@@ -1,0 +1,179 @@
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { ArrowLeft, Loader2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { registerEnsaioDraft } from "@/lib/driveSync.functions";
+import { getLabEnsaioSnapshot } from "@/lib/lab-ensaios.functions";
+import type { LabEnsaioSnapshot } from "@/lib/lab-ensaios.functions";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { labStore, useAmostra, useEnsaio, useLabSyncStatus, useOS } from "@/features/lab/store";
+import { ENSAIO_LABEL } from "@/features/lab/types";
+import { LabEnsaioProvider } from "@/features/lab/context";
+import { TriaxialCidPage as TriaxialCidPageInner } from "@/routes/_app.relatorio.triaxial-cid";
+import { AdensamentoPage as AdensamentoPageInner } from "@/routes/_app.relatorio.adensamento";
+import { CDPage as CDPageInner } from "@/routes/_app.relatorio.cisalhamento-direto";
+import { MEspAEnsaioEditor } from "@/features/mesp-natural/editor";
+
+export const Route = createFileRoute(
+  "/_app/relatorio/os/$osId/amostra/$amostraId/ensaio/$ensaioId",
+)({
+  head: () => ({
+    meta: [
+      { title: "Editor de Ensaio — Suporte INFRA" },
+      {
+        name: "description",
+        content: "Editor técnico para digitação, revisão e emissão de ensaios laboratoriais.",
+      },
+      { property: "og:title", content: "Editor de Ensaio — Suporte INFRA" },
+      {
+        property: "og:description",
+        content: "Editor técnico para digitação, revisão e emissão de ensaios laboratoriais.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
+  component: EnsaioEditor,
+});
+
+function EnsaioEditor() {
+  const { osId, amostraId, ensaioId } = Route.useParams();
+  const os = useOS(osId);
+  const amostra = useAmostra(osId, amostraId);
+  const ensaio = useEnsaio(osId, amostraId, ensaioId);
+  const sync = useLabSyncStatus();
+  const [restoring, setRestoring] = useState(false);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+
+  const registerFn = useServerFn(registerEnsaioDraft);
+  const snapshotFn = useServerFn(getLabEnsaioSnapshot);
+  const registeredRef = useRef<string | null>(null);
+  const restoreRef = useRef<string | null>(null);
+  const scopeId = `os/${osId}/amostra/${amostraId}/ensaio/${ensaioId}`;
+
+  useEffect(() => {
+    if (os && amostra && ensaio) return;
+    if (sync.status !== "salvo" && sync.status !== "erro") return;
+    if (restoreRef.current === scopeId) return;
+    restoreRef.current = scopeId;
+    setRestoring(true);
+    setRestoreError(null);
+    void snapshotFn({ data: { scopeId } })
+      .then((value) => {
+        const snapshot = value as LabEnsaioSnapshot | null;
+        if (!snapshot) {
+          setRestoreError("Não encontrei esse ensaio no índice de emissões.");
+          return;
+        }
+        labStore.ensureEnsaioFromSnapshot(snapshot);
+      })
+      .catch((err: unknown) => {
+        setRestoreError(err instanceof Error ? err.message : "Falha ao recuperar o ensaio.");
+      })
+      .finally(() => setRestoring(false));
+  }, [amostra, ensaio, os, scopeId, snapshotFn, sync.status]);
+
+  useEffect(() => {
+    if (!os || !amostra || !ensaio) return;
+    const currentScopeId = `os/${os.id}/amostra/${amostra.id}/ensaio/${ensaio.id}`;
+    if (registeredRef.current === currentScopeId) return;
+    registeredRef.current = currentScopeId;
+    void registerFn({
+      data: {
+        scopeId: currentScopeId,
+        os: { numero: os.numero ?? "", cliente: os.client ?? "" },
+        amostra: { code: amostra.reportNumber ?? amostra.code ?? "" },
+        ensaio: { tipo: ensaio.tipo, nome: ensaio.label ?? "" },
+      },
+    }).catch(() => {
+      // silencioso: não impede o editor de abrir
+      registeredRef.current = null;
+    });
+  }, [os, amostra, ensaio, registerFn]);
+
+  if (!os || !amostra || !ensaio) {
+    const waitingForHydration = sync.status === "idle" || sync.status === "carregando" || restoring;
+    return (
+      <div className="px-6 py-6">
+        <Card>
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
+            {waitingForHydration ? (
+              <span className="inline-flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" /> Carregando dados do ensaio…
+              </span>
+            ) : (
+              <>
+                Ensaio não encontrado{restoreError ? `: ${restoreError}` : ""}.{" "}
+                <Link to="/relatorio/pendentes" search={{ tab: "verificacao" }} className="underline">Voltar</Link>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Componentes atuais dos editores; carregamos por tipo.
+  // Nota: TriaxialCidPage e AdensamentoPage já são componentes standalone;
+  // aqui apenas envelopamos com o provider de contexto para que possam
+  // ler identificação/coordenadas/fotos herdadas da amostra.
+  const Editor = pickEditor(ensaio.tipo);
+
+  return (
+    <LabEnsaioProvider
+      value={{
+        os,
+        amostra,
+        ensaio,
+        photos: ensaio.photos ?? [],
+        coords: amostra.coords,
+        onPayloadChange: (payload) => labStore.patchEnsaio(os.id, amostra.id, ensaio.id, { payload }),
+        addPhoto: (p) => labStore.addEnsaioPhoto(os.id, amostra.id, ensaio.id, p),
+        removePhoto: (id) => labStore.removeEnsaioPhoto(os.id, amostra.id, ensaio.id, id),
+        updatePhoto: (id, patch) => labStore.updateEnsaioPhoto(os.id, amostra.id, ensaio.id, id, patch),
+      }}
+    >
+      <div className="border-b border-border bg-muted/30 px-6 py-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground">
+          <Button variant="ghost" size="sm" asChild className="-ml-2 h-7">
+            <Link to="/relatorio/os/$osId/amostra/$amostraId" params={{ osId: os.id, amostraId: amostra.id }} search={{}}>
+              <ArrowLeft className="mr-1 h-3 w-3" />
+              Amostra
+            </Link>
+          </Button>
+          <span>·</span>
+          <span>OS {os.numero}</span>
+          <span>·</span>
+          <span>Amostra {amostra.reportNumber || "—"}</span>
+          <span>·</span>
+          <span className="font-medium text-foreground">{ENSAIO_LABEL[ensaio.tipo]}</span>
+        </div>
+      </div>
+      <Editor />
+    </LabEnsaioProvider>
+  );
+}
+
+function pickEditor(tipo: string): React.FC {
+  switch (tipo) {
+    case "triaxial-cid":
+    case "triaxial-cid-sat":
+    case "triaxial-cid-nat":
+      return TriaxialCidPageInner as unknown as React.FC;
+    case "adensamento":
+      return AdensamentoPageInner as unknown as React.FC;
+    case "cisalhamento-direto":
+      return CDPageInner as unknown as React.FC;
+    case "mesp-a":
+      return MEspAEnsaioEditor as unknown as React.FC;
+    default:
+      return () => (
+        <div className="px-6 py-6 text-sm text-muted-foreground">
+          Editor para <b>{tipo}</b> ainda não disponível.
+        </div>
+      );
+  }
+}

@@ -1,0 +1,288 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@theme {
+  --status-atrasado-rgb: 239, 68, 68;
+}
+
+@utility animate-pulse-slow {
+  animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Design system definition.
+ *
+ * The @theme inline block maps CSS custom properties to Tailwind utility
+ * classes (e.g. --color-primary -> bg-primary, text-primary).
+ *
+ * The :root and .dark blocks define the actual color values using oklch.
+ * All colors MUST use oklch format.
+ *
+ * To add a new semantic color:
+ * 1. Add the variable to :root (light value) and .dark (dark value)
+ * 2. Register it in @theme inline as --color-<name>: var(--<name>)
+ */
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --font-display: "Sora", ui-sans-serif, system-ui, sans-serif;
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-ring-offset-background: var(--background);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+:root {
+  /* Suporte INFRA — Light theme (charcoal + amber gold from logo) */
+  --radius: 0.625rem;
+  /* Fundo levemente frio (~#F6F7FA) — dá profundidade aos cards brancos */
+  --background: oklch(0.975 0.004 260);
+  --foreground: oklch(0.22 0.005 60);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.22 0.005 60);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.22 0.005 60);
+  --primary: oklch(0.79 0.14 72);
+  --primary-foreground: oklch(0.22 0.01 60);
+  --secondary: oklch(0.955 0.004 80);
+  --secondary-foreground: oklch(0.25 0.01 60);
+  --muted: oklch(0.955 0.004 80);
+  --muted-foreground: oklch(0.52 0.01 70);
+  --accent: oklch(0.79 0.14 72);
+  --accent-foreground: oklch(0.22 0.01 60);
+  --destructive: oklch(0.6 0.22 25);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: oklch(0.905 0.005 80);
+  --input: oklch(0.905 0.005 80);
+  --ring: oklch(0.79 0.14 72);
+  --chart-1: oklch(0.79 0.14 72);
+  --chart-2: oklch(0.65 0.13 68);
+  --chart-3: oklch(0.45 0.02 65);
+  --chart-4: oklch(0.7 0.02 75);
+  --chart-5: oklch(0.86 0.09 80);
+  --sidebar: oklch(0.22 0.005 60);
+  --sidebar-foreground: oklch(0.94 0.005 85);
+  --sidebar-primary: oklch(0.79 0.14 72);
+  --sidebar-primary-foreground: oklch(0.22 0.01 60);
+  --sidebar-accent: oklch(0.28 0.006 60);
+  --sidebar-accent-foreground: oklch(0.94 0.005 85);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.79 0.14 72);
+
+  /* Status tokens (compartilhados por Gantt/Kanban/Tabela/Sidebar) */
+  --status-pendente: oklch(0.62 0.01 260);   /* cinza */
+  --status-programado: oklch(0.62 0.18 250); /* azul */
+  --status-execucao: oklch(0.79 0.14 72);    /* âmbar da marca */
+  --status-atrasado: oklch(0.6 0.22 25);     /* vermelho */
+  --status-concluido: oklch(0.62 0.16 150);  /* verde */
+}
+
+.dark {
+  /* Suporte INFRA — Dark theme (graphite + amber from logo) */
+  --background: oklch(0.18 0.004 60);
+  --foreground: oklch(0.95 0.005 85);
+  --card: oklch(0.225 0.004 60);
+  --card-foreground: oklch(0.95 0.005 85);
+  --popover: oklch(0.225 0.004 60);
+  --popover-foreground: oklch(0.95 0.005 85);
+  --primary: oklch(0.82 0.15 75);
+  --primary-foreground: oklch(0.2 0.01 60);
+  --secondary: oklch(0.28 0.005 60);
+  --secondary-foreground: oklch(0.95 0.005 85);
+  --muted: oklch(0.26 0.004 60);
+  --muted-foreground: oklch(0.72 0.01 75);
+  --accent: oklch(0.82 0.15 75);
+  --accent-foreground: oklch(0.2 0.01 60);
+  --destructive: oklch(0.62 0.2 25);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: oklch(0.82 0.15 75);
+  --chart-1: oklch(0.82 0.15 75);
+  --chart-2: oklch(0.7 0.13 70);
+  --chart-3: oklch(0.55 0.08 65);
+  --chart-4: oklch(0.45 0.02 60);
+  --chart-5: oklch(0.78 0.02 75);
+  --sidebar: oklch(0.14 0.003 60);
+  --sidebar-foreground: oklch(0.93 0.005 85);
+  --sidebar-primary: oklch(0.82 0.15 75);
+  --sidebar-primary-foreground: oklch(0.2 0.01 60);
+  --sidebar-accent: oklch(0.24 0.004 60);
+  --sidebar-accent-foreground: oklch(0.95 0.005 85);
+  --sidebar-border: oklch(1 0 0 / 6%);
+  --sidebar-ring: oklch(0.82 0.15 75);
+
+  --status-pendente: oklch(0.72 0.01 260);
+  --status-programado: oklch(0.72 0.16 250);
+  --status-execucao: oklch(0.82 0.15 75);
+  --status-atrasado: oklch(0.7 0.2 25);
+  --status-concluido: oklch(0.72 0.16 150);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+  }
+
+  /* Smooth transition for theme-aware surfaces */
+  .theme-transition,
+  .theme-transition * {
+    transition:
+      background-color 0.3s ease,
+      border-color 0.3s ease,
+      color 0.3s ease,
+      fill 0.3s ease,
+      stroke 0.3s ease;
+  }
+}
+
+/* ============================================================
+   Portal Aura — refino visual global dos cartões de conteúdo.
+   Aplica raio maior, fundo sutilmente translúcido e sombra
+   suave a qualquer `.rounded-lg.border.bg-card` (padrão herdado
+   das telas antigas) sem precisar tocar em cada arquivo.
+   ============================================================ */
+@layer components {
+  .rounded-lg.border.bg-card,
+  .rounded-xl.border.bg-card {
+    border-radius: var(--radius-xl);
+    background-color: color-mix(in oklch, var(--card) 92%, transparent);
+    box-shadow:
+      0 1px 0 color-mix(in oklch, var(--border) 60%, transparent) inset,
+      0 1px 2px -1px oklch(0 0 0 / 0.04);
+  }
+
+  /* Eyebrow reutilizável — mesmo estilo do PageHeader/RailCard. */
+  .aura-eyebrow {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: color-mix(in oklch, var(--muted-foreground) 85%, transparent);
+  }
+
+  /* Chip numérico para contadores em subtítulos/headers. */
+  .aura-count {
+    font-variant-numeric: tabular-nums;
+    color: var(--foreground);
+    font-weight: 500;
+  }
+
+  /* ---- Status pills reutilizáveis ----
+     Uso: <span class="status-pill status-programado">Programado</span> */
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.125rem 0.5rem;
+    border-radius: 9999px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.4;
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+  .status-pill::before {
+    content: "";
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background: currentColor;
+    opacity: 0.9;
+  }
+  .status-pendente {
+    color: var(--status-pendente);
+    background: color-mix(in oklch, var(--status-pendente) 12%, transparent);
+    border-color: color-mix(in oklch, var(--status-pendente) 25%, transparent);
+  }
+  .status-programado {
+    color: var(--status-programado);
+    background: color-mix(in oklch, var(--status-programado) 12%, transparent);
+    border-color: color-mix(in oklch, var(--status-programado) 30%, transparent);
+  }
+  .status-execucao {
+    color: var(--status-execucao);
+    background: color-mix(in oklch, var(--status-execucao) 15%, transparent);
+    border-color: color-mix(in oklch, var(--status-execucao) 35%, transparent);
+  }
+  .status-atrasado {
+    color: var(--status-atrasado);
+    background: color-mix(in oklch, var(--status-atrasado) 14%, transparent);
+    border-color: color-mix(in oklch, var(--status-atrasado) 35%, transparent);
+  }
+  .status-concluido {
+    color: var(--status-concluido);
+    background: color-mix(in oklch, var(--status-concluido) 14%, transparent);
+    border-color: color-mix(in oklch, var(--status-concluido) 32%, transparent);
+  }
+
+  /* Cor sólida para barras (Gantt) e dots — sem alpha */
+  .status-bar-pendente   { background-color: var(--status-pendente); }
+  .status-bar-programado { background-color: var(--status-programado); }
+  .status-bar-execucao   { background-color: var(--status-execucao); }
+  .status-bar-atrasado   { background-color: var(--status-atrasado); }
+  .status-bar-concluido  { background-color: var(--status-concluido); }
+}
+
+a[href*="lovable.dev"], 
+iframe[src*="lovable.dev"],
+div[style*="Edit with Lovable"],
+.lovable-badge {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  position: absolute !important;
+  z-index: -9999 !important;
+}

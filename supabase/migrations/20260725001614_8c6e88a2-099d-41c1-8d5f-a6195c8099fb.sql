@@ -1,0 +1,1 @@
+ALTER TABLE public.lab_pendencias_digitacao ADD COLUMN IF NOT EXISTS operador_nome text;

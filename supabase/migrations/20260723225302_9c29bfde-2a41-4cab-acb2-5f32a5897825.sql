@@ -1,0 +1,2 @@
+ALTER TABLE public.lab_pendencias_digitacao ADD COLUMN IF NOT EXISTS origem TEXT NOT NULL DEFAULT 'gantt' CHECK (origem IN ('gantt','digitalizacao'));
+CREATE INDEX IF NOT EXISTS idx_lab_pend_origem ON public.lab_pendencias_digitacao(origem, status);
