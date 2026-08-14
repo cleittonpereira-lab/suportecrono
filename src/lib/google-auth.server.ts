@@ -1,8 +1,10 @@
-import crypto from "crypto";
+import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 
 /**
  * Autenticação direta com Google APIs usando Service Account (JWT).
- * Não necessita de bibliotecas adicionais, utiliza o módulo nativo `crypto` do Node.
+ * Não necessita de bibliotecas adicionais, utiliza o módulo nativo `node:crypto` do Node.
  */
 
 interface ServiceAccountKey {
@@ -13,10 +15,7 @@ interface ServiceAccountKey {
 
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
-import fs from "fs";
-import path from "path";
-
-function getServiceAccount(): ServiceAccountKey | null {
+function getServiceAccount(): ServiceAccountKey {
   const tryParse = (rawStr: unknown): ServiceAccountKey | null => {
     if (!rawStr) return null;
     if (typeof rawStr === "object" && rawStr !== null) {
@@ -85,15 +84,15 @@ function getServiceAccount(): ServiceAccountKey | null {
   if (fromEnv) return fromEnv;
 
   // 2. Try local file
-  const localFile = path.join(process.cwd(), ".data", "service_account.json");
-  if (fs.existsSync(localFile)) {
-    try {
+  try {
+    const localFile = path.join(process.cwd(), ".data", "service_account.json");
+    if (fs.existsSync(localFile)) {
       const content = fs.readFileSync(localFile, "utf-8");
       const fromFile = tryParse(content);
       if (fromFile) return fromFile;
-    } catch {
-      // ignore
     }
+  } catch {
+    // ignore
   }
 
   // 3. Built-in Server Service Account fallback
@@ -116,9 +115,8 @@ function base64UrlEncode(objOrStr: object | string): string {
 export async function getGoogleAccessToken(scopes = [
   "https://www.googleapis.com/auth/spreadsheets",
   "https://www.googleapis.com/auth/drive"
-]): Promise<string | null> {
+]): Promise<string> {
   const sa = getServiceAccount();
-  if (!sa) return null;
 
   // Cache do token (com margem de segurança de 2 minutos)
   if (cachedToken && Date.now() < cachedToken.expiresAt - 120_000) {
@@ -149,7 +147,7 @@ export async function getGoogleAccessToken(scopes = [
     signature = crypto.sign("sha256", Buffer.from(signInput), keyObj).toString("base64url");
   } catch (keyErr) {
     console.error("Erro ao assinar JWT com chave privada:", keyErr);
-    return null;
+    throw new Error(`Erro ao assinar JWT com chave privada: ${(keyErr as Error).message}`);
   }
 
   const jwt = `${signInput}.${signature}`;
@@ -181,5 +179,5 @@ export async function getGoogleAccessToken(scopes = [
 }
 
 export function isGoogleAuthConfigured(): boolean {
-  return !!getServiceAccount();
+  return true;
 }
