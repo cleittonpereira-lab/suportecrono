@@ -252,55 +252,39 @@ export const updateScheduleRow = createServerFn({ method: "POST" })
       throw new Error("rowIndex inválido");
     }
 
-    // 1. Tentar gravar via API remota
-    try {
-      const sheet = `'${SHEET_NAME}'`;
-      const updates: { range: string; values: string[][] }[] = [];
-      const push = (col: string, value: string | undefined) => {
-        if (value === undefined) return;
-        updates.push({
-          range: `${sheet}!${col}${data.rowIndex}`,
-          values: [[value]],
-        });
-      };
-      push("B", data.dataPostagem);
-      push("E", data.setor);
-      push("F", data.laboratorio);
-      push("G", data.dataEntrega);
-      push("P", data.escopo);
+    const sheet = `'${SHEET_NAME}'`;
+    const updates: { range: string; values: string[][] }[] = [];
+    const push = (col: string, value: string | undefined) => {
+      if (value === undefined) return;
+      updates.push({
+        range: `${sheet}!${col}${data.rowIndex}`,
+        values: [[value]],
+      });
+    };
+    push("B", data.dataPostagem);
+    push("E", data.setor);
+    push("F", data.laboratorio);
+    push("G", data.dataEntrega);
+    push("P", data.escopo);
 
-      if (updates.length > 0) {
-        const response = await sheetsApiRequest(`/values:batchUpdate`, {
-          method: "POST",
-          body: JSON.stringify({
-            valueInputOption: "USER_ENTERED",
-            data: updates,
-          }),
-        });
-        if (response.ok) {
-          invalidateSheetsCache();
-          return { updated: updates.length };
-        }
+    if (updates.length > 0) {
+      const response = await sheetsApiRequest(`/values:batchUpdate`, {
+        method: "POST",
+        body: JSON.stringify({
+          valueInputOption: "USER_ENTERED",
+          data: updates,
+        }),
+      });
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error("Erro Google Sheets batchUpdate:", response.status, errText);
+        throw new Error(`Erro ao salvar no Google Sheets (${response.status}): ${errText}`);
       }
-    } catch {
-      // Fallback local
+      invalidateSheetsCache();
+      return { updated: updates.length };
     }
 
-    // 2. Gravar alteração no armazenamento local
-    const store = readScheduleStore();
-    const key = String(data.rowIndex);
-    store.edits[key] = {
-      ...(store.edits[key] || {}),
-      rowIndex: data.rowIndex,
-      dataPostagem: data.dataPostagem !== undefined ? data.dataPostagem : store.edits[key]?.dataPostagem,
-      setor: data.setor !== undefined ? data.setor : store.edits[key]?.setor,
-      laboratorio: data.laboratorio !== undefined ? data.laboratorio : store.edits[key]?.laboratorio,
-      dataEntrega: data.dataEntrega !== undefined ? data.dataEntrega : store.edits[key]?.dataEntrega,
-      escopo: data.escopo !== undefined ? data.escopo : store.edits[key]?.escopo,
-    };
-    writeScheduleStore(store);
-    invalidateSheetsCache();
-    return { updated: 1 };
+    return { updated: 0 };
   });
 
 async function getSheetId(sheetTitle: string): Promise<number> {
@@ -359,63 +343,66 @@ export const moveScheduleRowToEntregues = createServerFn({ method: "POST" })
       throw new Error("rowIndex inválido");
     }
 
-    try {
-      const readRange = `'${SHEET_NAME}'!A${data.rowIndex}:P${data.rowIndex}`;
-      const readRes = await sheetsApiRequest(`/values/${readRange}`);
-      if (readRes.ok) {
-        const readData = (await readRes.json()) as { values?: string[][] };
-        const current = readData.values?.[0] ?? [];
-        if (current[2]?.trim()) {
-          const today = (() => {
-            const n = new Date();
-            return `${String(n.getDate()).padStart(2, "0")}/${String(n.getMonth() + 1).padStart(2, "0")}/${n.getFullYear()}`;
-          })();
-          const rowToAppend: string[] = [];
-          for (let i = 0; i < 11; i++) rowToAppend.push(current[i] ?? "");
-          rowToAppend[1] = data.dataPostagem ?? today;
-          rowToAppend.push(current[15] ?? "");
-
-          const scanRange = `'${ENTREGUES_SHEET_NAME}'!A1:L20000`;
-          const scanRes = await sheetsApiRequest(`/values/${scanRange}`);
-          if (scanRes.ok) {
-            const scanData = (await scanRes.json()) as { values?: string[][] };
-            const allRows = scanData.values ?? [];
-            let lastFilled = 0;
-            for (let i = 0; i < allRows.length; i++) {
-              const row = allRows[i] ?? [];
-              if (row.some((cell) => (cell ?? "").toString().trim() !== "")) lastFilled = i + 1;
-            }
-            const targetRow = Math.max(lastFilled + 1, 3);
-            await appendOneRow(ENTREGUES_SHEET_NAME);
-            const writeRange = `'${ENTREGUES_SHEET_NAME}'!A${targetRow}:L${targetRow}`;
-            await sheetsApiRequest(`/values/${writeRange}?valueInputOption=USER_ENTERED`, {
-              method: "PUT",
-              body: JSON.stringify({ range: writeRange, majorDimension: "ROWS", values: [rowToAppend] }),
-            });
-            const sheetId = await getSheetId(SHEET_NAME);
-            await sheetsApiRequest(`:batchUpdate`, {
-              method: "POST",
-              body: JSON.stringify({
-                requests: [{ deleteDimension: { range: { sheetId, dimension: "ROWS", startIndex: data.rowIndex - 1, endIndex: data.rowIndex } } }],
-              }),
-            });
-            invalidateSheetsCache();
-            return { moved: true };
-          }
-        }
-      }
-    } catch {
-      // Fallback local
+    const readRange = `'${SHEET_NAME}'!A${data.rowIndex}:P${data.rowIndex}`;
+    const readRes = await sheetsApiRequest(`/values/${readRange}`);
+    if (!readRes.ok) {
+      const err = await readRes.text();
+      throw new Error(`Falha ao ler linha para mover (${readRes.status}): ${err}`);
     }
 
-    const store = readScheduleStore();
-    const key = String(data.rowIndex);
-    store.edits[key] = {
-      ...(store.edits[key] || {}),
-      rowIndex: data.rowIndex,
-      movedToEntregues: true,
-    };
-    writeScheduleStore(store);
+    const readData = (await readRes.json()) as { values?: string[][] };
+    const current = readData.values?.[0] ?? [];
+    if (!current[2]?.trim()) {
+      throw new Error("Linha vazia ou tomador não encontrado");
+    }
+
+    const today = (() => {
+      const n = new Date();
+      return `${String(n.getDate()).padStart(2, "0")}/${String(n.getMonth() + 1).padStart(2, "0")}/${n.getFullYear()}`;
+    })();
+    const rowToAppend: string[] = [];
+    for (let i = 0; i < 11; i++) rowToAppend.push(current[i] ?? "");
+    rowToAppend[1] = data.dataPostagem ?? today;
+    rowToAppend.push(current[15] ?? "");
+
+    const scanRange = `'${ENTREGUES_SHEET_NAME}'!A1:L20000`;
+    const scanRes = await sheetsApiRequest(`/values/${scanRange}`);
+    if (!scanRes.ok) {
+      const err = await scanRes.text();
+      throw new Error(`Falha ao escanear OS Entregues (${scanRes.status}): ${err}`);
+    }
+
+    const scanData = (await scanRes.json()) as { values?: string[][] };
+    const allRows = scanData.values ?? [];
+    let lastFilled = 0;
+    for (let i = 0; i < allRows.length; i++) {
+      const row = allRows[i] ?? [];
+      if (row.some((cell) => (cell ?? "").toString().trim() !== "")) lastFilled = i + 1;
+    }
+    const targetRow = Math.max(lastFilled + 1, 3);
+    await appendOneRow(ENTREGUES_SHEET_NAME);
+    const writeRange = `'${ENTREGUES_SHEET_NAME}'!A${targetRow}:L${targetRow}`;
+    const writeRes = await sheetsApiRequest(`/values/${writeRange}?valueInputOption=USER_ENTERED`, {
+      method: "PUT",
+      body: JSON.stringify({ range: writeRange, majorDimension: "ROWS", values: [rowToAppend] }),
+    });
+    if (!writeRes.ok) {
+      const err = await writeRes.text();
+      throw new Error(`Falha ao gravar em OS Entregues (${writeRes.status}): ${err}`);
+    }
+
+    const sheetId = await getSheetId(SHEET_NAME);
+    const delRes = await sheetsApiRequest(`:batchUpdate`, {
+      method: "POST",
+      body: JSON.stringify({
+        requests: [{ deleteDimension: { range: { sheetId, dimension: "ROWS", startIndex: data.rowIndex - 1, endIndex: data.rowIndex } } }],
+      }),
+    });
+    if (!delRes.ok) {
+      const err = await delRes.text();
+      throw new Error(`Falha ao remover linha do Cronograma (${delRes.status}): ${err}`);
+    }
+
     invalidateSheetsCache();
     return { moved: true };
   });
@@ -441,60 +428,42 @@ export const createScheduleRow = createServerFn({ method: "POST" })
       throw new Error("Tomador obrigatório");
     }
 
-    try {
-      const scanRange = `'${SHEET_NAME}'!A1:K20000`;
-      const scanRes = await sheetsApiRequest(`/values/${scanRange}`);
-      if (scanRes.ok) {
-        const scanData = (await scanRes.json()) as { values?: string[][] };
-        const allRows = scanData.values ?? [];
-        let lastFilled = 0;
-        for (let i = 0; i < allRows.length; i++) {
-          const row = allRows[i] ?? [];
-          if (row.some((c) => (c ?? "").toString().trim() !== "")) lastFilled = i + 1;
-        }
-        const targetRow = Math.max(lastFilled + 1, 5);
-        await appendOneRow(SHEET_NAME);
-        const rowAK: string[] = [
-          "", data.dataPostagem ?? "", data.tomador ?? "", data.os ?? "",
-          data.setor ?? "", data.laboratorio ?? "", data.dataEntrega ?? "",
-          data.volumeComp ?? "", data.volumeCaract ?? "", data.mctc ?? "", data.mrs ?? "",
-        ];
-        const updates = [
-          { range: `'${SHEET_NAME}'!A${targetRow}:K${targetRow}`, values: [rowAK] },
-          { range: `'${SHEET_NAME}'!P${targetRow}`, values: [[data.escopo ?? ""]] },
-        ];
-        const writeRes = await sheetsApiRequest(`/values:batchUpdate`, {
-          method: "POST",
-          body: JSON.stringify({ valueInputOption: "USER_ENTERED", data: updates }),
-        });
-        if (writeRes.ok) {
-          invalidateSheetsCache();
-          return { created: true, rowIndex: targetRow };
-        }
-      }
-    } catch {
-      // Fallback local
+    const scanRange = `'${SHEET_NAME}'!A1:K20000`;
+    const scanRes = await sheetsApiRequest(`/values/${scanRange}`);
+    if (!scanRes.ok) {
+      const err = await scanRes.text();
+      throw new Error(`Falha ao ler linhas da planilha (${scanRes.status}): ${err}`);
     }
 
-    const store = readScheduleStore();
-    const newIndex = 900 + store.newRows.length;
-    store.newRows.push({
-      rowIndex: newIndex,
-      tomador: data.tomador,
-      os: data.os,
-      dataPostagem: data.dataPostagem,
-      setor: data.setor,
-      laboratorio: data.laboratorio,
-      dataEntrega: data.dataEntrega,
-      volumeComp: data.volumeComp,
-      volumeCaract: data.volumeCaract,
-      mctc: data.mctc,
-      mrs: data.mrs,
-      escopo: data.escopo,
+    const scanData = (await scanRes.json()) as { values?: string[][] };
+    const allRows = scanData.values ?? [];
+    let lastFilled = 0;
+    for (let i = 0; i < allRows.length; i++) {
+      const row = allRows[i] ?? [];
+      if (row.some((c) => (c ?? "").toString().trim() !== "")) lastFilled = i + 1;
+    }
+    const targetRow = Math.max(lastFilled + 1, 5);
+    await appendOneRow(SHEET_NAME);
+    const rowAK: string[] = [
+      "", data.dataPostagem ?? "", data.tomador ?? "", data.os ?? "",
+      data.setor ?? "", data.laboratorio ?? "", data.dataEntrega ?? "",
+      data.volumeComp ?? "", data.volumeCaract ?? "", data.mctc ?? "", data.mrs ?? "",
+    ];
+    const updates = [
+      { range: `'${SHEET_NAME}'!A${targetRow}:K${targetRow}`, values: [rowAK] },
+      { range: `'${SHEET_NAME}'!P${targetRow}`, values: [[data.escopo ?? ""]] },
+    ];
+    const writeRes = await sheetsApiRequest(`/values:batchUpdate`, {
+      method: "POST",
+      body: JSON.stringify({ valueInputOption: "USER_ENTERED", data: updates }),
     });
-    writeScheduleStore(store);
+    if (!writeRes.ok) {
+      const err = await writeRes.text();
+      throw new Error(`Falha ao gravar nova OS na planilha (${writeRes.status}): ${err}`);
+    }
+
     invalidateSheetsCache();
-    return { created: true, rowIndex: newIndex };
+    return { created: true, rowIndex: targetRow };
   });
 
 export const deleteScheduleRow = createServerFn({ method: "POST" })
@@ -504,30 +473,18 @@ export const deleteScheduleRow = createServerFn({ method: "POST" })
       throw new Error("rowIndex inválido");
     }
 
-    try {
-      const sheetId = await getSheetId(SHEET_NAME);
-      const res = await sheetsApiRequest(`:batchUpdate`, {
-        method: "POST",
-        body: JSON.stringify({
-          requests: [{ deleteDimension: { range: { sheetId, dimension: "ROWS", startIndex: data.rowIndex - 1, endIndex: data.rowIndex } } }],
-        }),
-      });
-      if (res.ok) {
-        invalidateSheetsCache();
-        return { deleted: true };
-      }
-    } catch {
-      // Fallback local
+    const sheetId = await getSheetId(SHEET_NAME);
+    const res = await sheetsApiRequest(`:batchUpdate`, {
+      method: "POST",
+      body: JSON.stringify({
+        requests: [{ deleteDimension: { range: { sheetId, dimension: "ROWS", startIndex: data.rowIndex - 1, endIndex: data.rowIndex } } }],
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Falha ao excluir linha da planilha (${res.status}): ${err}`);
     }
 
-    const store = readScheduleStore();
-    const key = String(data.rowIndex);
-    store.edits[key] = {
-      ...(store.edits[key] || {}),
-      rowIndex: data.rowIndex,
-      movedToEntregues: true,
-    };
-    writeScheduleStore(store);
     invalidateSheetsCache();
     return { deleted: true };
   });

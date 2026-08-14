@@ -17,16 +17,39 @@ import fs from "fs";
 import path from "path";
 
 function getServiceAccount(): ServiceAccountKey | null {
-  const tryParse = (str: string | undefined): ServiceAccountKey | null => {
-    if (!str) return null;
+  const tryParse = (rawStr: string | undefined): ServiceAccountKey | null => {
+    if (!rawStr) return null;
+    let str = rawStr.trim();
+    if ((str.startsWith('"') && str.endsWith('"')) || (str.startsWith("'") && str.endsWith("'"))) {
+      str = str.slice(1, -1).trim();
+    }
+    // 1. Direct JSON parse
     try {
       const parsed = JSON.parse(str);
-      if (parsed.client_email && parsed.private_key) {
-        return parsed;
+      if (parsed && parsed.client_email && parsed.private_key) {
+        return {
+          ...parsed,
+          private_key: String(parsed.private_key).replace(/\\n/g, "\n"),
+        };
       }
     } catch {
       // ignore
     }
+
+    // 2. Base64 decode then JSON parse
+    try {
+      const decoded = Buffer.from(str, "base64").toString("utf-8");
+      const parsed = JSON.parse(decoded);
+      if (parsed && parsed.client_email && parsed.private_key) {
+        return {
+          ...parsed,
+          private_key: String(parsed.private_key).replace(/\\n/g, "\n"),
+        };
+      }
+    } catch {
+      // ignore
+    }
+
     return null;
   };
 
@@ -86,8 +109,9 @@ export async function getGoogleAccessToken(scopes = [
 
   let signature = "";
   try {
+    const formattedKey = sa.private_key.replace(/\\n/g, "\n");
     const keyObj = crypto.createPrivateKey({
-      key: sa.private_key,
+      key: formattedKey,
       format: "pem",
     });
     signature = crypto.sign("sha256", Buffer.from(signInput), keyObj).toString("base64url");
