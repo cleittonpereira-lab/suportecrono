@@ -103,6 +103,19 @@ function getServiceAccount(): ServiceAccountKey {
   };
 }
 
+function cleanPem(rawKey: string): string {
+  const cleaned = rawKey.replace(/\\n/g, "\n");
+  const matches = cleaned.match(/-----BEGIN [A-Z ]+KEY-----([\s\S]*?)-----END [A-Z ]+KEY-----/);
+  if (!matches) {
+    const base64Only = cleaned.replace(/[\r\n\s]/g, "");
+    const chunks = base64Only.match(/.{1,64}/g) || [];
+    return `-----BEGIN PRIVATE KEY-----\n${chunks.join("\n")}\n-----END PRIVATE KEY-----`;
+  }
+  const base64Body = matches[1].replace(/[\r\n\s]/g, "");
+  const chunks = base64Body.match(/.{1,64}/g) || [];
+  return `-----BEGIN PRIVATE KEY-----\n${chunks.join("\n")}\n-----END PRIVATE KEY-----`;
+}
+
 function base64UrlEncode(objOrStr: object | string): string {
   const str = typeof objOrStr === "string" ? objOrStr : JSON.stringify(objOrStr);
   return Buffer.from(str)
@@ -139,7 +152,7 @@ export async function getGoogleAccessToken(scopes = [
 
   let signature = "";
   try {
-    const formattedKey = sa.private_key.replace(/\\n/g, "\n");
+    const formattedKey = cleanPem(sa.private_key);
     const keyObj = crypto.createPrivateKey({
       key: formattedKey,
       format: "pem",
