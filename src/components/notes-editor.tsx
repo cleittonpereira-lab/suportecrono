@@ -71,8 +71,8 @@ export function NotesEditor({
   );
 
   return (
-    <div className="rounded-md border bg-background">
-      <div className="flex items-center gap-0.5 border-b px-1 py-0.5">
+    <div className="rounded-md border bg-background notes-editor-container">
+      <div className="flex items-center gap-0.5 border-b px-1 py-0.5 notes-toolbar">
         <Btn onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive("bold")} title="Negrito (Ctrl+B)">
           <Bold className="h-3 w-3" />
         </Btn>

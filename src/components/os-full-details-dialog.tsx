@@ -81,6 +81,17 @@ export function OsFullDetailsDialog({
   .badge-danger { background: #fee; border-color: #f99; color: #b00; }
   .num { text-align: right; font-variant-numeric: tabular-nums; }
   .lab { white-space: pre-wrap; background: #fafafa; border: 1px solid #eee; padding: 6px 8px; border-radius: 4px; }
+
+  /* Regras de Impressão Limpa — Texto Puro sem Ícones ou Fotos */
+  svg { display: none !important; }
+  button, input, textarea, select, .no-print, .print\\:hidden, .notes-toolbar, [role="toolbar"], .sr-only { display: none !important; }
+  img:not(.doc-header img) { display: none !important; }
+  .notes-editor-container { border: 1px solid #e2e8f0; background: #fff; padding: 6px 10px; border-radius: 4px; }
+  .ProseMirror { font-size: 11px; line-height: 1.5; color: #1e293b; min-height: auto !important; }
+  .ProseMirror p { margin: 4px 0; }
+  .group.relative.rounded-md.border { border: 1px solid #e2e8f0; padding: 4px 8px; background: #fff; margin-bottom: 3px; display: inline-block; width: 100%; }
+  .group.relative.rounded-md.border .h-24 { display: none !important; }
+
   @media print {
     body { margin: 12mm; }
     h2 { page-break-after: avoid; }
