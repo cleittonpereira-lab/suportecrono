@@ -1,8 +1,9 @@
 import { getGoogleAccessToken } from "./google-auth.server.ts";
 
-// Cache em memória de 5 minutos para performance instantânea
-const TTL_MS = 5 * 60_000;
+const SPREADSHEET_ID = "1V7mP2PfC2l877y6jjIOVXmt5ZzjEgLZIYVAe3Y4VD6c";
 
+// Cache em memória
+const TTL_MS = 5 * 60_000;
 type Entry = { at: number; data: { values?: string[][] } };
 const cache = new Map<string, Entry>();
 const inflight = new Map<string, Promise<{ values?: string[][] }>>();
@@ -51,29 +52,38 @@ export function parseCsv(csvText: string): string[][] {
   return rows;
 }
 
-export async function fetchDirectGoogleSheet(spreadsheetId: string, sheetName?: string): Promise<{ values?: string[][] }> {
-  // Google Sheets API v4 oficial com Service Account (ignora filtros do usuário, dados 100% reais)
+/**
+ * Busca dados da planilha Google usando APENAS a API v4 oficial com Service Account.
+ * A API v4 ignora filtros aplicados pelos usuários na planilha — dados sempre completos.
+ * Não há fallback para GViz para evitar que filtros afetem os dados.
+ */
+export async function fetchDirectGoogleSheet(
+  spreadsheetId: string,
+  sheetName?: string,
+): Promise<{ values?: string[][] }> {
   const token = await getGoogleAccessToken();
   const cleanRange = sheetName ? sheetName.replace(/^'|'$/g, "") : "Sheet1";
   const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(cleanRange)}`;
+
   const res = await fetch(apiUrl, {
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
   });
+
   if (res.ok) {
     const data = (await res.json()) as { values?: string[][] };
     return { values: data.values || [] };
   }
+
   const errText = await res.text();
   throw new Error(`Google Sheets API v4 error (${res.status}): ${errText.slice(0, 300)}`);
 }
 
-
 export async function sheetsGetValues(
   url: string,
-  headers: Record<string, string> = {},
+  _headers: Record<string, string> = {},
   opts: { ttlMs?: number } = {},
 ): Promise<{ values?: string[][] }> {
   const ttl = opts.ttlMs ?? TTL_MS;
@@ -84,73 +94,19 @@ export async function sheetsGetValues(
   if (pending) return pending;
 
   const task = (async () => {
-    // 1. Tentar autenticação direta via Google Service Account se configurado
-    try {
-      const googleToken = await getGoogleAccessToken();
-      if (googleToken) {
-        let targetUrl = url;
-        if (targetUrl.includes("connector-gateway.lovable.dev/google_sheets/v4")) {
-          targetUrl = targetUrl.replace("https://connector-gateway.lovable.dev/google_sheets/v4", "https://sheets.googleapis.com/v4");
-        }
-        const res = await fetch(targetUrl, {
-          headers: {
-            Authorization: `Bearer ${googleToken}`,
-            "Content-Type": "application/json",
-          },
-        });
-        if (res.ok) {
-          const data = (await res.json()) as { values?: string[][] };
-          cache.set(url, { at: Date.now(), data });
-          return data;
-        }
-      }
-    } catch (err) {
-      console.warn("Google Service Account fetch error:", err);
-    }
+    // Extrair spreadsheetId e sheetName da URL
+    const match = url.match(/spreadsheets\/([^\/]+)\/values\/([^?]+)/);
+    if (!match) throw new Error(`URL inválida para sheetsGetValues: ${url}`);
 
-    // 2. Se houver gateway Lovable com chaves REAIS (não vazias), tentar rapidamente sem retry demorado
-    const hasLovableKey = headers["Authorization"] && !headers["Authorization"].includes("undefined") && !headers["Authorization"].endsWith("Bearer ");
-    const hasSheetsKey = headers["X-Connection-Api-Key"] && !headers["X-Connection-Api-Key"].includes("undefined") && headers["X-Connection-Api-Key"].length > 5;
+    const spreadsheetId = match[1];
+    const rawRange = decodeURIComponent(match[2]);
+    const sheetName = rawRange.includes("!")
+      ? rawRange.split("!")[0].replace(/^'|'$/g, "")
+      : rawRange.replace(/^'|'$/g, "");
 
-    if (hasLovableKey && hasSheetsKey) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s max timeout
-        const res = await fetch(url, { headers, signal: controller.signal });
-        clearTimeout(timeoutId);
-        if (res.ok) {
-          const data = (await res.json()) as { values?: string[][] };
-          cache.set(url, { at: Date.now(), data });
-          return data;
-        }
-      } catch (err) {
-        // gateway falhou ou timeout -> cai no fallback instantâneo
-      }
-    }
-
-    // 3. Fallback direto da planilha pública (instantâneo)
-    try {
-      const match = url.match(/spreadsheets\/([^\/]+)\/values\/([^?]+)/);
-      if (match) {
-        const spreadsheetId = match[1];
-        const rawRange = decodeURIComponent(match[2]);
-        let sheetName: string | undefined;
-        if (rawRange.includes("!")) {
-          sheetName = rawRange.split("!")[0].replace(/^'|'$/g, "");
-        } else {
-          sheetName = rawRange.replace(/^'|'$/g, "");
-        }
-        const data = await fetchDirectGoogleSheet(spreadsheetId, sheetName);
-        cache.set(url, { at: Date.now(), data });
-        return data;
-      }
-    } catch (err) {
-      console.warn("Direct Google Sheet fetch fallback failed:", err);
-    }
-
-    const stale = cache.get(url);
-    if (stale) return stale.data;
-    throw new Error(`Google Sheets fetch failed for ${url}`);
+    const data = await fetchDirectGoogleSheet(spreadsheetId, sheetName);
+    cache.set(url, { at: Date.now(), data });
+    return data;
   })();
 
   inflight.set(url, task);
