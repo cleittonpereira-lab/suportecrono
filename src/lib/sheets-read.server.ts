@@ -52,48 +52,24 @@ export function parseCsv(csvText: string): string[][] {
 }
 
 export async function fetchDirectGoogleSheet(spreadsheetId: string, sheetName?: string): Promise<{ values?: string[][] }> {
-  // 1. Prioridade absoluta: Google Sheets API v4 oficial com Service Account (0 delay, 100% tempo real)
-  try {
-    const token = await getGoogleAccessToken();
-    if (token) {
-      const cleanRange = sheetName ? sheetName.replace(/^'|'$/g, "") : "Sheet1";
-      const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(cleanRange)}`;
-      const res = await fetch(apiUrl, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
-      if (res.ok) {
-        const data = (await res.json()) as { values?: string[][] };
-        return { values: data.values || [] };
-      } else {
-        const errText = await res.text();
-        console.error("fetchDirectGoogleSheet Google API error:", res.status, errText);
-      }
-    }
-  } catch (err) {
-    console.error("fetchDirectGoogleSheet auth error:", err);
-  }
-
-  // 2. Fallback público GViz CSV
-  let url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv`;
-  if (sheetName) {
-    url += `&sheet=${encodeURIComponent(sheetName)}`;
-  }
-  const res = await fetch(url, {
+  // Google Sheets API v4 oficial com Service Account (ignora filtros do usuário, dados 100% reais)
+  const token = await getGoogleAccessToken();
+  const cleanRange = sheetName ? sheetName.replace(/^'|'$/g, "") : "Sheet1";
+  const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(cleanRange)}`;
+  const res = await fetch(apiUrl, {
     headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
     },
   });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Google Sheets direct fetch error (${res.status}): ${text.slice(0, 200)}`);
+  if (res.ok) {
+    const data = (await res.json()) as { values?: string[][] };
+    return { values: data.values || [] };
   }
-  const text = await res.text();
-  const values = parseCsv(text);
-  return { values };
+  const errText = await res.text();
+  throw new Error(`Google Sheets API v4 error (${res.status}): ${errText.slice(0, 300)}`);
 }
+
 
 export async function sheetsGetValues(
   url: string,
