@@ -82,7 +82,7 @@ export const fetchSchedule = createServerFn({ method: "GET" }).handler(
 
     const parsed: ScheduleRow[] = dataRows
       .map((row, idx) => ({ row, sheetRow: idx + 5 }))
-      .filter(({ row }) => row[2]?.trim())
+      .filter(({ row }) => (row[2] && row[2].trim()) || (row[3] && row[3].trim()) || (row[5] && row[5].trim()) || (row[6] && row[6].trim()))
       .map(({ row, sheetRow }) => ({
         rowIndex: sheetRow,
         delta: row[0] ?? "",
@@ -191,7 +191,7 @@ export const fetchEntregues = createServerFn({ method: "GET" }).handler(
     const dataRows = rows.slice(2);
 
     const parsed: EntregueRow[] = dataRows
-      .filter((row) => row[2]?.trim())
+      .filter((row) => (row[2] && row[2].trim()) || (row[3] && row[3].trim()) || (row[5] && row[5].trim()))
       .map((row) => ({
         delta: row[0] ?? "",
         dataPostagem: row[1] ?? "",

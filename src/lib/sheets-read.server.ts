@@ -56,8 +56,8 @@ export async function fetchDirectGoogleSheet(spreadsheetId: string, sheetName?: 
   try {
     const token = await getGoogleAccessToken();
     if (token) {
-      const range = sheetName ? `'${sheetName.replace(/'/g, "")}'` : "Sheet1";
-      const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`;
+      const cleanRange = sheetName ? sheetName.replace(/^'|'$/g, "") : "Sheet1";
+      const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(cleanRange)}`;
       const res = await fetch(apiUrl, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -67,10 +67,13 @@ export async function fetchDirectGoogleSheet(spreadsheetId: string, sheetName?: 
       if (res.ok) {
         const data = (await res.json()) as { values?: string[][] };
         return { values: data.values || [] };
+      } else {
+        const errText = await res.text();
+        console.error("fetchDirectGoogleSheet Google API error:", res.status, errText);
       }
     }
-  } catch {
-    // Fallback para GViz
+  } catch (err) {
+    console.error("fetchDirectGoogleSheet auth error:", err);
   }
 
   // 2. Fallback público GViz CSV
