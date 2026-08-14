@@ -354,7 +354,13 @@ function CronogramaView({
                 </CollapsibleTrigger>
                 <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down">
                   <div className="border-t border-border">
-                    <ScheduleTable rows={g.rows} flush />
+                    {g.rows.length === 0 ? (
+                      <div className="py-6 text-center text-xs text-muted-foreground bg-muted/10">
+                        Nenhum pedido nesta categoria para os filtros selecionados
+                      </div>
+                    ) : (
+                      <ScheduleTable rows={g.rows} flush />
+                    )}
                   </div>
                 </CollapsibleContent>
               </section>
