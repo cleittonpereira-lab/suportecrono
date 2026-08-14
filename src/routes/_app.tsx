@@ -83,7 +83,9 @@ function AppLayout() {
     // Guard de aba
     const tab = pathToTab(pathname);
     if (tab && !canAccess(tab)) {
-      nav({ to: "/", replace: true });
+      if (pathname !== "/entregas" && pathname !== "/") {
+        nav({ to: "/entregas", replace: true });
+      }
     }
   }, [loading, user, profile, isGuest, pathname, canAccess, nav]);
 

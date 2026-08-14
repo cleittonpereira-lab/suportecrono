@@ -30,7 +30,7 @@ function AuthPage() {
     if (loading) return;
     if (user) {
       if (profile?.status === "pendente") nav({ to: "/pendente", replace: true });
-      else if (profile?.status === "ativo") nav({ to: "/", replace: true });
+      else if (profile?.status !== "bloqueado") nav({ to: "/entregas", replace: true });
     }
   }, [user, profile, loading, nav]);
 
@@ -67,7 +67,7 @@ function AuthPage() {
               className="w-full mt-2"
               onClick={() => {
                 enterGuest();
-                nav({ to: "/" });
+                nav({ to: "/entregas" });
               }}
             >
               <Eye className="mr-2 h-4 w-4" /> Entrar sem login
@@ -185,7 +185,7 @@ function SignInForm() {
     }
     toast.success("Login realizado.");
     // Aguarda o listener carregar o perfil e o useEffect redirecionar
-    setTimeout(() => nav({ to: "/" }), 200);
+    setTimeout(() => nav({ to: "/entregas" }), 100);
   };
 
   return (
@@ -238,7 +238,7 @@ function SignInUsernameForm() {
       return;
     }
     toast.success("Login realizado.");
-    setTimeout(() => nav({ to: "/" }), 200);
+    setTimeout(() => nav({ to: "/entregas" }), 100);
   };
 
   return (

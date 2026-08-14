@@ -107,7 +107,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<AuthState>(() => {
-    const authed = !!user && profile?.status === "ativo";
+    const isBlocked = profile?.status === "bloqueado";
+    const isPending = profile?.status === "pendente";
+    const authed = !!user && !isBlocked && !isPending;
+
     const canAccess = (tab: TabKey): boolean => {
       const meta = TAB_META[tab];
       if (isGuest) {
@@ -116,13 +119,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return true;
       }
       if (!user) return false;
-      if (profile?.status !== "ativo") return false;
       
-      // Admin bypass
-      if (role === "admin") return true;
+      // Admin bypass / Cleitton
+      if (role === "admin" || user.email === 'cleitton.pereira@suportesolos.com.br') return true;
 
-      // Cleitton (admin manual check if role is missing or needs specific access)
-      if (user.email === 'cleitton.pereira@suportesolos.com.br') return true;
+      if (isBlocked || isPending) return false;
 
       if (meta.adminOnly) return false;
       if (allowedTabs) return allowedTabs.has(tab);
