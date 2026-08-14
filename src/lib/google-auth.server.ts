@@ -15,105 +15,80 @@ interface ServiceAccountKey {
 
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
-function getServiceAccount(): ServiceAccountKey {
-  const tryParse = (rawStr: unknown): ServiceAccountKey | null => {
-    if (!rawStr) return null;
-    if (typeof rawStr === "object" && rawStr !== null) {
-      const obj = rawStr as any;
-      if (obj.client_email && obj.private_key) {
-        return {
-          ...obj,
-          private_key: String(obj.private_key).replace(/\\n/g, "\n"),
-        };
-      }
-    }
-    if (typeof rawStr !== "string") return null;
+function cleanPem(rawKey: string): string {
+  const cleaned = rawKey.replace(/\\n/g, "\n").trim();
+  const matches = cleaned.match(/-----BEGIN [A-Z ]+KEY-----([\s\S]*?)-----END [A-Z ]+KEY-----/);
+  
+  let base64Body = "";
+  if (matches) {
+    base64Body = matches[1].replace(/[\r\n\s]/g, "");
+  } else {
+    base64Body = cleaned.replace(/[\r\n\s]/g, "");
+  }
+  
+  const chunks = base64Body.match(/.{1,64}/g) || [];
+  return `-----BEGIN PRIVATE KEY-----\n${chunks.join("\n")}\n-----END PRIVATE KEY-----`;
+}
 
-    let str = rawStr.trim();
-    if ((str.startsWith('"') && str.endsWith('"')) || (str.startsWith("'") && str.endsWith("'"))) {
-      str = str.slice(1, -1).trim();
-    }
+function tryParseServiceAccount(rawStr: unknown): ServiceAccountKey | null {
+  if (!rawStr || typeof rawStr !== "string") return null;
 
-    // 1. Direct JSON parse (with support for double stringification)
+  const tryJson = (str: string) => {
     try {
       let parsed = JSON.parse(str);
-      if (typeof parsed === "string") {
-        try { parsed = JSON.parse(parsed); } catch {}
-      }
-      if (parsed && parsed.client_email && parsed.private_key) {
-        return {
-          ...parsed,
-          private_key: String(parsed.private_key).replace(/\\n/g, "\n"),
-        };
-      }
-    } catch {
-      // ignore
-    }
-
-    // 2. Base64 decode then JSON parse
-    try {
-      const decoded = Buffer.from(str, "base64").toString("utf-8");
-      let parsed = JSON.parse(decoded);
-      if (typeof parsed === "string") {
-        try { parsed = JSON.parse(parsed); } catch {}
-      }
-      if (parsed && parsed.client_email && parsed.private_key) {
-        return {
-          ...parsed,
-          private_key: String(parsed.private_key).replace(/\\n/g, "\n"),
-        };
-      }
-    } catch {
-      // ignore
-    }
-
+      if (typeof parsed === "string") parsed = JSON.parse(parsed);
+      if (parsed?.client_email && parsed?.private_key) return parsed;
+    } catch { return null; }
     return null;
   };
 
+  // 1. Direct parse
+  const direct = tryJson(rawStr.trim());
+  if (direct) return direct;
+
+  // 2. Base64 parse
+  try {
+    const decoded = Buffer.from(rawStr.trim(), "base64").toString("utf-8");
+    const base64Parsed = tryJson(decoded);
+    if (base64Parsed) return base64Parsed;
+  } catch {}
+
+  return null;
+}
+
+function getServiceAccount(): ServiceAccountKey {
   const envs = typeof process !== "undefined" && process.env ? process.env : {};
   const metaEnv = typeof import.meta !== "undefined" && (import.meta as any).env ? (import.meta as any).env : {};
 
-  // 1. Try env variables
-  const fromEnv = tryParse(
-    envs.GOOGLE_SERVICE_ACCOUNT_JSON ||
-    envs.GOOGLE_SERVICE_ACCOUNT ||
-    envs.VITE_GOOGLE_SERVICE_ACCOUNT_JSON ||
-    metaEnv.GOOGLE_SERVICE_ACCOUNT_JSON ||
+  const keysToTry = [
+    envs.GOOGLE_SERVICE_ACCOUNT_JSON,
+    envs.GOOGLE_SERVICE_ACCOUNT,
+    envs.VITE_GOOGLE_SERVICE_ACCOUNT_JSON,
+    metaEnv.GOOGLE_SERVICE_ACCOUNT_JSON,
     metaEnv.VITE_GOOGLE_SERVICE_ACCOUNT_JSON
-  );
-  if (fromEnv) return fromEnv;
+  ];
 
-  // 2. Try local file
+  for (const key of keysToTry) {
+    const parsed = tryParseServiceAccount(key);
+    if (parsed) return { ...parsed, private_key: cleanPem(parsed.private_key) };
+  }
+
   try {
     const localFile = path.join(process.cwd(), ".data", "service_account.json");
     if (fs.existsSync(localFile)) {
       const content = fs.readFileSync(localFile, "utf-8");
-      const fromFile = tryParse(content);
-      if (fromFile) return fromFile;
+      const parsed = tryParseServiceAccount(content);
+      if (parsed) return { ...parsed, private_key: cleanPem(parsed.private_key) };
     }
-  } catch {
-    // ignore
-  }
+  } catch {}
 
-  // 3. Built-in Server Service Account fallback
-  return {
-    client_email: "suporte-bot@suporte-laboratorio.iam.gserviceaccount.com",
-    private_key: `-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC+Ga1vlCEznZ+V\nYlVDJ0FkDhtptlsny+we2aHGOTkOSE8p65uMgBAkgBHOUT88BXr59E6iaTVw9KQk\nnAQecXIwhLcaojURfEfQgQBZM5xlW4iYNt4Ex0JPskEHvbhO0oQlsyJW1ipZofcl\nAxdUi/iwUwBJVZ4dsBUk++PziI2FiAg8nreNk0fMJsbl7MuLQXV2RUE9PLdvrig6\nyhQ/q/iTgtB8ECp63SmyP1PedAWtuqA2SzoKdPDQyYjN4EjgAsuZ0AkE61lgJooK\nha2/Fv8wEO8ToymlzWEUbm08Ik1em2Nsp31vjDs+Ysm7BpE9MaXrWce7qOENA5bp\nlq1ki+JHAgMBAAECggEAAGf7k6rc0+xv48LKrui0qEgaj1Qbs3DpUpbtZFgRJOxzE\nRpVDhikVDAi/ZplRrmGJeZjhD/CXMEUkFSWIoqkc1mmvqGK6IxP9thON+qTGJE4q\nFbabEcg11zQnFGnrREwhag5fCcTrsaomY9dSX2tsrKAND/o3TxP/MDmJ6Imp4LKH\nJodV5JIIUFOGyPxkA8Jqkn7IKQspDNKT4i+2D4g5jz1Ox512k6kiZX42odIXWImb\n4FOSYuGertDpQ78964QZ3BXXuIvQPTwg0hSaeycDed47IimZvC7839qwWTg9XbrT\nJ6PfJ7Q0yDxGvY4ftz5cKRKyDeIfsLBKWoueYncMQKBgQDf10d2fPz3HfnRtrAe\nA9oABAX1PFrNEXoqOieNU1SUW8Vq2+0tjVQNqnQ+3KNJ6C75Eqlbp1P8lrS7Q3yE\nC51KHwWwaUuxH7ilttFc7Sz4z9eivh6ho1wwWcpecjefYDDgPXshy/l/hLOMWlfr\ndko7MLw9SRc0t3rLVsxfouC8zQKBgQDZaXC43osXp372/3/y0s22Ue4YpgIFGvi6\nZU9IC2l4dQQCXTr6J01oKr1PZKE5nH+zbIvLzpccjFw2lYP/8AwAMFu/blUxu+B+\nSWFYxJ4GH0Z3dL808tMyBN2GXVpLjzxE15BBfEkxZpZNm4AdF6wqEZM3euaplV6/\n6f1S9p5bYwKBgHAhab0jc51fOMwjVipTB5vGaC2nZF0iCi6pHzMesVn4dvbG4RNW\nnuqRntX2tR3K3+0Juikds2bvH+5HKlMDdnGxBKqQtMgv+dGZuVtxvHuPspfl4XZb\nXU0jTcruMIr4JsPOSKZvhbaphUAj6bMceKcaDNIukR9pYmwGOS8XarlpAoGBAKBd\nsyTaGnT/OprMib8+GTjzpBGQWgsUAwXSdrFooYqVnbh0tm0QkntUk0E9s+K/+j4J\nwfA6WaJYMiidDrm5gdCd2v8QTk0aDRR54hFNLlbLuPmiJuvSdU/+4Lwcnd8AL2+E\nJcb3+zEyP4nNOqm67WY2goW45O2P3UzoNtB8UwCLAoGAUXcUDUjxXTF5b+gzTC8A\nXedZ6lZsz11FYC703voj/DhLOMqCr5Kl0ECEbQYgP3G0UCnGZE9B2p8jvRtymzfv\nMoCzBe8+lr+w/tARSPagbGPbvmNpPzvAy3A/BjtXiTycUqEAafZ3b+PVLQg1KAgW\nasNAyfFiOyvtmKc3WNpCb9k=\n-----END PRIVATE KEY-----\n`,
-    token_uri: "https://oauth2.googleapis.com/token",
-  };
-}
+  // Built-in fallback: JSON completo em Base64 — gerado com scratch/gen-b64-key.cjs
+  // Imune a corrupção de escapes pois é Base64 puro
+  const BUILTIN_SA_B64 = "eyJ0eXBlIjoic2VydmljZV9hY2NvdW50IiwicHJvamVjdF9pZCI6InN1cG9ydGUtbGFib3JhdG9yaW8iLCJwcml2YXRlX2tleV9pZCI6IjgwMjJjMjgyN2NjNmZkZGE4NjYxM2ZjNTZhOTUzYjc5ZGNhYTY4NDIiLCJwcml2YXRlX2tleSI6Ii0tLS0tQkVHSU4gUFJJVkFURSBLRVktLS0tLVxuTUlJRXZRSUJBREFOQmdrcWhraUc5dzBCQVFFRkFBU0NCS2N3Z2dTakFnRUFBb0lCQVFDK0dhMXZsQ0V6blorVlxuWWxWREowRmtEaHRwdGxzbnkrd2UyYUhHT1RrT1NFOHA2NXVNZ0JBa2dCSE9VVDg4QlhyNTlFNmlhVFZ3OUtRa1xubkFRZWNYSXdoTGNhb2pVUmZFZlFnUUJaTTV4bFc0aVlOdDRFeDBKUHNrRUh2YmhPMG9RbHN5SlcxaXBab2ZjbFxuQXhkVWkvaXdVd0JKVlo0ZHNCVWsrK1B6aUkyRmlBZzhucmVOazBmTUpzYmw3TXVMUVhWMlJVRTlQTGR2cmlnNlxueWhRL3EvaVRndEI4RUNwNjNTbXlQMVBlZEFXdHVxQTJTem9LZFBEUXlZak40RWpnQXN1WjBBa0U2MWxnSm9vS1xuaGEyL0Z2OHdFTzhUb3ltbHpXRVVibTA4SWsxZW0yTnNwMzF2akRzK1lzbTdCcEU5TWFYcldjZTdxT0VOQTVicFxubHExa2krSkhBZ01CQUFFQ2dnRUFBR2Y3azZyYzAreHY0OExLcnVpMHFFZ2FqMVFiczNEcFVwYnRaRmdSSk94ekVcblJwVkRoaWtWREFpL1pwbFJybUdKZVpqaEQvQ1hNRVVrRlNXSW9xa2MxbW12cUdLNkl4UDl0aE9OK3FUR0pFNHFcbkZiYWJFY2cxMXpRbkZHbnJSRXdoYWc1ZkNjVHJzYW9tWTlkU1gydHNyS0FORC9vM1R4UC9NRG1KNkltcDRMS0hcbkpvZFY1SklJVUZPR3lQeGtBOEpxa243SUtRc3BETktUNGkrMkQ0ZzVqejFPeDUxMms2a2laWDQyb2RJWFdJbWJcbjRGT1NZdUdlcnREcFE3ODk2NFFaM0JYWHVJdlFQVHdnMGhTYWV5Y0RlZDQ3SWltWnZDNzgzOXF3V1RnOVhiclRcbko2UGZKN1EweUR4R3ZZNGZ0ejVjS1JLeURlSWZzTEJLV291ZVluY01RS0JnUURmMTBkMmZQejNIZm5SdHJBZVxuQTlvQUJBWDFQRnJORVhvcU9pZU5VMVNVVzhWcTIrMHRqVlFOcW5RKzNLTko2Qzc1RXFsYnAxUDhsclM3UTN5RVxuQzUxS0h3V3dhVXV4SDdpbHR0RmM3U3o0ejllaXZoNmhvMXd3V2NwZWNqZWZZRERnUFhzaHkvbC9oTE9NV2xmclxuZGtvN01MdzlTUmMwdDNyTFZzeGZvdUM4elFLQmdRRFphWEM0M29zWHAzNzIvMy95MHMyMlVlNFlwZ0lGR3ZpNlxuWlU5SUMybDRkUVFDWFRyNkowMW9LcjFQWktFNW5IK3piSXZMenBjY2pGdzJsWVAvOEF3QU1GdS9ibFV4dStCK1xuU1dGWXhKNEdIMFozZEw4MDh0TXlCTjJHWFZwTGp6eEUxNUJCZkVreFpwWk5tNEFkRjZ3cUVaTTNldWFwbFY2L1xuNmYxUzlwNWJZd0tCZ0hBaGFiMGpjNTFmT013alZpcFRCNXZHYUMyblpGMGlDaTZwSHpNZXNWbjRkdmJHNFJOV1xubnVxUm50WDJ0UjNLMyswSnVpa2RzMmJ2SCs1SEtsTURkbkd4QktxUXRNZ3YrZEdadVZ0eHZIdVBzcGZsNFhaYlxuWFUwalRjcnVNSXI0SnNQT1NLWnZoYmFwaFVBajZiTWNlS2NhRE5JdWtSOXBZbXdHT1M4WGFybHBBb0dCQUtCZFxuc3lUYUduVC9PcHJNaWI4K0dUanpwQkdRV2dzVUF3WFNkckZvb1lxVm5iaDB0bTBRa250VWswRTlzK0svK2o0Slxud2ZBNldhSllNaWlkRHJtNWdkQ2QydjhRVGswYURSUjU0aEZOTGxiTHVQbWlKdXZTZFUvKzRMd2NuZDhBTDIrRVxuSmNiMyt6RXlQNG5OT3FtNjdXWTJnb1c0NU8yUDNVem9OdEI4VXdDTEFvR0FVWGNVRFVqeFhURjViK2d6VEM4QVxuWGVkWjZsWnN6MTFGWUM3MDN2b2ovRGhMT01xQ3I1S2wwRUNFYlFZZ1AzRzBVQ25HWkU5QjJwOGp2UnR5bXpmdlxuTW9DekJlOCtscit3L3RBUlNQYWdiR1Bidm1OcFB6dkF5M0EvQmp0WGlUeWNVcUVBYWZaM2IrUFZMUWcxS0FnV1xuYXNOQXlmRmlPeXZ0bUtjM1dOcENiOWs9XG4tLS0tLUVORCBQUklWQVRFIEtFWS0tLS0tXG4iLCJjbGllbnRfZW1haWwiOiJzdXBvcnRlLWJvdEBzdXBvcnRlLWxhYm9yYXRvcmlvLmlhbS5nc2VydmljZWFjY291bnQuY29tIiwiY2xpZW50X2lkIjoiMTEyMDE3NjkyMTc0MTU2NjcyNTc3IiwiYXV0aF91cmkiOiJodHRwczovL2FjY291bnRzLmdvb2dsZS5jb20vby9vYXV0aDIvYXV0aCIsInRva2VuX3VyaSI6Imh0dHBzOi8vb2F1dGgyLmdvb2dsZWFwaXMuY29tL3Rva2VuIiwiYXV0aF9wcm92aWRlcl94NTA5X2NlcnRfdXJsIjoiaHR0cHM6Ly93d3cuZ29vZ2xlYXBpcy5jb20vb2F1dGgyL3YxL2NlcnRzIiwiY2xpZW50X3g1MDlfY2VydF91cmwiOiJodHRwczovL3d3dy5nb29nbGVhcGlzLmNvbS9yb2JvdC92MS9tZXRhZGF0YS94NTA5L3N1cG9ydGUtYm90JTQwc3Vwb3J0ZS1sYWJvcmF0b3Jpby5pYW0uZ3NlcnZpY2VhY2NvdW50LmNvbSIsInVuaXZlcnNlX2RvbWFpbiI6Imdvb2dsZWFwaXMuY29tIn0=";
+  const fromBuiltin = tryParseServiceAccount(BUILTIN_SA_B64);
+  if (fromBuiltin) return { ...fromBuiltin, private_key: cleanPem(fromBuiltin.private_key) };
 
-function cleanPem(rawKey: string): string {
-  const cleaned = rawKey.replace(/\\n/g, "\n");
-  const matches = cleaned.match(/-----BEGIN [A-Z ]+KEY-----([\s\S]*?)-----END [A-Z ]+KEY-----/);
-  if (!matches) {
-    const base64Only = cleaned.replace(/[\r\n\s]/g, "");
-    const chunks = base64Only.match(/.{1,64}/g) || [];
-    return `-----BEGIN PRIVATE KEY-----\n${chunks.join("\n")}\n-----END PRIVATE KEY-----`;
-  }
-  const base64Body = matches[1].replace(/[\r\n\s]/g, "");
-  const chunks = base64Body.match(/.{1,64}/g) || [];
-  return `-----BEGIN PRIVATE KEY-----\n${chunks.join("\n")}\n-----END PRIVATE KEY-----`;
+  throw new Error("Service Account não configurada. Defina a variável de ambiente GOOGLE_SERVICE_ACCOUNT_JSON.");
 }
 
 function base64UrlEncode(objOrStr: object | string): string {
@@ -131,7 +106,6 @@ export async function getGoogleAccessToken(scopes = [
 ]): Promise<string> {
   const sa = getServiceAccount();
 
-  // Cache do token (com margem de segurança de 2 minutos)
   if (cachedToken && Date.now() < cachedToken.expiresAt - 120_000) {
     return cachedToken.token;
   }
@@ -146,51 +120,38 @@ export async function getGoogleAccessToken(scopes = [
     iat: now,
   };
 
-  const encodedHeader = base64UrlEncode(header);
-  const encodedClaim = base64UrlEncode(claimSet);
-  const signInput = `${encodedHeader}.${encodedClaim}`;
+  const jwt = `${base64UrlEncode(header)}.${base64UrlEncode(claimSet)}`;
 
-  let signature = "";
-  try {
-    const formattedKey = cleanPem(sa.private_key);
-    const keyObj = crypto.createPrivateKey({
-      key: formattedKey,
-      format: "pem",
-    });
-    signature = crypto.sign("sha256", Buffer.from(signInput), keyObj).toString("base64url");
-  } catch (keyErr) {
-    console.error("Erro ao assinar JWT com chave privada:", keyErr);
-    throw new Error(`Erro ao assinar JWT com chave privada: ${(keyErr as Error).message}`);
-  }
-
-  const jwt = `${signInput}.${signature}`;
-
-  const tokenUrl = sa.token_uri || "https://oauth2.googleapis.com/token";
-  const body = new URLSearchParams({
-    grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-    assertion: jwt,
+  const keyObj = crypto.createPrivateKey({
+    key: sa.private_key,
+    format: "pem",
   });
+  
+  const signature = crypto.sign("sha256", Buffer.from(jwt), keyObj).toString("base64url");
+  const assertion = `${jwt}.${signature}`;
 
-  const res = await fetch(tokenUrl, {
+  const res = await fetch(sa.token_uri || "https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: body.toString(),
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion: assertion,
+    }).toString(),
   });
 
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Falha ao obter Google Access Token (${res.status}): ${errText}`);
-  }
+  if (!res.ok) throw new Error(`Falha ao obter token: ${await res.text()}`);
 
-  const data = (await res.json()) as { access_token: string; expires_in: number };
-  cachedToken = {
-    token: data.access_token,
-    expiresAt: Date.now() + data.expires_in * 1000,
-  };
+  const data = await res.json() as { access_token: string; expires_in: number };
+  cachedToken = { token: data.access_token, expiresAt: Date.now() + data.expires_in * 1000 };
 
   return cachedToken.token;
 }
 
 export function isGoogleAuthConfigured(): boolean {
-  return true;
+  try {
+    getServiceAccount();
+    return true;
+  } catch {
+    return false;
+  }
 }
