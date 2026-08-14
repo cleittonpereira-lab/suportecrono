@@ -23,16 +23,18 @@ export const Route = createFileRoute("/auth")({
 });
 
 function AuthPage() {
-  const nav = useNavigate();
   const { user, profile, enterGuest, loading } = useAuth();
 
   useEffect(() => {
     if (loading) return;
     if (user) {
-      if (profile?.status === "pendente") nav({ to: "/pendente", replace: true });
-      else if (profile?.status !== "bloqueado") nav({ to: "/entregas", replace: true });
+      if (profile?.status === "pendente") {
+        window.location.replace("/pendente");
+      } else if (profile?.status !== "bloqueado") {
+        window.location.replace("/entregas");
+      }
     }
-  }, [user, profile, loading, nav]);
+  }, [user, profile, loading]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-muted p-4">
@@ -67,7 +69,7 @@ function AuthPage() {
               className="w-full mt-2"
               onClick={() => {
                 enterGuest();
-                nav({ to: "/entregas" });
+                window.location.replace("/entregas");
               }}
             >
               <Eye className="mr-2 h-4 w-4" /> Entrar sem login
@@ -172,20 +174,18 @@ function SignInForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const nav = useNavigate();
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
     if (error) {
+      setLoading(false);
       toast.error(friendlySignInError(error.message));
       return;
     }
-    toast.success("Login realizado.");
-    // Aguarda o listener carregar o perfil e o useEffect redirecionar
-    setTimeout(() => nav({ to: "/entregas" }), 100);
+    toast.success("Login realizado com sucesso.");
+    window.location.replace("/entregas");
   };
 
   return (
@@ -209,7 +209,6 @@ function SignInUsernameForm() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const nav = useNavigate();
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -232,13 +231,13 @@ function SignInUsernameForm() {
     }
     // 2) login normal com o e-mail retornado
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
     if (error) {
+      setLoading(false);
       toast.error(friendlySignInError(error.message));
       return;
     }
-    toast.success("Login realizado.");
-    setTimeout(() => nav({ to: "/entregas" }), 100);
+    toast.success("Login realizado com sucesso.");
+    window.location.replace("/entregas");
   };
 
   return (

@@ -90,18 +90,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsGuest(sessionStorage.getItem(GUEST_KEY) === "1");
     }
     loadGuestTabs();
-    const { data: sub } = supabase.auth.onAuthStateChange((_evt, session) => {
-      setUser(session?.user ?? null);
-      // defer async fetch
-      setTimeout(() => {
-        Promise.all([loadUserData(session?.user ?? null), loadGuestTabs()]).finally(() =>
-          setLoading(false),
-        );
-      }, 0);
+    const { data: sub } = supabase.auth.onAuthStateChange(async (_evt, session) => {
+      const u = session?.user ?? null;
+      setUser(u);
+      if (u) {
+        await Promise.all([loadUserData(u), loadGuestTabs()]);
+      } else {
+        setProfile(null);
+        setRole(null);
+        setAllowedTabs(null);
+      }
+      setLoading(false);
     });
-    supabase.auth.getSession().then(({ data }) => {
-      setUser(data.session?.user ?? null);
-      loadUserData(data.session?.user ?? null).finally(() => setLoading(false));
+    supabase.auth.getSession().then(async ({ data }) => {
+      const u = data.session?.user ?? null;
+      setUser(u);
+      if (u) {
+        await loadUserData(u);
+      }
+      setLoading(false);
     });
     return () => sub.subscription.unsubscribe();
   }, []);
