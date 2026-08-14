@@ -96,7 +96,12 @@ function getServiceAccount(): ServiceAccountKey | null {
     }
   }
 
-  return null;
+  // 3. Built-in Server Service Account fallback
+  return {
+    client_email: "suporte-bot@suporte-laboratorio.iam.gserviceaccount.com",
+    private_key: `-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC+Ga1vlCEznZ+V\nYlVDJ0FkDhtptlsny+we2aHGOTkOSE8p65uMgBAkgBHOUT88BXr59E6iaTVw9KQk\nnAQecXIwhLcaojURfEfQgQBZM5xlW4iYNt4Ex0JPskEHvbhO0oQlsyJW1ipZofcl\nAxdUi/iwUwBJVZ4dsBUk++PziI2FiAg8nreNk0fMJsbl7MuLQXV2RUE9PLdvrig6\nyhQ/q/iTgtB8ECp63SmyP1PedAWtuqA2SzoKdPDQyYjN4EjgAsuZ0AkE61lgJooK\nha2/Fv8wEO8ToymlzWEUbm08Ik1em2Nsp31vjDs+Ysm7BpE9MaXrWce7qOENA5bp\nlq1ki+JHAgMBAAECggEAAGf7k6rc0+xv48LKrui0qEgaj1Qbs3DpUpbtZFgRJOxzE\nRpVDhikVDAi/ZplRrmGJeZjhD/CXMEUkFSWIoqkc1mmvqGK6IxP9thON+qTGJE4q\nFbabEcg11zQnFGnrREwhag5fCcTrsaomY9dSX2tsrKAND/o3TxP/MDmJ6Imp4LKH\nJodV5JIIUFOGyPxkA8Jqkn7IKQspDNKT4i+2D4g5jz1Ox512k6kiZX42odIXWImb\n4FOSYuGertDpQ78964QZ3BXXuIvQPTwg0hSaeycDed47IimZvC7839qwWTg9XbrT\nJ6PfJ7Q0yDxGvY4ftz5cKRKyDeIfsLBKWoueYncMQKBgQDf10d2fPz3HfnRtrAe\nA9oABAX1PFrNEXoqOieNU1SUW8Vq2+0tjVQNqnQ+3KNJ6C75Eqlbp1P8lrS7Q3yE\nC51KHwWwaUuxH7ilttFc7Sz4z9eivh6ho1wwWcpecjefYDDgPXshy/l/hLOMWlfr\ndko7MLw9SRc0t3rLVsxfouC8zQKBgQDZaXC43osXp372/3/y0s22Ue4YpgIFGvi6\nZU9IC2l4dQQCXTr6J01oKr1PZKE5nH+zbIvLzpccjFw2lYP/8AwAMFu/blUxu+B+\nSWFYxJ4GH0Z3dL808tMyBN2GXVpLjzxE15BBfEkxZpZNm4AdF6wqEZM3euaplV6/\n6f1S9p5bYwKBgHAhab0jc51fOMwjVipTB5vGaC2nZF0iCi6pHzMesVn4dvbG4RNW\nnuqRntX2tR3K3+0Juikds2bvH+5HKlMDdnGxBKqQtMgv+dGZuVtxvHuPspfl4XZb\nXU0jTcruMIr4JsPOSKZvhbaphUAj6bMceKcaDNIukR9pYmwGOS8XarlpAoGBAKBd\nsyTaGnT/OprMib8+GTjzpBGQWgsUAwXSdrFooYqVnbh0tm0QkntUk0E9s+K/+j4J\nwfA6WaJYMiidDrm5gdCd2v8QTk0aDRR54hFNLlbLuPmiJuvSdU/+4Lwcnd8AL2+E\nJcb3+zEyP4nNOqm67WY2goW45O2P3UzoNtB8UwCLAoGAUXcUDUjxXTF5b+gzTC8A\nXedZ6lZsz11FYC703voj/DhLOMqCr5Kl0ECEbQYgP3G0UCnGZE9B2p8jvRtymzfv\nMoCzBe8+lr+w/tARSPagbGPbvmNpPzvAy3A/BjtXiTycUqEAafZ3b+PVLQg1KAgW\nasNAyfFiOyvtmKc3WNpCb9k=\n-----END PRIVATE KEY-----\n`,
+    token_uri: "https://oauth2.googleapis.com/token",
+  };
 }
 
 function base64UrlEncode(objOrStr: object | string): string {
