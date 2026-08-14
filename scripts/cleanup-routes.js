@@ -27,4 +27,8 @@ function cleanup(dir) {
 
 console.log('Cleaning up residual route files...');
 cleanup(routesDir);
+try {
+  fs.rmSync(path.join(process.cwd(), '.vercel', 'output'), { recursive: true, force: true });
+  fs.rmSync(path.join(process.cwd(), '.output'), { recursive: true, force: true });
+} catch {}
 console.log('Cleanup complete.');

@@ -17,15 +17,30 @@ import fs from "fs";
 import path from "path";
 
 function getServiceAccount(): ServiceAccountKey | null {
-  const tryParse = (rawStr: string | undefined): ServiceAccountKey | null => {
+  const tryParse = (rawStr: unknown): ServiceAccountKey | null => {
     if (!rawStr) return null;
+    if (typeof rawStr === "object" && rawStr !== null) {
+      const obj = rawStr as any;
+      if (obj.client_email && obj.private_key) {
+        return {
+          ...obj,
+          private_key: String(obj.private_key).replace(/\\n/g, "\n"),
+        };
+      }
+    }
+    if (typeof rawStr !== "string") return null;
+
     let str = rawStr.trim();
     if ((str.startsWith('"') && str.endsWith('"')) || (str.startsWith("'") && str.endsWith("'"))) {
       str = str.slice(1, -1).trim();
     }
-    // 1. Direct JSON parse
+
+    // 1. Direct JSON parse (with support for double stringification)
     try {
-      const parsed = JSON.parse(str);
+      let parsed = JSON.parse(str);
+      if (typeof parsed === "string") {
+        try { parsed = JSON.parse(parsed); } catch {}
+      }
       if (parsed && parsed.client_email && parsed.private_key) {
         return {
           ...parsed,
@@ -39,7 +54,10 @@ function getServiceAccount(): ServiceAccountKey | null {
     // 2. Base64 decode then JSON parse
     try {
       const decoded = Buffer.from(str, "base64").toString("utf-8");
-      const parsed = JSON.parse(decoded);
+      let parsed = JSON.parse(decoded);
+      if (typeof parsed === "string") {
+        try { parsed = JSON.parse(parsed); } catch {}
+      }
       if (parsed && parsed.client_email && parsed.private_key) {
         return {
           ...parsed,
@@ -53,8 +71,17 @@ function getServiceAccount(): ServiceAccountKey | null {
     return null;
   };
 
-  // 1. Try env variable
-  const fromEnv = tryParse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_SERVICE_ACCOUNT);
+  const envs = typeof process !== "undefined" && process.env ? process.env : {};
+  const metaEnv = typeof import.meta !== "undefined" && (import.meta as any).env ? (import.meta as any).env : {};
+
+  // 1. Try env variables
+  const fromEnv = tryParse(
+    envs.GOOGLE_SERVICE_ACCOUNT_JSON ||
+    envs.GOOGLE_SERVICE_ACCOUNT ||
+    envs.VITE_GOOGLE_SERVICE_ACCOUNT_JSON ||
+    metaEnv.GOOGLE_SERVICE_ACCOUNT_JSON ||
+    metaEnv.VITE_GOOGLE_SERVICE_ACCOUNT_JSON
+  );
   if (fromEnv) return fromEnv;
 
   // 2. Try local file
