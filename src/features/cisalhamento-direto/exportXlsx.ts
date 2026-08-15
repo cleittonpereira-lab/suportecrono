@@ -2,6 +2,11 @@ import ExcelJS from "exceljs";
 import type { CDSample, CDSpecimen, CDSpecimenResults, CDEnvelopeResult } from "./types";
 import { averageMoisturePct } from "./domain/calc";
 import type { Photo } from "@/features/lab/types";
+import {
+  generateMohrEnvelopeCanvas,
+  generateStressStrainCanvas,
+  generateVolumeChangeCanvas,
+} from "./chartCanvas";
 
 const fmt = (n: number | null | undefined, d = 2) =>
   n == null || !isFinite(n) ? "—" : Number(n.toFixed(d));
@@ -17,7 +22,7 @@ export interface ExportCDParams {
   filename?: string;
 }
 
-// Estilos corporativos Suporte INFRA
+// Cores corporativas Suporte INFRA
 const BRAND_DARK = "FF141414"; // #141414
 const BRAND_ACCENT = "FFE5A832"; // #E5A832
 const BRAND_NAVY = "FF1E293B"; // #1E293B
@@ -52,8 +57,8 @@ async function getLogoBase64(): Promise<string | null> {
 }
 
 /**
- * Exporta o laudo técnico executivo completo e dados brutos em formato Excel (.xlsx)
- * com design profissional, cores corporativas da Suporte INFRA, bordas e identidade visual.
+ * Exporta o laudo técnico executivo completo em formato Excel (.xlsx)
+ * com layout fiel ao PDF, gráficos embutidos em alta resolução, abas individuais por CP e dados lado a lado.
  */
 export async function exportCDRawDataXlsx({
   sample,
@@ -71,7 +76,7 @@ export async function exportCDRawDataXlsx({
   wb.created = new Date();
   wb.modified = new Date();
 
-  // Carrega o logotipo da Suporte INFRA
+  // 1. Carrega o logotipo
   const logoBase64 = await getLogoBase64();
   let logoImageId: number | null = null;
   if (logoBase64) {
@@ -81,22 +86,31 @@ export async function exportCDRawDataXlsx({
     });
   }
 
-  // =========================================================================
-  // ABA 1: LAUDO EXECUTIVO (Design Fiel ao Relatório PDF da Suporte INFRA)
-  // =========================================================================
-  const ws1 = wb.addWorksheet("Laudo Executivo", {
-    views: [{ showGridLines: true }],
-  });
+  // 2. Renderiza os gráficos em Canvas
+  const mohrChartB64 = generateMohrEnvelopeCanvas(results, specimens, envelope, 900, 520);
+  const stressStrainB64 = generateStressStrainCanvas(results, specimens, 900, 480);
+  const volChangeB64 = generateVolumeChangeCanvas(results, specimens, 900, 480);
 
-  // Configuração de largura das colunas (A a G)
+  let mohrChartId: number | null = null;
+  let stressStrainId: number | null = null;
+  let volChangeId: number | null = null;
+
+  if (mohrChartB64) {
+    mohrChartId = wb.addImage({ base64: mohrChartB64, extension: "png" });
+  }
+  if (stressStrainB64) {
+    stressStrainId = wb.addImage({ base64: stressStrainB64, extension: "png" });
+  }
+  if (volChangeB64) {
+    volChangeId = wb.addImage({ base64: volChangeB64, extension: "png" });
+  }
+
+  // =========================================================================
+  // ABA 1: LAUDO EXECUTIVO (Espelho Fiel do PDF com Gráfico da Envoltória)
+  // =========================================================================
+  const ws1 = wb.addWorksheet("Laudo Executivo", { views: [{ showGridLines: true }] });
   ws1.columns = [
-    { width: 34 }, // A
-    { width: 14 }, // B
-    { width: 12 }, // C
-    { width: 22 }, // D
-    { width: 22 }, // E
-    { width: 22 }, // F
-    { width: 22 }, // G
+    { width: 34 }, { width: 14 }, { width: 12 }, { width: 22 }, { width: 22 }, { width: 22 }, { width: 22 },
   ];
 
   // Inserção do Logo no topo
@@ -132,7 +146,6 @@ export async function exportCDRawDataXlsx({
 
   let r = 6;
 
-  // Função auxiliar para barra de título de seção
   const addSectionHeader = (text: string) => {
     ws1.mergeCells(`A${r}:G${r}`);
     const cell = ws1.getCell(`A${r}`);
@@ -143,9 +156,6 @@ export async function exportCDRawDataXlsx({
     ws1.getRow(r).height = 20;
     r++;
   };
-
-  // --- SEÇÃO 1: IDENTIFICAÇÃO CADASTRAL ---
-  addSectionHeader("1. IDENTIFICAÇÃO DA ORDEM DE SERVIÇO E DA AMOSTRA");
 
   const addGridRow = (l1: string, v1: any, l2: string, v2: any, l3: string, v3: any) => {
     const row = ws1.getRow(r);
@@ -183,12 +193,13 @@ export async function exportCDRawDataXlsx({
     r++;
   };
 
+  // 1. Identificação
+  addSectionHeader("1. IDENTIFICAÇÃO DA ORDEM DE SERVIÇO E DA AMOSTRA");
   addGridRow("Cliente:", sample.client || "—", "Furo / Sondagem:", sample.borehole || "—", "Data do Ensaio:", sample.date || new Date().toISOString().split("T")[0]);
   addGridRow("Obra / Projeto:", sample.workNumber || "—", "Profundidade (m):", sample.depth || "—", "Revisão:", `Rev ${String(sample.revision || "00").padStart(2, "0")}`);
   addGridRow("Ordem de Serviço (O.S.):", sample.os || "—", "Código da Amostra:", sample.code || "—", "Identificação Amostra:", sample.reportNumber || "—");
   addGridRow("Local / Município:", sample.local || "—", "Cota do Furo (m):", sample.coordCota || "—", "Coordenadas N/E:", `${sample.coordN || "—"} / ${sample.coordE || "—"}`);
 
-  // Descrições
   ws1.getRow(r).height = 18;
   ws1.getCell(`A${r}`).value = "Descrição Tátil-Visual:";
   ws1.getCell(`A${r}`).font = { name: "Calibri", size: 9, bold: true, color: { argb: "FF475569" } };
@@ -211,20 +222,20 @@ export async function exportCDRawDataXlsx({
   for (let c = 2; c <= 7; c++) ws1.getRow(r).getCell(c).border = thinBorder;
   r += 2;
 
-  // --- SEÇÃO 2: RESPONSABILIDADE TÉCNICA E EQUIPE ---
+  // 2. Responsabilidade Técnica
   addSectionHeader("2. RESPONSABILIDADE TÉCNICA E EQUIPE DE EXECUÇÃO");
   addGridRow("Responsável Técnico:", sample.technicalResp || "Engº Responsável · CREA-SP 000000", "Operador (Laboratorista):", sample.operator || "—", "Laboratório:", "Suporte INFRA");
   addGridRow("Digitado por:", sample.typedBy || "—", "Verificado por:", sample.verifiedBy || "Engenharia Geotécnica", "Unidade:", "Laboratório Central / SP");
   r++;
 
-  // --- SEÇÃO 3: PARÂMETROS METODOLÓGICOS DO ENSAIO ---
+  // 3. Condições do Ensaio
   addSectionHeader("3. PARÂMETROS E CONDIÇÕES METODOLÓGICAS DO ENSAIO");
   addGridRow("Norma Técnica:", "ASTM D3080 / D3080M-2023", "Equipamento Utilizado:", sample.equipment || "Cisalhamento Direto", "Nº Corpos de Prova:", specimens.length);
   addGridRow("Condição do Ensaio:", sample.testCondition === "inundado" ? "Inundado (CDinun)" : "Umidade Natural (CDnat)", "Correção de Área:", sample.applyAreaCorrection !== false ? "Sim (ASTM D3080 - Acor)" : "Não (Área Inicial A₀)", "Densidade Grãos (Gs):", sample.Gs || 2.70);
   addGridRow("Geometria da Caixa:", sample.geometry === "circular" ? `Circular (Ø = ${sample.dimensionMm || 60} mm)` : `Quadrada (${sample.dimensionMm || 60}x${sample.dimensionMm || 60} mm)`, "Estado da Amostra:", sample.sampleState === "indeformada" ? `Indeformada (${sample.sampleType || "Bloco"})` : sample.sampleState === "compactada" ? `Compactada (${sample.compactionEnergy || "PN"})` : "Recompactada", "Massa Espec. Água:", `${sample.rhoW || 1.0} g/cm³`);
   r++;
 
-  // --- SEÇÃO 4: PARÂMETROS DE RESISTÊNCIA (MOHR-COULOMB) COM DESTAQUE ---
+  // 4. Parâmetros de Resistência com Cards e Gráfico
   addSectionHeader("4. PARÂMETROS DE RESISTÊNCIA AO CISALHAMENTO (CRITÉRIO DE MOHR-COULOMB)");
 
   // 3 Quadros de Destaque
@@ -288,10 +299,24 @@ export async function exportCDRawDataXlsx({
   for (let c = 1; c <= 7; c++) ws1.getRow(r).getCell(c).border = thinBorder;
   r += 2;
 
-  // --- SEÇÃO 5: TABELA COMPARATIVA DE RESULTADOS ---
+  // --- EMBUTIR O GRÁFICO DA ENVOLTÓRIA DE MOHR-COULOMB NO LAUDO EXECUTIVO ---
+  if (mohrChartId !== null) {
+    const chartStartRow = r;
+    // Espaço reservado para o gráfico
+    for (let i = 0; i < 20; i++) {
+      ws1.getRow(r).height = 16;
+      r++;
+    }
+    ws1.addImage(mohrChartId, {
+      tl: { col: 0.1, row: chartStartRow - 0.9 },
+      ext: { width: 680, height: 320 },
+    });
+    r += 2;
+  }
+
+  // 5. Tabela Comparativa de Resultados
   addSectionHeader("5. QUADRO COMPARATIVO DE ÍNDICES FÍSICOS E RESULTADOS POR CORPO DE PROVA (CP)");
 
-  // Cabeçalho da tabela de CPs
   const tableHeaderRow = ws1.getRow(r);
   tableHeaderRow.height = 22;
   const th1 = ws1.getCell(`A${r}`);
@@ -315,7 +340,7 @@ export async function exportCDRawDataXlsx({
   th3.border = thinBorder;
 
   specimens.forEach((cp, i) => {
-    const colLetter = String.fromCharCode(68 + i); // D, E, F...
+    const colLetter = String.fromCharCode(68 + i);
     const cell = ws1.getCell(`${colLetter}${r}`);
     cell.value = `${cp.displayId ?? cp.id} (σn = ${fmt(cp.normalStressTarget, 0)} kPa)`;
     cell.font = { name: "Calibri", size: 9, bold: true, color: { argb: "FFFFFFFF" } };
@@ -390,7 +415,7 @@ export async function exportCDRawDataXlsx({
   });
   r++;
 
-  // --- SEÇÃO 6: CONTROLE DE REVISÕES ---
+  // 6. Controle de Revisões
   addSectionHeader("6. CONTROLE DE REVISÕES E HISTÓRICO DE EMISSÃO");
   const revHeader = ws1.getRow(r);
   revHeader.height = 18;
@@ -417,7 +442,7 @@ export async function exportCDRawDataXlsx({
   }
   r += 2;
 
-  // --- SEÇÃO 7: NOTAS TÉCNICAS E REFERÊNCIAS ---
+  // 7. Notas Técnicas
   addSectionHeader("7. NOTAS TÉCNICAS E REFERÊNCIAS NORMATIVAS UTILIZADAS");
   const notes = [
     "• ASTM D3080 / D3080M-2023 — Standard Test Method for Direct Shear Test of Soils Under Consolidated Drained Conditions.",
@@ -435,7 +460,7 @@ export async function exportCDRawDataXlsx({
   });
   r++;
 
-  // --- RODAPÉ CORPORATIVO ---
+  // Rodapé Corporativo
   ws1.mergeCells(`A${r}:G${r}`);
   const foot = ws1.getCell(`A${r}`);
   foot.value = "SUPORTE CONSULTORIA E ENGENHARIA LTDA. — SISTEMA SUPORTE INFRA (Documento Gerado Eletronicamente)";
@@ -445,49 +470,236 @@ export async function exportCDRawDataXlsx({
   ws1.getRow(r).height = 20;
 
   // =========================================================================
-  // ABA 2: MOLDAGEM & UMIDADE (Com Formatação Rica)
+  // ABA 2: CURVAS & GRÁFICOS DO ENSAIO (Painel de Alta Resolução)
   // =========================================================================
-  const ws2 = wb.addWorksheet("Moldagem & Umidades", { views: [{ showGridLines: true }] });
-  ws2.columns = [
-    { width: 22 }, { width: 15 }, { width: 22 }, { width: 22 }, { width: 20 }, { width: 20 }, { width: 22 },
-  ];
+  const wsCharts = wb.addWorksheet("Curvas & Gráficos", { views: [{ showGridLines: true }] });
+  wsCharts.columns = [{ width: 35 }, { width: 35 }, { width: 35 }, { width: 35 }];
 
-  let r2 = 1;
-  ws2.mergeCells(`A${r2}:G${r2}`);
-  const w2Title = ws2.getCell(`A${r2}`);
-  w2Title.value = "REGISTRO DE MOLDAGEM, DIMENSÕES E CÁPSULAS DE UMIDADE DOS CPS";
-  w2Title.font = { name: "Calibri", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
-  w2Title.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND_DARK } };
-  w2Title.alignment = { horizontal: "center", vertical: "middle" };
-  ws2.getRow(r2).height = 24;
-  r2 += 2;
+  wsCharts.mergeCells("A1:D1");
+  const cTitle = wsCharts.getCell("A1");
+  cTitle.value = "PAINEL GRÁFICO COMPLETO DO ENSAIO DE CISALHAMENTO DIRETO";
+  cTitle.font = { name: "Calibri", size: 12, bold: true, color: { argb: "FFFFFFFF" } };
+  cTitle.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND_DARK } };
+  cTitle.alignment = { horizontal: "center", vertical: "middle" };
+  wsCharts.getRow(1).height = 25;
 
-  specimens.forEach((cp, idx) => {
-    const res = results[idx];
-    ws2.mergeCells(`A${r2}:G${r2}`);
-    const cpHeader = ws2.getCell(`A${r2}`);
-    cpHeader.value = `CORPO DE PROVA: ${cp.displayId ?? cp.id} (Tensão Normal σn = ${cp.normalStressTarget} kPa)`;
-    cpHeader.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
-    cpHeader.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND_NAVY } };
-    ws2.getRow(r2).height = 20;
-    r2++;
+  let gRow = 3;
+  if (stressStrainId !== null) {
+    wsCharts.mergeCells(`A${gRow}:D${gRow}`);
+    const c1H = wsCharts.getCell(`A${gRow}`);
+    c1H.value = "1. CURVA TENSÃO CISALHANTE (τ) VS. DEFORMAÇÃO HORIZONTAL (εh)";
+    c1H.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+    c1H.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND_NAVY } };
+    gRow++;
 
-    // Tabela de Cápsulas Iniciais
-    ws2.mergeCells(`A${r2}:G${r2}`);
-    ws2.getCell(`A${r2}`).value = "Cápsulas de Umidade Inicial (w₀)";
-    ws2.getCell(`A${r2}`).font = { name: "Calibri", size: 9, bold: true };
-    ws2.getCell(`A${r2}`).fill = { type: "pattern", pattern: "solid", fgColor: { argb: BG_LIGHT_GRAY } };
-    r2++;
-
-    const capsHead = ["Cápsula Nº", "Tara (g)", "Solo Úmido + Tara (g)", "Solo Seco + Tara (g)", "Massa Água (g)", "Massa Solo Seco (g)", "Umidade (%)"];
-    capsHead.forEach((h, i) => {
-      const cell = ws2.getRow(r2).getCell(i + 1);
-      cell.value = h;
-      cell.font = { name: "Calibri", size: 8.5, bold: true };
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BG_LIGHT_GRAY } };
-      cell.border = thinBorder;
+    const imgRow = gRow;
+    for (let i = 0; i < 18; i++) { wsCharts.getRow(gRow).height = 16; gRow++; }
+    wsCharts.addImage(stressStrainId, {
+      tl: { col: 0.1, row: imgRow - 0.9 },
+      ext: { width: 750, height: 300 },
     });
-    r2++;
+    gRow += 2;
+  }
+
+  if (volChangeId !== null) {
+    wsCharts.mergeCells(`A${gRow}:D${gRow}`);
+    const c2H = wsCharts.getCell(`A${gRow}`);
+    c2H.value = "2. VARIAÇÃO VOLUMÉTRICA — DESLOCAMENTO VERTICAL (δv) VS. DEFORMAÇÃO HORIZONTAL (εh)";
+    c2H.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+    c2H.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND_NAVY } };
+    gRow++;
+
+    const imgRow = gRow;
+    for (let i = 0; i < 18; i++) { wsCharts.getRow(gRow).height = 16; gRow++; }
+    wsCharts.addImage(volChangeId, {
+      tl: { col: 0.1, row: imgRow - 0.9 },
+      ext: { width: 750, height: 300 },
+    });
+    gRow += 2;
+  }
+
+  if (mohrChartId !== null) {
+    wsCharts.mergeCells(`A${gRow}:D${gRow}`);
+    const c3H = wsCharts.getCell(`A${gRow}`);
+    c3H.value = "3. ENVOLTÓRIA DE RESISTÊNCIA DE MOHR-COULOMB (τ VS. σ'n)";
+    c3H.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+    c3H.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND_NAVY } };
+    gRow++;
+
+    const imgRow = gRow;
+    for (let i = 0; i < 18; i++) { wsCharts.getRow(gRow).height = 16; gRow++; }
+    wsCharts.addImage(mohrChartId, {
+      tl: { col: 0.1, row: imgRow - 0.9 },
+      ext: { width: 750, height: 300 },
+    });
+  }
+
+  // =========================================================================
+  // ABA 3: CISALHAMENTO (CPS LADO A LADO)
+  // =========================================================================
+  const wsSideBySide = wb.addWorksheet("Cisalhamento (Lado a Lado)", { views: [{ showGridLines: true }] });
+  
+  // Larguras de colunas por CP (6 colunas por CP)
+  wsSideBySide.columns = specimens.flatMap(() => [
+    { width: 14 }, // Disp H (mm)
+    { width: 14 }, // Def H (%)
+    { width: 14 }, // Carga (kgf)
+    { width: 14 }, // Recalque V (mm)
+    { width: 15 }, // Area Corrigida (cm2)
+    { width: 16 }, // Tensão Cisalhante (kPa)
+    { width: 3 },  // Espaço separador
+  ]);
+
+  const totalCols = specimens.length * 7;
+  wsSideBySide.mergeCells(1, 1, 1, totalCols - 1);
+  const sTitle = wsSideBySide.getCell(1, 1);
+  sTitle.value = "LEITURAS DE CISALHAMENTO DIRETO COMPARATIVO — CORPOS DE PROVA LADO A LADO";
+  sTitle.font = { name: "Calibri", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+  sTitle.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND_DARK } };
+  sTitle.alignment = { horizontal: "center", vertical: "middle" };
+  wsSideBySide.getRow(1).height = 24;
+
+  let sCol = 1;
+  specimens.forEach((cp, idx) => {
+    wsSideBySide.mergeCells(3, sCol, 3, sCol + 5);
+    const cpHead = wsSideBySide.getCell(3, sCol);
+    cpHead.value = `${cp.displayId ?? cp.id} (Tensão Normal σn = ${cp.normalStressTarget} kPa)`;
+    cpHead.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+    cpHead.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND_NAVY } };
+    cpHead.alignment = { horizontal: "center", vertical: "middle" };
+
+    const headers = [
+      "Disp. H (mm)", "Def. H (%)", "Carga (kgf)", "Recalque V (mm)", "Área Corrig. (cm²)", "τ (kPa)",
+    ];
+    headers.forEach((h, hI) => {
+      const c = wsSideBySide.getCell(4, sCol + hI);
+      c.value = h;
+      c.font = { name: "Calibri", size: 8.5, bold: true, color: { argb: "FFFFFFFF" } };
+      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND_DARK } };
+      c.alignment = { horizontal: "center", vertical: "middle" };
+      c.border = thinBorder;
+    });
+
+    const res = results[idx];
+    (cp.shearData || []).forEach((reading, pIdx) => {
+      const rowNum = 5 + pIdx;
+      const calcPt = res?.curve?.[pIdx];
+      const forceN = reading.loadKgf != null ? reading.loadKgf * 9.80665 : reading.shearForce;
+      const loadKgf = reading.loadKgf != null ? reading.loadKgf : forceN / 9.80665;
+      const isZebra = pIdx % 2 === 1;
+
+      const vals = [
+        fmt(reading.horizDispMm, 2),
+        fmt(calcPt?.horizStrainPct, 2),
+        fmt(loadKgf, 2),
+        fmt(reading.vertDispMm, 3),
+        fmt(calcPt?.areaCorr, 3),
+        fmt(calcPt?.shearStress, 2),
+      ];
+
+      vals.forEach((v, vI) => {
+        const cell = wsSideBySide.getCell(rowNum, sCol + vI);
+        cell.value = v;
+        cell.font = { name: "Calibri", size: 9 };
+        cell.border = thinBorder;
+        cell.alignment = { horizontal: "right", vertical: "middle" };
+        if (isZebra) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BG_ZEBRA } };
+      });
+    });
+
+    sCol += 7;
+  });
+
+  // =========================================================================
+  // ABAS INDIVIDUAIS PARA CADA CORPO DE PROVA (CP-01, CP-02, CP-03...)
+  // =========================================================================
+  specimens.forEach((cp, idx) => {
+    const cpName = cp.displayId ?? `CP-0${idx + 1}`;
+    const res = results[idx];
+    const wsCP = wb.addWorksheet(`${cpName} (${cp.normalStressTarget}kPa)`, {
+      views: [{ showGridLines: true }],
+    });
+
+    wsCP.columns = [
+      { width: 22 }, { width: 14 }, { width: 18 }, { width: 18 }, { width: 16 }, { width: 16 }, { width: 18 },
+    ];
+
+    // Título da aba do CP
+    wsCP.mergeCells("A1:G1");
+    const cpTitle = wsCP.getCell("A1");
+    cpTitle.value = `MEMORIAL TÉCNICO INDIVIDUAL — ${cpName} (Tensão Normal σn = ${cp.normalStressTarget} kPa)`;
+    cpTitle.font = { name: "Calibri", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+    cpTitle.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND_DARK } };
+    cpTitle.alignment = { horizontal: "center", vertical: "middle" };
+    wsCP.getRow(1).height = 24;
+
+    let cpR = 3;
+
+    // 1. Dados de Moldagem
+    wsCP.mergeCells(`A${cpR}:G${cpR}`);
+    const mHead = wsCP.getCell(`A${cpR}`);
+    mHead.value = "1. DADOS DE MOLDAGEM E DIMENSÕES DO CORPO DE PROVA";
+    mHead.font = { name: "Calibri", size: 9.5, bold: true, color: { argb: "FFFFFFFF" } };
+    mHead.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND_NAVY } };
+    cpR++;
+
+    const moldGrid = [
+      ["Identificação do Anel:", cp.ringId || `ANEL-0${idx + 1}`, "Massa do Anel (g):", fmt(cp.ringMass, 2)],
+      ["Massa CP + Anel (g):", fmt(cp.wetMassCPAnel, 2), "Massa Úmida do Solo (g):", fmt(res?.wetMass ?? cp.wetMass, 2)],
+      ["Altura Inicial H₀ (mm):", fmt(cp.height0Mm, 2), "Diâmetro / Lado D₀ (mm):", fmt(cp.diameterMm || sample.dimensionMm, 2)],
+      ["Área Inicial A₀ (cm²):", fmt(res?.area0, 2), "Volume Inicial V₀ (cm³):", fmt(res?.volume0, 2)],
+      ["Massa Específica Natural ρn (g/cm³):", fmt(res?.wetDensity, 3), "Massa Específica Seca ρd (g/cm³):", fmt(res?.dryDensity, 3)],
+      ["Índice de Vazios Inicial e₀:", fmt(res?.voidRatio0, 3), "Grau de Saturação Inicial Sr₀ (%):", fmt(res?.saturation0Pct, 1)],
+    ];
+
+    moldGrid.forEach(([l1, v1, l2, v2]) => {
+      const row = wsCP.getRow(cpR);
+      row.height = 17;
+      wsCP.getCell(`A${cpR}`).value = l1;
+      wsCP.getCell(`A${cpR}`).font = { name: "Calibri", size: 9, bold: true };
+      wsCP.getCell(`A${cpR}`).fill = { type: "pattern", pattern: "solid", fgColor: { argb: BG_LIGHT_GRAY } };
+      wsCP.getCell(`A${cpR}`).border = thinBorder;
+
+      wsCP.mergeCells(`B${cpR}:C${cpR}`);
+      wsCP.getCell(`B${cpR}`).value = v1;
+      wsCP.getCell(`B${cpR}`).font = { name: "Calibri", size: 9 };
+      wsCP.getCell(`B${cpR}`).border = thinBorder;
+      wsCP.getCell(`C${cpR}`).border = thinBorder;
+
+      wsCP.mergeCells(`D${cpR}:E${cpR}`);
+      wsCP.getCell(`D${cpR}`).value = l2;
+      wsCP.getCell(`D${cpR}`).font = { name: "Calibri", size: 9, bold: true };
+      wsCP.getCell(`D${cpR}`).fill = { type: "pattern", pattern: "solid", fgColor: { argb: BG_LIGHT_GRAY } };
+      wsCP.getCell(`D${cpR}`).border = thinBorder;
+      wsCP.getCell(`E${cpR}`).border = thinBorder;
+
+      wsCP.mergeCells(`F${cpR}:G${cpR}`);
+      wsCP.getCell(`F${cpR}`).value = v2;
+      wsCP.getCell(`F${cpR}`).font = { name: "Calibri", size: 9 };
+      wsCP.getCell(`F${cpR}`).border = thinBorder;
+      wsCP.getCell(`G${cpR}`).border = thinBorder;
+
+      cpR++;
+    });
+    cpR++;
+
+    // 2. Cápsulas de Umidade Inicial
+    wsCP.mergeCells(`A${cpR}:G${cpR}`);
+    const uHead = wsCP.getCell(`A${cpR}`);
+    uHead.value = "2. CÁPSULAS DE UMIDADE INICIAL (w₀)";
+    uHead.font = { name: "Calibri", size: 9.5, bold: true, color: { argb: "FFFFFFFF" } };
+    uHead.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND_NAVY } };
+    cpR++;
+
+    const cHeaders = ["Cápsula Nº", "Tara (g)", "Solo Úmido + Tara (g)", "Solo Seco + Tara (g)", "Massa Água (g)", "Massa Solo Seco (g)", "Teor de Umidade (%)"];
+    cHeaders.forEach((h, hI) => {
+      const c = wsCP.getCell(cpR, hI + 1);
+      c.value = h;
+      c.font = { name: "Calibri", size: 8.5, bold: true };
+      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BG_LIGHT_GRAY } };
+      c.border = thinBorder;
+    });
+    cpR++;
 
     (cp.capsules || []).forEach((c, cIdx) => {
       const mw = (c.wet || 0) - (c.dry || 0);
@@ -495,195 +707,90 @@ export async function exportCDRawDataXlsx({
       const w = ms > 0 ? (mw / ms) * 100 : 0;
       const row = [c.numero || `Cáp-${cIdx + 1}`, fmt(c.tara, 2), fmt(c.wet, 2), fmt(c.dry, 2), fmt(mw, 2), fmt(ms, 2), fmt(w, 2)];
       row.forEach((v, i) => {
-        const cell = ws2.getRow(r2).getCell(i + 1);
+        const cell = wsCP.getCell(cpR, i + 1);
         cell.value = v;
         cell.font = { name: "Calibri", size: 9 };
         cell.border = thinBorder;
         if (i > 0) cell.alignment = { horizontal: "right" };
       });
-      r2++;
+      cpR++;
     });
 
-    // Média Inicial
-    ws2.mergeCells(`A${r2}:F${r2}`);
-    ws2.getCell(`A${r2}`).value = "Umidade Inicial Média w₀ (%):";
-    ws2.getCell(`A${r2}`).font = { name: "Calibri", size: 9, bold: true };
-    ws2.getCell(`A${r2}`).alignment = { horizontal: "right" };
-    ws2.getCell(`G${r2}`).value = fmt(res?.moisture0Pct ?? averageMoisturePct(cp.capsules), 2);
-    ws2.getCell(`G${r2}`).font = { name: "Calibri", size: 9, bold: true };
-    ws2.getCell(`G${r2}`).alignment = { horizontal: "right" };
-    ws2.getCell(`G${r2}`).fill = { type: "pattern", pattern: "solid", fgColor: { argb: BG_HIGHLIGHT } };
-    r2 += 2;
-  });
+    wsCP.mergeCells(`A${cpR}:F${cpR}`);
+    wsCP.getCell(`A${cpR}`).value = "Umidade Inicial Média w₀ (%):";
+    wsCP.getCell(`A${cpR}`).font = { name: "Calibri", size: 9, bold: true };
+    wsCP.getCell(`A${cpR}`).alignment = { horizontal: "right" };
+    wsCP.getCell(`G${cpR}`).value = fmt(res?.moisture0Pct ?? averageMoisturePct(cp.capsules), 2);
+    wsCP.getCell(`G${cpR}`).font = { name: "Calibri", size: 9, bold: true };
+    wsCP.getCell(`G${cpR}`).alignment = { horizontal: "right" };
+    wsCP.getCell(`G${cpR}`).fill = { type: "pattern", pattern: "solid", fgColor: { argb: BG_HIGHLIGHT } };
+    cpR += 2;
 
-  // =========================================================================
-  // ABA 3: ADENSAMENTO (Com Formatação de Cabeçalhos e Bordas)
-  // =========================================================================
-  const ws3 = wb.addWorksheet("Adensamento", { views: [{ showGridLines: true }] });
-  ws3.columns = specimens.flatMap(() => [
-    { width: 14 }, { width: 14 }, { width: 18 },
-  ]);
+    // 3. Leituras de Cisalhamento Passo a Passo
+    wsCP.mergeCells(`A${cpR}:G${cpR}`);
+    const sStepHead = wsCP.getCell(`A${cpR}`);
+    sStepHead.value = "3. LEITURAS DE CISALHAMENTO PASSO A PASSO (DADOS BRUTOS)";
+    sStepHead.font = { name: "Calibri", size: 9.5, bold: true, color: { argb: "FFFFFFFF" } };
+    sStepHead.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND_NAVY } };
+    cpR++;
 
-  ws3.mergeCells(1, 1, 1, Math.max(6, specimens.length * 3));
-  const w3Title = ws3.getCell("A1");
-  w3Title.value = "LEITURAS DA ETAPA DE ADENSAMENTO VERTICAL (TEMPO VS. RECALQUE)";
-  w3Title.font = { name: "Calibri", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
-  w3Title.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND_DARK } };
-  w3Title.alignment = { horizontal: "center", vertical: "middle" };
-  ws3.getRow(1).height = 24;
-
-  let colIdx = 1;
-  specimens.forEach((cp) => {
-    ws3.mergeCells(3, colIdx, 3, colIdx + 2);
-    const cpHeader = ws3.getCell(3, colIdx);
-    cpHeader.value = `${cp.displayId ?? cp.id} (σn = ${cp.normalStressTarget} kPa)`;
-    cpHeader.font = { name: "Calibri", size: 9, bold: true, color: { argb: "FFFFFFFF" } };
-    cpHeader.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND_NAVY } };
-    cpHeader.alignment = { horizontal: "center" };
-
-    const hRow = ["Tempo (min)", "√t (min½)", "Recalque Δh (mm)"];
-    hRow.forEach((h, hI) => {
-      const cell = ws3.getCell(4, colIdx + hI);
-      cell.value = h;
-      cell.font = { name: "Calibri", size: 8.5, bold: true };
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BG_LIGHT_GRAY } };
-      cell.border = thinBorder;
+    const stepHeaders = ["Ponto Nº", "Disp. Horiz. (mm)", "Deformação Horiz. (%)", "Carga (kgf)", "Recalque Vert. (mm)", "Área Corrigida (cm²)", "Tensão Cisalhante τ (kPa)"];
+    stepHeaders.forEach((h, hI) => {
+      const c = wsCP.getCell(cpR, hI + 1);
+      c.value = h;
+      c.font = { name: "Calibri", size: 8.5, bold: true, color: { argb: "FFFFFFFF" } };
+      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND_DARK } };
+      c.border = thinBorder;
+      c.alignment = { horizontal: "center", vertical: "middle" };
     });
+    cpR++;
 
-    (cp.consolidationData || []).forEach((p, pIdx) => {
-      const rowNum = 5 + pIdx;
-      const c1 = ws3.getCell(rowNum, colIdx);
-      const c2 = ws3.getCell(rowNum, colIdx + 1);
-      const c3 = ws3.getCell(rowNum, colIdx + 2);
-      c1.value = fmt(p.timeMin, 1);
-      c2.value = fmt(Math.sqrt(Math.max(0, p.timeMin)), 2);
-      c3.value = fmt(p.settlementMm, 4);
-      c1.border = thinBorder;
-      c2.border = thinBorder;
-      c3.border = thinBorder;
-      c1.alignment = { horizontal: "right" };
-      c2.alignment = { horizontal: "right" };
-      c3.alignment = { horizontal: "right" };
-    });
-
-    colIdx += 3;
-  });
-
-  // =========================================================================
-  // ABA 4: CISALHAMENTO (Dados Brutos Completos com Zebra e Formatação)
-  // =========================================================================
-  const ws4 = wb.addWorksheet("Cisalhamento (Dados Brutos)", { views: [{ showGridLines: true }] });
-  ws4.columns = [
-    { width: 18 }, { width: 10 }, { width: 22 }, { width: 22 }, { width: 24 },
-    { width: 20 }, { width: 22 }, { width: 20 }, { width: 22 }, { width: 20 },
-  ];
-
-  ws4.mergeCells("A1:J1");
-  const w4Title = ws4.getCell("A1");
-  w4Title.value = "LEITURAS E RESULTADOS DA ETAPA DE CISALHAMENTO DIRETO (MEMORIAL PASSO A PASSO)";
-  w4Title.font = { name: "Calibri", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
-  w4Title.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND_DARK } };
-  w4Title.alignment = { horizontal: "center", vertical: "middle" };
-  ws4.getRow(1).height = 24;
-
-  const sHeaders = [
-    "Corpo de Prova", "Ponto Nº", "Disp. Horiz. (mm)", "Deformação Horiz. (%)", "Carga (kgf)",
-    "Força Cisalhante (N)", "Recalque Vert. (mm)", "Área Corrigida (cm²)", "Tensão Cisalhante τ (kPa)", "Tensão Normal σn (kPa)",
-  ];
-  const sRow = ws4.getRow(3);
-  sRow.height = 20;
-  sHeaders.forEach((h, i) => {
-    const cell = sRow.getCell(i + 1);
-    cell.value = h;
-    cell.font = { name: "Calibri", size: 9, bold: true, color: { argb: "FFFFFFFF" } };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND_NAVY } };
-    cell.alignment = { horizontal: "center", vertical: "middle" };
-    cell.border = thinBorder;
-  });
-
-  let r4 = 4;
-  specimens.forEach((cp, cpIdx) => {
-    const res = results[cpIdx];
     (cp.shearData || []).forEach((reading, pIdx) => {
       const calcPt = res?.curve?.[pIdx];
       const forceN = reading.loadKgf != null ? reading.loadKgf * 9.80665 : reading.shearForce;
       const loadKgf = reading.loadKgf != null ? reading.loadKgf : forceN / 9.80665;
       const isZebra = pIdx % 2 === 1;
+
       const row = [
-        cp.displayId ?? cp.id,
         pIdx + 1,
-        fmt(reading.horizDispMm, 3),
+        fmt(reading.horizDispMm, 2),
         fmt(calcPt?.horizStrainPct, 2),
         fmt(loadKgf, 2),
-        fmt(forceN, 2),
         fmt(reading.vertDispMm, 3),
         fmt(calcPt?.areaCorr, 3),
         fmt(calcPt?.shearStress, 2),
-        fmt(cp.normalStressTarget, 0),
       ];
+
       row.forEach((v, i) => {
-        const cell = ws4.getRow(r4).getCell(i + 1);
+        const cell = wsCP.getCell(cpR, i + 1);
         cell.value = v;
         cell.font = { name: "Calibri", size: 9 };
         cell.border = thinBorder;
+        if (i === 0) cell.alignment = { horizontal: "center" };
+        else cell.alignment = { horizontal: "right" };
         if (isZebra) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BG_ZEBRA } };
-        if (i > 1) cell.alignment = { horizontal: "right" };
       });
-      r4++;
+      cpR++;
     });
   });
 
   // =========================================================================
-  // ABA 5: ENVOLTÓRIA DE MOHR-COULOMB
+  // ABA FINAL: REGISTRO FOTOGRÁFICO
   // =========================================================================
-  const ws5 = wb.addWorksheet("Envoltória Mohr-Coulomb", { views: [{ showGridLines: true }] });
-  ws5.columns = [{ width: 28 }, { width: 24 }, { width: 32 }, { width: 32 }, { width: 24 }];
+  const wsPhotos = wb.addWorksheet("Registro Fotográfico", { views: [{ showGridLines: true }] });
+  wsPhotos.columns = [{ width: 8 }, { width: 22 }, { width: 24 }, { width: 45 }, { width: 18 }, { width: 20 }];
 
-  ws5.mergeCells("A1:E1");
-  const w5Title = ws5.getCell("A1");
-  w5Title.value = "ENVOLTÓRIA DE RESISTÊNCIA DE MOHR-COULOMB — MEMORIAL DE CÁLCULO E REGRESSÃO";
-  w5Title.font = { name: "Calibri", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
-  w5Title.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND_DARK } };
-  w5Title.alignment = { horizontal: "center", vertical: "middle" };
-  ws5.getRow(1).height = 24;
-
-  const envHeaders = ["Corpo de Prova", "Tensão Normal σ'n (kPa)", "Tensão Cisalhante de Pico τ_pico (kPa)", "Tensão Cisalhante Residual τ_res (kPa)", "Deformação na Ruptura (%)"];
-  envHeaders.forEach((h, i) => {
-    const cell = ws5.getRow(3).getCell(i + 1);
-    cell.value = h;
-    cell.font = { name: "Calibri", size: 9, bold: true, color: { argb: "FFFFFFFF" } };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND_NAVY } };
-    cell.border = thinBorder;
-  });
-
-  results.forEach((res, i) => {
-    const row = [specimens[i]?.displayId ?? `CP-${i + 1}`, fmt(res.sigmaN, 0), fmt(res.tauPeak, 2), fmt(res.tauResidual, 2), fmt(res.horizStrainAtFailurePct, 2)];
-    row.forEach((v, colI) => {
-      const cell = ws5.getRow(4 + i).getCell(colI + 1);
-      cell.value = v;
-      cell.font = { name: "Calibri", size: 9 };
-      cell.border = thinBorder;
-      if (colI > 0) cell.alignment = { horizontal: "right" };
-    });
-  });
-
-  // =========================================================================
-  // ABA 6: REGISTRO FOTOGRÁFICO DO ENSAIO
-  // =========================================================================
-  const ws6 = wb.addWorksheet("Registro Fotográfico", { views: [{ showGridLines: true }] });
-  ws6.columns = [{ width: 8 }, { width: 22 }, { width: 24 }, { width: 45 }, { width: 18 }, { width: 20 }];
-
-  ws6.mergeCells("A1:F1");
-  const w6Title = ws6.getCell("A1");
+  wsPhotos.mergeCells("A1:F1");
+  const w6Title = wsPhotos.getCell("A1");
   w6Title.value = "REGISTRO FOTOGRÁFICO DO ENSAIO — CATÁLOGO DE EVIDÊNCIAS";
   w6Title.font = { name: "Calibri", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
   w6Title.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND_DARK } };
   w6Title.alignment = { horizontal: "center", vertical: "middle" };
-  ws6.getRow(1).height = 24;
+  wsPhotos.getRow(1).height = 24;
 
   const photoHeaders = ["Nº", "Corpo de Prova (CP)", "Etapa / Fase", "Legenda / Descrição da Evidência", "Data de Registro", "Identificador Interno"];
   photoHeaders.forEach((h, i) => {
-    const cell = ws6.getRow(3).getCell(i + 1);
+    const cell = wsPhotos.getRow(3).getCell(i + 1);
     cell.value = h;
     cell.font = { name: "Calibri", size: 9, bold: true, color: { argb: "FFFFFFFF" } };
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND_NAVY } };
@@ -691,10 +798,10 @@ export async function exportCDRawDataXlsx({
   });
 
   if (photos.length === 0) {
-    ws6.mergeCells("A4:F4");
-    ws6.getCell("A4").value = "Nenhuma fotografia anexada a este ensaio.";
-    ws6.getCell("A4").font = { name: "Calibri", size: 9, italic: true };
-    ws6.getCell("A4").alignment = { horizontal: "center" };
+    wsPhotos.mergeCells("A4:F4");
+    wsPhotos.getCell("A4").value = "Nenhuma fotografia anexada a este ensaio.";
+    wsPhotos.getCell("A4").font = { name: "Calibri", size: 9, italic: true };
+    wsPhotos.getCell("A4").alignment = { horizontal: "center" };
   } else {
     photos.forEach((p, pIdx) => {
       const row = [
@@ -706,7 +813,7 @@ export async function exportCDRawDataXlsx({
         p.id,
       ];
       row.forEach((v, i) => {
-        const cell = ws6.getRow(4 + pIdx).getCell(i + 1);
+        const cell = wsPhotos.getRow(4 + pIdx).getCell(i + 1);
         cell.value = v;
         cell.font = { name: "Calibri", size: 9 };
         cell.border = thinBorder;
@@ -714,7 +821,7 @@ export async function exportCDRawDataXlsx({
     });
   }
 
-  // Gera o arquivo e aciona o download no navegador
+  // Download do arquivo XLSX
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
