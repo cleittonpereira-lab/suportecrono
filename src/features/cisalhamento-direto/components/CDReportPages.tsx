@@ -120,6 +120,14 @@ export function CDReportPage1({
                 <td className={cellBase}>{specimens.length}</td>
               </tr>
               <tr>
+                <td className={cellLeft}>Correção de Área da Seção</td>
+                <td className={cellBase}>
+                  {sample.applyAreaCorrection !== false
+                    ? "Sim (ASTM D3080)"
+                    : "Não (Área Inicial Constante)"}
+                </td>
+              </tr>
+              <tr>
                 <td className={cellLeft}>Velocidade do Ensaio [mm/min]</td>
                 <td className={cellBase}>{fmt(avgSpeed, 2)}</td>
               </tr>

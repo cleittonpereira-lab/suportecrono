@@ -64,16 +64,20 @@ export function processSpecimen(cp: CDSpecimen, sample: CDSample): CDSpecimenRes
     let areaCorr = A0;
     const delta = r.horizDispMm / 10; // cm
     
-    if (sample.geometry === "circular") {
-      const D = (cp.diameterMm || sample.dimensionMm) / 10; // cm
-      if (delta < D) {
-        const theta = 2 * Math.acos(delta / D);
-        areaCorr = (D**2 / 4) * (theta - Math.sin(theta));
-      } else areaCorr = 0.001;
+    if (sample.applyAreaCorrection !== false) {
+      if (sample.geometry === "circular") {
+        const D = (cp.diameterMm || sample.dimensionMm) / 10; // cm
+        if (delta < D) {
+          const theta = 2 * Math.acos(delta / D);
+          areaCorr = (D**2 / 4) * (theta - Math.sin(theta));
+        } else areaCorr = 0.001;
+      } else {
+        const L = (cp.lengthMm || sample.dimensionMm) / 10; // cm
+        const W = (cp.widthMm || sample.dimensionMm) / 10; // cm
+        areaCorr = W * Math.max(0.001, L - delta);
+      }
     } else {
-      const L = (cp.lengthMm || sample.dimensionMm) / 10; // cm
-      const W = (cp.widthMm || sample.dimensionMm) / 10; // cm
-      areaCorr = W * Math.max(0.001, L - delta);
+      areaCorr = A0;
     }
     
     const nominalDim = sample.dimensionMm / 10;

@@ -34,6 +34,7 @@ export interface CDSample {
   Gs: number; // densidade dos grãos
   rhoW: number; // densidade da água (g/cm³)
   testCondition: "natural" | "inundado";
+  applyAreaCorrection?: boolean; // Correção de área da seção transversal durante cisalhamento (ASTM D3080)
   applyMembrane: boolean;
   membraneE: number; // módulo membrana (kPa)
   membraneT: number; // espessura membrana (mm)

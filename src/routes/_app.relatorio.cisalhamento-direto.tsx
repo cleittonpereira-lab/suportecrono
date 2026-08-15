@@ -39,6 +39,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   Upload,
+  FileSpreadsheet,
 } from "lucide-react";
 import { toast } from "sonner";
 import { toCanvas, toPng } from "html-to-image";
@@ -96,6 +97,7 @@ import {
 import { CDSpecimensSummaryCard } from "@/features/cisalhamento-direto/components/CDSpecimensSummaryCard";
 import { CDImportDialog } from "@/features/cisalhamento-direto/components/CDImportDialog";
 import { parseCDXlsx } from "@/features/cisalhamento-direto/importXlsx";
+import { exportCDRawDataXlsx } from "@/features/cisalhamento-direto/exportXlsx";
 
 const fmt = (n: number | null | undefined, d = 2) =>
   n == null || !isFinite(n) ? "—" : n.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -487,6 +489,25 @@ export function CDPage() {
     }
   };
 
+  const handleExportXlsx = () => {
+    try {
+      const base = (sample.workNumber || sample.os || sample.reportNumber || "relatorio")
+        .toString()
+        .replace(/[^\w-]+/g, "_");
+      const filename = `Cisalhamento-Direto_${base}_DadosBrutos.xlsx`;
+      exportCDRawDataXlsx({
+        sample,
+        specimens: sortedSpecimens,
+        results,
+        envelope,
+        filename,
+      });
+      toast.success("Planilha Excel (.xlsx) com todos os dados brutos exportada com sucesso!");
+    } catch (err) {
+      toast.error("Erro ao exportar planilha Excel: " + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
   const handleSaveVersion = async (opts?: { skipVerification?: boolean }) => {
     const skipVerification = opts?.skipVerification === true;
     setSaveBusy(true);
@@ -499,10 +520,7 @@ export function CDPage() {
       const saved = await saveVersion({ scopeId, rev, filename, size: blob.size, pdfBlob: blob });
       await refreshVersions();
 
-      toast.success(`Prévia ${String(saved.rev).padStart(2, "0")} salva localmente`, { id: tid });
-
-      // Sincronização com o Drive (opcional / em segundo plano)
-      const syncId = toast.loading("Sincronizando com o Google Drive…");
+      // Sincronização com o Drive em segundo plano
       try {
         const fotos = (ctx?.photos ?? [])
           .map((p) => {
@@ -533,21 +551,20 @@ export function CDPage() {
         });
         if (resDrive?.folderUrl) setDriveFolderUrl(resDrive.folderUrl);
         await refreshDriveStatus();
-        toast.success("Sincronizado com o Google Drive ✓", { id: syncId });
       } catch (err) {
         console.warn("Drive sync standby:", err);
-        toast.info("Versão salva localmente (Google Drive em standby)", { id: syncId });
       }
 
       await requestApproval({ data: { scopeId, rev: saved.rev, filename, skipVerification } });
       await refreshApprovals();
       toast.success(
         skipVerification
-          ? `Prévia ${String(saved.rev).padStart(2, "0")} enviada para aprovação`
-          : `Prévia ${String(saved.rev).padStart(2, "0")} enviada para verificação`,
+          ? `Versão Rev ${String(saved.rev).padStart(2, "0")} gerada e enviada para aprovação!`
+          : `Versão Rev ${String(saved.rev).padStart(2, "0")} gerada e salva com sucesso!`,
+        { id: tid },
       );
     } catch (err) {
-      toast.error("Erro ao salvar: " + (err instanceof Error ? err.message : String(err)), { id: tid });
+      toast.error("Erro ao salvar versão: " + (err instanceof Error ? err.message : String(err)), { id: tid });
     } finally {
       setSaveBusy(false);
     }
@@ -797,6 +814,16 @@ export function CDPage() {
               </DialogContent>
             </Dialog>
 
+            {/* Exportar Dados Brutos (XLSX) */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportXlsx}
+              className="border-emerald-600/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+            >
+              <FileSpreadsheet className="mr-1.5 h-4 w-4 text-emerald-600" /> Exportar Dados Brutos (XLSX)
+            </Button>
+
             {/* Visualizar Relatório */}
             <Button variant="outline" size="sm" onClick={() => setReportOpen(true)}>
               <Eye className="mr-1.5 h-4 w-4" /> Visualizar Relatório
@@ -1035,6 +1062,21 @@ export function CDPage() {
                       <SelectContent>
                         <SelectItem value="circular">Circular (Ø nominal)</SelectItem>
                         <SelectItem value="quadrada">Quadrada (Lado nominal)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-xs">Correção de Área (ASTM D3080)</Label>
+                    <Select
+                      value={sample.applyAreaCorrection !== false ? "sim" : "nao"}
+                      onValueChange={(v) => updateSample("applyAreaCorrection", v === "sim")}
+                    >
+                      <SelectTrigger className="h-9 mt-1 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="sim">Sim — Corrigir Área (Acor)</SelectItem>
+                        <SelectItem value="nao">Não — Área Inicial Constante (A₀)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -1320,6 +1362,7 @@ export function CDPage() {
                             <TableHead className="text-xs">Disp. H (mm)</TableHead>
                             <TableHead className="text-xs">Carga (kgf)</TableHead>
                             <TableHead className="text-xs">Recalque V (mm)</TableHead>
+                            <TableHead className="text-xs">Área Corrigida (cm²)</TableHead>
                             <TableHead className="text-xs">τ (kPa)</TableHead>
                             <TableHead className="w-10"></TableHead>
                           </TableRow>
@@ -1369,6 +1412,9 @@ export function CDPage() {
                                     }}
                                     className="h-7 w-20 text-xs"
                                   />
+                                </TableCell>
+                                <TableCell className="py-1 text-xs text-muted-foreground">
+                                  {fmt(calcPoint?.areaCorr, 2)}
                                 </TableCell>
                                 <TableCell className="py-1 text-xs font-semibold">
                                   {fmt(calcPoint?.shearStress, 1)}
@@ -1433,7 +1479,15 @@ export function CDPage() {
                       enviada ao <b>Google Drive da Suporte</b> (PDF · dados · fotos).
                     </CardDescription>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleExportXlsx}
+                      className="gap-1.5 border-emerald-600/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+                    >
+                      <FileSpreadsheet className="h-4 w-4 text-emerald-600" /> Exportar Dados Brutos (XLSX)
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
@@ -1493,6 +1547,7 @@ export function CDPage() {
                                   timeZone: "America/Sao_Paulo",
                                   dateStyle: "short",
                                   timeStyle: "medium",
+                                daylight: false,
                                 }).format(new Date(v.createdAt))}
                               </TableCell>
                               <TableCell className="text-xs font-mono">{v.filename}</TableCell>
@@ -1539,6 +1594,15 @@ export function CDPage() {
                               </TableCell>
                               <TableCell className="text-right">
                                 <div className="flex justify-end gap-1">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="gap-1 text-xs text-emerald-700 dark:text-emerald-400"
+                                    onClick={() => handleExportXlsx()}
+                                    title="Exportar Dados Brutos (XLSX)"
+                                  >
+                                    <FileSpreadsheet className="h-3 w-3 text-emerald-600" /> XLSX
+                                  </Button>
                                   <Button
                                     size="sm"
                                     variant="outline"
@@ -1716,7 +1780,14 @@ export function CDPage() {
               <Button variant="outline" onClick={() => setReportOpen(false)}>
                 Fechar
               </Button>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={handleExportXlsx}
+                  className="gap-1.5 border-emerald-600/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+                >
+                  <FileSpreadsheet className="h-4 w-4 text-emerald-600" /> Exportar Dados Brutos (XLSX)
+                </Button>
                 <Button variant="secondary" onClick={handleGeneratePdf} disabled={pdfBusy}>
                   <Download className="mr-2 h-4 w-4" /> {pdfBusy ? "Gerando PDF…" : "Baixar PDF"}
                 </Button>

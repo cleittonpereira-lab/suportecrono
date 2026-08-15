@@ -26,6 +26,7 @@ export const SEED_CD_SAMPLE: CDSample = {
   membraneE: 1400,
   membraneT: 0.3,
   testCondition: "inundado",
+  applyAreaCorrection: true,
   sampleState: "indeformada",
 };
 
