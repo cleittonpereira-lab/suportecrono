@@ -494,15 +494,18 @@ export function CDPage() {
       const base = (sample.workNumber || sample.os || sample.reportNumber || "relatorio")
         .toString()
         .replace(/[^\w-]+/g, "_");
-      const filename = `Cisalhamento-Direto_${base}_DadosBrutos.xlsx`;
+      const filename = `Cisalhamento-Direto_${base}_LaudoExecutivo.xlsx`;
       exportCDRawDataXlsx({
         sample,
         specimens: sortedSpecimens,
         results,
         envelope,
+        photos: ctx?.photos || [],
+        approvals,
+        versions,
         filename,
       });
-      toast.success("Planilha Excel (.xlsx) com todos os dados brutos exportada com sucesso!");
+      toast.success("Planilha Excel Executiva (.xlsx) com laudo completo e dados brutos exportada com sucesso!");
     } catch (err) {
       toast.error("Erro ao exportar planilha Excel: " + (err instanceof Error ? err.message : String(err)));
     }
