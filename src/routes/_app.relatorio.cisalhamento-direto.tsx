@@ -489,13 +489,14 @@ export function CDPage() {
     }
   };
 
-  const handleExportXlsx = () => {
+  const handleExportXlsx = async () => {
+    const tid = toast.loading("Gerando Planilha Excel Executiva...");
     try {
       const base = (sample.workNumber || sample.os || sample.reportNumber || "relatorio")
         .toString()
         .replace(/[^\w-]+/g, "_");
       const filename = `Cisalhamento-Direto_${base}_LaudoExecutivo.xlsx`;
-      exportCDRawDataXlsx({
+      await exportCDRawDataXlsx({
         sample,
         specimens: sortedSpecimens,
         results,
@@ -505,9 +506,9 @@ export function CDPage() {
         versions,
         filename,
       });
-      toast.success("Planilha Excel Executiva (.xlsx) com laudo completo e dados brutos exportada com sucesso!");
+      toast.success("Planilha Excel Executiva (.xlsx) exportada com sucesso!", { id: tid });
     } catch (err) {
-      toast.error("Erro ao exportar planilha Excel: " + (err instanceof Error ? err.message : String(err)));
+      toast.error("Erro ao exportar planilha Excel: " + (err instanceof Error ? err.message : String(err)), { id: tid });
     }
   };
 
