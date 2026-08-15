@@ -512,35 +512,28 @@ export function CDReportPage4({
   const lineColors = ["#1e40af", "#b45309", "#15803d", "#7e22ce", "#b91c1c", "#0284c7"];
   const title = getReportTitle(sample.testCondition);
 
-  // Escala unificada 1:1 (mesmo domínio e ticks para X e Y)
-  const unifiedMax = React.useMemo(() => {
+  // Eixo horizontal limita o gráfico com base nas tensões normais dos CPs
+  const xMax = React.useMemo(() => {
     const sigmaVals = results.map((r) => r.sigmaN);
-    const tauVals = results.map((r) => r.tauPeak);
-    const maxVal = Math.max(
-      ...sigmaVals,
-      ...tauVals,
-      envelope ? envelope.c + Math.max(...sigmaVals, 100) * Math.tan((envelope.phiDeg * Math.PI) / 180) : 0,
-      100
-    );
-    const rounded = Math.ceil((maxVal * 1.15) / 50) * 50;
-    return Math.max(100, rounded);
-  }, [results, envelope]);
+    const maxVal = sigmaVals.length ? Math.max(...sigmaVals, 100) : 100;
+    return Math.max(100, Math.ceil((maxVal * 1.25) / 50) * 50);
+  }, [results]);
 
-  const tickStep = unifiedMax <= 100 ? 25 : unifiedMax <= 250 ? 50 : 100;
-  const ticks = React.useMemo(() => {
+  const xTicks = React.useMemo(() => {
     const list: number[] = [];
-    for (let t = 0; t <= unifiedMax; t += tickStep) list.push(t);
+    const step = xMax <= 100 ? 25 : xMax <= 250 ? 50 : 100;
+    for (let t = 0; t <= xMax; t += step) list.push(t);
     return list;
-  }, [unifiedMax, tickStep]);
+  }, [xMax]);
 
   const envelopeLine = React.useMemo(() => {
     if (!envelope) return [];
-    const yEnd = envelope.c + unifiedMax * Math.tan((envelope.phiDeg * Math.PI) / 180);
+    const yEnd = envelope.c + xMax * Math.tan((envelope.phiDeg * Math.PI) / 180);
     return [
       { sigma: 0, tau: envelope.c },
-      { sigma: unifiedMax, tau: yEnd },
+      { sigma: xMax, tau: yEnd },
     ];
-  }, [envelope, unifiedMax]);
+  }, [envelope, xMax]);
 
   return (
     <div style={REPORT_PAGE_STYLE} className="printable-report">
@@ -553,7 +546,7 @@ export function CDReportPage4({
       />
 
       <div className="flex-1 flex flex-col justify-between mt-2 gap-3">
-        {/* Gráfico da Envoltória com Escala Isométrica 1:1 e Dimensões Proporcionais */}
+        {/* Gráfico da Envoltória com preenchimento horizontal completo da página */}
         <div className="flex flex-col flex-1">
           <SectionBar>Envoltória de Resistência (Strength Envelopes) — Mohr-Coulomb</SectionBar>
           
@@ -575,85 +568,85 @@ export function CDReportPage4({
             </div>
           )}
 
-          <div className="w-full flex-1 flex items-center justify-center p-2 rounded border border-[#141414]/60 bg-white">
-            <div className="w-[145mm] h-[130mm] max-w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart margin={{ top: 20, right: 25, bottom: 25, left: 15 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis
-                    type="number"
-                    dataKey="sigma"
-                    domain={[0, unifiedMax]}
-                    ticks={ticks}
-                    tick={{ fontSize: 8 }}
-                  >
-                    <RLabel
-                      value="Tensão Normal σ'n [kPa]"
-                      offset={-15}
-                      position="insideBottom"
-                      style={{ fontSize: 9, fontWeight: 600, fill: "#374151" }}
-                    />
-                  </XAxis>
-                  <YAxis
-                    type="number"
-                    dataKey="tau"
-                    domain={[0, unifiedMax]}
-                    ticks={ticks}
-                    tick={{ fontSize: 8 }}
-                  >
-                    <RLabel
-                      value="Tensão Cisalhante τ [kPa]"
-                      angle={-90}
-                      position="insideLeft"
-                      offset={5}
-                      style={{ fontSize: 9, fontWeight: 600, fill: "#374151" }}
-                    />
-                  </YAxis>
-
-                  <Legend
-                    verticalAlign="top"
-                    align="center"
-                    wrapperStyle={{ top: -5, fontSize: 8.5, fontWeight: 500 }}
+          <div className="flex-1 w-full rounded border border-[#141414]/60 bg-white p-2 min-h-[120mm]">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart margin={{ top: 20, right: 20, bottom: 25, left: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis
+                  type="number"
+                  dataKey="sigma"
+                  domain={[0, xMax]}
+                  ticks={xTicks}
+                  tick={{ fontSize: 8 }}
+                >
+                  <RLabel
+                    value="Tensão Normal σ'n [kPa]"
+                    offset={-15}
+                    position="insideBottom"
+                    style={{ fontSize: 9, fontWeight: 600, fill: "#374151" }}
                   />
+                </XAxis>
+                <YAxis
+                  type="number"
+                  domain={[0, "auto"]}
+                  tick={{ fontSize: 8 }}
+                >
+                  <RLabel
+                    value="Tensão Cisalhante τ [kPa]"
+                    angle={-90}
+                    position="insideLeft"
+                    offset={5}
+                    style={{ fontSize: 9, fontWeight: 600, fill: "#374151" }}
+                  />
+                </YAxis>
 
-                  {/* Linha da Envoltória Linear */}
-                  {envelope && (
-                    <Line
-                      name="Envoltória Linear (τ = c' + σ'·tan φ')"
-                      data={envelopeLine}
-                      dataKey="tau"
-                      stroke="#374151"
-                      strokeWidth={2}
-                      dot={false}
-                      activeDot={false}
+                <Legend
+                  verticalAlign="top"
+                  align="center"
+                  wrapperStyle={{ top: -5, fontSize: 8.5, fontWeight: 500 }}
+                />
+
+                {/* Linha da Envoltória Linear */}
+                {envelope && (
+                  <Line
+                    name="Envoltória Linear (τ = c' + σ'·tan φ')"
+                    data={envelopeLine}
+                    dataKey="tau"
+                    stroke="#374151"
+                    strokeWidth={2}
+                    dot={false}
+                    activeDot={false}
+                  />
+                )}
+
+                {/* Pontos de Ruptura Individuais Sólidos e Discretos */}
+                {results.map((r, i) => {
+                  const color = specimens[i]?.color || lineColors[i % lineColors.length];
+                  return (
+                    <Scatter
+                      key={i}
+                      name={`${specimens[i]?.displayId ?? `CP-${i + 1}`} (σn = ${fmt(r.sigmaN, 0)} kPa)`}
+                      data={[{ sigma: r.sigmaN, tau: r.tauPeak }]}
+                      fill={color}
+                      shape={(props: any) => {
+                        const { cx, cy } = props;
+                        if (cx == null || cy == null || isNaN(cx) || isNaN(cy)) return null;
+                        return (
+                          <circle
+                            cx={cx}
+                            cy={cy}
+                            r={4.5}
+                            fill={color}
+                            stroke="#111827"
+                            strokeWidth={1}
+                          />
+                        );
+                      }}
                     />
-                  )}
-
-                  {/* Pontos de Ruptura Individuais Coloridos por CP com marcadores circulares destacados */}
-                  {results.map((r, i) => {
-                    const color = specimens[i]?.color || lineColors[i % lineColors.length];
-                    return (
-                      <Scatter
-                        key={i}
-                        name={`${specimens[i]?.displayId ?? `CP-${i + 1}`} (σn = ${fmt(r.sigmaN, 0)} kPa)`}
-                        data={[{ sigma: r.sigmaN, tau: r.tauPeak }]}
-                        fill={color}
-                        shape={(props: any) => {
-                          const { cx, cy } = props;
-                          if (cx == null || cy == null || isNaN(cx) || isNaN(cy)) return null;
-                          return (
-                            <g>
-                              <circle cx={cx} cy={cy} r={6.5} fill={color} stroke="#111827" strokeWidth={2} />
-                              <circle cx={cx} cy={cy} r={2} fill="#ffffff" />
-                            </g>
-                          );
-                        }}
-                      />
-                    );
-                  })}
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
+                  );
+                })}
+              </ComposedChart>
+            </ResponsiveContainer>
           </div>
         </div>
 

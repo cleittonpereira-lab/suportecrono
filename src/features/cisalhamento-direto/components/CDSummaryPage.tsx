@@ -20,50 +20,44 @@ export function CDSummaryPage({
 }) {
   const lineColors = ["#1e40af", "#b45309", "#15803d", "#7e22ce", "#b91c1c", "#0284c7"];
 
-  const unifiedMax = useMemo(() => {
+  const xMax = useMemo(() => {
     const sigmaVals = results.map(r => r.sigmaN);
-    const tauVals = results.map(r => r.tauPeak);
-    const maxVal = Math.max(
-      ...sigmaVals,
-      ...tauVals,
-      envelope ? envelope.c + Math.max(...sigmaVals, 100) * Math.tan(envelope.phiDeg * Math.PI / 180) : 0,
-      100
-    );
-    return Math.max(100, Math.ceil((maxVal * 1.15) / 50) * 50);
-  }, [results, envelope]);
+    const maxVal = sigmaVals.length ? Math.max(...sigmaVals, 100) : 100;
+    return Math.max(100, Math.ceil((maxVal * 1.25) / 50) * 50);
+  }, [results]);
 
-  const tickStep = unifiedMax <= 100 ? 25 : unifiedMax <= 250 ? 50 : 100;
-  const ticks = useMemo(() => {
+  const xTicks = useMemo(() => {
     const list: number[] = [];
-    for (let t = 0; t <= unifiedMax; t += tickStep) list.push(t);
+    const step = xMax <= 100 ? 25 : xMax <= 250 ? 50 : 100;
+    for (let t = 0; t <= xMax; t += step) list.push(t);
     return list;
-  }, [unifiedMax, tickStep]);
+  }, [xMax]);
 
   const envelopeLine = useMemo(() => {
     if (!envelope) return [];
-    const yEnd = envelope.c + unifiedMax * Math.tan(envelope.phiDeg * Math.PI / 180);
+    const yEnd = envelope.c + xMax * Math.tan(envelope.phiDeg * Math.PI / 180);
     return [
       { sigma: 0, tau: envelope.c },
-      { sigma: unifiedMax, tau: yEnd }
+      { sigma: xMax, tau: yEnd }
     ];
-  }, [envelope, unifiedMax]);
+  }, [envelope, xMax]);
 
   return (
     <div className="flex flex-col gap-8 w-full">
-      {/* Gráfico Tensão de Cisalhamento vs. Tensão Normal — Escala 1:1 */}
+      {/* Gráfico Tensão de Cisalhamento vs. Tensão Normal */}
       <div className="w-full relative border border-[#141414] bg-white p-4 rounded-md flex flex-col items-center">
         <div className="w-full">
           <SectionBar>Envoltória de Resistência (Mohr-Coulomb)</SectionBar>
         </div>
-        <div className="w-full max-w-[500px] h-[360px] my-3">
+        <div className="w-full h-[380px] my-3">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart margin={{ top: 20, right: 30, bottom: 30, left: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={true} />
               <XAxis 
                 type="number" 
                 dataKey="sigma" 
-                domain={[0, unifiedMax]}
-                ticks={ticks}
+                domain={[0, xMax]}
+                ticks={xTicks}
                 tick={{ fontSize: 10, fill: '#374151' }}
                 stroke="#374151"
               >
@@ -71,9 +65,7 @@ export function CDSummaryPage({
               </XAxis>
               <YAxis 
                 type="number" 
-                dataKey="tau"
-                domain={[0, unifiedMax]}
-                ticks={ticks}
+                domain={[0, "auto"]}
                 tick={{ fontSize: 10, fill: '#374151' }}
                 stroke="#374151"
               >
@@ -98,7 +90,7 @@ export function CDSummaryPage({
                 />
               )}
 
-              {/* Pontos de Ruptura Individuais */}
+              {/* Pontos de Ruptura Individuais Sólidos e Discretos */}
               {results.map((r, i) => {
                 const color = specimens[i]?.color || lineColors[i % lineColors.length];
                 return (
@@ -111,10 +103,14 @@ export function CDSummaryPage({
                       const { cx, cy } = props;
                       if (cx == null || cy == null || isNaN(cx) || isNaN(cy)) return null;
                       return (
-                        <g>
-                          <circle cx={cx} cy={cy} r={7} fill={color} stroke="#111827" strokeWidth={2} />
-                          <circle cx={cx} cy={cy} r={2.5} fill="#ffffff" />
-                        </g>
+                        <circle
+                          cx={cx}
+                          cy={cy}
+                          r={4.5}
+                          fill={color}
+                          stroke="#111827"
+                          strokeWidth={1}
+                        />
                       );
                     }}
                   />
