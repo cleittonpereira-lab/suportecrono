@@ -9,106 +9,128 @@ const fmt = (n: number | null | undefined, d = 2) =>
 
 export function CDSummaryPage({ 
   sample, 
+  specimens = [],
   results, 
   envelope 
 }: { 
   sample: CDSample, 
-  specimens: CDSpecimen[], 
+  specimens?: CDSpecimen[], 
   results: CDSpecimenResults[], 
   envelope: CDEnvelopeResult | null 
 }) {
-  const chartData = useMemo(() => {
-    return results.map((r) => ({
-      sigma: r.sigmaN,
-      tau: r.tauPeak,
-      color: "#3b82f6" // fallback
-    }));
-  }, [results]);
+  const lineColors = ["#1e40af", "#b45309", "#15803d", "#7e22ce", "#b91c1c", "#0284c7"];
 
-  const maxSigma = useMemo(() => {
-    const vals = results.map(r => r.sigmaN);
-    return vals.length ? Math.max(...vals) : 100;
-  }, [results]);
+  const unifiedMax = useMemo(() => {
+    const sigmaVals = results.map(r => r.sigmaN);
+    const tauVals = results.map(r => r.tauPeak);
+    const maxVal = Math.max(
+      ...sigmaVals,
+      ...tauVals,
+      envelope ? envelope.c + Math.max(...sigmaVals, 100) * Math.tan(envelope.phiDeg * Math.PI / 180) : 0,
+      100
+    );
+    return Math.max(100, Math.ceil((maxVal * 1.15) / 50) * 50);
+  }, [results, envelope]);
 
-  const maxTau = useMemo(() => {
-    const vals = results.map(r => r.tauPeak);
-    return vals.length ? Math.max(...vals) : 100;
-  }, [results]);
+  const tickStep = unifiedMax <= 100 ? 25 : unifiedMax <= 250 ? 50 : 100;
+  const ticks = useMemo(() => {
+    const list: number[] = [];
+    for (let t = 0; t <= unifiedMax; t += tickStep) list.push(t);
+    return list;
+  }, [unifiedMax, tickStep]);
 
   const envelopeLine = useMemo(() => {
     if (!envelope) return [];
-    const xEnd = maxSigma * 1.2;
-    const yEnd = envelope.c + xEnd * Math.tan(envelope.phiDeg * Math.PI / 180);
+    const yEnd = envelope.c + unifiedMax * Math.tan(envelope.phiDeg * Math.PI / 180);
     return [
       { sigma: 0, tau: envelope.c },
-      { sigma: xEnd, tau: yEnd }
+      { sigma: unifiedMax, tau: yEnd }
     ];
-  }, [envelope, maxSigma]);
+  }, [envelope, unifiedMax]);
 
   return (
     <div className="flex flex-col gap-8 w-full">
-      {/* Gráfico Tensão de Cisalhamento vs. Tensão Normal */}
-      <div className="w-full h-[450px] relative border border-[#141414] bg-white">
-        <SectionBar>Envoltória de Resistência (Mohr-Coulomb)</SectionBar>
-        <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart margin={{ top: 40, right: 40, bottom: 40, left: 40 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={true} />
-            <XAxis 
-              type="number" 
-              dataKey="sigma" 
-              domain={[0, 'auto']}
-              ticks={equalTicks(0, maxSigma * 1.2)}
-              tick={{ fontSize: 10, fill: '#374151' }}
-              stroke="#374151"
-            >
-              <RLabel value="Tensão Normal - σ' (kPa)" offset={-25} position="insideBottom" style={{ fontSize: 11, fontWeight: 600, fill: '#374151' }} />
-            </XAxis>
-            <YAxis 
-              type="number" 
-              domain={[0, 'auto']}
-              ticks={equalTicks(0, maxTau * 1.2)}
-              tick={{ fontSize: 10, fill: '#374151' }}
-              stroke="#374151"
-            >
-              <RLabel value="Tensão de Cisalhamento - τ (kPa)" angle={-90} position="insideLeft" offset={10} style={{ fontSize: 11, fontWeight: 600, fill: '#374151' }} />
-            </YAxis>
-            <Tooltip 
-              contentStyle={{ fontSize: 10, border: '1px solid #141414', borderRadius: '4px' }}
-              formatter={(v: any) => fmt(v, 1)}
-            />
-            
-            {/* Pontos de Ruptura */}
-            <Scatter 
-              name="Ruptura" 
-              data={chartData} 
-              fill="#ef4444" 
-              shape="circle"
-              line={false}
-            />
-
-            {/* Linha da Envoltória */}
-            {envelope && (
-              <Line 
-                name="Envoltória"
-                data={envelopeLine}
+      {/* Gráfico Tensão de Cisalhamento vs. Tensão Normal — Escala 1:1 */}
+      <div className="w-full relative border border-[#141414] bg-white p-4 rounded-md flex flex-col items-center">
+        <div className="w-full">
+          <SectionBar>Envoltória de Resistência (Mohr-Coulomb)</SectionBar>
+        </div>
+        <div className="w-full max-w-[500px] h-[360px] my-3">
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart margin={{ top: 20, right: 30, bottom: 30, left: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={true} />
+              <XAxis 
+                type="number" 
+                dataKey="sigma" 
+                domain={[0, unifiedMax]}
+                ticks={ticks}
+                tick={{ fontSize: 10, fill: '#374151' }}
+                stroke="#374151"
+              >
+                <RLabel value="Tensão Normal - σ'n (kPa)" offset={-20} position="insideBottom" style={{ fontSize: 11, fontWeight: 600, fill: '#374151' }} />
+              </XAxis>
+              <YAxis 
+                type="number" 
                 dataKey="tau"
-                stroke="#000"
-                strokeWidth={2}
-                dot={false}
-                activeDot={false}
-                legendType="line"
+                domain={[0, unifiedMax]}
+                ticks={ticks}
+                tick={{ fontSize: 10, fill: '#374151' }}
+                stroke="#374151"
+              >
+                <RLabel value="Tensão de Cisalhamento - τ (kPa)" angle={-90} position="insideLeft" offset={0} style={{ fontSize: 11, fontWeight: 600, fill: '#374151' }} />
+              </YAxis>
+              <Tooltip 
+                contentStyle={{ fontSize: 10, border: '1px solid #141414', borderRadius: '4px' }}
+                formatter={(v: any) => fmt(v, 1)}
               />
-            )}
-            
-            <Legend verticalAlign="top" align="right" wrapperStyle={{ fontSize: 10, paddingBottom: 10 }} />
-          </ComposedChart>
-        </ResponsiveContainer>
+              
+              {/* Linha da Envoltória */}
+              {envelope && (
+                <Line 
+                  name="Envoltória Linear"
+                  data={envelopeLine}
+                  dataKey="tau"
+                  stroke="#111827"
+                  strokeWidth={2}
+                  dot={false}
+                  activeDot={false}
+                  legendType="line"
+                />
+              )}
+
+              {/* Pontos de Ruptura Individuais */}
+              {results.map((r, i) => {
+                const color = specimens[i]?.color || lineColors[i % lineColors.length];
+                return (
+                  <Scatter 
+                    key={i}
+                    name={`${specimens[i]?.displayId ?? `CP-${i + 1}`} (σn = ${fmt(r.sigmaN, 0)} kPa)`}
+                    data={[{ sigma: r.sigmaN, tau: r.tauPeak }]}
+                    fill={color}
+                    shape={(props: any) => {
+                      const { cx, cy } = props;
+                      if (cx == null || cy == null || isNaN(cx) || isNaN(cy)) return null;
+                      return (
+                        <g>
+                          <circle cx={cx} cy={cy} r={7} fill={color} stroke="#111827" strokeWidth={2} />
+                          <circle cx={cx} cy={cy} r={2.5} fill="#ffffff" />
+                        </g>
+                      );
+                    }}
+                  />
+                );
+              })}
+              
+              <Legend verticalAlign="top" align="center" wrapperStyle={{ fontSize: 9, paddingBottom: 8 }} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
         
         {/* Parâmetros da Envoltória sobre o gráfico */}
         {envelope && (
-          <div className="absolute bottom-16 right-16 flex flex-col gap-1 text-[11px]">
+          <div className="flex flex-wrap justify-center gap-3 text-[11px] mt-2">
             <span className="rounded border border-[#141414]/60 bg-[#f3f4f6] px-3 py-1">
-              <b>c'</b> <span className="text-[9px] text-[#141414]/70">(intercepto coesivo)</span> <b>=</b> {fmt(envelope.c, 2)} kPa
+              <b>c'</b> <span className="text-[9px] text-[#141414]/70">(coesão efetiva)</span> <b>=</b> {fmt(envelope.c, 2)} kPa
             </span>
             <span className="rounded border border-[#141414]/60 bg-[#f3f4f6] px-3 py-1">
               <b>φ'</b> <span className="text-[9px] text-[#141414]/70">(ângulo de atrito)</span> <b>=</b> {fmt(envelope.phiDeg, 2)}°
