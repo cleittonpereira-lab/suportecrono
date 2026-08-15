@@ -1,6 +1,8 @@
+import { useState, useMemo } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { CDPage } from "./_app.relatorio.cisalhamento-direto";
 import { LabEnsaioProvider, type LabEnsaioContextValue } from "@/features/lab/context";
+import type { Photo } from "@/features/lab/types";
 
 export const Route = createFileRoute("/_app/modelos-relatorios/cisalhamento-direto")({
   ssr: false,
@@ -17,7 +19,7 @@ export const Route = createFileRoute("/_app/modelos-relatorios/cisalhamento-dire
 });
 
 const NOW = "2026-01-01T00:00:00.000Z";
-const PHANTOM_CTX: LabEnsaioContextValue = {
+const PHANTOM_CTX: Omit<LabEnsaioContextValue, "photos" | "addPhoto" | "removePhoto" | "updatePhoto"> = {
   os: {
     id: "modelo-os-cd",
     createdAt: NOW,
@@ -54,16 +56,67 @@ const PHANTOM_CTX: LabEnsaioContextValue = {
     operator: "Operador Modelo",
     photos: [],
   },
-  photos: [],
   onPayloadChange: () => {},
-  addPhoto: () => {},
-  removePhoto: () => {},
-  updatePhoto: () => {},
 };
 
 function ModeloCisalhamento() {
+  const [photos, setPhotos] = useState<Photo[]>(() => {
+    try {
+      const saved = localStorage.getItem("cd_modelo_photos");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const addPhoto = (photo: Omit<Photo, "id" | "createdAt">) => {
+    const newPhoto: Photo = {
+      ...photo,
+      id: "photo_" + Math.random().toString(36).substring(2, 9),
+      createdAt: new Date().toISOString(),
+    };
+    setPhotos((prev) => {
+      const next = [...prev, newPhoto];
+      try {
+        localStorage.setItem("cd_modelo_photos", JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  const removePhoto = (photoId: string) => {
+    setPhotos((prev) => {
+      const next = prev.filter((p) => p.id !== photoId);
+      try {
+        localStorage.setItem("cd_modelo_photos", JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  const updatePhoto = (photoId: string, patch: Partial<Photo>) => {
+    setPhotos((prev) => {
+      const next = prev.map((p) => (p.id === photoId ? { ...p, ...patch } : p));
+      try {
+        localStorage.setItem("cd_modelo_photos", JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  const dynamicCtx: LabEnsaioContextValue = useMemo(
+    () => ({
+      ...PHANTOM_CTX,
+      photos,
+      addPhoto,
+      removePhoto,
+      updatePhoto,
+    }),
+    [photos],
+  );
+
   return (
-    <LabEnsaioProvider value={PHANTOM_CTX}>
+    <LabEnsaioProvider value={dynamicCtx}>
       <CDPage />
     </LabEnsaioProvider>
   );
