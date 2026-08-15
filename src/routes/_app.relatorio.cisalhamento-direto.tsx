@@ -41,7 +41,7 @@ import {
   Upload,
 } from "lucide-react";
 import { toast } from "sonner";
-import { toPng } from "html-to-image";
+import { toCanvas, toPng } from "html-to-image";
 import { jsPDF } from "jspdf";
 import {
   listVersions,
@@ -206,6 +206,7 @@ export function CDPage() {
   const [idOpen, setIdOpen] = useState(true);
   const [reportOpen, setReportOpen] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
 
@@ -400,29 +401,98 @@ export function CDPage() {
   const photoPagesCount = Math.max(1, Math.ceil(sortedSpecimens.length / 3));
   const totalPages = 5 + photoPagesCount; // P1 (Condições), P2 (Resumo), P3 (Gráficos), P4 (Envoltória), P5.. (Fotos), P6 (Fórmulas)
 
+  /**
+   * Renderiza o PDF do relatório e devolve como Blob (para download direto ou salvar como versão).
+   */
+  const buildReportPdfBlob = async (): Promise<Blob> => {
+    let pages: HTMLElement[] = [];
+    
+    // Se o modal de pré-visualização estiver aberto, busca primeiro as páginas visíveis nele
+    const modalEl = document.querySelector("[role='dialog']");
+    if (modalEl) {
+      pages = Array.from(modalEl.querySelectorAll<HTMLElement>(".printable-report"));
+    }
+    if (pages.length === 0 && reportRef.current) {
+      pages = Array.from(reportRef.current.querySelectorAll<HTMLElement>(".printable-report"));
+    }
+    if (pages.length === 0) {
+      pages = Array.from(document.querySelectorAll<HTMLElement>(".printable-report"));
+    }
+    if (pages.length === 0) throw new Error("Nenhuma página do relatório encontrada.");
+
+    // Aguarda frames para que os gráficos SVG renderizem
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
+    await new Promise((r) => setTimeout(r, 200));
+
+    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
+    const W = 210, H = 297;
+
+    for (let i = 0; i < pages.length; i++) {
+      const page = pages[i];
+      const rect = page.getBoundingClientRect();
+      const w = Math.ceil(rect.width) || 794;
+      const h = Math.ceil(rect.height) || 1123;
+
+      const canvas = await toCanvas(page, {
+        pixelRatio: 2,
+        cacheBust: true,
+        backgroundColor: "#ffffff",
+        width: w,
+        height: h,
+        skipAutoScale: true,
+        style: {
+          background: "#ffffff",
+          color: "#0f172a",
+          transform: "none",
+        },
+        filter: (node) => !(node instanceof HTMLElement && node.classList.contains("no-print")),
+      });
+
+      const dataUrl = canvas.toDataURL("image/png");
+      if (!dataUrl || !dataUrl.startsWith("data:image/png;base64,")) {
+        const jpegUrl = canvas.toDataURL("image/jpeg", 0.95);
+        if (!jpegUrl || !jpegUrl.startsWith("data:image/jpeg;base64,")) {
+          throw new Error(`Falha ao capturar imagem da página ${i + 1}`);
+        }
+        if (i > 0) pdf.addPage("a4", "portrait");
+        pdf.addImage(jpegUrl, "JPEG", 0, 0, W, H, undefined, "FAST");
+      } else {
+        if (i > 0) pdf.addPage("a4", "portrait");
+        pdf.addImage(dataUrl, "PNG", 0, 0, W, H, undefined, "FAST");
+      }
+    }
+
+    return pdf.output("blob");
+  };
+
+  const handleGeneratePdf = async () => {
+    setPdfBusy(true);
+    const toastId = toast.loading("Gerando PDF do relatório…");
+    try {
+      const blob = await buildReportPdfBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const base = (sample.workNumber || sample.os || "relatorio").toString().replace(/[^\w-]+/g, "_");
+      a.download = `Cisalhamento-Direto_${base}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("PDF gerado e baixado com sucesso!", { id: toastId });
+    } catch (err) {
+      toast.error("Erro ao gerar PDF: " + (err instanceof Error ? err.message : String(err)), { id: toastId });
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
   const handleSaveVersion = async (opts?: { skipVerification?: boolean }) => {
     const skipVerification = opts?.skipVerification === true;
     setSaveBusy(true);
     const tid = toast.loading("Gerando e salvando versão PDF…");
     try {
-      if (!reportRef.current) throw new Error("Relatório não montado");
-
-      const pages = Array.from(reportRef.current.querySelectorAll<HTMLElement>(".printable-report"));
-      if (!pages.length) throw new Error("Nenhuma página encontrada para gerar o PDF.");
-
-      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-      for (let i = 0; i < pages.length; i++) {
-        // eslint-disable-next-line no-await-in-loop
-        const dataUrl = await toPng(pages[i], {
-          pixelRatio: 2.5,
-          cacheBust: true,
-          backgroundColor: "#fff",
-          filter: (node) => !(node instanceof HTMLElement && node.classList.contains("no-print")),
-        });
-        if (i > 0) pdf.addPage("a4", "portrait");
-        pdf.addImage(dataUrl, "PNG", 0, 0, 210, 297, undefined, "FAST");
-      }
-      const blob = pdf.output("blob");
+      const blob = await buildReportPdfBlob();
       const rev = await nextRev(scopeId);
       const base = (sample.workNumber || sample.os || "relatorio").toString().replace(/[^\w-]+/g, "_");
       const filename = `Cisalhamento-Direto_${base}_Rev-${String(rev).padStart(2, "0")}.pdf`;
@@ -431,7 +501,7 @@ export function CDPage() {
 
       toast.success(`Prévia ${String(saved.rev).padStart(2, "0")} salva localmente`, { id: tid });
 
-      // Sincronização com o Drive
+      // Sincronização com o Drive (opcional / em segundo plano)
       const syncId = toast.loading("Sincronizando com o Google Drive…");
       try {
         const fotos = (ctx?.photos ?? [])
@@ -465,7 +535,8 @@ export function CDPage() {
         await refreshDriveStatus();
         toast.success("Sincronizado com o Google Drive ✓", { id: syncId });
       } catch (err) {
-        toast.error("Falha ao enviar ao Drive: " + (err instanceof Error ? err.message : String(err)), { id: syncId });
+        console.warn("Drive sync standby:", err);
+        toast.info("Versão salva localmente (Google Drive em standby)", { id: syncId });
       }
 
       await requestApproval({ data: { scopeId, rev: saved.rev, filename, skipVerification } });
@@ -765,6 +836,140 @@ export function CDPage() {
           </div>
         </div>
 
+        {/* Identificação da amostra (comum a todos os CPs) - retrátil */}
+        {ctx ? (
+          <Card className="mb-4 border-primary/30 bg-primary/5">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-sm">
+                    Amostra {ctx.amostra.reportNumber || "—"} · OS {ctx.os.numero}
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    {ctx.os.client || "—"} · Furo {ctx.amostra.borehole || "—"} · Prof. {ctx.amostra.depth || "—"}
+                    {ctx.coords && (
+                      <> · N {ctx.coords.N ?? "—"} · E {ctx.coords.E ?? "—"} · Cota {ctx.coords.cota ?? "—"}</>
+                    )}
+                  </CardDescription>
+                </div>
+                <a
+                  href={`/os/${ctx.os.id}/amostra/${ctx.amostra.id}`}
+                  className="text-xs text-primary hover:underline"
+                >
+                  editar amostra →
+                </a>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
+                <div>
+                  <div className="text-muted-foreground">Condição do ensaio</div>
+                  <div className="font-medium">
+                    {sample.testCondition === "inundado" ? "CDinun — Inundado" : "CDnat — Natural"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">Condição da amostra</div>
+                  <div className="font-medium">
+                    {sample.sampleState === "compactada"
+                      ? `Compactada${sample.compactionEnergy ? ` · ${sample.compactionEnergy}` : ""}${
+                          typeof sample.compactionDegreePct === "number"
+                            ? ` · GC ${sample.compactionDegreePct}%`
+                            : ""
+                        }`
+                      : sample.sampleState === "recompactada"
+                        ? "Recompactada"
+                        : sample.sampleState === "indeformada"
+                          ? `Indeformada${sample.sampleType ? ` · ${sample.sampleType}` : ""}`
+                          : "—"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">Equipamento</div>
+                  <div className="font-medium">{sample.equipment || "—"}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">Geometria</div>
+                  <div className="font-medium">
+                    {sample.geometry === "circular"
+                      ? `Circular (Ø ${sample.dimensionMm || 60} mm)`
+                      : `Quadrada (${sample.dimensionMm || 60} mm)`}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-3 border-t border-border/50 pt-2">
+                <div className="mb-1 text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Corpos de prova ({sortedSpecimens.length})
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {sortedSpecimens.map((s) => (
+                    <span
+                      key={s.id}
+                      className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-0.5 text-[11px]"
+                    >
+                      <span className="font-semibold">{s.displayId ?? s.id}</span>
+                      <span className="text-muted-foreground">
+                        · σn = {s.normalStressTarget} kPa
+                      </span>
+                    </span>
+                  ))}
+                  {sortedSpecimens.length === 0 && (
+                    <span className="text-muted-foreground">Nenhum CP cadastrado.</span>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="mb-4">
+            <CardHeader
+              className="cursor-pointer select-none pb-2"
+              onClick={() => setIdOpen((v) => !v)}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {idOpen ? (
+                    <ChevronDown className="h-4 w-4" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4" />
+                  )}
+                  <CardTitle className="text-sm">Identificação da amostra</CardTitle>
+                </div>
+                <CardDescription className="text-xs">
+                  {sample.client || "—"} · {sample.workNumber || "—"} · {sample.borehole || "—"}
+                </CardDescription>
+              </div>
+            </CardHeader>
+            {idOpen && (
+              <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {([
+                  ["client", "Cliente"], ["workNumber", "Obra"], ["reportNumber", "Amostra"],
+                  ["borehole", "Furo"], ["depth", "Profundidade (m)"], ["local", "Local"],
+                  ["code", "Código"], ["os", "O.S."], ["revision", "Revisão"],
+                  ["technicalResp", "Responsável Técnico"],
+                  ["coordN", "Coord. N (m)"], ["coordE", "Coord. E (m)"], ["coordCota", "Cota (m)"],
+                ] as [keyof CDSample, string][]).map(([k, label]) => (
+                  <div key={k}>
+                    <Label className="text-xs">{label}</Label>
+                    <Input
+                      value={String(sample[k] ?? "")}
+                      onChange={(e) => updateSample(k, e.target.value)}
+                    />
+                  </div>
+                ))}
+                <div className="col-span-full">
+                  <Label className="text-xs">Descrição tátil-visual</Label>
+                  <Input value={sample.description} onChange={(e) => updateSample("description", e.target.value)} />
+                </div>
+                <div className="col-span-full">
+                  <Label className="text-xs">Descrição granulométrica</Label>
+                  <Input value={sample.granulometricDescription ?? ""} onChange={(e) => updateSample("granulometricDescription", e.target.value)} />
+                </div>
+              </CardContent>
+            )}
+          </Card>
+        )}
+
         {/* Abas Principais de Edição */}
         <Tabs value={tab} onValueChange={setTab} className="flex-1 overflow-hidden flex flex-col">
           <div className="flex items-center gap-2">
@@ -787,6 +992,148 @@ export function CDPage() {
           <div className="flex-1 overflow-auto mt-4 pr-1">
             {/* Aba 1: Amostra */}
             <TabsContent value="amostra" className="m-0 space-y-4">
+              {/* Propriedades e Condições do Ensaio */}
+              <Card>
+                <CardHeader className="py-3">
+                  <CardTitle className="text-sm font-medium">Propriedades e Condições do Ensaio</CardTitle>
+                </CardHeader>
+                <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  <div>
+                    <Label className="text-xs">Tipo / Condição do Ensaio</Label>
+                    <Select
+                      value={sample.testCondition}
+                      onValueChange={(v) => updateSample("testCondition", v as "inundado" | "natural")}
+                    >
+                      <SelectTrigger className="h-9 mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="inundado">Inundado — CDinun</SelectItem>
+                        <SelectItem value="natural">Natural (Umidade Natural) — CDnat</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-xs">Densidade dos Grãos (Gs)</Label>
+                    <Input
+                      type="number"
+                      step={0.01}
+                      value={sample.Gs}
+                      onChange={(e) => updateSample("Gs", parseFloat(e.target.value) || 0)}
+                      className="h-9 text-xs mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Geometria da Caixa</Label>
+                    <Select
+                      value={sample.geometry || "circular"}
+                      onValueChange={(v) => updateSample("geometry", v as "circular" | "quadrada")}
+                    >
+                      <SelectTrigger className="h-9 mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="circular">Circular (Ø nominal)</SelectItem>
+                        <SelectItem value="quadrada">Quadrada (Lado nominal)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="col-span-full grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div>
+                      <Label className="text-xs">Equipamento Utilizado</Label>
+                      <div className="mt-1">
+                        <PickerWithCreate
+                          kind="equipments"
+                          value={sample.equipment ?? ""}
+                          onChange={(v) => updateSample("equipment", v)}
+                          placeholder="Selecione o equipamento…"
+                          createLabel="Novo equipamento"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <Label className="text-xs">Dimensões Características (mm)</Label>
+                      <Input
+                        type="number"
+                        value={sample.dimensionMm || 60}
+                        onChange={(e) => updateSample("dimensionMm", parseFloat(e.target.value) || 0)}
+                        placeholder="Ex.: 60 mm"
+                        className="h-9 text-xs mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Condição da Amostra</Label>
+                      <Select
+                        value={sample.sampleState ?? "indeformada"}
+                        onValueChange={(v) =>
+                          updateSample("sampleState", v as "indeformada" | "compactada" | "recompactada")
+                        }
+                      >
+                        <SelectTrigger className="h-9 text-xs mt-1">
+                          <SelectValue placeholder="Selecione…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="indeformada">Indeformada</SelectItem>
+                          <SelectItem value="compactada">Compactada</SelectItem>
+                          <SelectItem value="recompactada">Recompactada</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {sample.sampleState === "indeformada" && (
+                    <div className="col-span-full sm:col-span-2">
+                      <Label className="text-xs">Tipo de Amostragem</Label>
+                      <Input
+                        value={sample.sampleType ?? ""}
+                        onChange={(e) => updateSample("sampleType", e.target.value)}
+                        placeholder="Ex.: Bloco indeformado, Tubo Shelby, Denison…"
+                        className="h-8 text-xs mt-1"
+                      />
+                    </div>
+                  )}
+
+                  {sample.sampleState === "compactada" && (
+                    <div className="col-span-full grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <Label className="text-xs">Energia de Compactação</Label>
+                        <Select
+                          value={sample.compactionEnergy ?? ""}
+                          onValueChange={(v) =>
+                            updateSample("compactionEnergy", v as "PN" | "PI" | "PM")
+                          }
+                        >
+                          <SelectTrigger className="h-8 text-xs mt-1">
+                            <SelectValue placeholder="Selecione a energia…" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="PN">Proctor Normal (PN)</SelectItem>
+                            <SelectItem value="PI">Proctor Intermediário (PI)</SelectItem>
+                            <SelectItem value="PM">Proctor Modificado (PM)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-xs">Grau de Compactação Alvo (GC %)</Label>
+                        <Input
+                          type="number"
+                          step={0.1}
+                          value={sample.compactionDegreePct ?? ""}
+                          onChange={(e) =>
+                            updateSample(
+                              "compactionDegreePct",
+                              e.target.value ? parseFloat(e.target.value) : undefined
+                            )
+                          }
+                          placeholder="Ex.: 95 %"
+                          className="h-8 text-xs mt-1"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between py-3">
                   <div>
@@ -1271,26 +1618,52 @@ export function CDPage() {
           </div>
         </div>
 
-        {/* Componente Invisível montado para rasterização do PDF (6 Páginas Estruturadas) */}
-        <div className="hidden">
-          <div ref={reportRef}>
-            <CDReportPage1 sample={sample} specimens={sortedSpecimens} totalPages={totalPages} />
-            <CDReportPage2 sample={sample} specimens={sortedSpecimens} results={results} totalPages={totalPages} />
-            <CDReportPage3 sample={sample} specimens={sortedSpecimens} results={results} totalPages={totalPages} />
-            <CDReportPage4 sample={sample} specimens={sortedSpecimens} results={results} envelope={envelope} totalPages={totalPages} />
-            {Array.from({ length: photoPagesCount }).map((_, pIdx) => (
-              <CDReportPage5
-                key={pIdx}
-                sample={sample}
-                specimens={sortedSpecimens}
-                photos={ctx?.photos || []}
-                pageIndex={pIdx}
-                totalPages={totalPages}
-              />
-            ))}
-            <CDReportPage6 sample={sample} totalPages={totalPages} />
-          </div>
+        {/* RELATÓRIO — cópia sempre montada para rasterização offscreen / impressão */}
+        <div
+          ref={reportRef}
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "210mm",
+            background: "#ffffff",
+            pointerEvents: "none",
+            zIndex: -9999,
+            opacity: 0,
+          }}
+          className="print-only-report mx-auto flex flex-col items-center gap-4"
+        >
+          <CDReportPage1 sample={sample} specimens={sortedSpecimens} totalPages={totalPages} />
+          <CDReportPage2 sample={sample} specimens={sortedSpecimens} results={results} totalPages={totalPages} />
+          <CDReportPage3 sample={sample} specimens={sortedSpecimens} results={results} totalPages={totalPages} />
+          <CDReportPage4 sample={sample} specimens={sortedSpecimens} results={results} envelope={envelope} totalPages={totalPages} />
+          {Array.from({ length: photoPagesCount }).map((_, pIdx) => (
+            <CDReportPage5
+              key={pIdx}
+              sample={sample}
+              specimens={sortedSpecimens}
+              photos={ctx?.photos || []}
+              pageIndex={pIdx}
+              totalPages={totalPages}
+            />
+          ))}
+          <CDReportPage6 sample={sample} totalPages={totalPages} />
         </div>
+        <style>{`
+          @media print {
+            .print-only-report {
+              position: static !important;
+              left: auto !important;
+              top: auto !important;
+              opacity: 1 !important;
+              z-index: 1 !important;
+              pointer-events: auto !important;
+            }
+            .print-only-report > div { page-break-after: always; break-after: page; margin: 0 !important; }
+            .print-only-report > div:last-child { page-break-after: auto; break-after: auto; }
+            .printable-report { box-shadow: none !important; }
+          }
+        `}</style>
 
         {/* Modal de Pré-visualização do Relatório Completo */}
         <Dialog open={reportOpen} onOpenChange={setReportOpen}>
@@ -1339,13 +1712,18 @@ export function CDPage() {
                 </div>
               </div>
             </div>
-            <DialogFooter className="px-6 py-4 border-t bg-background">
+            <DialogFooter className="px-6 py-4 border-t bg-background flex flex-wrap items-center justify-between gap-2">
               <Button variant="outline" onClick={() => setReportOpen(false)}>
                 Fechar
               </Button>
-              <Button onClick={() => handleSaveVersion()} disabled={saveBusy}>
-                <Download className="mr-2 h-4 w-4" /> Salvar Versão / Gerar PDF
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="secondary" onClick={handleGeneratePdf} disabled={pdfBusy}>
+                  <Download className="mr-2 h-4 w-4" /> {pdfBusy ? "Gerando PDF…" : "Baixar PDF"}
+                </Button>
+                <Button onClick={() => handleSaveVersion()} disabled={saveBusy}>
+                  <Send className="mr-2 h-4 w-4" /> {saveBusy ? "Salvando…" : "Salvar Versão / Enviar"}
+                </Button>
+              </div>
             </DialogFooter>
           </DialogContent>
         </Dialog>
