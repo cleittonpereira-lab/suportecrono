@@ -165,7 +165,7 @@ function getInitialData(): ProgramacaoData {
             data_fim: end.toISOString().split("T")[0],
             data_inicio_prevista: start.toISOString().split("T")[0],
             duracao_dias: "5",
-            data_inicio_real: status !== "planejado" ? start.toISOString().split("T")[0] : "",
+            data_inicio_real: status !== "programado" ? start.toISOString().split("T")[0] : "",
             data_fim_real: status === "concluido" ? end.toISOString().split("T")[0] : "",
             status,
             progresso: status === "concluido" ? "100" : status === "em_execucao" ? "50" : "0",

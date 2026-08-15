@@ -2799,22 +2799,23 @@ function ReportHeader({ sample, page, total }: { sample: SampleProps; page: numb
   return (
     <div className="border border-[#141414] text-[#141414]">
       {/* Faixa superior — logo + título normativo */}
-      <div className="flex items-center">
-        <div className="flex w-[24%] items-center justify-center border-r border-[#141414] px-2 py-1">
+      <div className="flex items-center px-2">
+        <div className="flex w-[27%] items-center justify-center px-4 py-2">
           <img
             src={logoAsset.url}
             alt="Suporte Infra"
             crossOrigin="anonymous"
-            className="h-12 w-auto object-contain"
+            className="h-10 w-auto max-w-full object-contain"
           />
         </div>
-        <div className="flex-1 px-2 py-1 text-center leading-tight">
+        <div className="w-[1px] self-stretch my-2 bg-[#141414]" />
+        <div className="flex-1 px-4 py-1.5 text-center leading-tight">
           <div className="text-[12px] font-bold underline">RELATÓRIO DE ENSAIO</div>
-          <div className="text-[12px] font-bold">ENSAIO DE ADENSAMENTO UNIDIMENSIONAL (EDOMÉTRICO)</div>
-          <div className="mt-0.5 text-[10px]">
+          <div className="text-[11.5px] font-bold">ENSAIO DE ADENSAMENTO UNIDIMENSIONAL (EDOMÉTRICO)</div>
+          <div className="mt-0.5 text-[9.5px]">
             ABNT NBR 16853/20 — Solo — Ensaio de adensamento unidimensional
           </div>
-          <div className="text-[10px] italic">
+          <div className="text-[9.5px] italic">
             ASTM D2435/D2435M-11 — Standard Test Methods for One-Dimensional Consolidation
             Properties of Soils Using Incremental Loading
           </div>

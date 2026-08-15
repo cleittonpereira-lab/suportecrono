@@ -101,20 +101,21 @@ export function ReportHeader({
   );
   return (
     <div className="border border-[#141414] text-[#141414]">
-      <div className="flex items-center">
-        <div className="flex w-[24%] items-center justify-center border-r border-[#141414] px-2 py-1">
+      <div className="flex items-center px-2">
+        <div className="flex w-[27%] items-center justify-center px-4 py-2">
           <img
             src={logoUrl}
             alt="Suporte Infra"
             crossOrigin="anonymous"
-            className="h-12 w-auto object-contain"
+            className="h-10 w-auto max-w-full object-contain"
           />
         </div>
-        <div className="flex-1 px-2 py-1 text-center leading-tight">
+        <div className="w-[1px] self-stretch my-2 bg-[#141414]" />
+        <div className="flex-1 px-4 py-1.5 text-center leading-tight">
           <div className="text-[12px] font-bold underline">RELATÓRIO DE ENSAIO</div>
-          <div className="text-[12px] font-bold">{title}</div>
+          <div className="text-[11.5px] font-bold">{title}</div>
           {norms.map((n, i) => (
-            <div key={i} className={`mt-0.5 text-[10px] ${n.italic ? "italic" : ""}`}>
+            <div key={i} className={`mt-0.5 text-[9.5px] ${n.italic ? "italic" : ""}`}>
               {n.text}
             </div>
           ))}

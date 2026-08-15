@@ -32,7 +32,7 @@ export function CDSetupPage({
             
             <div className="flex justify-between items-center text-[10px] border-b border-[#141414]/10 pb-1">
               <span className="text-[#141414]/70">Norma Adotada:</span>
-              <span className="font-medium text-[#141414]">ASTM D3080 / NBR 17144</span>
+              <span className="font-medium text-[#141414]">ASTM D3080:2023</span>
             </div>
             <div className="flex justify-between items-center text-[10px] border-b border-[#141414]/10 pb-1">
               <span className="text-[#141414]/70">Tipo da Amostra:</span>

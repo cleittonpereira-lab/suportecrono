@@ -770,7 +770,7 @@ function GanttPage() {
       })
       .join("");
 
-    const logoUrl = `${window.location.origin}${suporteLogoAsset.url}`;
+    const logoUrl = `${window.location.origin}${suporteLogoUrl}`;
     const logoImg = `<img src="${logoUrl}" alt="Suporte INFRA" style="height:44px;width:auto" onerror="this.style.display='none'"/>`;
 
     const totalWidth = INFO_W + gridWidth;
