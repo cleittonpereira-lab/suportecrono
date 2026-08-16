@@ -2671,6 +2671,58 @@ function AvgMeasureDialog({
 }
 
 /** Ficha de moldagem por CP — layout inspirado na planilha padrão do laboratório. */
+
+function PtNumInput({
+  value,
+  onChange,
+  className = "h-7 text-xs text-right font-mono",
+  placeholder,
+  disabled,
+}: {
+  value: number | null | undefined;
+  onChange: (val: number) => void;
+  className?: string;
+  placeholder?: string;
+  disabled?: boolean;
+}) {
+  const [localVal, setLocalVal] = useState(() =>
+    value == null || isNaN(value) ? "" : String(value).replace(".", ",")
+  );
+
+  useEffect(() => {
+    const formatted = value == null || isNaN(value) ? "" : String(value).replace(".", ",");
+    setLocalVal(formatted);
+  }, [value]);
+
+  return (
+    <Input
+      type="text"
+      inputMode="decimal"
+      value={localVal}
+      disabled={disabled}
+      placeholder={placeholder}
+      className={className}
+      onChange={(e) => {
+        const text = e.target.value;
+        setLocalVal(text);
+        const parsed = parseFloat(text.replace(",", "."));
+        if (!isNaN(parsed)) {
+          onChange(parsed);
+        } else if (text.trim() === "") {
+          onChange(0);
+        }
+      }}
+      onBlur={() => {
+        const parsed = parseFloat(localVal.replace(",", "."));
+        if (!isNaN(parsed)) {
+          setLocalVal(String(parsed).replace(".", ","));
+          onChange(parsed);
+        }
+      }}
+    />
+  );
+}
+
 function MoldagemFicha({
   cp,
   res,
@@ -2743,95 +2795,229 @@ function MoldagemFicha({
 
   return (
     <div className="space-y-3">
-      {/* Cápsulas de umidade — retrátil */}
-      <div className="rounded-md border border-border">
-        <button
-          type="button"
+      {/* CONTAINER RECOLHÍVEL: DETERMINAÇÃO DA UMIDADE (INICIAL E FINAL) */}
+      <Card className="border-primary/30 shadow-sm overflow-hidden">
+        <CardHeader
+          className="cursor-pointer select-none pb-2 pt-3 px-4 hover:bg-muted/40 transition-colors border-b border-border/40"
           onClick={onToggleCaps}
-          className="flex w-full items-center justify-between border-b border-border bg-muted/40 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide"
         >
-          <span className="flex items-center gap-2">
-            {capsOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            Etapa de Moldagem — cápsulas de umidade ({cp.displayId ?? cp.id})
-          </span>
-          <span className="text-[10px] font-normal text-muted-foreground">
-            Média w₀ = {fmt(res.w0Pct, 2)}%
-          </span>
-        </button>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {capsOpen ? (
+                <ChevronDown className="h-4 w-4 text-primary" />
+              ) : (
+                <ChevronRight className="h-4 w-4 text-primary" />
+              )}
+              <div>
+                <CardTitle className="text-sm font-bold text-primary flex items-center gap-2">
+                  <Beaker className="h-4 w-4" /> Determinação da Umidade da Amostra — Cápsulas (Inicial e Final) — {cp.displayId ?? cp.id}
+                </CardTitle>
+                <CardDescription className="text-[11px]">
+                  3 determinações com pesagens para cada etapa do ensaio (clique para recolher/expandir)
+                </CardDescription>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="text-xs font-semibold bg-background border-primary/30 text-primary">
+                w₀ Inicial = {fmt(res.w0Pct, 2)}%
+              </Badge>
+              <Badge variant="outline" className="text-xs font-semibold bg-background border-primary/30 text-primary">
+                w_f Final = {isFinite(wFinalEff) ? fmt(wFinalEff, 2) : "—"}%
+              </Badge>
+            </div>
+          </div>
+        </CardHeader>
+
         {capsOpen && (
-        <div className="overflow-x-auto p-3">
-          <table className="w-full border-collapse text-[11px]">
-            <thead className="bg-muted/30 text-muted-foreground">
-              <tr>
-                <th className="border border-border px-2 py-1 text-left">Cápsula</th>
-                <th className="border border-border px-2 py-1">1</th>
-                <th className="border border-border px-2 py-1">2</th>
-                <th className="border border-border px-2 py-1">3</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td className="border border-border px-2 py-1 font-medium">Tipo</td>
-                {caps.map((c, i) => (
-                  <td key={i} className="border border-border p-1">
-                    <Input className="h-7" value={c.tipo ?? ""} onChange={(e) => updateCap(i, { tipo: e.target.value })} />
-                  </td>
-                ))}
-              </tr>
-              <tr>
-                <td className="border border-border px-2 py-1 font-medium">Nº Cápsula</td>
-                {caps.map((c, i) => (
-                  <td key={i} className="border border-border p-1">
-                    <Input className="h-7" value={c.numero ?? ""} onChange={(e) => updateCap(i, { numero: e.target.value })} />
-                  </td>
-                ))}
-              </tr>
-              <tr>
-                <td className="border border-border px-2 py-1 font-medium">Tara (g)</td>
-                {caps.map((c, i) => (
-                  <td key={i} className="border border-border p-1">
-                    <MiniNum value={c.tara} step={0.01} onChange={(v) => updateCap(i, { tara: v })} />
-                  </td>
-                ))}
-              </tr>
-              <tr>
-                <td className="border border-border px-2 py-1 font-medium">Amostra Úmida + Tara (g)</td>
-                {caps.map((c, i) => (
-                  <td key={i} className="border border-border p-1">
-                    <MiniNum value={c.wet} step={0.01} onChange={(v) => updateCap(i, { wet: v })} />
-                  </td>
-                ))}
-              </tr>
-              <tr>
-                <td className="border border-border px-2 py-1 font-medium">Amostra Seca + Tara (g)</td>
-                {caps.map((c, i) => (
-                  <td key={i} className="border border-border p-1">
-                    <MiniNum value={c.dry} step={0.01} onChange={(v) => updateCap(i, { dry: v })} />
-                  </td>
-                ))}
-              </tr>
-              <tr className="bg-muted/20">
-                <td className="border border-border px-2 py-1 font-medium">Umidade (%)</td>
-                {caps.map((c, i) => {
-                  const w = wCap(c);
-                  return (
-                    <td key={i} className="border border-border px-2 py-1 text-center text-muted-foreground">
-                      {isFinite(w) ? fmt(w, 2) : "—"}
-                    </td>
-                  );
-                })}
-              </tr>
-              <tr className="bg-muted/40 font-semibold">
-                <td className="border border-border px-2 py-1">Média (%)</td>
-                <td className="border border-border px-2 py-1 text-center" colSpan={3}>
-                  {fmt(res.w0Pct, 2)}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+          <CardContent className="p-4 grid gap-4 md:grid-cols-2 bg-background">
+            {/* Cápsulas Iniciais (Moldagem) */}
+            <div className="border border-border/70 rounded-md p-3 bg-muted/10">
+              <div className="flex items-center justify-between pb-2 mb-2 border-b border-border/50">
+                <div className="font-bold text-xs text-primary">Umidade Inicial (Moldagem)</div>
+                <Badge variant="secondary" className="text-[11px] font-bold">
+                  Média w₀ = {fmt(res.w0Pct, 2)}%
+                </Badge>
+              </div>
+
+              <table className="w-full border-collapse text-xs">
+                <thead className="bg-muted/40 text-muted-foreground">
+                  <tr>
+                    <th className="border border-border p-1.5 text-left">Determinação</th>
+                    <th className="border border-border p-1.5 text-center w-24">Cápsula 1</th>
+                    <th className="border border-border p-1.5 text-center w-24">Cápsula 2</th>
+                    <th className="border border-border p-1.5 text-center w-24">Cápsula 3</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td className="border border-border p-1.5 font-medium">Tipo</td>
+                    {caps.slice(0, 3).map((c, i) => (
+                      <td key={i} className="border border-border p-1">
+                        <Input
+                          className="h-7 text-xs text-center"
+                          value={c.tipo ?? ""}
+                          onChange={(e) => updateCap(i, { tipo: e.target.value })}
+                          placeholder="M"
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="border border-border p-1.5 font-medium">Nº Cápsula</td>
+                    {caps.slice(0, 3).map((c, i) => (
+                      <td key={i} className="border border-border p-1">
+                        <Input
+                          className="h-7 text-xs text-center"
+                          value={c.numero ?? ""}
+                          onChange={(e) => updateCap(i, { numero: e.target.value })}
+                          placeholder={`#${i + 1}`}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="border border-border p-1.5 font-medium">Tara (g)</td>
+                    {caps.slice(0, 3).map((c, i) => (
+                      <td key={i} className="border border-border p-1">
+                        <PtNumInput
+                          value={c.tara}
+                          onChange={(v) => updateCap(i, { tara: v })}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="border border-border p-1.5 font-medium">Solo Úmido + Tara (g)</td>
+                    {caps.slice(0, 3).map((c, i) => (
+                      <td key={i} className="border border-border p-1">
+                        <PtNumInput
+                          value={c.wet}
+                          onChange={(v) => updateCap(i, { wet: v })}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="border border-border p-1.5 font-medium">Solo Seco + Tara (g)</td>
+                    {caps.slice(0, 3).map((c, i) => (
+                      <td key={i} className="border border-border p-1">
+                        <PtNumInput
+                          value={c.dry}
+                          onChange={(v) => updateCap(i, { dry: v })}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                  <tr className="bg-muted/30">
+                    <td className="border border-border p-1.5 font-medium">Umidade (%)</td>
+                    {caps.slice(0, 3).map((c, i) => {
+                      const w = wCap(c);
+                      return (
+                        <td key={i} className="border border-border p-1.5 text-right font-semibold">
+                          {isFinite(w) ? `${w.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%` : "—"}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {/* Cápsulas Finais (Pós-Ensaio) */}
+            <div className="border border-border/70 rounded-md p-3 bg-muted/10">
+              <div className="flex items-center justify-between pb-2 mb-2 border-b border-border/50">
+                <div className="font-bold text-xs text-primary">Umidade Final (Pós-Ensaio)</div>
+                <Badge variant="secondary" className="text-[11px] font-bold">
+                  Média w_f = {isFinite(wFinalEff) ? fmt(wFinalEff, 2) : "—"}%
+                </Badge>
+              </div>
+
+              <table className="w-full border-collapse text-xs">
+                <thead className="bg-muted/40 text-muted-foreground">
+                  <tr>
+                    <th className="border border-border p-1.5 text-left">Determinação</th>
+                    <th className="border border-border p-1.5 text-center w-24">Cápsula 1</th>
+                    <th className="border border-border p-1.5 text-center w-24">Cápsula 2</th>
+                    <th className="border border-border p-1.5 text-center w-24">Cápsula 3</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td className="border border-border p-1.5 font-medium">Tipo</td>
+                    {finalCaps.slice(0, 3).map((c, i) => (
+                      <td key={i} className="border border-border p-1">
+                        <Input
+                          className="h-7 text-xs text-center"
+                          value={c.tipo ?? ""}
+                          onChange={(e) => updateFinalCap(i, { tipo: e.target.value })}
+                          placeholder="F"
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="border border-border p-1.5 font-medium">Nº Cápsula</td>
+                    {finalCaps.slice(0, 3).map((c, i) => (
+                      <td key={i} className="border border-border p-1">
+                        <Input
+                          className="h-7 text-xs text-center"
+                          value={c.numero ?? ""}
+                          onChange={(e) => updateFinalCap(i, { numero: e.target.value })}
+                          placeholder={`#${i + 1}`}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="border border-border p-1.5 font-medium">Tara (g)</td>
+                    {finalCaps.slice(0, 3).map((c, i) => (
+                      <td key={i} className="border border-border p-1">
+                        <PtNumInput
+                          value={c.tara}
+                          onChange={(v) => updateFinalCap(i, { tara: v })}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="border border-border p-1.5 font-medium">Solo Úmido + Tara (g)</td>
+                    {finalCaps.slice(0, 3).map((c, i) => (
+                      <td key={i} className="border border-border p-1">
+                        <PtNumInput
+                          value={c.wet}
+                          onChange={(v) => updateFinalCap(i, { wet: v })}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="border border-border p-1.5 font-medium">Solo Seco + Tara (g)</td>
+                    {finalCaps.slice(0, 3).map((c, i) => (
+                      <td key={i} className="border border-border p-1">
+                        <PtNumInput
+                          value={c.dry}
+                          onChange={(v) => updateFinalCap(i, { dry: v })}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                  <tr className="bg-muted/30">
+                    <td className="border border-border p-1.5 font-medium">Umidade (%)</td>
+                    {finalCaps.slice(0, 3).map((c, i) => {
+                      const w = wCap(c);
+                      return (
+                        <td key={i} className="border border-border p-1.5 text-right font-semibold">
+                          {isFinite(w) ? `${w.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%` : "—"}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
         )}
-      </div>
+      </Card>
 
       {/* Geometria + programa — retrátil */}
       <div className="rounded-md border border-border">
