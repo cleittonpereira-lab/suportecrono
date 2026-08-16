@@ -27,7 +27,6 @@ const COLOR_BLACK = "FF141414";
 const COLOR_SECTION_BG = "FFD1D5DB"; // #d1d5db (SectionBar do PDF)
 const COLOR_SECTION_TEXT = "FF111827";
 const COLOR_BORDER = "FF141414"; // Borda preta clássica do laudo
-const COLOR_PHOTO_BG = "FFF8FAFC";
 
 const borderBlack: Partial<ExcelJS.Borders> = {
   top: { style: "thin", color: { argb: COLOR_BORDER } },
@@ -75,8 +74,9 @@ function addOfficialReportHeader(
   // Inserção do Logo no topo esquerdo (A1:B3)
   if (logoImageId !== null) {
     ws.addImage(logoImageId, {
-      tl: { col: 0.15, row: r - 0.9 },
-      ext: { width: 175, height: 46 },
+      tl: { col: 0.1, row: r - 1 },
+      br: { col: 2.1, row: r + 2 },
+      editAs: "twoCell",
     });
   }
 
@@ -221,37 +221,63 @@ function addOfficialReportFooter(
   startRow: number,
   assinaturaImageId: number | null
 ): number {
-  let r = startRow + 1;
+  let r = startRow + 2;
 
   const spDate = new Date().toLocaleDateString("pt-BR", { dateStyle: "long" });
 
-  ws.mergeCells(`A${r}:C${r + 3}`);
-  const fLeft = ws.getCell(`A${r}`);
+  const rTop = r;
+  const rBot = r + 4;
+
+  // Linhas com alturas fixas e limpas
+  ws.getRow(rTop).height = 22;
+  ws.getRow(rTop + 1).height = 22;
+  ws.getRow(rTop + 2).height = 16;
+  ws.getRow(rTop + 3).height = 16;
+  ws.getRow(rTop + 4).height = 16;
+
+  // Coluna Esquerda: A..C
+  ws.mergeCells(`A${rTop}:C${rBot}`);
+  const fLeft = ws.getCell(`A${rTop}`);
   fLeft.value = `São Paulo, ${spDate}\nContrato nº ${sample.workNumber || "—"} · Revisão ${sample.revision || "00"}\nOperador: ${sample.operator || "—"}  |  Digitado por: ${sample.typedBy || "—"}\nVerificado por: ${sample.verifiedBy || "Engº Cleitton Pereira"}\nGerente de Lab: Tecnº Geotécnico Carlos Christian da Silva`;
   fLeft.font = { name: "Calibri", size: 8.5, color: { argb: COLOR_BLACK } };
-  fLeft.alignment = { horizontal: "left", vertical: "top", wrapText: true };
+  fLeft.alignment = { horizontal: "left", vertical: "middle", wrapText: true };
 
-  ws.mergeCells(`D${r}:E${r + 3}`);
-  const fMid = ws.getCell(`D${r}`);
-  fMid.value = `\n\n\n______________________________________\nResponsável Técnico\n${sample.technicalResp || "Eng. Antônio Sérgio Damasco Penna - CREA 0600459308"}`;
-  fMid.font = { name: "Calibri", size: 8.5, bold: true, color: { argb: COLOR_BLACK } };
-  fMid.alignment = { horizontal: "center", vertical: "top", wrapText: true };
-
-  // Inserção da Assinatura do Maurício perfeitamente centralizada acima da linha
+  // Assinatura do Maurício centralizada em D..E
   if (assinaturaImageId !== null) {
     ws.addImage(assinaturaImageId, {
-      tl: { col: 3.45, row: r + 0.15 },
-      ext: { width: 130, height: 35 },
+      tl: { col: 3.2, row: rTop - 1 },
+      br: { col: 4.8, row: rTop + 1 },
+      editAs: "twoCell",
     });
   }
 
-  ws.mergeCells(`F${r}:G${r + 3}`);
-  const fRight = ws.getCell(`F${r}`);
+  // Linha e Texto de Responsável Técnico
+  ws.mergeCells(`D${rTop + 2}:E${rTop + 2}`);
+  const lineCell = ws.getCell(`D${rTop + 2}`);
+  lineCell.value = "______________________________________";
+  lineCell.font = { name: "Calibri", size: 8.5, bold: true, color: { argb: COLOR_BLACK } };
+  lineCell.alignment = { horizontal: "center", vertical: "bottom" };
+
+  ws.mergeCells(`D${rTop + 3}:E${rTop + 3}`);
+  const titleResp = ws.getCell(`D${rTop + 3}`);
+  titleResp.value = "Responsável Técnico";
+  titleResp.font = { name: "Calibri", size: 8, color: { argb: "FF475569" } };
+  titleResp.alignment = { horizontal: "center", vertical: "top" };
+
+  ws.mergeCells(`D${rTop + 4}:E${rTop + 4}`);
+  const nameResp = ws.getCell(`D${rTop + 4}`);
+  nameResp.value = sample.technicalResp || "Eng. Antônio Sérgio Damasco Penna - CREA 0600459308";
+  nameResp.font = { name: "Calibri", size: 8.5, bold: true, color: { argb: COLOR_BLACK } };
+  nameResp.alignment = { horizontal: "center", vertical: "top" };
+
+  // Coluna Direita: F..G (Nota)
+  ws.mergeCells(`F${rTop}:G${rBot}`);
+  const fRight = ws.getCell(`F${rTop}`);
   fRight.value = "NOTA:\nOs resultados apresentados referem-se exclusivamente à amostra ensaiada. A reprodução deste documento somente poderá ser feita na íntegra, após aprovação prévia e por escrito da empresa.";
   fRight.font = { name: "Calibri", size: 8, italic: true, color: { argb: "FF475569" } };
-  fRight.alignment = { horizontal: "left", vertical: "top", wrapText: true };
+  fRight.alignment = { horizontal: "left", vertical: "middle", wrapText: true };
 
-  r += 4;
+  r = rBot + 1;
 
   // Barra Institucional Preta Inferior
   ws.mergeCells(`A${r}:G${r}`);
@@ -453,15 +479,17 @@ export async function exportCDRawDataXlsx({
   ws1.getCell(`F${r1}`).border = borderBlack;
   r1++;
 
-  // Gráfico de Mohr-Coulomb
+  // Inserção do Gráfico de Mohr-Coulomb travado com twoCell de A a G
   if (mohrChartId !== null) {
     const chartStartRow = r1;
-    for (let i = 0; i < 20; i++) { ws1.getRow(r1).height = 17; r1++; }
+    const chartEndRow = r1 + 22;
+    for (let i = chartStartRow; i <= chartEndRow; i++) { ws1.getRow(i).height = 17; }
     ws1.addImage(mohrChartId, {
-      tl: { col: 0.05, row: chartStartRow - 0.9 },
-      ext: { width: 880, height: 340 },
+      tl: { col: 0, row: chartStartRow - 1 },
+      br: { col: 7, row: chartEndRow },
+      editAs: "twoCell",
     });
-    r1++;
+    r1 = chartEndRow + 2;
   }
 
   // 3. Tabela Resumo dos Resultados por CP
@@ -553,7 +581,7 @@ export async function exportCDRawDataXlsx({
   r1 = addOfficialReportFooter(ws1, sample, r1, assinaturaImageId);
 
   // =========================================================================
-  // ABA 2: CURVAS & GRÁFICOS
+  // ABA 2: CURVAS & GRÁFICOS (Com twoCell Lock)
   // =========================================================================
   const wsCharts = wb.addWorksheet("Curvas & Gráficos");
   wsCharts.columns = defaultColumns;
@@ -564,24 +592,28 @@ export async function exportCDRawDataXlsx({
 
   if (stressStrainId !== null) {
     rC = addSectionBar(wsCharts, rC, "Tensão Cisalhante (τ) vs. Deformação Horizontal (εh)");
-    const imgStart = rC;
-    for (let i = 0; i < 19; i++) { wsCharts.getRow(rC).height = 17; rC++; }
+    const g1Start = rC;
+    const g1End = rC + 20;
+    for (let i = g1Start; i <= g1End; i++) { wsCharts.getRow(i).height = 17; }
     wsCharts.addImage(stressStrainId, {
-      tl: { col: 0.05, row: imgStart - 0.9 },
-      ext: { width: 880, height: 320 },
+      tl: { col: 0, row: g1Start - 1 },
+      br: { col: 7, row: g1End },
+      editAs: "twoCell",
     });
-    rC++;
+    rC = g1End + 2;
   }
 
   if (volChangeId !== null) {
     rC = addSectionBar(wsCharts, rC, "Variação Volumétrica — Deslocamento Vertical (δv) vs. Deformação Horizontal (εh)");
-    const imgStart = rC;
-    for (let i = 0; i < 19; i++) { wsCharts.getRow(rC).height = 17; rC++; }
+    const g2Start = rC;
+    const g2End = rC + 20;
+    for (let i = g2Start; i <= g2End; i++) { wsCharts.getRow(i).height = 17; }
     wsCharts.addImage(volChangeId, {
-      tl: { col: 0.05, row: imgStart - 0.9 },
-      ext: { width: 880, height: 320 },
+      tl: { col: 0, row: g2Start - 1 },
+      br: { col: 7, row: g2End },
+      editAs: "twoCell",
     });
-    rC++;
+    rC = g2End + 2;
   }
 
   rC = addOfficialReportFooter(wsCharts, sample, rC, assinaturaImageId);
@@ -830,7 +862,7 @@ export async function exportCDRawDataXlsx({
 
       wsCP.mergeCells(`B${rCP}:C${rCP}`);
       wsCP.getCell(`B${rCP}`).value = v1;
-      wsCP.getCell(`B${rCP}`).font = { name: "Calibri", size: 9.5, bold: true };
+      wsCP.getCell(`B${rCP}`).font = { name: "Calibri", size: 9.5 };
       wsCP.getCell(`B${rCP}`).border = borderBlack;
       wsCP.getCell(`C${rCP}`).border = borderBlack;
 
@@ -842,7 +874,7 @@ export async function exportCDRawDataXlsx({
 
       wsCP.mergeCells(`F${rCP}:G${rCP}`);
       wsCP.getCell(`F${rCP}`).value = v2;
-      wsCP.getCell(`F${rCP}`).font = { name: "Calibri", size: 9.5, bold: true };
+      wsCP.getCell(`F${rCP}`).font = { name: "Calibri", size: 9.5 };
       wsCP.getCell(`F${rCP}`).border = borderBlack;
       wsCP.getCell(`G${rCP}`).border = borderBlack;
 
@@ -866,23 +898,29 @@ export async function exportCDRawDataXlsx({
 
   // SEÇÃO 1: FOTOS DE MOLDAGEM
   rPh = addSectionBar(wsPhotos, rPh, "Etapa de Moldagem / Aspecto Inicial");
-  const moldStartRow = rPh;
-  for (let i = 0; i < 11; i++) { wsPhotos.getRow(rPh).height = 16; rPh++; }
+  const mImgStart = rPh;
+  const mImgEnd = rPh + 13;
+  for (let i = mImgStart; i <= mImgEnd; i++) { wsPhotos.getRow(i).height = 16; }
 
   specimens.slice(0, 3).forEach((cp, i) => {
     const p = photos.find((x) => (x.specimenId === cp.id || x.specimenId === cp.displayId) && x.kind === "moldagem");
-    const colStart = i === 0 ? 0.1 : i === 1 ? 2.4 : 4.7;
-    const cellStart = i === 0 ? "A" : i === 1 ? "C" : "F";
-    const cellEnd = i === 0 ? "B" : i === 1 ? "E" : "G";
+    const colStart = i === 0 ? 0.05 : i === 1 ? 2.4 : 4.75;
+    const colEnd = i === 0 ? 2.3 : i === 1 ? 4.65 : 7.0;
 
     if (p && photoImageIds[p.id]) {
       wsPhotos.addImage(photoImageIds[p.id], {
-        tl: { col: colStart, row: moldStartRow - 0.8 },
-        ext: { width: 260, height: 160 },
+        tl: { col: colStart, row: mImgStart - 1 },
+        br: { col: colEnd, row: mImgEnd },
+        editAs: "twoCell",
       });
     }
+  });
 
-    // Legenda abaixo da foto
+  rPh = mImgEnd + 1;
+  wsPhotos.getRow(rPh).height = 18;
+  specimens.slice(0, 3).forEach((cp, i) => {
+    const cellStart = i === 0 ? "A" : i === 1 ? "C" : "F";
+    const cellEnd = i === 0 ? "B" : i === 1 ? "E" : "G";
     wsPhotos.mergeCells(`${cellStart}${rPh}:${cellEnd}${rPh}`);
     const legCell = wsPhotos.getCell(`${cellStart}${rPh}`);
     legCell.value = `${cp.displayId ?? cp.id} (σn = ${fmt(cp.normalStressTarget, 0)} kPa)`;
@@ -894,23 +932,29 @@ export async function exportCDRawDataXlsx({
 
   // SEÇÃO 2: FOTOS DE RUPTURA
   rPh = addSectionBar(wsPhotos, rPh, "Após Ruptura / Plano de Cisalhamento");
-  const rupStartRow = rPh;
-  for (let i = 0; i < 11; i++) { wsPhotos.getRow(rPh).height = 16; rPh++; }
+  const rupStart = rPh;
+  const rupEnd = rPh + 13;
+  for (let i = rupStart; i <= rupEnd; i++) { wsPhotos.getRow(i).height = 16; }
 
   specimens.slice(0, 3).forEach((cp, i) => {
     const p = photos.find((x) => (x.specimenId === cp.id || x.specimenId === cp.displayId) && x.kind === "ruptura");
-    const colStart = i === 0 ? 0.1 : i === 1 ? 2.4 : 4.7;
-    const cellStart = i === 0 ? "A" : i === 1 ? "C" : "F";
-    const cellEnd = i === 0 ? "B" : i === 1 ? "E" : "G";
+    const colStart = i === 0 ? 0.05 : i === 1 ? 2.4 : 4.75;
+    const colEnd = i === 0 ? 2.3 : i === 1 ? 4.65 : 7.0;
 
     if (p && photoImageIds[p.id]) {
       wsPhotos.addImage(photoImageIds[p.id], {
-        tl: { col: colStart, row: rupStartRow - 0.8 },
-        ext: { width: 260, height: 160 },
+        tl: { col: colStart, row: rupStart - 1 },
+        br: { col: colEnd, row: rupEnd },
+        editAs: "twoCell",
       });
     }
+  });
 
-    // Legenda abaixo da foto
+  rPh = rupEnd + 1;
+  wsPhotos.getRow(rPh).height = 18;
+  specimens.slice(0, 3).forEach((cp, i) => {
+    const cellStart = i === 0 ? "A" : i === 1 ? "C" : "F";
+    const cellEnd = i === 0 ? "B" : i === 1 ? "E" : "G";
     wsPhotos.mergeCells(`${cellStart}${rPh}:${cellEnd}${rPh}`);
     const legCell = wsPhotos.getCell(`${cellStart}${rPh}`);
     legCell.value = `${cp.displayId ?? cp.id} (σn = ${fmt(cp.normalStressTarget, 0)} kPa)`;
