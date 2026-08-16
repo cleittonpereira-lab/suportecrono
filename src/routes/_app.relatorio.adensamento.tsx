@@ -90,7 +90,7 @@ import {
   requestApproval,
   verifyApproval,
   decideApproval,
-  fetchApprovals,
+  listApprovals,
 } from "@/lib/approvals.functions";
 
 export const Route = createFileRoute("/_app/relatorio/adensamento")({
@@ -274,8 +274,8 @@ export function AdensamentoPage() {
     }
 
     try {
-      const res = await fetchApprovals({ data: { scopeId } });
-      if (res?.approvals) setApprovals(res.approvals);
+      const res = await listApprovals({ data: { scopeId } });
+      if (Array.isArray(res)) setApprovals(res as ApprovalRow[]);
     } catch (e) {
       console.warn("Erro ao buscar aprovações:", e);
     }
