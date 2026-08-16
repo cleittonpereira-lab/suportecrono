@@ -708,7 +708,7 @@ export function CDReportPage5({
                 const p = photos.find((x) => x.specimenId === cp.id && x.kind === "moldagem");
                 return (
                   <div key={cp.id} className="flex flex-col items-center justify-center h-full">
-                    <div className="w-full h-32 bg-black/5 border border-[#141414]/20 rounded overflow-hidden flex items-center justify-center">
+                    <div className="w-full aspect-[4/3] max-h-36 bg-black/5 border border-[#141414]/20 rounded overflow-hidden flex items-center justify-center">
                       {p ? (
                         <img
                           src={p.dataUrl}
@@ -739,7 +739,7 @@ export function CDReportPage5({
                 const p = photos.find((x) => x.specimenId === cp.id && x.kind === "ruptura");
                 return (
                   <div key={cp.id} className="flex flex-col items-center justify-center h-full">
-                    <div className="w-full h-32 bg-black/5 border border-[#141414]/20 rounded overflow-hidden flex items-center justify-center">
+                    <div className="w-full aspect-[4/3] max-h-36 bg-black/5 border border-[#141414]/20 rounded overflow-hidden flex items-center justify-center">
                       {p ? (
                         <img
                           src={p.dataUrl}

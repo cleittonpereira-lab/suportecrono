@@ -21,21 +21,27 @@ export function PhotoUploader({ title, kind, photos, onAdd, onRemove, onUpdate }
   const inputRef = useRef<HTMLInputElement>(null);
   const items = photos.filter((p) => p.kind === kind);
   const [editing, setEditing] = useState<Photo | null>(null);
+  const [pendingUpload, setPendingUpload] = useState<{
+    dataUrl: string;
+    bytes: number;
+    kind: Photo["kind"];
+    caption?: string;
+  } | null>(null);
 
   const handleFiles = async (files: FileList | null) => {
     if (!files || !files.length) return;
-    for (const f of Array.from(files)) {
-      if (!f.type.startsWith("image/")) {
-        toast.error(`${f.name}: não é uma imagem`);
-        continue;
-      }
-      try {
-        const { dataUrl, bytes } = await fileToCompressedDataUrl(f);
-        onAdd({ dataUrl, bytes, kind, caption: "" });
-      } catch (e) {
-        toast.error(`Falha ao processar ${f.name}`);
-        console.error(e);
-      }
+    const f = files[0];
+    if (!f.type.startsWith("image/")) {
+      toast.error(`${f.name}: não é uma imagem`);
+      return;
+    }
+    try {
+      const { dataUrl, bytes } = await fileToCompressedDataUrl(f);
+      // Abre o diálogo de recorte 4:3 imediatamente para ajuste fino
+      setPendingUpload({ dataUrl, bytes, kind, caption: "" });
+    } catch (e) {
+      toast.error(`Falha ao processar ${f.name}`);
+      console.error(e);
     }
     if (inputRef.current) inputRef.current.value = "";
   };
@@ -56,13 +62,12 @@ export function PhotoUploader({ title, kind, photos, onAdd, onRemove, onUpdate }
           onClick={() => inputRef.current?.click()}
         >
           <ImagePlus className="mr-1 h-3 w-3" />
-          Adicionar
+          Adicionar Foto (4:3)
         </Button>
         <input
           ref={inputRef}
           type="file"
           accept="image/*"
-          multiple
           className="hidden"
           onChange={(e) => void handleFiles(e.target.files)}
         />
@@ -70,17 +75,17 @@ export function PhotoUploader({ title, kind, photos, onAdd, onRemove, onUpdate }
 
       {items.length === 0 ? (
         <p className="py-6 text-center text-xs text-muted-foreground">
-          Nenhuma foto — clique em "Adicionar" para incluir.
+          Nenhuma foto — clique em "Adicionar Foto (4:3)" para incluir e enquadrar.
         </p>
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           {items.map((p) => (
-            <div key={p.id} className="group relative overflow-hidden rounded-md border border-border">
-              <div className="flex aspect-[3/4] w-full items-center justify-center bg-black/5">
+            <div key={p.id} className="group relative overflow-hidden rounded-md border border-border bg-card">
+              <div className="flex aspect-[4/3] w-full items-center justify-center bg-black/5 overflow-hidden">
                 <img
                   src={p.dataUrl}
                   alt={p.caption ?? title}
-                  className="max-h-full max-w-full object-contain"
+                  className="h-full w-full object-cover"
                 />
               </div>
               <div className="p-2">
@@ -100,7 +105,7 @@ export function PhotoUploader({ title, kind, photos, onAdd, onRemove, onUpdate }
                       className="h-6 px-1.5"
                       onClick={() => setEditing(p)}
                       aria-label="Editar recorte"
-                      title="Editar recorte (3:4)"
+                      title="Editar recorte (4:3)"
                     >
                       <Crop className="h-3 w-3" />
                     </Button>
@@ -121,6 +126,28 @@ export function PhotoUploader({ title, kind, photos, onAdd, onRemove, onUpdate }
         </div>
       )}
 
+      {/* Recorte ao fazer upload de nova imagem */}
+      {pendingUpload && (
+        <PhotoCropDialog
+          open={!!pendingUpload}
+          photo={{
+            id: "pending",
+            dataUrl: pendingUpload.dataUrl,
+            bytes: pendingUpload.bytes,
+            kind: pendingUpload.kind,
+            caption: pendingUpload.caption,
+            createdAt: new Date().toISOString(),
+          }}
+          onOpenChange={(o) => { if (!o) setPendingUpload(null); }}
+          onSave={(dataUrl, bytes) => {
+            onAdd({ dataUrl, bytes, kind: pendingUpload.kind, caption: pendingUpload.caption });
+            setPendingUpload(null);
+            toast.success("Foto adicionada e enquadrada em 4:3 com sucesso!");
+          }}
+        />
+      )}
+
+      {/* Recorte de foto já existente */}
       {editing && (
         <PhotoCropDialog
           open={!!editing}
@@ -129,7 +156,7 @@ export function PhotoUploader({ title, kind, photos, onAdd, onRemove, onUpdate }
           onSave={(dataUrl, bytes) => {
             onUpdate(editing.id, { dataUrl, bytes });
             setEditing(null);
-            toast.success("Recorte salvo");
+            toast.success("Recorte atualizado");
           }}
         />
       )}
