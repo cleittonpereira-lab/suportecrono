@@ -210,6 +210,7 @@ const SyncRevisionInput = z.object({
   }),
   rev: z.number().int().nonnegative(),
   pdf: z.object({ filename: z.string(), base64: z.string() }),
+  xlsx: z.object({ filename: z.string(), base64: z.string() }).optional(),
   dadosJson: z.string().optional(),
   fotos: z.array(PhotoSchema).default([]),
   manifest: z.record(z.string(), z.unknown()).default({}),
@@ -324,6 +325,19 @@ export const syncRevisionToDrive = createServerFn({ method: "POST" })
         overwrite: true,
       });
       await logSync({ scope_id: data.scopeId, rev: data.rev, kind: "pdf", status: "ok", file_id: pdfId, folder_id: relFolderId });
+
+      let xlsxId: string | null = null;
+      if (data.xlsx) {
+        const xlsxBytes = b64ToBytes(data.xlsx.base64);
+        xlsxId = await uploadBytes({
+          parentId: relFolderId,
+          name: data.xlsx.filename,
+          mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          bytes: xlsxBytes,
+          overwrite: true,
+        });
+        await logSync({ scope_id: data.scopeId, rev: data.rev, kind: "xlsx", status: "ok", file_id: xlsxId, folder_id: relFolderId });
+      }
 
       let dadosId: string | null = null;
       if (data.dadosJson) {

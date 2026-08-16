@@ -341,9 +341,9 @@ function applyA4PageSetup(ws: ExcelJS.Worksheet) {
 }
 
 /**
- * Exporta o arquivo Excel completo no formato idêntico ao relatório em PDF.
+ * Constrói a planilha Excel completa no formato executivo espelho do laudo em PDF.
  */
-export async function exportCDRawDataXlsx({
+export async function buildCDRawDataXlsxWorkbook({
   sample,
   specimens,
   results,
@@ -351,8 +351,7 @@ export async function exportCDRawDataXlsx({
   photos = [],
   approvals = [],
   versions = [],
-  filename,
-}: ExportCDParams) {
+}: ExportCDParams): Promise<ExcelJS.Workbook> {
   const wb = new ExcelJS.Workbook();
   wb.creator = "Suporte INFRA";
   wb.lastModifiedBy = sample.operator || "Suporte INFRA";
@@ -1121,7 +1120,33 @@ export async function exportCDRawDataXlsx({
 
   rPh = addOfficialReportFooter(wsPhotos, sample, rPh, assinaturaImageId);
 
-  // Download do arquivo XLSX
+  return wb;
+}
+
+/**
+ * Gera o arquivo XLSX e retorna o nome e conteúdo em base64 (para upload no Drive).
+ */
+export async function getCDRawDataXlsxBase64(params: ExportCDParams): Promise<{ filename: string; base64: string }> {
+  const wb = await buildCDRawDataXlsxWorkbook(params);
+  const buffer = await wb.xlsx.writeBuffer();
+  let binary = "";
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  const base64 = btoa(binary);
+  const baseName = (params.sample.workNumber || params.sample.os || params.sample.reportNumber || "relatorio")
+    .toString()
+    .replace(/[^\w-]+/g, "_");
+  const filename = params.filename || `Cisalhamento-Direto_${baseName}_LaudoExecutivo.xlsx`;
+  return { filename, base64 };
+}
+
+/**
+ * Exporta e baixa o arquivo Excel diretamente no navegador.
+ */
+export async function exportCDRawDataXlsx(params: ExportCDParams) {
+  const wb = await buildCDRawDataXlsxWorkbook(params);
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1129,10 +1154,10 @@ export async function exportCDRawDataXlsx({
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  const baseName = (sample.workNumber || sample.os || sample.reportNumber || "relatorio")
+  const baseName = (params.sample.workNumber || params.sample.os || params.sample.reportNumber || "relatorio")
     .toString()
     .replace(/[^\w-]+/g, "_");
-  a.download = filename || `Cisalhamento-Direto_${baseName}_LaudoExecutivo.xlsx`;
+  a.download = params.filename || `Cisalhamento-Direto_${baseName}_LaudoExecutivo.xlsx`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

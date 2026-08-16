@@ -1,9 +1,8 @@
-/**
- * Cliente do sync com Google Drive — chama as server functions.
- */
 import { syncRevisionToDrive, getDriveSyncStatus } from "@/lib/driveSync.functions";
 import { blobToBase64 } from "@/lib/drive-sync-client";
-import type { CDSample, CDSpecimen } from "./types";
+import type { CDSample, CDSpecimen, CDSpecimenResults, CDEnvelopeResult } from "./types";
+import { getCDRawDataXlsxBase64 } from "./exportXlsx";
+import type { Photo } from "@/features/lab/types";
 
 export { blobToBase64 };
 
@@ -21,6 +20,9 @@ export interface SyncRevisionArgs {
   pdfFilename: string;
   sample: CDSample;
   specimens: CDSpecimen[];
+  results?: CDSpecimenResults[];
+  envelope?: CDEnvelopeResult | null;
+  photos?: Photo[];
   ctxOs?: { numero?: string; cliente?: string };
   ctxAmostra?: { code?: string; descricao?: string };
   ctxEnsaio?: { tipo?: string; nome?: string };
@@ -37,6 +39,26 @@ export async function syncRevision(args: SyncRevisionArgs) {
     savedAt: new Date().toISOString(),
     rev: args.rev,
   };
+
+  // Gera a planilha XLSX completa para salvar no Google Drive
+  let xlsxPayload: { filename: string; base64: string } | undefined = undefined;
+  try {
+    if (args.results) {
+      const base = (args.sample.workNumber || args.sample.os || "relatorio").toString().replace(/[^\w-]+/g, "_");
+      const filename = `Cisalhamento-Direto_${base}_Rev-${String(args.rev).padStart(2, "0")}.xlsx`;
+      xlsxPayload = await getCDRawDataXlsxBase64({
+        sample: args.sample,
+        specimens: args.specimens,
+        results: args.results,
+        envelope: args.envelope || null,
+        photos: args.photos,
+        filename,
+      });
+    }
+  } catch (err) {
+    console.warn("Falha ao gerar XLSX para sync no Drive:", err);
+  }
+
   return syncRevisionToDrive({
     data: {
       scopeId: args.scopeId,
@@ -54,6 +76,7 @@ export async function syncRevision(args: SyncRevisionArgs) {
       },
       rev: args.rev,
       pdf: { filename: args.pdfFilename, base64: pdfBase64 },
+      xlsx: xlsxPayload,
       dadosJson: JSON.stringify(dados),
       fotos: args.fotos ?? [],
       manifest: {
