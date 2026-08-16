@@ -226,6 +226,7 @@ export function CDPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [isVerificador, setIsVerificador] = useState(false);
   const [wfStatus, setWfStatus] = useState("digitacao");
+  const [previewVersionPdf, setPreviewVersionPdf] = useState<{ url: string; title: string } | null>(null);
   const reportRef = useRef<HTMLDivElement>(null);
 
   // Diálogo de confirmação
@@ -689,6 +690,59 @@ export function CDPage() {
               {decideBusy ? "Processando..." : "Confirmar"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Pop-up Modal de Visualização do Relatório PDF */}
+      <Dialog
+        open={previewVersionPdf !== null}
+        onOpenChange={(open) => {
+          if (!open && previewVersionPdf) {
+            URL.revokeObjectURL(previewVersionPdf.url);
+            setPreviewVersionPdf(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-5xl w-[95vw] h-[90vh] flex flex-col p-4 sm:p-6 gap-3">
+          <DialogHeader className="flex flex-row items-center justify-between pb-2 border-b">
+            <div>
+              <DialogTitle className="text-base font-bold flex items-center gap-2">
+                <FileText className="h-5 w-5 text-primary" />
+                {previewVersionPdf?.title}
+              </DialogTitle>
+              <DialogDescription className="text-xs">
+                Visualização do laudo técnico oficial em alta resolução
+              </DialogDescription>
+            </div>
+            <div className="flex items-center gap-2 mr-6">
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 text-xs"
+                onClick={() => {
+                  if (!previewVersionPdf) return;
+                  const a = document.createElement("a");
+                  a.href = previewVersionPdf.url;
+                  a.download = previewVersionPdf.title;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                }}
+              >
+                <Download className="h-3.5 w-3.5" /> Baixar PDF
+              </Button>
+            </div>
+          </DialogHeader>
+
+          <div className="flex-1 w-full h-full min-h-0 bg-muted/40 rounded-lg overflow-hidden border">
+            {previewVersionPdf && (
+              <iframe
+                src={`${previewVersionPdf.url}#toolbar=1&navpanes=0`}
+                className="w-full h-full border-0 rounded-lg"
+                title="Pré-visualização do Relatório"
+              />
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -1619,8 +1673,11 @@ export function CDPage() {
                                     size="sm"
                                     variant="outline"
                                     className="gap-1 text-xs"
-                                    onClick={() => viewVersion(v)}
-                                    title="Visualizar PDF"
+                                    onClick={() => {
+                                      const url = URL.createObjectURL(v.pdfBlob);
+                                      setPreviewVersionPdf({ url, title: v.filename });
+                                    }}
+                                    title="Visualizar PDF em Pop-up"
                                   >
                                     <Eye className="h-3 w-3" /> Visualizar
                                   </Button>
