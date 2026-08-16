@@ -2921,6 +2921,17 @@ function MoldagemFicha({
                   </tr>
                 </tbody>
               </table>
+
+              <div className="mt-3 pt-2 border-t border-border/40 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-[11px] text-muted-foreground">Massa inicial CP (g)</Label>
+                  <PtNumInput
+                    value={cp.m0}
+                    onChange={(v) => onCp({ m0: v })}
+                    className="h-8 text-xs text-right font-mono"
+                  />
+                </div>
+              </div>
             </div>
 
             {/* Cápsulas Finais (Pós-Ensaio) */}
@@ -3014,11 +3025,30 @@ function MoldagemFicha({
                   </tr>
                 </tbody>
               </table>
+
+              <div className="mt-3 pt-2 border-t border-border/40 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-[11px] text-muted-foreground">Massa final CP m_f (g)</Label>
+                  <PtNumInput
+                    value={cp.mFinal ?? 0}
+                    onChange={(v) => onCp({ mFinal: v })}
+                    className="h-8 text-xs text-right font-mono"
+                  />
+                </div>
+                <div>
+                  <Label className="text-[11px] text-muted-foreground">Umidade final w_f (%)</Label>
+                  <PtNumInput
+                    value={cp.wFinalPct ?? 0}
+                    onChange={(v) => onCp({ wFinalPct: v })}
+                    className="h-8 text-xs text-right font-mono"
+                  />
+                </div>
+              </div>
             </div>
           </CardContent>
         )}
       </Card>
-
+      
       {/* Geometria + programa — retrátil */}
       <div className="rounded-md border border-border">
         <button
@@ -3137,130 +3167,7 @@ function MoldagemFicha({
         )}
       </div>
 
-      {/* Etapa Final — cápsulas de umidade + massa final + índices finais */}
-      <div className="rounded-md border border-border">
-        <button
-          type="button"
-          onClick={onToggleFinal}
-          className="flex w-full items-center justify-between border-b border-border bg-muted/40 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide"
-        >
-          <span className="flex items-center gap-2">
-            {finalOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            Etapa Final — Cápsulas de umidade e Massa final do CP ({cp.displayId ?? cp.id})
-          </span>
-          <span className="text-[10px] font-normal text-muted-foreground">
-            {isFinite(wFinalEff) ? `w_f = ${fmt(wFinalEff, 2)}%` : "sem dados"}
-            {mFinal > 0 ? ` · m_f = ${fmt(mFinal, 2)} g` : ""}
-          </span>
-        </button>
-        {finalOpen && (
-          <div className="space-y-3 p-3">
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-[11px]">
-                <thead className="bg-muted/30 text-muted-foreground">
-                  <tr>
-                    <th className="border border-border px-2 py-1 text-left">Cápsula (final)</th>
-                    <th className="border border-border px-2 py-1">1</th>
-                    <th className="border border-border px-2 py-1">2</th>
-                    <th className="border border-border px-2 py-1">3</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td className="border border-border px-2 py-1 font-medium">Tipo</td>
-                    {finalCaps.map((c, i) => (
-                      <td key={i} className="border border-border p-1">
-                        <Input className="h-7" value={c.tipo ?? ""} onChange={(e) => updateFinalCap(i, { tipo: e.target.value })} />
-                      </td>
-                    ))}
-                  </tr>
-                  <tr>
-                    <td className="border border-border px-2 py-1 font-medium">Nº Cápsula</td>
-                    {finalCaps.map((c, i) => (
-                      <td key={i} className="border border-border p-1">
-                        <Input className="h-7" value={c.numero ?? ""} onChange={(e) => updateFinalCap(i, { numero: e.target.value })} />
-                      </td>
-                    ))}
-                  </tr>
-                  <tr>
-                    <td className="border border-border px-2 py-1 font-medium">Tara (g)</td>
-                    {finalCaps.map((c, i) => (
-                      <td key={i} className="border border-border p-1">
-                        <MiniNum value={c.tara} step={0.01} onChange={(v) => updateFinalCap(i, { tara: v })} />
-                      </td>
-                    ))}
-                  </tr>
-                  <tr>
-                    <td className="border border-border px-2 py-1 font-medium">Amostra Úmida + Tara (g)</td>
-                    {finalCaps.map((c, i) => (
-                      <td key={i} className="border border-border p-1">
-                        <MiniNum value={c.wet} step={0.01} onChange={(v) => updateFinalCap(i, { wet: v })} />
-                      </td>
-                    ))}
-                  </tr>
-                  <tr>
-                    <td className="border border-border px-2 py-1 font-medium">Amostra Seca + Tara (g)</td>
-                    {finalCaps.map((c, i) => (
-                      <td key={i} className="border border-border p-1">
-                        <MiniNum value={c.dry} step={0.01} onChange={(v) => updateFinalCap(i, { dry: v })} />
-                      </td>
-                    ))}
-                  </tr>
-                  <tr className="bg-muted/20">
-                    <td className="border border-border px-2 py-1 font-medium">Umidade final (%)</td>
-                    {finalCaps.map((c, i) => {
-                      const w = wCap(c);
-                      return (
-                        <td key={i} className="border border-border px-2 py-1 text-center text-muted-foreground">
-                          {isFinite(w) ? fmt(w, 2) : "—"}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                  <tr className="bg-muted/40 font-semibold">
-                    <td className="border border-border px-2 py-1">Média w_f (%)</td>
-                    <td className="border border-border px-2 py-1 text-center" colSpan={3}>
-                      {isFinite(wFinalFromCaps) ? fmt(wFinalFromCaps, 2) : "—"}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <NumField
-                label="Massa final CP m_f (g)"
-                value={cp.mFinal ?? 0}
-                step={0.01}
-                onChange={(v) => onCp({ mFinal: v })}
-              />
-              <NumField
-                label="Umidade final w_f (%)"
-                value={cp.wFinalPct ?? 0}
-                step={0.01}
-                onChange={(v) => onCp({ wFinalPct: v })}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 rounded-md bg-muted/20 p-3 text-[11px] sm:grid-cols-4">
-              <Stat label="w_f médio" value={isFinite(wFinalEff) ? `${fmt(wFinalEff, 2)} %` : "—"} />
-              <Stat label="Massa seca final m_sd,f" value={isFinite(dryMassFinal) ? `${fmt(dryMassFinal, 2)} g` : "—"} />
-              <Stat label="Δw = w_f − w₀" value={isFinite(deltaW) ? `${fmt(deltaW, 2)} %` : "—"} />
-              <Stat label="ΔM = m_f − m₀" value={isFinite(deltaM) ? `${fmt(deltaM, 2)} g` : "—"} />
-              <Stat label="e_f (≈ após aden.)" value={fmt(eFinalApprox, 3)} />
-              <Stat label="Sr_f" value={isFinite(SrFinal) ? `${fmt(SrFinal, 1)} %` : "—"} />
-              <Stat label="γ_nat,f" value={isFinite(gammaNatFinal) ? `${fmt(gammaNatFinal, 2)} kN/m³` : "—"} />
-              <Stat label="γ_d,f" value={isFinite(gammaDryFinal) ? `${fmt(gammaDryFinal, 2)} kN/m³` : "—"} />
-            </div>
-            <p className="text-[10px] text-muted-foreground">
-              Equações: w = (m_água / m_sólidos) · 100; m_sd = m / (1 + w); γ = (m / V) · g;
-              e = (G_s · γ_w / γ_d) − 1; S_r = (w · G_s) / e. Volume final adotado como V_c (pós-adensamento);
-              variação de volume no cisalhamento não é considerada aqui.
-            </p>
-          </div>
-        )}
       </div>
-    </div>
   );
 }
 
