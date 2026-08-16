@@ -174,6 +174,7 @@ export function AdensamentoPage() {
   const [stages, setStages] = useState<Stage[]>(() => seedStages(phys.e0, sample.ringHeight));
   const [selectedStage, setSelectedStage] = useState(5);
   const [activeTab, setActiveTab] = useState<string>("ficha");
+  const [capsOpen, setCapsOpen] = useState(true);
   const [methodCas, setMethodCas] = useState(true);
   const [methodPS, setMethodPS] = useState(true);
   const [showResults, setShowResults] = useState(true);
@@ -954,75 +955,61 @@ export function AdensamentoPage() {
                   </div>
                   <div>
                     <Label className="text-xs text-muted-foreground">Diâmetro D₀ (mm)</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
+                    <PtNumInput
                       value={sample.ringDiameter}
-                      onChange={(e) => updateSample("ringDiameter", parseFloat(e.target.value) || 0)}
+                      onChange={(v) => updateSample("ringDiameter", v)}
                       className="h-8 text-xs mt-0.5"
                     />
                   </div>
                   <div>
                     <Label className="text-xs text-muted-foreground">Altura H₀ (mm)</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
+                    <PtNumInput
                       value={sample.ringHeight}
-                      onChange={(e) => updateSample("ringHeight", parseFloat(e.target.value) || 0)}
+                      onChange={(v) => updateSample("ringHeight", v)}
                       className="h-8 text-xs mt-0.5"
                     />
                   </div>
                   <div>
                     <Label className="text-xs text-muted-foreground">Densidade Grãos Gs</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
+                    <PtNumInput
                       value={sample.Gs}
-                      onChange={(e) => updateSample("Gs", parseFloat(e.target.value) || 0)}
+                      onChange={(v) => updateSample("Gs", v)}
                       className="h-8 text-xs mt-0.5"
                     />
                   </div>
 
                   <div>
                     <Label className="text-xs text-muted-foreground">Massa do Anel (g)</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      placeholder="Ex.: 110.45"
+                    <PtNumInput
                       value={sample.ringMass ?? 110.45}
-                      onChange={(e) => updateSample("ringMass", parseFloat(e.target.value) || 0)}
+                      onChange={(v) => updateSample("ringMass", v)}
+                      placeholder="Ex.: 110,45"
                       className="h-8 text-xs mt-0.5"
                     />
                   </div>
                   <div>
                     <Label className="text-xs text-muted-foreground">Anel + CP Inicial (g)</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      placeholder="Ex.: 256.80"
+                    <PtNumInput
                       value={sample.wetMassInitialWithRing ?? (sample.ringMass ? sample.ringMass + sample.wetMassInitial : sample.wetMassInitial + 110.45)}
-                      onChange={(e) => updateSample("wetMassInitialWithRing", parseFloat(e.target.value) || 0)}
+                      onChange={(v) => updateSample("wetMassInitialWithRing", v)}
+                      placeholder="Ex.: 256,80"
                       className="h-8 text-xs mt-0.5"
                     />
                   </div>
                   <div>
                     <Label className="text-xs text-muted-foreground">Anel + CP Final (g)</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      placeholder="Ex.: 254.10"
+                    <PtNumInput
                       value={sample.wetMassFinalWithRing ?? (sample.ringMass ? sample.ringMass + sample.wetMassFinal : sample.wetMassFinal + 110.45)}
-                      onChange={(e) => updateSample("wetMassFinalWithRing", parseFloat(e.target.value) || 0)}
+                      onChange={(v) => updateSample("wetMassFinalWithRing", v)}
+                      placeholder="Ex.: 254,10"
                       className="h-8 text-xs mt-0.5"
                     />
                   </div>
                   <div>
                     <Label className="text-xs text-muted-foreground">Massa Esp. Água (g/cm³)</Label>
-                    <Input
-                      type="number"
-                      step="0.001"
+                    <PtNumInput
                       value={sample.rhoW || 1.0}
-                      onChange={(e) => updateSample("rhoW", parseFloat(e.target.value) || 1.0)}
+                      onChange={(v) => updateSample("rhoW", v)}
                       className="h-8 text-xs mt-0.5"
                     />
                   </div>
@@ -1049,296 +1036,293 @@ export function AdensamentoPage() {
               </Card>
             </div>
 
-            {/* TABELAS DE CÁPSULAS DE UMIDADE (3 CÁPSULAS INICIAIS E 3 FINAIS) */}
-            <div className="grid gap-4 md:grid-cols-2">
-              {/* Cápsulas Iniciais (Moldagem) */}
-              <Card>
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
+            {/* CONTAINER RECOLHÍVEL: DETERMINAÇÃO DA UMIDADE (INICIAL E FINAL) */}
+            <Card className="border-primary/30 shadow-sm overflow-hidden">
+              <CardHeader
+                className="cursor-pointer select-none pb-2 pt-3 px-4 hover:bg-muted/40 transition-colors border-b border-border/40"
+                onClick={() => setCapsOpen((v) => !v)}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {capsOpen ? (
+                      <ChevronDown className="h-4 w-4 text-primary" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4 text-primary" />
+                    )}
                     <div>
-                      <CardTitle className="text-sm font-bold text-primary">
-                        Determinação da Umidade Inicial (Moldagem)
+                      <CardTitle className="text-sm font-bold text-primary flex items-center gap-2">
+                        <Beaker className="h-4 w-4" /> Determinação da Umidade da Amostra — Cápsulas (Inicial e Final)
                       </CardTitle>
-                      <CardDescription className="text-xs">
-                        3 determinações com cápsulas para cálculo de w₀
+                      <CardDescription className="text-[11px]">
+                        3 determinações com pesagens para cada etapa do ensaio (clique para recolher/expandir)
                       </CardDescription>
                     </div>
-                    <Badge variant="outline" className="text-xs font-bold bg-primary/5 text-primary border-primary/30">
-                      Média w₀ = {fmt(phys.wi, 2)}%
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-xs font-semibold bg-background border-primary/30 text-primary">
+                      w₀ Inicial = {fmt(phys.wi, 2)}%
+                    </Badge>
+                    <Badge variant="outline" className="text-xs font-semibold bg-background border-primary/30 text-primary">
+                      w_f Final = {fmt(phys.wf, 2)}%
                     </Badge>
                   </div>
-                </CardHeader>
-                <CardContent className="overflow-x-auto">
-                  <table className="w-full border-collapse text-xs">
-                    <thead className="bg-muted/40 text-muted-foreground">
-                      <tr>
-                        <th className="border border-border p-1.5 text-left">Determinação</th>
-                        <th className="border border-border p-1.5 text-center w-24">Cápsula 1</th>
-                        <th className="border border-border p-1.5 text-center w-24">Cápsula 2</th>
-                        <th className="border border-border p-1.5 text-center w-24">Cápsula 3</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td className="border border-border p-1.5 font-medium">Nº Cápsula</td>
-                        {[0, 1, 2].map((i) => {
-                          const cap = sample.capsules?.[i] ?? { numero: `C-${i + 1}`, tara: 15.2, wet: 45.3, dry: 35.2 };
-                          return (
-                            <td key={i} className="border border-border p-1">
-                              <Input
-                                value={cap.numero ?? `C-${i + 1}`}
-                                onChange={(e) => {
-                                  const caps = [...(sample.capsules ?? [
-                                    { numero: "C-01", tara: 15.2, wet: 45.3, dry: 35.2 },
-                                    { numero: "C-02", tara: 14.8, wet: 44.9, dry: 34.8 },
-                                    { numero: "C-03", tara: 15.5, wet: 46.1, dry: 35.8 },
-                                  ])];
-                                  caps[i] = { ...caps[i], numero: e.target.value };
-                                  updateSample("capsules", caps);
-                                }}
-                                className="h-7 text-xs text-center"
-                              />
-                            </td>
-                          );
-                        })}
-                      </tr>
-                      <tr>
-                        <td className="border border-border p-1.5 font-medium">Tara da Cápsula (g)</td>
-                        {[0, 1, 2].map((i) => {
-                          const cap = sample.capsules?.[i] ?? { numero: `C-${i + 1}`, tara: 15.2 + i * 0.3, wet: 45.3, dry: 35.2 };
-                          return (
-                            <td key={i} className="border border-border p-1">
-                              <Input
-                                type="number"
-                                step="0.01"
-                                value={cap.tara}
-                                onChange={(e) => {
-                                  const caps = [...(sample.capsules ?? [
-                                    { numero: "C-01", tara: 15.2, wet: 45.3, dry: 35.2 },
-                                    { numero: "C-02", tara: 14.8, wet: 44.9, dry: 34.8 },
-                                    { numero: "C-03", tara: 15.5, wet: 46.1, dry: 35.8 },
-                                  ])];
-                                  caps[i] = { ...caps[i], tara: parseFloat(e.target.value) || 0 };
-                                  updateSample("capsules", caps);
-                                }}
-                                className="h-7 text-xs text-right font-mono"
-                              />
-                            </td>
-                          );
-                        })}
-                      </tr>
-                      <tr>
-                        <td className="border border-border p-1.5 font-medium">Solo Úmido + Tara (g)</td>
-                        {[0, 1, 2].map((i) => {
-                          const cap = sample.capsules?.[i] ?? { numero: `C-${i + 1}`, tara: 15.2, wet: 45.3 + i * 0.4, dry: 35.2 };
-                          return (
-                            <td key={i} className="border border-border p-1">
-                              <Input
-                                type="number"
-                                step="0.01"
-                                value={cap.wet}
-                                onChange={(e) => {
-                                  const caps = [...(sample.capsules ?? [
-                                    { numero: "C-01", tara: 15.2, wet: 45.3, dry: 35.2 },
-                                    { numero: "C-02", tara: 14.8, wet: 44.9, dry: 34.8 },
-                                    { numero: "C-03", tara: 15.5, wet: 46.1, dry: 35.8 },
-                                  ])];
-                                  caps[i] = { ...caps[i], wet: parseFloat(e.target.value) || 0 };
-                                  updateSample("capsules", caps);
-                                }}
-                                className="h-7 text-xs text-right font-mono"
-                              />
-                            </td>
-                          );
-                        })}
-                      </tr>
-                      <tr>
-                        <td className="border border-border p-1.5 font-medium">Solo Seco + Tara (g)</td>
-                        {[0, 1, 2].map((i) => {
-                          const cap = sample.capsules?.[i] ?? { numero: `C-${i + 1}`, tara: 15.2, wet: 45.3, dry: 35.2 + i * 0.3 };
-                          return (
-                            <td key={i} className="border border-border p-1">
-                              <Input
-                                type="number"
-                                step="0.01"
-                                value={cap.dry}
-                                onChange={(e) => {
-                                  const caps = [...(sample.capsules ?? [
-                                    { numero: "C-01", tara: 15.2, wet: 45.3, dry: 35.2 },
-                                    { numero: "C-02", tara: 14.8, wet: 44.9, dry: 34.8 },
-                                    { numero: "C-03", tara: 15.5, wet: 46.1, dry: 35.8 },
-                                  ])];
-                                  caps[i] = { ...caps[i], dry: parseFloat(e.target.value) || 0 };
-                                  updateSample("capsules", caps);
-                                }}
-                                className="h-7 text-xs text-right font-mono"
-                              />
-                            </td>
-                          );
-                        })}
-                      </tr>
-                      <tr className="bg-muted/30">
-                        <td className="border border-border p-1.5 font-medium">Umidade (%)</td>
-                        {[0, 1, 2].map((i) => {
-                          const cap = sample.capsules?.[i] ?? { tara: 15.2, wet: 45.3, dry: 35.2 };
-                          const ms = cap.dry - cap.tara;
-                          const w = ms > 0 ? ((cap.wet - cap.dry) / ms) * 100 : NaN;
-                          return (
-                            <td key={i} className="border border-border p-1.5 text-right font-semibold">
-                              {isFinite(w) ? `${w.toFixed(2)}%` : "—"}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    </tbody>
-                  </table>
-                </CardContent>
-              </Card>
+                </div>
+              </CardHeader>
 
-              {/* Cápsulas Finais (Pós-Ensaio) */}
-              <Card>
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle className="text-sm font-bold text-primary">
-                        Determinação da Umidade Final (Pós-Ensaio)
-                      </CardTitle>
-                      <CardDescription className="text-xs">
-                        3 determinações com cápsulas para cálculo de w_f
-                      </CardDescription>
+              {capsOpen && (
+                <CardContent className="p-4 grid gap-4 md:grid-cols-2 bg-background">
+                  {/* Cápsulas Iniciais (Moldagem) */}
+                  <div className="border border-border/70 rounded-md p-3 bg-muted/10">
+                    <div className="flex items-center justify-between pb-2 mb-2 border-b border-border/50">
+                      <div className="font-bold text-xs text-primary">Umidade Inicial (Moldagem)</div>
+                      <Badge variant="secondary" className="text-[11px] font-bold">
+                        Média w₀ = {fmt(phys.wi, 2)}%
+                      </Badge>
                     </div>
-                    <Badge variant="outline" className="text-xs font-bold bg-primary/5 text-primary border-primary/30">
-                      Média w_f = {fmt(phys.wf, 2)}%
-                    </Badge>
+
+                    <table className="w-full border-collapse text-xs">
+                      <thead className="bg-muted/40 text-muted-foreground">
+                        <tr>
+                          <th className="border border-border p-1.5 text-left">Determinação</th>
+                          <th className="border border-border p-1.5 text-center w-24">Cápsula 1</th>
+                          <th className="border border-border p-1.5 text-center w-24">Cápsula 2</th>
+                          <th className="border border-border p-1.5 text-center w-24">Cápsula 3</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td className="border border-border p-1.5 font-medium">Nº Cápsula</td>
+                          {[0, 1, 2].map((i) => {
+                            const cap = sample.capsules?.[i] ?? { numero: `C-${i + 1}`, tara: 15.2, wet: 45.3, dry: 35.2 };
+                            return (
+                              <td key={i} className="border border-border p-1">
+                                <Input
+                                  value={cap.numero ?? `C-${i + 1}`}
+                                  onChange={(e) => {
+                                    const caps = [...(sample.capsules ?? [
+                                      { numero: "C-01", tara: 15.2, wet: 45.3, dry: 35.2 },
+                                      { numero: "C-02", tara: 14.8, wet: 44.9, dry: 34.8 },
+                                      { numero: "C-03", tara: 15.5, wet: 46.1, dry: 35.8 },
+                                    ])];
+                                    caps[i] = { ...caps[i], numero: e.target.value };
+                                    updateSample("capsules", caps);
+                                  }}
+                                  className="h-7 text-xs text-center"
+                                />
+                              </td>
+                            );
+                          })}
+                        </tr>
+                        <tr>
+                          <td className="border border-border p-1.5 font-medium">Tara (g)</td>
+                          {[0, 1, 2].map((i) => {
+                            const cap = sample.capsules?.[i] ?? { numero: `C-${i + 1}`, tara: 15.2 + i * 0.3, wet: 45.3, dry: 35.2 };
+                            return (
+                              <td key={i} className="border border-border p-1">
+                                <PtNumInput
+                                  value={cap.tara}
+                                  onChange={(v) => {
+                                    const caps = [...(sample.capsules ?? [
+                                      { numero: "C-01", tara: 15.2, wet: 45.3, dry: 35.2 },
+                                      { numero: "C-02", tara: 14.8, wet: 44.9, dry: 34.8 },
+                                      { numero: "C-03", tara: 15.5, wet: 46.1, dry: 35.8 },
+                                    ])];
+                                    caps[i] = { ...caps[i], tara: v };
+                                    updateSample("capsules", caps);
+                                  }}
+                                />
+                              </td>
+                            );
+                          })}
+                        </tr>
+                        <tr>
+                          <td className="border border-border p-1.5 font-medium">Solo Úmido + Tara (g)</td>
+                          {[0, 1, 2].map((i) => {
+                            const cap = sample.capsules?.[i] ?? { numero: `C-${i + 1}`, tara: 15.2, wet: 45.3 + i * 0.4, dry: 35.2 };
+                            return (
+                              <td key={i} className="border border-border p-1">
+                                <PtNumInput
+                                  value={cap.wet}
+                                  onChange={(v) => {
+                                    const caps = [...(sample.capsules ?? [
+                                      { numero: "C-01", tara: 15.2, wet: 45.3, dry: 35.2 },
+                                      { numero: "C-02", tara: 14.8, wet: 44.9, dry: 34.8 },
+                                      { numero: "C-03", tara: 15.5, wet: 46.1, dry: 35.8 },
+                                    ])];
+                                    caps[i] = { ...caps[i], wet: v };
+                                    updateSample("capsules", caps);
+                                  }}
+                                />
+                              </td>
+                            );
+                          })}
+                        </tr>
+                        <tr>
+                          <td className="border border-border p-1.5 font-medium">Solo Seco + Tara (g)</td>
+                          {[0, 1, 2].map((i) => {
+                            const cap = sample.capsules?.[i] ?? { numero: `C-${i + 1}`, tara: 15.2, wet: 45.3, dry: 35.2 + i * 0.3 };
+                            return (
+                              <td key={i} className="border border-border p-1">
+                                <PtNumInput
+                                  value={cap.dry}
+                                  onChange={(v) => {
+                                    const caps = [...(sample.capsules ?? [
+                                      { numero: "C-01", tara: 15.2, wet: 45.3, dry: 35.2 },
+                                      { numero: "C-02", tara: 14.8, wet: 44.9, dry: 34.8 },
+                                      { numero: "C-03", tara: 15.5, wet: 46.1, dry: 35.8 },
+                                    ])];
+                                    caps[i] = { ...caps[i], dry: v };
+                                    updateSample("capsules", caps);
+                                  }}
+                                />
+                              </td>
+                            );
+                          })}
+                        </tr>
+                        <tr className="bg-muted/30">
+                          <td className="border border-border p-1.5 font-medium">Umidade (%)</td>
+                          {[0, 1, 2].map((i) => {
+                            const cap = sample.capsules?.[i] ?? { tara: 15.2, wet: 45.3, dry: 35.2 };
+                            const ms = cap.dry - cap.tara;
+                            const w = ms > 0 && cap.wet >= cap.dry ? ((cap.wet - cap.dry) / ms) * 100 : NaN;
+                            return (
+                              <td key={i} className="border border-border p-1.5 text-right font-semibold">
+                                {isFinite(w) ? `${w.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%` : "—"}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      </tbody>
+                    </table>
                   </div>
-                </CardHeader>
-                <CardContent className="overflow-x-auto">
-                  <table className="w-full border-collapse text-xs">
-                    <thead className="bg-muted/40 text-muted-foreground">
-                      <tr>
-                        <th className="border border-border p-1.5 text-left">Determinação</th>
-                        <th className="border border-border p-1.5 text-center w-24">Cápsula 1</th>
-                        <th className="border border-border p-1.5 text-center w-24">Cápsula 2</th>
-                        <th className="border border-border p-1.5 text-center w-24">Cápsula 3</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td className="border border-border p-1.5 font-medium">Nº Cápsula</td>
-                        {[0, 1, 2].map((i) => {
-                          const cap = sample.finalCapsules?.[i] ?? { numero: `CF-${i + 1}`, tara: 14.9, wet: 43.8, dry: 34.6 };
-                          return (
-                            <td key={i} className="border border-border p-1">
-                              <Input
-                                value={cap.numero ?? `CF-${i + 1}`}
-                                onChange={(e) => {
-                                  const caps = [...(sample.finalCapsules ?? [
-                                    { numero: "CF-01", tara: 14.9, wet: 43.8, dry: 34.6 },
-                                    { numero: "CF-02", tara: 15.1, wet: 44.2, dry: 34.9 },
-                                    { numero: "CF-03", tara: 15.3, wet: 44.5, dry: 35.1 },
-                                  ])];
-                                  caps[i] = { ...caps[i], numero: e.target.value };
-                                  updateSample("finalCapsules", caps);
-                                }}
-                                className="h-7 text-xs text-center"
-                              />
-                            </td>
-                          );
-                        })}
-                      </tr>
-                      <tr>
-                        <td className="border border-border p-1.5 font-medium">Tara da Cápsula (g)</td>
-                        {[0, 1, 2].map((i) => {
-                          const cap = sample.finalCapsules?.[i] ?? { numero: `CF-${i + 1}`, tara: 14.9 + i * 0.2, wet: 43.8, dry: 34.6 };
-                          return (
-                            <td key={i} className="border border-border p-1">
-                              <Input
-                                type="number"
-                                step="0.01"
-                                value={cap.tara}
-                                onChange={(e) => {
-                                  const caps = [...(sample.finalCapsules ?? [
-                                    { numero: "CF-01", tara: 14.9, wet: 43.8, dry: 34.6 },
-                                    { numero: "CF-02", tara: 15.1, wet: 44.2, dry: 34.9 },
-                                    { numero: "CF-03", tara: 15.3, wet: 44.5, dry: 35.1 },
-                                  ])];
-                                  caps[i] = { ...caps[i], tara: parseFloat(e.target.value) || 0 };
-                                  updateSample("finalCapsules", caps);
-                                }}
-                                className="h-7 text-xs text-right font-mono"
-                              />
-                            </td>
-                          );
-                        })}
-                      </tr>
-                      <tr>
-                        <td className="border border-border p-1.5 font-medium">Solo Úmido + Tara (g)</td>
-                        {[0, 1, 2].map((i) => {
-                          const cap = sample.finalCapsules?.[i] ?? { numero: `CF-${i + 1}`, tara: 14.9, wet: 43.8 + i * 0.4, dry: 34.6 };
-                          return (
-                            <td key={i} className="border border-border p-1">
-                              <Input
-                                type="number"
-                                step="0.01"
-                                value={cap.wet}
-                                onChange={(e) => {
-                                  const caps = [...(sample.finalCapsules ?? [
-                                    { numero: "CF-01", tara: 14.9, wet: 43.8, dry: 34.6 },
-                                    { numero: "CF-02", tara: 15.1, wet: 44.2, dry: 34.9 },
-                                    { numero: "CF-03", tara: 15.3, wet: 44.5, dry: 35.1 },
-                                  ])];
-                                  caps[i] = { ...caps[i], wet: parseFloat(e.target.value) || 0 };
-                                  updateSample("finalCapsules", caps);
-                                }}
-                                className="h-7 text-xs text-right font-mono"
-                              />
-                            </td>
-                          );
-                        })}
-                      </tr>
-                      <tr>
-                        <td className="border border-border p-1.5 font-medium">Solo Seco + Tara (g)</td>
-                        {[0, 1, 2].map((i) => {
-                          const cap = sample.finalCapsules?.[i] ?? { numero: `CF-${i + 1}`, tara: 14.9, wet: 43.8, dry: 34.6 + i * 0.3 };
-                          return (
-                            <td key={i} className="border border-border p-1">
-                              <Input
-                                type="number"
-                                step="0.01"
-                                value={cap.dry}
-                                onChange={(e) => {
-                                  const caps = [...(sample.finalCapsules ?? [
-                                    { numero: "CF-01", tara: 14.9, wet: 43.8, dry: 34.6 },
-                                    { numero: "CF-02", tara: 15.1, wet: 44.2, dry: 34.9 },
-                                    { numero: "CF-03", tara: 15.3, wet: 44.5, dry: 35.1 },
-                                  ])];
-                                  caps[i] = { ...caps[i], dry: parseFloat(e.target.value) || 0 };
-                                  updateSample("finalCapsules", caps);
-                                }}
-                                className="h-7 text-xs text-right font-mono"
-                              />
-                            </td>
-                          );
-                        })}
-                      </tr>
-                      <tr className="bg-muted/30">
-                        <td className="border border-border p-1.5 font-medium">Umidade (%)</td>
-                        {[0, 1, 2].map((i) => {
-                          const cap = sample.finalCapsules?.[i] ?? { tara: 14.9, wet: 43.8, dry: 34.6 };
-                          const ms = cap.dry - cap.tara;
-                          const w = ms > 0 ? ((cap.wet - cap.dry) / ms) * 100 : NaN;
-                          return (
-                            <td key={i} className="border border-border p-1.5 text-right font-semibold">
-                              {isFinite(w) ? `${w.toFixed(2)}%` : "—"}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    </tbody>
-                  </table>
+
+                  {/* Cápsulas Finais (Pós-Ensaio) */}
+                  <div className="border border-border/70 rounded-md p-3 bg-muted/10">
+                    <div className="flex items-center justify-between pb-2 mb-2 border-b border-border/50">
+                      <div className="font-bold text-xs text-primary">Umidade Final (Pós-Ensaio)</div>
+                      <Badge variant="secondary" className="text-[11px] font-bold">
+                        Média w_f = {fmt(phys.wf, 2)}%
+                      </Badge>
+                    </div>
+
+                    <table className="w-full border-collapse text-xs">
+                      <thead className="bg-muted/40 text-muted-foreground">
+                        <tr>
+                          <th className="border border-border p-1.5 text-left">Determinação</th>
+                          <th className="border border-border p-1.5 text-center w-24">Cápsula 1</th>
+                          <th className="border border-border p-1.5 text-center w-24">Cápsula 2</th>
+                          <th className="border border-border p-1.5 text-center w-24">Cápsula 3</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td className="border border-border p-1.5 font-medium">Nº Cápsula</td>
+                          {[0, 1, 2].map((i) => {
+                            const cap = sample.finalCapsules?.[i] ?? { numero: `CF-${i + 1}`, tara: 14.9, wet: 43.8, dry: 34.6 };
+                            return (
+                              <td key={i} className="border border-border p-1">
+                                <Input
+                                  value={cap.numero ?? `CF-${i + 1}`}
+                                  onChange={(e) => {
+                                    const caps = [...(sample.finalCapsules ?? [
+                                      { numero: "CF-01", tara: 14.9, wet: 43.8, dry: 34.6 },
+                                      { numero: "CF-02", tara: 15.1, wet: 44.2, dry: 34.9 },
+                                      { numero: "CF-03", tara: 15.3, wet: 44.5, dry: 35.1 },
+                                    ])];
+                                    caps[i] = { ...caps[i], numero: e.target.value };
+                                    updateSample("finalCapsules", caps);
+                                  }}
+                                  className="h-7 text-xs text-center"
+                                />
+                              </td>
+                            );
+                          })}
+                        </tr>
+                        <tr>
+                          <td className="border border-border p-1.5 font-medium">Tara (g)</td>
+                          {[0, 1, 2].map((i) => {
+                            const cap = sample.finalCapsules?.[i] ?? { numero: `CF-${i + 1}`, tara: 14.9 + i * 0.2, wet: 43.8, dry: 34.6 };
+                            return (
+                              <td key={i} className="border border-border p-1">
+                                <PtNumInput
+                                  value={cap.tara}
+                                  onChange={(v) => {
+                                    const caps = [...(sample.finalCapsules ?? [
+                                      { numero: "CF-01", tara: 14.9, wet: 43.8, dry: 34.6 },
+                                      { numero: "CF-02", tara: 15.1, wet: 44.2, dry: 34.9 },
+                                      { numero: "CF-03", tara: 15.3, wet: 44.5, dry: 35.1 },
+                                    ])];
+                                    caps[i] = { ...caps[i], tara: v };
+                                    updateSample("finalCapsules", caps);
+                                  }}
+                                />
+                              </td>
+                            );
+                          })}
+                        </tr>
+                        <tr>
+                          <td className="border border-border p-1.5 font-medium">Solo Úmido + Tara (g)</td>
+                          {[0, 1, 2].map((i) => {
+                            const cap = sample.finalCapsules?.[i] ?? { numero: `CF-${i + 1}`, tara: 14.9, wet: 43.8 + i * 0.4, dry: 34.6 };
+                            return (
+                              <td key={i} className="border border-border p-1">
+                                <PtNumInput
+                                  value={cap.wet}
+                                  onChange={(v) => {
+                                    const caps = [...(sample.finalCapsules ?? [
+                                      { numero: "CF-01", tara: 14.9, wet: 43.8, dry: 34.6 },
+                                      { numero: "CF-02", tara: 15.1, wet: 44.2, dry: 34.9 },
+                                      { numero: "CF-03", tara: 15.3, wet: 44.5, dry: 35.1 },
+                                    ])];
+                                    caps[i] = { ...caps[i], wet: v };
+                                    updateSample("finalCapsules", caps);
+                                  }}
+                                />
+                              </td>
+                            );
+                          })}
+                        </tr>
+                        <tr>
+                          <td className="border border-border p-1.5 font-medium">Solo Seco + Tara (g)</td>
+                          {[0, 1, 2].map((i) => {
+                            const cap = sample.finalCapsules?.[i] ?? { numero: `CF-${i + 1}`, tara: 14.9, wet: 43.8, dry: 34.6 + i * 0.3 };
+                            return (
+                              <td key={i} className="border border-border p-1">
+                                <PtNumInput
+                                  value={cap.dry}
+                                  onChange={(v) => {
+                                    const caps = [...(sample.finalCapsules ?? [
+                                      { numero: "CF-01", tara: 14.9, wet: 43.8, dry: 34.6 },
+                                      { numero: "CF-02", tara: 15.1, wet: 44.2, dry: 34.9 },
+                                      { numero: "CF-03", tara: 15.3, wet: 44.5, dry: 35.1 },
+                                    ])];
+                                    caps[i] = { ...caps[i], dry: v };
+                                    updateSample("finalCapsules", caps);
+                                  }}
+                                />
+                              </td>
+                            );
+                          })}
+                        </tr>
+                        <tr className="bg-muted/30">
+                          <td className="border border-border p-1.5 font-medium">Umidade (%)</td>
+                          {[0, 1, 2].map((i) => {
+                            const cap = sample.finalCapsules?.[i] ?? { tara: 14.9, wet: 43.8, dry: 34.6 };
+                            const ms = cap.dry - cap.tara;
+                            const w = ms > 0 && cap.wet >= cap.dry ? ((cap.wet - cap.dry) / ms) * 100 : NaN;
+                            return (
+                              <td key={i} className="border border-border p-1.5 text-right font-semibold">
+                                {isFinite(w) ? `${w.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%` : "—"}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
                 </CardContent>
-              </Card>
-            </div>
+              )}
+            </Card>
 
             {/* ÍNDICES FÍSICOS CALCULADOS */}
             <Card>
@@ -1865,6 +1849,58 @@ export function AdensamentoPage() {
         )}
       </div>
     </div>
+  );
+}
+
+
+function PtNumInput({
+  value,
+  onChange,
+  className = "h-7 text-xs text-right font-mono",
+  placeholder,
+  disabled,
+}: {
+  value: number | null | undefined;
+  onChange: (val: number) => void;
+  className?: string;
+  placeholder?: string;
+  disabled?: boolean;
+}) {
+  const [localVal, setLocalVal] = useState(() =>
+    value == null || isNaN(value) ? "" : String(value).replace(".", ",")
+  );
+
+  useEffect(() => {
+    const formatted = value == null || isNaN(value) ? "" : String(value).replace(".", ",");
+    setLocalVal(formatted);
+  }, [value]);
+
+  return (
+    <Input
+      type="text"
+      inputMode="decimal"
+      value={localVal}
+      disabled={disabled}
+      placeholder={placeholder}
+      className={className}
+      onChange={(e) => {
+        const text = e.target.value;
+        setLocalVal(text);
+        const parsed = parseFloat(text.replace(",", "."));
+        if (!isNaN(parsed)) {
+          onChange(parsed);
+        } else if (text.trim() === "") {
+          onChange(0);
+        }
+      }}
+      onBlur={() => {
+        const parsed = parseFloat(localVal.replace(",", "."));
+        if (!isNaN(parsed)) {
+          setLocalVal(String(parsed).replace(".", ","));
+          onChange(parsed);
+        }
+      }}
+    />
   );
 }
 
