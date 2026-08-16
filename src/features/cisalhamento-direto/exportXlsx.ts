@@ -59,7 +59,7 @@ async function getImageBase64(url: string): Promise<string | null> {
 }
 
 /**
- * Adiciona o Cabeçalho Oficial Idêntico ao PDF com Alturas de Linhas Amplas e Respiro
+ * Adiciona o Cabeçalho Oficial Idêntico ao PDF com Alturas e Posicionamentos Precisos
  */
 function addOfficialReportHeader(
   ws: ExcelJS.Worksheet,
@@ -72,16 +72,16 @@ function addOfficialReportHeader(
 ): number {
   let r = startRow;
 
-  // Inserção do Logo com proporção natural
+  // Inserção do Logo Suporte no topo esquerdo (A1:B3)
   if (logoImageId !== null) {
     ws.addImage(logoImageId, {
       tl: { col: 0.15, row: r - 0.9 },
-      ext: { width: 175, height: 50 },
+      ext: { width: 170, height: 46 },
       editAs: "oneCell",
     });
   }
 
-  // Título Central do Laudo
+  // Título Central do Laudo (C1:G3)
   ws.mergeCells(`C${r}:G${r}`);
   const t1 = ws.getCell(`C${r}`);
   t1.value = "RELATÓRIO DE ENSAIO";
@@ -119,14 +119,14 @@ function addOfficialReportHeader(
     }
   }
 
-  // Tabela Cadastral Idêntica ao PDF (Altura 25pt em todas as linhas)
+  // Tabela Cadastral Idêntica ao PDF (Altura 24pt)
   const addHeaderField = (
     l1: string, v1: any,
     l2: string, v2: any,
     l3: string, v3: any
   ) => {
     const row = ws.getRow(r);
-    row.height = 25;
+    row.height = 24;
 
     // Coluna 1
     ws.getCell(`A${r}`).value = l1;
@@ -172,7 +172,7 @@ function addOfficialReportHeader(
   }
 
   // Descrição Tátil-Visual
-  ws.getRow(r).height = 26;
+  ws.getRow(r).height = 25;
   ws.getCell(`A${r}`).value = "Descrição Tátil-Visual:";
   ws.getCell(`A${r}`).font = { name: "Calibri", size: 10.5, bold: true };
   ws.getCell(`A${r}`).alignment = { vertical: "middle" };
@@ -185,7 +185,7 @@ function addOfficialReportHeader(
   r++;
 
   // Descrição Granulométrica + Folha
-  ws.getRow(r).height = 26;
+  ws.getRow(r).height = 25;
   ws.getCell(`A${r}`).value = "Descrição Granulométrica:";
   ws.getCell(`A${r}`).font = { name: "Calibri", size: 10.5, bold: true };
   ws.getCell(`A${r}`).alignment = { vertical: "middle" };
@@ -225,7 +225,7 @@ function addSectionBar(ws: ExcelJS.Worksheet, r: number, text: string): number {
 }
 
 /**
- * Adiciona o Rodapé Oficial Idêntico ao PDF com Linhas Estruturadas e Assinatura Limpa
+ * Adiciona o Rodapé Oficial com Assinatura Limpa e Isolada
  */
 function addOfficialReportFooter(
   ws: ExcelJS.Worksheet,
@@ -239,25 +239,24 @@ function addOfficialReportFooter(
 
   const rTop = r;
 
-  // Linhas do Rodapé com Alturas Amplas
-  ws.getRow(rTop).height = 36;       // Linha da Assinatura
-  ws.getRow(rTop + 1).height = 20;   // Traço de Assinatura
-  ws.getRow(rTop + 2).height = 20;   // Rótulo Resp. Técnico
+  ws.getRow(rTop).height = 36;       // Linha da imagem de assinatura
+  ws.getRow(rTop + 1).height = 20;   // Traço de assinatura
+  ws.getRow(rTop + 2).height = 20;   // Rótulo Responsável Técnico
   ws.getRow(rTop + 3).height = 22;   // Nome e CREA
   ws.getRow(rTop + 4).height = 22;   // Gerente de Lab
 
-  // Coluna Esquerda: A..C (Dados da Equipe)
+  // Coluna Esquerda: A..C (Equipe Técnica)
   ws.mergeCells(`A${rTop}:C${rTop + 4}`);
   const fLeft = ws.getCell(`A${rTop}`);
   fLeft.value = `São Paulo, ${spDate}\nContrato nº ${sample.workNumber || "—"} · Revisão ${sample.revision || "00"}\nOperador: ${sample.operator || "—"}  |  Digitado por: ${sample.typedBy || "—"}\nVerificado por: ${sample.verifiedBy || "Engº Cleitton Pereira"}\nGerente de Lab: Tecnº Geotécnico Carlos Christian da Silva`;
   fLeft.font = { name: "Calibri", size: 9.5, color: { argb: COLOR_BLACK } };
   fLeft.alignment = { horizontal: "left", vertical: "middle", wrapText: true };
 
-  // Imagem da Assinatura no Centro (D..E)
+  // Assinatura do Maurício centralizada em D..E
   if (assinaturaImageId !== null) {
     ws.addImage(assinaturaImageId, {
-      tl: { col: 3.4, row: rTop - 0.95 },
-      ext: { width: 130, height: 38 },
+      tl: { col: 3.45, row: rTop - 0.95 },
+      ext: { width: 125, height: 35 },
       editAs: "oneCell",
     });
   }
@@ -416,6 +415,7 @@ export async function exportCDRawDataXlsx({
   applyA4PageSetup(ws1);
 
   let r1 = addOfficialReportHeader(ws1, sample, reportTitle, 1, totalPages, logoImageId);
+  ws1.getRow(r1).height = 14;
   r1++;
 
   // 1. Parâmetros e Condições do Ensaio
@@ -457,6 +457,8 @@ export async function exportCDRawDataXlsx({
 
     r1++;
   });
+
+  ws1.getRow(r1).height = 14;
   r1++;
 
   // 2. Parâmetros de Resistência (Mohr-Coulomb) com Gráfico
@@ -502,15 +504,18 @@ export async function exportCDRawDataXlsx({
   ws1.getCell(`F${r1}`).border = borderBlack;
   r1++;
 
-  // Gráfico de Mohr-Coulomb com 20 linhas de altura 22pt e respiro
+  // Inserção do Gráfico de Mohr-Coulomb com isolamento total (nunca sobrepõe nada)
   if (mohrChartId !== null) {
+    ws1.getRow(r1).height = 10;
+    r1++;
     const chartStartRow = r1;
-    for (let i = 0; i < 20; i++) { ws1.getRow(r1).height = 22; r1++; }
+    for (let i = 0; i < 18; i++) { ws1.getRow(r1).height = 22; r1++; }
     ws1.addImage(mohrChartId, {
-      tl: { col: 0.1, row: chartStartRow - 0.95 },
-      ext: { width: 880, height: 400 },
+      tl: { col: 0.15, row: chartStartRow - 0.7 },
+      ext: { width: 820, height: 350 },
       editAs: "oneCell",
     });
+    ws1.getRow(r1).height = 14;
     r1++;
   }
 
@@ -614,37 +619,44 @@ export async function exportCDRawDataXlsx({
   r1 = addOfficialReportFooter(ws1, sample, r1, assinaturaImageId);
 
   // =========================================================================
-  // ABA 2: CURVAS & GRÁFICOS
+  // ABA 2: CURVAS & GRÁFICOS (Com Isolamento Absoluto de Cada Gráfico)
   // =========================================================================
   const wsCharts = wb.addWorksheet("Curvas & Gráficos");
   wsCharts.columns = defaultColumns;
   applyA4PageSetup(wsCharts);
 
   let rC = addOfficialReportHeader(wsCharts, sample, reportTitle, 2, totalPages, logoImageId);
+  wsCharts.getRow(rC).height = 14;
   rC++;
 
   if (stressStrainId !== null) {
     rC = addSectionBar(wsCharts, rC, "Tensão Cisalhante (τ) vs. Deformação Horizontal (εh)");
+    wsCharts.getRow(rC).height = 10;
+    rC++;
     const g1Start = rC;
-    for (let i = 0; i < 18; i++) { wsCharts.getRow(rC).height = 22; rC++; }
+    for (let i = 0; i < 16; i++) { wsCharts.getRow(rC).height = 22; rC++; }
     wsCharts.addImage(stressStrainId, {
-      tl: { col: 0.1, row: g1Start - 0.95 },
-      ext: { width: 880, height: 360 },
+      tl: { col: 0.15, row: g1Start - 0.7 },
+      ext: { width: 820, height: 310 },
       editAs: "oneCell",
     });
-    rC += 2;
+    wsCharts.getRow(rC).height = 14;
+    rC++;
   }
 
   if (volChangeId !== null) {
     rC = addSectionBar(wsCharts, rC, "Variação Volumétrica — Deslocamento Vertical (δv) vs. Deformação Horizontal (εh)");
+    wsCharts.getRow(rC).height = 10;
+    rC++;
     const g2Start = rC;
-    for (let i = 0; i < 18; i++) { wsCharts.getRow(rC).height = 22; rC++; }
+    for (let i = 0; i < 16; i++) { wsCharts.getRow(rC).height = 22; rC++; }
     wsCharts.addImage(volChangeId, {
-      tl: { col: 0.1, row: g2Start - 0.95 },
-      ext: { width: 880, height: 360 },
+      tl: { col: 0.15, row: g2Start - 0.7 },
+      ext: { width: 820, height: 310 },
       editAs: "oneCell",
     });
-    rC += 2;
+    wsCharts.getRow(rC).height = 14;
+    rC++;
   }
 
   rC = addOfficialReportFooter(wsCharts, sample, rC, assinaturaImageId);
@@ -662,6 +674,7 @@ export async function exportCDRawDataXlsx({
     applyA4PageSetup(wsCP);
 
     let rCP = addOfficialReportHeader(wsCP, sample, `${reportTitle} — ${cpName}`, pageNum, totalPages, logoImageId);
+    wsCP.getRow(rCP).height = 14;
     rCP++;
 
     // 1. Dados de Moldagem e Dimensões Iniciais
@@ -725,6 +738,8 @@ export async function exportCDRawDataXlsx({
 
       rCP++;
     });
+
+    wsCP.getRow(rCP).height = 14;
     rCP++;
 
     // 2. Cápsulas de Umidade Inicial (w0)
@@ -772,7 +787,10 @@ export async function exportCDRawDataXlsx({
     vCap.font = { name: "Calibri", size: 10.5, bold: true };
     vCap.alignment = { horizontal: "right", vertical: "middle" };
     vCap.border = borderBlack;
-    rCP += 2;
+    rCP++;
+
+    wsCP.getRow(rCP).height = 14;
+    rCP++;
 
     // 3. Adensamento Vertical
     rCP = addSectionBar(wsCP, rCP, `3. Adensamento Vertical (σn = ${cp.normalStressTarget} kPa)`);
@@ -838,7 +856,10 @@ export async function exportCDRawDataXlsx({
     vCons2.alignment = { horizontal: "center", vertical: "middle" };
     vCons2.border = borderBlack;
     wsCP.getCell(`G${rCP}`).border = borderBlack;
-    rCP += 2;
+    rCP++;
+
+    wsCP.getRow(rCP).height = 14;
+    rCP++;
 
     // 4. Leituras de Cisalhamento Passo a Passo
     rCP = addSectionBar(wsCP, rCP, "4. Leituras da Etapa de Cisalhamento Passo a Passo");
@@ -882,6 +903,8 @@ export async function exportCDRawDataXlsx({
       });
       rCP++;
     });
+
+    wsCP.getRow(rCP).height = 14;
     rCP++;
 
     // 5. Cápsulas de Umidade Final (wf)
@@ -928,7 +951,10 @@ export async function exportCDRawDataXlsx({
     vCapF.font = { name: "Calibri", size: 10.5, bold: true };
     vCapF.alignment = { horizontal: "right", vertical: "middle" };
     vCapF.border = borderBlack;
-    rCP += 2;
+    rCP++;
+
+    wsCP.getRow(rCP).height = 14;
+    rCP++;
 
     // 6. Resumo dos Resultados do CP
     rCP = addSectionBar(wsCP, rCP, "6. Resumo dos Parâmetros de Ruptura do Corpo de Prova");
@@ -1000,12 +1026,18 @@ export async function exportCDRawDataXlsx({
   applyA4PageSetup(wsPhotos);
 
   let rPh = addOfficialReportHeader(wsPhotos, sample, `${reportTitle} — Registro Fotográfico`, totalPages, totalPages, logoImageId);
+  wsPhotos.getRow(rPh).height = 14;
   rPh++;
 
   rPh = addSectionBar(wsPhotos, rPh, "Registro Fotográfico do Ensaio");
+  wsPhotos.getRow(rPh).height = 10;
+  rPh++;
 
   // SEÇÃO 1: FOTOS DE MOLDAGEM
   rPh = addSectionBar(wsPhotos, rPh, "Etapa de Moldagem / Aspecto Inicial");
+  wsPhotos.getRow(rPh).height = 10;
+  rPh++;
+
   const mImgStart = rPh;
   for (let i = 0; i < 12; i++) { wsPhotos.getRow(rPh).height = 22; rPh++; }
 
@@ -1015,8 +1047,8 @@ export async function exportCDRawDataXlsx({
 
     if (p && photoImageIds[p.id]) {
       wsPhotos.addImage(photoImageIds[p.id], {
-        tl: { col: colStart, row: mImgStart - 0.9 },
-        ext: { width: 260, height: 180 },
+        tl: { col: colStart, row: mImgStart - 0.7 },
+        ext: { width: 250, height: 165 },
         editAs: "oneCell",
       });
     }
@@ -1033,10 +1065,16 @@ export async function exportCDRawDataXlsx({
     legCell.alignment = { horizontal: "center", vertical: "middle" };
     legCell.border = borderBlack;
   });
-  rPh += 2;
+  rPh++;
+
+  wsPhotos.getRow(rPh).height = 14;
+  rPh++;
 
   // SEÇÃO 2: FOTOS DE RUPTURA
   rPh = addSectionBar(wsPhotos, rPh, "Após Ruptura / Plano de Cisalhamento");
+  wsPhotos.getRow(rPh).height = 10;
+  rPh++;
+
   const rupStart = rPh;
   for (let i = 0; i < 12; i++) { wsPhotos.getRow(rPh).height = 22; rPh++; }
 
@@ -1046,8 +1084,8 @@ export async function exportCDRawDataXlsx({
 
     if (p && photoImageIds[p.id]) {
       wsPhotos.addImage(photoImageIds[p.id], {
-        tl: { col: colStart, row: rupStart - 0.9 },
-        ext: { width: 260, height: 180 },
+        tl: { col: colStart, row: rupStart - 0.7 },
+        ext: { width: 250, height: 165 },
         editAs: "oneCell",
       });
     }
@@ -1064,7 +1102,7 @@ export async function exportCDRawDataXlsx({
     legCell.alignment = { horizontal: "center", vertical: "middle" };
     legCell.border = borderBlack;
   });
-  rPh += 2;
+  rPh++;
 
   rPh = addOfficialReportFooter(wsPhotos, sample, rPh, assinaturaImageId);
 
