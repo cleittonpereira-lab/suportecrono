@@ -13,7 +13,7 @@ import { z } from "zod";
 const GATEWAY = "https://connector-gateway.lovable.dev/google_drive";
 const DRIVE_V3 = `${GATEWAY}/drive/v3`;
 const DRIVE_UPLOAD = `${GATEWAY}/upload/drive/v3/files`;
-const ROOT_FOLDER_ID = "17RBUhXfOcliyGyBTZ0je0QytNfeL7fGg";
+const ROOT_FOLDER_ID = "1buEmIk9ksuC3n9ndQRxqQkyN5SYgugAb";
 const STATE_FILENAME = "_lab-state.json";
 
 function driveHeaders(extra: Record<string, string> = {}): Headers {

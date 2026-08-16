@@ -18,8 +18,8 @@ const DRIVE_V3 = `${GATEWAY}/drive/v3`;
 const DRIVE_UPLOAD = `${GATEWAY}/upload/drive/v3/files`;
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 
-/** ID da pasta raiz na conta da Suporte (link fornecido pelo cliente). */
-export const DRIVE_ROOT_FOLDER_ID = "17RBUhXfOcliyGyBTZ0je0QytNfeL7fGg";
+/** ID da pasta raiz oficial de relatórios da Suporte no Google Drive */
+export const DRIVE_ROOT_FOLDER_ID = "1buEmIk9ksuC3n9ndQRxqQkyN5SYgugAb";
 
 function driveHeaders(extra: Record<string, string> = {}): Headers {
   const h = new Headers(extra);
