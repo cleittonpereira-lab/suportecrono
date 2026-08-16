@@ -12,13 +12,13 @@ import { Label } from "@/components/ui/label";
 import type { Photo } from "../types";
 
 /**
- * Editor de recorte simples, com aspecto fixo 4:3 (paisagem — 4 na horizontal, 3 na vertical).
- * Controles: zoom, deslocamento X e Y. Salva um JPEG 4:3 (1600×1200)
+ * Editor de recorte simples, com aspecto fixo 3:4 (retrato — 3 na horizontal, 4 na vertical).
+ * Controles: zoom, deslocamento X e Y. Salva um JPEG 3:4 (1200×1600)
  * usando as dimensões originais da imagem para preservar máxima nitidez e qualidade técnica.
  */
-const ASPECT = 4 / 3;
-const OUT_W = 1600;
-const OUT_H = 1200;
+const ASPECT = 3 / 4;
+const OUT_W = 1200;
+const OUT_H = 1600;
 
 export function PhotoCropDialog({
   open,
@@ -68,8 +68,8 @@ export function PhotoCropDialog({
     return { sx, sy, cropW, cropH };
   }, [imgDims, zoom, ox, oy]);
 
-  const previewBoxW = 480;
-  const previewBoxH = Math.round(previewBoxW / ASPECT); // 360px
+  const previewBoxH = 460;
+  const previewBoxW = Math.round(previewBoxH * ASPECT); // 345px
   const preview = useMemo(() => {
     if (!imgDims || !crop) return null;
     const scale = previewBoxW / crop.cropW;
@@ -129,9 +129,9 @@ export function PhotoCropDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[560px]">
         <DialogHeader>
-          <DialogTitle>Ajustar recorte (4:3 horizontal)</DialogTitle>
+          <DialogTitle>Ajustar enquadramento da foto</DialogTitle>
           <DialogDescription>
-            Arraste sobre a imagem para reposicionar. Use o zoom para aproximar. Proporção oficial 4:3 (4 na horizontal · 3 na vertical).
+            Arraste sobre a imagem para reposicionar e use o zoom para aproximar.
           </DialogDescription>
         </DialogHeader>
 

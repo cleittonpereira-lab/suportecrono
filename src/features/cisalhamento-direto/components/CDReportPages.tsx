@@ -700,16 +700,15 @@ export function CDReportPage5({
 
         {/* Bloco 1: Etapa de Moldagem */}
         <div className="rounded border border-[#141414]/60 bg-white p-2.5 flex flex-col shadow-sm">
-          <div className="text-[9.5px] font-bold text-[#141414] uppercase mb-2 border-b border-[#141414]/15 pb-1 flex items-center justify-between">
-            <span>Etapa de Moldagem / Aspecto Inicial</span>
-            <span className="text-[8px] font-normal text-muted-foreground">Proporção 4:3</span>
+          <div className="text-[9.5px] font-bold text-[#141414] uppercase mb-2 border-b border-[#141414]/15 pb-1">
+            Etapa de Moldagem / Aspecto Inicial
           </div>
           <div className="grid grid-cols-3 gap-3 items-start">
             {cpsForPage.map((cp) => {
               const p = photos.find((x) => (x.specimenId === cp.id || x.specimenId === cp.displayId) && x.kind === "moldagem");
               return (
                 <div key={cp.id} className="flex flex-col items-center">
-                  <div className="w-full aspect-[4/3] bg-neutral-100 border border-[#141414]/25 rounded overflow-hidden flex items-center justify-center shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+                  <div className="w-full aspect-[3/4] max-h-[225px] bg-neutral-100 border border-[#141414]/25 rounded overflow-hidden flex items-center justify-center shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
                     {p ? (
                       <img
                         src={p.dataUrl}
@@ -740,16 +739,15 @@ export function CDReportPage5({
 
         {/* Bloco 2: Após Ruptura */}
         <div className="rounded border border-[#141414]/60 bg-white p-2.5 flex flex-col shadow-sm">
-          <div className="text-[9.5px] font-bold text-[#141414] uppercase mb-2 border-b border-[#141414]/15 pb-1 flex items-center justify-between">
-            <span>Após Ruptura / Plano de Cisalhamento</span>
-            <span className="text-[8px] font-normal text-muted-foreground">Proporção 4:3</span>
+          <div className="text-[9.5px] font-bold text-[#141414] uppercase mb-2 border-b border-[#141414]/15 pb-1">
+            Após Ruptura / Plano de Cisalhamento
           </div>
           <div className="grid grid-cols-3 gap-3 items-start">
             {cpsForPage.map((cp) => {
               const p = photos.find((x) => (x.specimenId === cp.id || x.specimenId === cp.displayId) && x.kind === "ruptura");
               return (
                 <div key={cp.id} className="flex flex-col items-center">
-                  <div className="w-full aspect-[4/3] bg-neutral-100 border border-[#141414]/25 rounded overflow-hidden flex items-center justify-center shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+                  <div className="w-full aspect-[3/4] max-h-[225px] bg-neutral-100 border border-[#141414]/25 rounded overflow-hidden flex items-center justify-center shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
                     {p ? (
                       <img
                         src={p.dataUrl}

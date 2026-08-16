@@ -62,7 +62,7 @@ export function PhotoUploader({ title, kind, photos, onAdd, onRemove, onUpdate }
           onClick={() => inputRef.current?.click()}
         >
           <ImagePlus className="mr-1 h-3 w-3" />
-          Adicionar Foto (4:3)
+          Adicionar Foto
         </Button>
         <input
           ref={inputRef}
@@ -75,13 +75,13 @@ export function PhotoUploader({ title, kind, photos, onAdd, onRemove, onUpdate }
 
       {items.length === 0 ? (
         <p className="py-6 text-center text-xs text-muted-foreground">
-          Nenhuma foto — clique em "Adicionar Foto (4:3)" para incluir e enquadrar.
+          Nenhuma foto — clique em "Adicionar Foto" para incluir.
         </p>
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           {items.map((p) => (
             <div key={p.id} className="group relative overflow-hidden rounded-md border border-border bg-card">
-              <div className="flex aspect-[4/3] w-full items-center justify-center bg-black/5 overflow-hidden">
+              <div className="flex aspect-[3/4] w-full items-center justify-center bg-black/5 overflow-hidden">
                 <img
                   src={p.dataUrl}
                   alt={p.caption ?? title}
@@ -105,7 +105,7 @@ export function PhotoUploader({ title, kind, photos, onAdd, onRemove, onUpdate }
                       className="h-6 px-1.5"
                       onClick={() => setEditing(p)}
                       aria-label="Editar recorte"
-                      title="Editar recorte (4:3)"
+                      title="Editar enquadramento"
                     >
                       <Crop className="h-3 w-3" />
                     </Button>
@@ -142,7 +142,7 @@ export function PhotoUploader({ title, kind, photos, onAdd, onRemove, onUpdate }
           onSave={(dataUrl, bytes) => {
             onAdd({ dataUrl, bytes, kind: pendingUpload.kind, caption: pendingUpload.caption });
             setPendingUpload(null);
-            toast.success("Foto adicionada e enquadrada em 4:3 com sucesso!");
+            toast.success("Foto adicionada e enquadrada com sucesso!");
           }}
         />
       )}
