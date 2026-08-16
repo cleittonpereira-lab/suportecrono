@@ -3,13 +3,13 @@ import type { CDSpecimen, CDSpecimenResults, CDEnvelopeResult } from "./types";
 const lineColors = ["#1e40af", "#b45309", "#15803d", "#7e22ce", "#b91c1c", "#0284c7"];
 
 /**
- * Renderiza o gráfico da Envoltória de Mohr-Coulomb em alta resolução para inclusão no Excel.
+ * Renderiza o gráfico da Envoltória de Mohr-Coulomb em alta resolução para largura total no Excel.
  */
 export function generateMohrEnvelopeCanvas(
   results: CDSpecimenResults[],
   specimens: CDSpecimen[],
   envelope: CDEnvelopeResult | null,
-  width = 900,
+  width = 1100,
   height = 550
 ): string | null {
   if (typeof document === "undefined") return null;
@@ -21,12 +21,12 @@ export function generateMohrEnvelopeCanvas(
 
   ctx.scale(2, 2);
 
-  // Fundo branco
+  // Fundo branco com borda suave
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, width, height);
 
-  // Margens
-  const margin = { top: 60, right: 40, bottom: 65, left: 75 };
+  // Margens amplas e equilibradas
+  const margin = { top: 55, right: 35, bottom: 65, left: 80 };
   const plotW = width - margin.left - margin.right;
   const plotH = height - margin.top - margin.bottom;
 
@@ -85,7 +85,7 @@ export function generateMohrEnvelopeCanvas(
 
   // Ticks e Rótulos Eixo X
   ctx.fillStyle = "#475569";
-  ctx.font = "11px Calibri, sans-serif";
+  ctx.font = "11.5px Calibri, sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
   for (let x = 0; x <= xMax; x += xStep) {
@@ -111,12 +111,12 @@ export function generateMohrEnvelopeCanvas(
 
   // Títulos dos Eixos
   ctx.fillStyle = "#1e293b";
-  ctx.font = "bold 12px Calibri, sans-serif";
+  ctx.font = "bold 13px Calibri, sans-serif";
   ctx.textAlign = "center";
   ctx.fillText("Tensão Normal Efetiva σ'n [kPa]", margin.left + plotW / 2, height - 15);
 
   ctx.save();
-  ctx.translate(20, margin.top + plotH / 2);
+  ctx.translate(22, margin.top + plotH / 2);
   ctx.rotate(-Math.PI / 2);
   ctx.fillText("Tensão Cisalhante τ [kPa]", 0, 0);
   ctx.restore();
@@ -150,16 +150,15 @@ export function generateMohrEnvelopeCanvas(
   });
 
   // Legenda no Topo
-  ctx.font = "11px Calibri, sans-serif";
+  ctx.font = "12px Calibri, sans-serif";
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
-  let curX = margin.left + 10;
+  let curX = margin.left + 15;
   const legY = 25;
 
-  // Linha da Envoltória
   if (envelope) {
     ctx.strokeStyle = "#1e293b";
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2.5;
     ctx.beginPath();
     ctx.moveTo(curX, legY);
     ctx.lineTo(curX + 22, legY);
@@ -167,27 +166,26 @@ export function generateMohrEnvelopeCanvas(
     curX += 28;
 
     ctx.fillStyle = "#1e293b";
-    ctx.fillText(`Envoltória (c'=${envelope.c.toFixed(2)} kPa, φ'=${envelope.phiDeg.toFixed(2)}°)`, curX, legY);
-    curX += 230;
+    ctx.fillText(`Envoltória (c' = ${envelope.c.toFixed(2)} kPa, φ' = ${envelope.phiDeg.toFixed(2)}°)`, curX, legY);
+    curX += 260;
   }
 
-  // Pontos de cada CP
   results.forEach((r, i) => {
     const color = specimens[i]?.color || lineColors[i % lineColors.length];
-    const name = `${specimens[i]?.displayId ?? `CP-${i + 1}`} (σn=${r.sigmaN.toFixed(0)} kPa)`;
+    const name = `${specimens[i]?.displayId ?? `CP-${i + 1}`} (σn = ${r.sigmaN.toFixed(0)} kPa)`;
 
     ctx.beginPath();
-    ctx.arc(curX + 5, legY, 5, 0, 2 * Math.PI);
+    ctx.arc(curX + 5, legY, 5.5, 0, 2 * Math.PI);
     ctx.fillStyle = color;
     ctx.fill();
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1.2;
     ctx.strokeStyle = "#0f172a";
     ctx.stroke();
-    curX += 14;
+    curX += 16;
 
     ctx.fillStyle = "#334155";
     ctx.fillText(name, curX, legY);
-    curX += ctx.measureText(name).width + 18;
+    curX += ctx.measureText(name).width + 25;
   });
 
   return canvas.toDataURL("image/png").split(",")[1];
@@ -199,8 +197,8 @@ export function generateMohrEnvelopeCanvas(
 export function generateStressStrainCanvas(
   results: CDSpecimenResults[],
   specimens: CDSpecimen[],
-  width = 900,
-  height = 500
+  width = 1100,
+  height = 520
 ): string | null {
   if (typeof document === "undefined") return null;
   const canvas = document.createElement("canvas");
@@ -214,7 +212,7 @@ export function generateStressStrainCanvas(
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, width, height);
 
-  const margin = { top: 50, right: 40, bottom: 65, left: 75 };
+  const margin = { top: 55, right: 35, bottom: 65, left: 80 };
   const plotW = width - margin.left - margin.right;
   const plotH = height - margin.top - margin.bottom;
 
@@ -263,7 +261,7 @@ export function generateStressStrainCanvas(
 
   // Ticks X
   ctx.fillStyle = "#475569";
-  ctx.font = "11px Calibri, sans-serif";
+  ctx.font = "11.5px Calibri, sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
   for (let x = 0; x <= xMax; x += 2.5) {
@@ -289,12 +287,12 @@ export function generateStressStrainCanvas(
 
   // Títulos
   ctx.fillStyle = "#1e293b";
-  ctx.font = "bold 12px Calibri, sans-serif";
+  ctx.font = "bold 13px Calibri, sans-serif";
   ctx.textAlign = "center";
   ctx.fillText("Deformação Horizontal εh [%]", margin.left + plotW / 2, height - 15);
 
   ctx.save();
-  ctx.translate(20, margin.top + plotH / 2);
+  ctx.translate(22, margin.top + plotH / 2);
   ctx.rotate(-Math.PI / 2);
   ctx.fillText("Tensão Cisalhante τ [kPa]", 0, 0);
   ctx.restore();
@@ -321,7 +319,7 @@ export function generateStressStrainCanvas(
       const px = mapX(peakPt.horizStrainPct);
       const py = mapY(peakPt.shearStress);
       ctx.beginPath();
-      ctx.arc(px, py, 5, 0, 2 * Math.PI);
+      ctx.arc(px, py, 5.5, 0, 2 * Math.PI);
       ctx.fillStyle = color;
       ctx.fill();
       ctx.lineWidth = 1.5;
@@ -331,11 +329,11 @@ export function generateStressStrainCanvas(
   });
 
   // Legenda
-  ctx.font = "11px Calibri, sans-serif";
+  ctx.font = "12px Calibri, sans-serif";
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
-  let curX = margin.left + 15;
-  const legY = 22;
+  let curX = margin.left + 20;
+  const legY = 24;
 
   results.forEach((r, i) => {
     const color = specimens[i]?.color || lineColors[i % lineColors.length];
@@ -345,13 +343,13 @@ export function generateStressStrainCanvas(
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.moveTo(curX, legY);
-    ctx.lineTo(curX + 20, legY);
+    ctx.lineTo(curX + 22, legY);
     ctx.stroke();
-    curX += 26;
+    curX += 28;
 
     ctx.fillStyle = "#334155";
     ctx.fillText(name, curX, legY);
-    curX += ctx.measureText(name).width + 25;
+    curX += ctx.measureText(name).width + 30;
   });
 
   return canvas.toDataURL("image/png").split(",")[1];
@@ -363,8 +361,8 @@ export function generateStressStrainCanvas(
 export function generateVolumeChangeCanvas(
   results: CDSpecimenResults[],
   specimens: CDSpecimen[],
-  width = 900,
-  height = 500
+  width = 1100,
+  height = 520
 ): string | null {
   if (typeof document === "undefined") return null;
   const canvas = document.createElement("canvas");
@@ -378,7 +376,7 @@ export function generateVolumeChangeCanvas(
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, width, height);
 
-  const margin = { top: 50, right: 40, bottom: 65, left: 75 };
+  const margin = { top: 55, right: 35, bottom: 65, left: 80 };
   const plotW = width - margin.left - margin.right;
   const plotH = height - margin.top - margin.bottom;
 
@@ -443,7 +441,7 @@ export function generateVolumeChangeCanvas(
 
   // Ticks X
   ctx.fillStyle = "#475569";
-  ctx.font = "11px Calibri, sans-serif";
+  ctx.font = "11.5px Calibri, sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
   for (let x = 0; x <= xMax; x += 2.5) {
@@ -469,12 +467,12 @@ export function generateVolumeChangeCanvas(
 
   // Títulos
   ctx.fillStyle = "#1e293b";
-  ctx.font = "bold 12px Calibri, sans-serif";
+  ctx.font = "bold 13px Calibri, sans-serif";
   ctx.textAlign = "center";
   ctx.fillText("Deformação Horizontal εh [%]", margin.left + plotW / 2, height - 15);
 
   ctx.save();
-  ctx.translate(20, margin.top + plotH / 2);
+  ctx.translate(22, margin.top + plotH / 2);
   ctx.rotate(-Math.PI / 2);
   ctx.fillText("Deslocamento Vertical δv [mm]", 0, 0);
   ctx.restore();
@@ -497,11 +495,11 @@ export function generateVolumeChangeCanvas(
   });
 
   // Legenda
-  ctx.font = "11px Calibri, sans-serif";
+  ctx.font = "12px Calibri, sans-serif";
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
-  let curX = margin.left + 15;
-  const legY = 22;
+  let curX = margin.left + 20;
+  const legY = 24;
 
   results.forEach((r, i) => {
     const color = specimens[i]?.color || lineColors[i % lineColors.length];
@@ -511,13 +509,13 @@ export function generateVolumeChangeCanvas(
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.moveTo(curX, legY);
-    ctx.lineTo(curX + 20, legY);
+    ctx.lineTo(curX + 22, legY);
     ctx.stroke();
-    curX += 26;
+    curX += 28;
 
     ctx.fillStyle = "#334155";
     ctx.fillText(name, curX, legY);
-    curX += ctx.measureText(name).width + 25;
+    curX += ctx.measureText(name).width + 30;
   });
 
   return canvas.toDataURL("image/png").split(",")[1];
