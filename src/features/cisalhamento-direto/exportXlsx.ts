@@ -22,7 +22,7 @@ export interface ExportCDParams {
   filename?: string;
 }
 
-// Cores corporativas Suporte INFRA (Idênticas ao PDF Executivo)
+// Cores corporativas Suporte INFRA (Padrão Oficial Executivo)
 const COLOR_BLACK = "FF141414";
 const COLOR_SECTION_BG = "FFD1D5DB"; // #d1d5db (SectionBar)
 const COLOR_SECTION_TEXT = "FF111827";
@@ -59,7 +59,7 @@ async function getImageBase64(url: string): Promise<string | null> {
 }
 
 /**
- * Adiciona o Cabeçalho Oficial Idêntico ao PDF com Proporções Perfeitas
+ * Adiciona o Cabeçalho Oficial Idêntico ao PDF com Alturas de Linhas Amplas e Respiro
  */
 function addOfficialReportHeader(
   ws: ExcelJS.Worksheet,
@@ -72,38 +72,38 @@ function addOfficialReportHeader(
 ): number {
   let r = startRow;
 
-  // Inserção do Logo com proporção 100% preservada (não distorce)
+  // Inserção do Logo com proporção natural
   if (logoImageId !== null) {
     ws.addImage(logoImageId, {
-      tl: { col: 0.15, row: r - 0.95 },
-      ext: { width: 170, height: 46 },
+      tl: { col: 0.15, row: r - 0.9 },
+      ext: { width: 175, height: 50 },
       editAs: "oneCell",
     });
   }
 
-  // Bloco Central do Laudo
+  // Título Central do Laudo
   ws.mergeCells(`C${r}:G${r}`);
   const t1 = ws.getCell(`C${r}`);
   t1.value = "RELATÓRIO DE ENSAIO";
-  t1.font = { name: "Calibri", size: 12, bold: true, underline: true, color: { argb: COLOR_BLACK } };
+  t1.font = { name: "Calibri", size: 12.5, bold: true, underline: true, color: { argb: COLOR_BLACK } };
   t1.alignment = { horizontal: "center", vertical: "middle" };
-  ws.getRow(r).height = 20;
+  ws.getRow(r).height = 24;
   r++;
 
   ws.mergeCells(`C${r}:G${r}`);
   const t2 = ws.getCell(`C${r}`);
   t2.value = title;
-  t2.font = { name: "Calibri", size: 11, bold: true, color: { argb: COLOR_BLACK } };
+  t2.font = { name: "Calibri", size: 11.5, bold: true, color: { argb: COLOR_BLACK } };
   t2.alignment = { horizontal: "center", vertical: "middle" };
-  ws.getRow(r).height = 20;
+  ws.getRow(r).height = 24;
   r++;
 
   ws.mergeCells(`C${r}:G${r}`);
   const t3 = ws.getCell(`C${r}`);
   t3.value = "ASTM D3080:2023 — Standard Test Method for Direct Shear Test of Soils Under Consolidated Drained Conditions";
-  t3.font = { name: "Calibri", size: 9, italic: true, color: { argb: "FF475569" } };
+  t3.font = { name: "Calibri", size: 9.5, italic: true, color: { argb: "FF475569" } };
   t3.alignment = { horizontal: "center", vertical: "middle" };
-  ws.getRow(r).height = 18;
+  ws.getRow(r).height = 20;
   r++;
 
   // Bordas do quadro superior
@@ -119,44 +119,44 @@ function addOfficialReportHeader(
     }
   }
 
-  // Tabela Cadastral Idêntica ao PDF (Altura 22pt, Vertical Middle)
+  // Tabela Cadastral Idêntica ao PDF (Altura 25pt em todas as linhas)
   const addHeaderField = (
     l1: string, v1: any,
     l2: string, v2: any,
     l3: string, v3: any
   ) => {
     const row = ws.getRow(r);
-    row.height = 22;
+    row.height = 25;
 
     // Coluna 1
     ws.getCell(`A${r}`).value = l1;
-    ws.getCell(`A${r}`).font = { name: "Calibri", size: 10, bold: true, color: { argb: COLOR_BLACK } };
+    ws.getCell(`A${r}`).font = { name: "Calibri", size: 10.5, bold: true, color: { argb: COLOR_BLACK } };
     ws.getCell(`A${r}`).alignment = { vertical: "middle" };
     ws.getCell(`A${r}`).border = borderBlack;
     ws.getCell(`B${r}`).value = v1 ?? "—";
-    ws.getCell(`B${r}`).font = { name: "Calibri", size: 10 };
+    ws.getCell(`B${r}`).font = { name: "Calibri", size: 10.5 };
     ws.getCell(`B${r}`).alignment = { vertical: "middle" };
     ws.getCell(`B${r}`).border = borderBlack;
 
     // Coluna 2
     ws.getCell(`C${r}`).value = l2;
-    ws.getCell(`C${r}`).font = { name: "Calibri", size: 10, bold: true, color: { argb: COLOR_BLACK } };
+    ws.getCell(`C${r}`).font = { name: "Calibri", size: 10.5, bold: true, color: { argb: COLOR_BLACK } };
     ws.getCell(`C${r}`).alignment = { vertical: "middle" };
     ws.getCell(`C${r}`).border = borderBlack;
     ws.mergeCells(`D${r}:E${r}`);
     ws.getCell(`D${r}`).value = v2 ?? "—";
-    ws.getCell(`D${r}`).font = { name: "Calibri", size: 10 };
+    ws.getCell(`D${r}`).font = { name: "Calibri", size: 10.5 };
     ws.getCell(`D${r}`).alignment = { vertical: "middle" };
     ws.getCell(`D${r}`).border = borderBlack;
     ws.getCell(`E${r}`).border = borderBlack;
 
     // Coluna 3
     ws.getCell(`F${r}`).value = l3;
-    ws.getCell(`F${r}`).font = { name: "Calibri", size: 10, bold: true, color: { argb: COLOR_BLACK } };
+    ws.getCell(`F${r}`).font = { name: "Calibri", size: 10.5, bold: true, color: { argb: COLOR_BLACK } };
     ws.getCell(`F${r}`).alignment = { vertical: "middle" };
     ws.getCell(`F${r}`).border = borderBlack;
     ws.getCell(`G${r}`).value = v3 ?? "—";
-    ws.getCell(`G${r}`).font = { name: "Calibri", size: 10 };
+    ws.getCell(`G${r}`).font = { name: "Calibri", size: 10.5 };
     ws.getCell(`G${r}`).alignment = { vertical: "middle" };
     ws.getCell(`G${r}`).border = borderBlack;
 
@@ -172,36 +172,36 @@ function addOfficialReportHeader(
   }
 
   // Descrição Tátil-Visual
-  ws.getRow(r).height = 22;
+  ws.getRow(r).height = 26;
   ws.getCell(`A${r}`).value = "Descrição Tátil-Visual:";
-  ws.getCell(`A${r}`).font = { name: "Calibri", size: 10, bold: true };
+  ws.getCell(`A${r}`).font = { name: "Calibri", size: 10.5, bold: true };
   ws.getCell(`A${r}`).alignment = { vertical: "middle" };
   ws.getCell(`A${r}`).border = borderBlack;
   ws.mergeCells(`B${r}:G${r}`);
   ws.getCell(`B${r}`).value = sample.description || "—";
-  ws.getCell(`B${r}`).font = { name: "Calibri", size: 10, italic: true };
+  ws.getCell(`B${r}`).font = { name: "Calibri", size: 10.5, italic: true };
   ws.getCell(`B${r}`).alignment = { vertical: "middle" };
   for (let c = 2; c <= 7; c++) ws.getRow(r).getCell(c).border = borderBlack;
   r++;
 
   // Descrição Granulométrica + Folha
-  ws.getRow(r).height = 22;
+  ws.getRow(r).height = 26;
   ws.getCell(`A${r}`).value = "Descrição Granulométrica:";
-  ws.getCell(`A${r}`).font = { name: "Calibri", size: 10, bold: true };
+  ws.getCell(`A${r}`).font = { name: "Calibri", size: 10.5, bold: true };
   ws.getCell(`A${r}`).alignment = { vertical: "middle" };
   ws.getCell(`A${r}`).border = borderBlack;
   ws.mergeCells(`B${r}:E${r}`);
   ws.getCell(`B${r}`).value = sample.granulometricDescription || "—";
-  ws.getCell(`B${r}`).font = { name: "Calibri", size: 10, italic: true };
+  ws.getCell(`B${r}`).font = { name: "Calibri", size: 10.5, italic: true };
   ws.getCell(`B${r}`).alignment = { vertical: "middle" };
   for (let c = 2; c <= 5; c++) ws.getRow(r).getCell(c).border = borderBlack;
 
   ws.getCell(`F${r}`).value = "Folha:";
-  ws.getCell(`F${r}`).font = { name: "Calibri", size: 10, bold: true };
+  ws.getCell(`F${r}`).font = { name: "Calibri", size: 10.5, bold: true };
   ws.getCell(`F${r}`).alignment = { vertical: "middle" };
   ws.getCell(`F${r}`).border = borderBlack;
   ws.getCell(`G${r}`).value = `${page} / ${total}`;
-  ws.getCell(`G${r}`).font = { name: "Calibri", size: 10, bold: true };
+  ws.getCell(`G${r}`).font = { name: "Calibri", size: 10.5, bold: true };
   ws.getCell(`G${r}`).alignment = { horizontal: "center", vertical: "middle" };
   ws.getCell(`G${r}`).border = borderBlack;
   r++;
@@ -210,22 +210,22 @@ function addOfficialReportHeader(
 }
 
 /**
- * Adiciona a Barra de Seção Padrão Suporte INFRA (SectionBar - Altura 24pt)
+ * Adiciona a Barra de Seção Padrão Suporte INFRA (SectionBar - Altura 26pt)
  */
 function addSectionBar(ws: ExcelJS.Worksheet, r: number, text: string): number {
   ws.mergeCells(`A${r}:G${r}`);
   const cell = ws.getCell(`A${r}`);
   cell.value = text;
-  cell.font = { name: "Calibri", size: 10.5, bold: true, color: { argb: COLOR_SECTION_TEXT } };
+  cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: COLOR_SECTION_TEXT } };
   cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_SECTION_BG } };
   cell.alignment = { horizontal: "center", vertical: "middle" };
   cell.border = borderBlack;
-  ws.getRow(r).height = 24;
+  ws.getRow(r).height = 26;
   return r + 1;
 }
 
 /**
- * Adiciona o Rodapé Oficial Idêntico ao PDF (com Assinatura Proporcional e Linhas Generosas)
+ * Adiciona o Rodapé Oficial Idêntico ao PDF com Linhas Estruturadas e Assinatura Limpa
  */
 function addOfficialReportFooter(
   ws: ExcelJS.Worksheet,
@@ -238,66 +238,68 @@ function addOfficialReportFooter(
   const spDate = new Date().toLocaleDateString("pt-BR", { dateStyle: "long" });
 
   const rTop = r;
-  const rBot = r + 4;
 
-  ws.getRow(rTop).height = 24;
-  ws.getRow(rTop + 1).height = 24;
-  ws.getRow(rTop + 2).height = 18;
-  ws.getRow(rTop + 3).height = 18;
-  ws.getRow(rTop + 4).height = 18;
+  // Linhas do Rodapé com Alturas Amplas
+  ws.getRow(rTop).height = 36;       // Linha da Assinatura
+  ws.getRow(rTop + 1).height = 20;   // Traço de Assinatura
+  ws.getRow(rTop + 2).height = 20;   // Rótulo Resp. Técnico
+  ws.getRow(rTop + 3).height = 22;   // Nome e CREA
+  ws.getRow(rTop + 4).height = 22;   // Gerente de Lab
 
-  // Coluna Esquerda: A..C
-  ws.mergeCells(`A${rTop}:C${rBot}`);
+  // Coluna Esquerda: A..C (Dados da Equipe)
+  ws.mergeCells(`A${rTop}:C${rTop + 4}`);
   const fLeft = ws.getCell(`A${rTop}`);
   fLeft.value = `São Paulo, ${spDate}\nContrato nº ${sample.workNumber || "—"} · Revisão ${sample.revision || "00"}\nOperador: ${sample.operator || "—"}  |  Digitado por: ${sample.typedBy || "—"}\nVerificado por: ${sample.verifiedBy || "Engº Cleitton Pereira"}\nGerente de Lab: Tecnº Geotécnico Carlos Christian da Silva`;
-  fLeft.font = { name: "Calibri", size: 9, color: { argb: COLOR_BLACK } };
+  fLeft.font = { name: "Calibri", size: 9.5, color: { argb: COLOR_BLACK } };
   fLeft.alignment = { horizontal: "left", vertical: "middle", wrapText: true };
 
-  // Assinatura do Maurício proporcional (não distorcida)
+  // Imagem da Assinatura no Centro (D..E)
   if (assinaturaImageId !== null) {
     ws.addImage(assinaturaImageId, {
-      tl: { col: 3.4, row: rTop - 0.9 },
-      ext: { width: 125, height: 38 },
+      tl: { col: 3.4, row: rTop - 0.95 },
+      ext: { width: 130, height: 38 },
       editAs: "oneCell",
     });
   }
 
-  // Linha e Texto de Responsável Técnico
-  ws.mergeCells(`D${rTop + 2}:E${rTop + 2}`);
-  const lineCell = ws.getCell(`D${rTop + 2}`);
+  // Traço de Assinatura
+  ws.mergeCells(`D${rTop + 1}:E${rTop + 1}`);
+  const lineCell = ws.getCell(`D${rTop + 1}`);
   lineCell.value = "______________________________________";
-  lineCell.font = { name: "Calibri", size: 9, bold: true, color: { argb: COLOR_BLACK } };
+  lineCell.font = { name: "Calibri", size: 9.5, bold: true, color: { argb: COLOR_BLACK } };
   lineCell.alignment = { horizontal: "center", vertical: "bottom" };
 
-  ws.mergeCells(`D${rTop + 3}:E${rTop + 3}`);
-  const titleResp = ws.getCell(`D${rTop + 3}`);
+  // Rótulo Responsável Técnico
+  ws.mergeCells(`D${rTop + 2}:E${rTop + 2}`);
+  const titleResp = ws.getCell(`D${rTop + 2}`);
   titleResp.value = "Responsável Técnico";
-  titleResp.font = { name: "Calibri", size: 8.5, color: { argb: "FF475569" } };
+  titleResp.font = { name: "Calibri", size: 9, color: { argb: "FF475569" } };
   titleResp.alignment = { horizontal: "center", vertical: "top" };
 
-  ws.mergeCells(`D${rTop + 4}:E${rTop + 4}`);
-  const nameResp = ws.getCell(`D${rTop + 4}`);
+  // Nome e CREA
+  ws.mergeCells(`D${rTop + 3}:E${rTop + 4}`);
+  const nameResp = ws.getCell(`D${rTop + 3}`);
   nameResp.value = sample.technicalResp || "Eng. Antônio Sérgio Damasco Penna - CREA 0600459308";
-  nameResp.font = { name: "Calibri", size: 9, bold: true, color: { argb: COLOR_BLACK } };
+  nameResp.font = { name: "Calibri", size: 9.5, bold: true, color: { argb: COLOR_BLACK } };
   nameResp.alignment = { horizontal: "center", vertical: "top" };
 
   // Coluna Direita: F..G (Nota)
-  ws.mergeCells(`F${rTop}:G${rBot}`);
+  ws.mergeCells(`F${rTop}:G${rTop + 4}`);
   const fRight = ws.getCell(`F${rTop}`);
   fRight.value = "NOTA:\nOs resultados apresentados referem-se exclusivamente à amostra ensaiada. A reprodução deste documento somente poderá ser feita na íntegra, após aprovação prévia e por escrito da empresa.";
-  fRight.font = { name: "Calibri", size: 8.5, italic: true, color: { argb: "FF475569" } };
+  fRight.font = { name: "Calibri", size: 9, italic: true, color: { argb: "FF475569" } };
   fRight.alignment = { horizontal: "left", vertical: "middle", wrapText: true };
 
-  r = rBot + 1;
+  r = rTop + 5;
 
   // Barra Institucional Preta Inferior
   ws.mergeCells(`A${r}:G${r}`);
   const fBar = ws.getCell(`A${r}`);
   fBar.value = "SUPORTE INFRA — LABORATÓRIO DE ENSAIOS ESPECIAIS   |   Av. Camélia Borges Narciso, 582 · São Pedro/SP   |   www.suportesolos.com.br";
-  fBar.font = { name: "Calibri", size: 9, bold: true, color: { argb: "FFFFFFFF" } };
+  fBar.font = { name: "Calibri", size: 9.5, bold: true, color: { argb: "FFFFFFFF" } };
   fBar.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_BLACK } };
   fBar.alignment = { horizontal: "center", vertical: "middle" };
-  ws.getRow(r).height = 22;
+  ws.getRow(r).height = 24;
   r++;
 
   // Carimbo de Data/Hora de Geração
@@ -306,9 +308,9 @@ function addOfficialReportFooter(
   const now = new Date();
   const stampStr = `Relatório gerado em: São Paulo, SP - Brasil · ${now.toLocaleDateString("pt-BR")} ${now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
   stampCell.value = stampStr;
-  stampCell.font = { name: "Calibri", size: 8, color: { argb: "FF64748B" } };
+  stampCell.font = { name: "Calibri", size: 8.5, color: { argb: "FF64748B" } };
   stampCell.alignment = { horizontal: "right", vertical: "middle" };
-  ws.getRow(r).height = 16;
+  ws.getRow(r).height = 18;
   r++;
 
   return r;
@@ -365,7 +367,7 @@ export async function exportCDRawDataXlsx({
   if (logoBase64) logoImageId = wb.addImage({ base64: logoBase64, extension: "png" });
   if (assinaturaBase64) assinaturaImageId = wb.addImage({ base64: assinaturaBase64, extension: "png" });
 
-  // Renderiza os gráficos de largura total em proporção harmoniosa
+  // Renderiza os gráficos de largura total
   const mohrChartB64 = generateMohrEnvelopeCanvas(results, specimens, envelope, 1100, 520);
   const stressStrainB64 = generateStressStrainCanvas(results, specimens, 1100, 480);
   const volChangeB64 = generateVolumeChangeCanvas(results, specimens, 1100, 480);
@@ -397,13 +399,13 @@ export async function exportCDRawDataXlsx({
 
   // Colunas amplas para excelente legibilidade e sem quebra de texto
   const defaultColumns = [
-    { width: 38 }, // A: Rótulos principais
+    { width: 40 }, // A: Rótulos principais
     { width: 22 }, // B: Valores / Identificadores
     { width: 16 }, // C: Rótulos secundários
-    { width: 20 }, // D: Valores secundários
-    { width: 20 }, // E: Coluna intermediária
-    { width: 16 }, // F: Rótulos laterais
-    { width: 20 }, // G: Valores laterais
+    { width: 22 }, // D: Valores secundários
+    { width: 22 }, // E: Coluna intermediária
+    { width: 18 }, // F: Rótulos laterais
+    { width: 22 }, // G: Valores laterais
   ];
 
   // =========================================================================
@@ -436,11 +438,11 @@ export async function exportCDRawDataXlsx({
   ];
 
   condRows.forEach(([lbl, val], idx) => {
-    ws1.getRow(r1).height = 22;
+    ws1.getRow(r1).height = 24;
     ws1.mergeCells(`A${r1}:C${r1}`);
     const cA = ws1.getCell(`A${r1}`);
     cA.value = lbl;
-    cA.font = { name: "Calibri", size: 10, bold: true };
+    cA.font = { name: "Calibri", size: 10.5, bold: true };
     cA.alignment = { vertical: "middle" };
     cA.border = borderBlack;
     if (idx % 2 === 1) cA.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_ZEBRA } };
@@ -448,7 +450,7 @@ export async function exportCDRawDataXlsx({
     ws1.mergeCells(`D${r1}:G${r1}`);
     const cD = ws1.getCell(`D${r1}`);
     cD.value = val;
-    cD.font = { name: "Calibri", size: 10 };
+    cD.font = { name: "Calibri", size: 10.5 };
     cD.alignment = { vertical: "middle" };
     cD.border = borderBlack;
     if (idx % 2 === 1) cD.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_ZEBRA } };
@@ -457,80 +459,80 @@ export async function exportCDRawDataXlsx({
   });
   r1++;
 
-  // 2. Parâmetros de Resistência (Mohr-Coulomb) com Gráfico Proporcional
+  // 2. Parâmetros de Resistência (Mohr-Coulomb) com Gráfico
   r1 = addSectionBar(ws1, r1, "Envoltória de Resistência (Strength Envelopes) — Mohr-Coulomb");
 
   ws1.mergeCells(`A${r1}:B${r1}`);
   ws1.getCell(`A${r1}`).value = "COESÃO EFETIVA";
-  ws1.getCell(`A${r1}`).font = { name: "Calibri", size: 9.5, bold: true, color: { argb: "FF475569" } };
+  ws1.getCell(`A${r1}`).font = { name: "Calibri", size: 10, bold: true, color: { argb: "FF475569" } };
   ws1.getCell(`A${r1}`).alignment = { horizontal: "center", vertical: "middle" };
   ws1.getCell(`A${r1}`).border = borderBlack;
 
   ws1.mergeCells(`C${r1}:E${r1}`);
   ws1.getCell(`C${r1}`).value = "ÂNGULO DE ATRITO";
-  ws1.getCell(`C${r1}`).font = { name: "Calibri", size: 9.5, bold: true, color: { argb: "FF475569" } };
+  ws1.getCell(`C${r1}`).font = { name: "Calibri", size: 10, bold: true, color: { argb: "FF475569" } };
   ws1.getCell(`C${r1}`).alignment = { horizontal: "center", vertical: "middle" };
   ws1.getCell(`C${r1}`).border = borderBlack;
 
   ws1.mergeCells(`F${r1}:G${r1}`);
   ws1.getCell(`F${r1}`).value = "COEF. DETERMINAÇÃO";
-  ws1.getCell(`F${r1}`).font = { name: "Calibri", size: 9.5, bold: true, color: { argb: "FF475569" } };
+  ws1.getCell(`F${r1}`).font = { name: "Calibri", size: 10, bold: true, color: { argb: "FF475569" } };
   ws1.getCell(`F${r1}`).alignment = { horizontal: "center", vertical: "middle" };
   ws1.getCell(`F${r1}`).border = borderBlack;
-  ws1.getRow(r1).height = 20;
+  ws1.getRow(r1).height = 22;
   r1++;
 
-  ws1.getRow(r1).height = 26;
+  ws1.getRow(r1).height = 28;
   ws1.mergeCells(`A${r1}:B${r1}`);
   ws1.getCell(`A${r1}`).value = envelope ? `c' = ${fmt(envelope.c, 2)} kPa` : "—";
-  ws1.getCell(`A${r1}`).font = { name: "Calibri", size: 12, bold: true };
+  ws1.getCell(`A${r1}`).font = { name: "Calibri", size: 12.5, bold: true };
   ws1.getCell(`A${r1}`).alignment = { horizontal: "center", vertical: "middle" };
   ws1.getCell(`A${r1}`).border = borderBlack;
 
   ws1.mergeCells(`C${r1}:E${r1}`);
   ws1.getCell(`C${r1}`).value = envelope ? `φ' = ${fmt(envelope.phiDeg, 2)}°` : "—";
-  ws1.getCell(`C${r1}`).font = { name: "Calibri", size: 12, bold: true };
+  ws1.getCell(`C${r1}`).font = { name: "Calibri", size: 12.5, bold: true };
   ws1.getCell(`C${r1}`).alignment = { horizontal: "center", vertical: "middle" };
   ws1.getCell(`C${r1}`).border = borderBlack;
 
   ws1.mergeCells(`F${r1}:G${r1}`);
   ws1.getCell(`F${r1}`).value = envelope ? `R² = ${fmt(envelope.r2, 3)}` : "—";
-  ws1.getCell(`F${r1}`).font = { name: "Calibri", size: 12, bold: true };
+  ws1.getCell(`F${r1}`).font = { name: "Calibri", size: 12.5, bold: true };
   ws1.getCell(`F${r1}`).alignment = { horizontal: "center", vertical: "middle" };
   ws1.getCell(`F${r1}`).border = borderBlack;
   r1++;
 
-  // Inserção do Gráfico de Mohr-Coulomb com proporção 100% perfeita
+  // Gráfico de Mohr-Coulomb com 20 linhas de altura 22pt e respiro
   if (mohrChartId !== null) {
     const chartStartRow = r1;
-    for (let i = 0; i < 20; i++) { ws1.getRow(r1).height = 20; r1++; }
+    for (let i = 0; i < 20; i++) { ws1.getRow(r1).height = 22; r1++; }
     ws1.addImage(mohrChartId, {
       tl: { col: 0.1, row: chartStartRow - 0.95 },
-      ext: { width: 880, height: 390 },
+      ext: { width: 880, height: 400 },
       editAs: "oneCell",
     });
     r1++;
   }
 
-  // 3. Tabela Resumo dos Resultados por CP (Alturas 22pt, Visual Executivo)
+  // 3. Tabela Resumo dos Resultados por CP
   r1 = addSectionBar(ws1, r1, "Resumo dos Resultados e Índices Físicos dos Corpos de Prova");
 
   const tableHeaderRow = ws1.getRow(r1);
-  tableHeaderRow.height = 24;
+  tableHeaderRow.height = 26;
   ws1.getCell(`A${r1}`).value = "Propriedade / Índice Físico";
-  ws1.getCell(`A${r1}`).font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+  ws1.getCell(`A${r1}`).font = { name: "Calibri", size: 10.5, bold: true, color: { argb: "FFFFFFFF" } };
   ws1.getCell(`A${r1}`).fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_BLACK } };
   ws1.getCell(`A${r1}`).alignment = { vertical: "middle" };
   ws1.getCell(`A${r1}`).border = borderBlack;
 
   ws1.getCell(`B${r1}`).value = "Símbolo";
-  ws1.getCell(`B${r1}`).font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+  ws1.getCell(`B${r1}`).font = { name: "Calibri", size: 10.5, bold: true, color: { argb: "FFFFFFFF" } };
   ws1.getCell(`B${r1}`).fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_BLACK } };
   ws1.getCell(`B${r1}`).alignment = { horizontal: "center", vertical: "middle" };
   ws1.getCell(`B${r1}`).border = borderBlack;
 
   ws1.getCell(`C${r1}`).value = "Unidade";
-  ws1.getCell(`C${r1}`).font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+  ws1.getCell(`C${r1}`).font = { name: "Calibri", size: 10.5, bold: true, color: { argb: "FFFFFFFF" } };
   ws1.getCell(`C${r1}`).fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_BLACK } };
   ws1.getCell(`C${r1}`).alignment = { horizontal: "center", vertical: "middle" };
   ws1.getCell(`C${r1}`).border = borderBlack;
@@ -539,7 +541,7 @@ export async function exportCDRawDataXlsx({
     const colLetter = String.fromCharCode(68 + i);
     const cell = ws1.getCell(`${colLetter}${r1}`);
     cell.value = `${cp.displayId ?? cp.id} (σn = ${fmt(cp.normalStressTarget, 0)} kPa)`;
-    cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+    cell.font = { name: "Calibri", size: 10.5, bold: true, color: { argb: "FFFFFFFF" } };
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_BLACK } };
     cell.alignment = { horizontal: "center", vertical: "middle" };
     cell.border = borderBlack;
@@ -570,26 +572,26 @@ export async function exportCDRawDataXlsx({
   ];
 
   rowsData.forEach(([label, sym, unit, fn], idx) => {
-    ws1.getRow(r1).height = 22;
+    ws1.getRow(r1).height = 24;
     const isZebra = idx % 2 === 1;
 
     const cA = ws1.getCell(`A${r1}`);
     cA.value = label;
-    cA.font = { name: "Calibri", size: 10 };
+    cA.font = { name: "Calibri", size: 10.5 };
     cA.alignment = { vertical: "middle" };
     cA.border = borderBlack;
     if (isZebra) cA.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_ZEBRA } };
 
     const cB = ws1.getCell(`B${r1}`);
     cB.value = sym;
-    cB.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FF475569" } };
+    cB.font = { name: "Calibri", size: 10.5, bold: true, color: { argb: "FF475569" } };
     cB.alignment = { horizontal: "center", vertical: "middle" };
     cB.border = borderBlack;
     if (isZebra) cB.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_ZEBRA } };
 
     const cC = ws1.getCell(`C${r1}`);
     cC.value = unit;
-    cC.font = { name: "Calibri", size: 10, color: { argb: "FF64748B" } };
+    cC.font = { name: "Calibri", size: 10.5, color: { argb: "FF64748B" } };
     cC.alignment = { horizontal: "center", vertical: "middle" };
     cC.border = borderBlack;
     if (isZebra) cC.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_ZEBRA } };
@@ -600,7 +602,7 @@ export async function exportCDRawDataXlsx({
       const val = res ? fn(res) : "—";
       const cCell = ws1.getCell(`${colLetter}${r1}`);
       cCell.value = val;
-      cCell.font = { name: "Calibri", size: 10, bold: label.includes("Tensão") || label.includes("Pico") };
+      cCell.font = { name: "Calibri", size: 10.5, bold: label.includes("Tensão") || label.includes("Pico") };
       cCell.alignment = { horizontal: "right", vertical: "middle" };
       cCell.border = borderBlack;
       if (isZebra) cCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_ZEBRA } };
@@ -612,7 +614,7 @@ export async function exportCDRawDataXlsx({
   r1 = addOfficialReportFooter(ws1, sample, r1, assinaturaImageId);
 
   // =========================================================================
-  // ABA 2: CURVAS & GRÁFICOS (Com Gráficos Proporcionais e Sem Sobreposições)
+  // ABA 2: CURVAS & GRÁFICOS
   // =========================================================================
   const wsCharts = wb.addWorksheet("Curvas & Gráficos");
   wsCharts.columns = defaultColumns;
@@ -624,10 +626,10 @@ export async function exportCDRawDataXlsx({
   if (stressStrainId !== null) {
     rC = addSectionBar(wsCharts, rC, "Tensão Cisalhante (τ) vs. Deformação Horizontal (εh)");
     const g1Start = rC;
-    for (let i = 0; i < 18; i++) { wsCharts.getRow(rC).height = 20; rC++; }
+    for (let i = 0; i < 18; i++) { wsCharts.getRow(rC).height = 22; rC++; }
     wsCharts.addImage(stressStrainId, {
       tl: { col: 0.1, row: g1Start - 0.95 },
-      ext: { width: 880, height: 350 },
+      ext: { width: 880, height: 360 },
       editAs: "oneCell",
     });
     rC += 2;
@@ -636,10 +638,10 @@ export async function exportCDRawDataXlsx({
   if (volChangeId !== null) {
     rC = addSectionBar(wsCharts, rC, "Variação Volumétrica — Deslocamento Vertical (δv) vs. Deformação Horizontal (εh)");
     const g2Start = rC;
-    for (let i = 0; i < 18; i++) { wsCharts.getRow(rC).height = 20; rC++; }
+    for (let i = 0; i < 18; i++) { wsCharts.getRow(rC).height = 22; rC++; }
     wsCharts.addImage(volChangeId, {
       tl: { col: 0.1, row: g2Start - 0.95 },
-      ext: { width: 880, height: 350 },
+      ext: { width: 880, height: 360 },
       editAs: "oneCell",
     });
     rC += 2;
@@ -648,7 +650,7 @@ export async function exportCDRawDataXlsx({
   rC = addOfficialReportFooter(wsCharts, sample, rC, assinaturaImageId);
 
   // =========================================================================
-  // ABAS INDIVIDUAIS COMPLETAS POR CP (Alturas 22pt, Espaçamento Generoso)
+  // ABAS INDIVIDUAIS COMPLETAS POR CP
   // =========================================================================
   specimens.forEach((cp, idx) => {
     const cpName = cp.displayId ?? `CP-0${idx + 1}`;
@@ -675,12 +677,12 @@ export async function exportCDRawDataXlsx({
     ];
 
     moldGrid.forEach(([l1, v1, l2, v2], idxM) => {
-      wsCP.getRow(rCP).height = 22;
+      wsCP.getRow(rCP).height = 24;
       const isZebra = idxM % 2 === 1;
 
       const cA = wsCP.getCell(`A${rCP}`);
       cA.value = l1;
-      cA.font = { name: "Calibri", size: 10, bold: true };
+      cA.font = { name: "Calibri", size: 10.5, bold: true };
       cA.alignment = { vertical: "middle" };
       cA.border = borderBlack;
       if (isZebra) cA.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_ZEBRA } };
@@ -688,7 +690,7 @@ export async function exportCDRawDataXlsx({
       wsCP.mergeCells(`B${rCP}:C${rCP}`);
       const cB = wsCP.getCell(`B${rCP}`);
       cB.value = v1;
-      cB.font = { name: "Calibri", size: 10 };
+      cB.font = { name: "Calibri", size: 10.5 };
       cB.alignment = { vertical: "middle" };
       cB.border = borderBlack;
       wsCP.getCell(`C${rCP}`).border = borderBlack;
@@ -700,7 +702,7 @@ export async function exportCDRawDataXlsx({
       wsCP.mergeCells(`D${rCP}:E${rCP}`);
       const cD = wsCP.getCell(`D${rCP}`);
       cD.value = l2;
-      cD.font = { name: "Calibri", size: 10, bold: true };
+      cD.font = { name: "Calibri", size: 10.5, bold: true };
       cD.alignment = { vertical: "middle" };
       cD.border = borderBlack;
       wsCP.getCell(`E${rCP}`).border = borderBlack;
@@ -712,7 +714,7 @@ export async function exportCDRawDataXlsx({
       wsCP.mergeCells(`F${rCP}:G${rCP}`);
       const cF = wsCP.getCell(`F${rCP}`);
       cF.value = v2;
-      cF.font = { name: "Calibri", size: 10 };
+      cF.font = { name: "Calibri", size: 10.5 };
       cF.alignment = { vertical: "middle" };
       cF.border = borderBlack;
       wsCP.getCell(`G${rCP}`).border = borderBlack;
@@ -729,11 +731,11 @@ export async function exportCDRawDataXlsx({
     rCP = addSectionBar(wsCP, rCP, "2. Cápsulas de Umidade Inicial (w₀)");
 
     const cHeaders = ["Cápsula Nº", "Tara (g)", "Solo Úmido + Tara (g)", "Solo Seco + Tara (g)", "Massa Água (g)", "Massa Solo Seco (g)", "Teor de Umidade (%)"];
-    wsCP.getRow(rCP).height = 24;
+    wsCP.getRow(rCP).height = 26;
     cHeaders.forEach((h, hI) => {
       const c = wsCP.getCell(rCP, hI + 1);
       c.value = h;
-      c.font = { name: "Calibri", size: 9.5, bold: true, color: { argb: "FFFFFFFF" } };
+      c.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
       c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_BLACK } };
       c.border = borderBlack;
       c.alignment = { horizontal: "center", vertical: "middle" };
@@ -741,7 +743,7 @@ export async function exportCDRawDataXlsx({
     rCP++;
 
     (cp.capsules || []).forEach((c, cIdx) => {
-      wsCP.getRow(rCP).height = 22;
+      wsCP.getRow(rCP).height = 24;
       const isZebra = cIdx % 2 === 1;
       const mw = (c.wet || 0) - (c.dry || 0);
       const ms = (c.dry || 0) - (c.tara || 0);
@@ -750,7 +752,7 @@ export async function exportCDRawDataXlsx({
       row.forEach((v, i) => {
         const cell = wsCP.getCell(rCP, i + 1);
         cell.value = v;
-        cell.font = { name: "Calibri", size: 10 };
+        cell.font = { name: "Calibri", size: 10.5 };
         cell.border = borderBlack;
         cell.alignment = { horizontal: i === 0 ? "center" : "right", vertical: "middle" };
         if (isZebra) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_ZEBRA } };
@@ -758,16 +760,16 @@ export async function exportCDRawDataXlsx({
       rCP++;
     });
 
-    wsCP.getRow(rCP).height = 22;
+    wsCP.getRow(rCP).height = 24;
     wsCP.mergeCells(`A${rCP}:F${rCP}`);
     const lCap = wsCP.getCell(`A${rCP}`);
     lCap.value = "Umidade Inicial Média w₀ (%):";
-    lCap.font = { name: "Calibri", size: 10, bold: true };
+    lCap.font = { name: "Calibri", size: 10.5, bold: true };
     lCap.alignment = { horizontal: "right", vertical: "middle" };
     lCap.border = borderBlack;
     const vCap = wsCP.getCell(`G${rCP}`);
     vCap.value = fmt(res?.moisture0Pct ?? averageMoisturePct(cp.capsules), 2);
-    vCap.font = { name: "Calibri", size: 10, bold: true };
+    vCap.font = { name: "Calibri", size: 10.5, bold: true };
     vCap.alignment = { horizontal: "right", vertical: "middle" };
     vCap.border = borderBlack;
     rCP += 2;
@@ -776,11 +778,11 @@ export async function exportCDRawDataXlsx({
     rCP = addSectionBar(wsCP, rCP, `3. Adensamento Vertical (σn = ${cp.normalStressTarget} kPa)`);
 
     const consHeaders = ["Leitura Nº", "Tempo (min)", "√t (min½)", "Recalque Vertical Δh (mm)", "Altura Atual H (mm)", "Índice de Vazios e", "Status"];
-    wsCP.getRow(rCP).height = 24;
+    wsCP.getRow(rCP).height = 26;
     consHeaders.forEach((h, hI) => {
       const c = wsCP.getCell(rCP, hI + 1);
       c.value = h;
-      c.font = { name: "Calibri", size: 9.5, bold: true, color: { argb: "FFFFFFFF" } };
+      c.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
       c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_BLACK } };
       c.border = borderBlack;
       c.alignment = { horizontal: "center", vertical: "middle" };
@@ -789,17 +791,17 @@ export async function exportCDRawDataXlsx({
 
     const consData = cp.consolidationData || [];
     if (consData.length === 0) {
-      wsCP.getRow(rCP).height = 22;
+      wsCP.getRow(rCP).height = 24;
       wsCP.mergeCells(`A${rCP}:G${rCP}`);
       const emptyCell = wsCP.getCell(`A${rCP}`);
       emptyCell.value = "Etapa de adensamento realizada de forma contínua.";
-      emptyCell.font = { name: "Calibri", size: 10, italic: true };
+      emptyCell.font = { name: "Calibri", size: 10.5, italic: true };
       emptyCell.alignment = { vertical: "middle" };
       emptyCell.border = borderBlack;
       rCP++;
     } else {
       consData.forEach((p, pIdx) => {
-        wsCP.getRow(rCP).height = 22;
+        wsCP.getRow(rCP).height = 24;
         const isZebra = pIdx % 2 === 1;
         const curH = (cp.height0Mm || 20) - (p.settlementMm || 0);
         const curE = res ? (curH / res.H0) * (1 + res.voidRatio0) - 1 : 0;
@@ -807,7 +809,7 @@ export async function exportCDRawDataXlsx({
         row.forEach((v, i) => {
           const cell = wsCP.getCell(rCP, i + 1);
           cell.value = v;
-          cell.font = { name: "Calibri", size: 10 };
+          cell.font = { name: "Calibri", size: 10.5 };
           cell.border = borderBlack;
           cell.alignment = { horizontal: i === 0 || i === 6 ? "center" : "right", vertical: "middle" };
           if (isZebra) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_ZEBRA } };
@@ -816,23 +818,23 @@ export async function exportCDRawDataXlsx({
       });
     }
 
-    wsCP.getRow(rCP).height = 22;
+    wsCP.getRow(rCP).height = 24;
     wsCP.mergeCells(`A${rCP}:D${rCP}`);
     const lCons = wsCP.getCell(`A${rCP}`);
     lCons.value = "Recalque Total de Adensamento (Δh):";
-    lCons.font = { name: "Calibri", size: 10, bold: true };
+    lCons.font = { name: "Calibri", size: 10.5, bold: true };
     lCons.alignment = { horizontal: "right", vertical: "middle" };
     lCons.border = borderBlack;
 
     const vCons1 = wsCP.getCell(`E${rCP}`);
     vCons1.value = fmt(res ? res.H0 - res.heightAfterCons : 0, 3) + " mm";
-    vCons1.font = { name: "Calibri", size: 10, bold: true };
+    vCons1.font = { name: "Calibri", size: 10.5, bold: true };
     vCons1.alignment = { horizontal: "right", vertical: "middle" };
     vCons1.border = borderBlack;
 
     const vCons2 = wsCP.getCell(`F${rCP}`);
     vCons2.value = "ec = " + fmt(res?.voidRatioAfterCons, 3);
-    vCons2.font = { name: "Calibri", size: 10, bold: true };
+    vCons2.font = { name: "Calibri", size: 10.5, bold: true };
     vCons2.alignment = { horizontal: "center", vertical: "middle" };
     vCons2.border = borderBlack;
     wsCP.getCell(`G${rCP}`).border = borderBlack;
@@ -842,11 +844,11 @@ export async function exportCDRawDataXlsx({
     rCP = addSectionBar(wsCP, rCP, "4. Leituras da Etapa de Cisalhamento Passo a Passo");
 
     const sStepHeaders = ["Ponto Nº", "Disp. Horiz. (mm)", "Deformação Horiz. (%)", "Carga (kgf)", "Recalque Vert. (mm)", "Área Corrigida (cm²)", "Tensão Cisalhante τ (kPa)"];
-    wsCP.getRow(rCP).height = 24;
+    wsCP.getRow(rCP).height = 26;
     sStepHeaders.forEach((h, hI) => {
       const c = wsCP.getCell(rCP, hI + 1);
       c.value = h;
-      c.font = { name: "Calibri", size: 9.5, bold: true, color: { argb: "FFFFFFFF" } };
+      c.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
       c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_BLACK } };
       c.border = borderBlack;
       c.alignment = { horizontal: "center", vertical: "middle" };
@@ -854,7 +856,7 @@ export async function exportCDRawDataXlsx({
     rCP++;
 
     (cp.shearData || []).forEach((reading, pIdx) => {
-      wsCP.getRow(rCP).height = 22;
+      wsCP.getRow(rCP).height = 24;
       const isZebra = pIdx % 2 === 1;
       const calcPt = res?.curve?.[pIdx];
       const forceN = reading.loadKgf != null ? reading.loadKgf * 9.80665 : reading.shearForce;
@@ -873,7 +875,7 @@ export async function exportCDRawDataXlsx({
       row.forEach((v, i) => {
         const cell = wsCP.getCell(rCP, i + 1);
         cell.value = v;
-        cell.font = { name: "Calibri", size: 10 };
+        cell.font = { name: "Calibri", size: 10.5 };
         cell.border = borderBlack;
         cell.alignment = { horizontal: i === 0 ? "center" : "right", vertical: "middle" };
         if (isZebra) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_ZEBRA } };
@@ -885,11 +887,11 @@ export async function exportCDRawDataXlsx({
     // 5. Cápsulas de Umidade Final (wf)
     rCP = addSectionBar(wsCP, rCP, "5. Cápsulas de Umidade Final (Pós-Ruptura wf)");
 
-    wsCP.getRow(rCP).height = 24;
+    wsCP.getRow(rCP).height = 26;
     cHeaders.forEach((h, hI) => {
       const c = wsCP.getCell(rCP, hI + 1);
       c.value = h;
-      c.font = { name: "Calibri", size: 9.5, bold: true, color: { argb: "FFFFFFFF" } };
+      c.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
       c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_BLACK } };
       c.border = borderBlack;
       c.alignment = { horizontal: "center", vertical: "middle" };
@@ -897,7 +899,7 @@ export async function exportCDRawDataXlsx({
     rCP++;
 
     (cp.finalCapsules || []).forEach((c, cIdx) => {
-      wsCP.getRow(rCP).height = 22;
+      wsCP.getRow(rCP).height = 24;
       const isZebra = cIdx % 2 === 1;
       const mw = (c.wet || 0) - (c.dry || 0);
       const ms = (c.dry || 0) - (c.tara || 0);
@@ -906,7 +908,7 @@ export async function exportCDRawDataXlsx({
       row.forEach((v, i) => {
         const cell = wsCP.getCell(rCP, i + 1);
         cell.value = v;
-        cell.font = { name: "Calibri", size: 10 };
+        cell.font = { name: "Calibri", size: 10.5 };
         cell.border = borderBlack;
         cell.alignment = { horizontal: i === 0 ? "center" : "right", vertical: "middle" };
         if (isZebra) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_ZEBRA } };
@@ -914,16 +916,16 @@ export async function exportCDRawDataXlsx({
       rCP++;
     });
 
-    wsCP.getRow(rCP).height = 22;
+    wsCP.getRow(rCP).height = 24;
     wsCP.mergeCells(`A${rCP}:F${rCP}`);
     const lCapF = wsCP.getCell(`A${rCP}`);
     lCapF.value = "Umidade Final Média wf (%):";
-    lCapF.font = { name: "Calibri", size: 10, bold: true };
+    lCapF.font = { name: "Calibri", size: 10.5, bold: true };
     lCapF.alignment = { horizontal: "right", vertical: "middle" };
     lCapF.border = borderBlack;
     const vCapF = wsCP.getCell(`G${rCP}`);
     vCapF.value = fmt(res?.moistureFinalPct ?? averageMoisturePct(cp.finalCapsules), 2);
-    vCapF.font = { name: "Calibri", size: 10, bold: true };
+    vCapF.font = { name: "Calibri", size: 10.5, bold: true };
     vCapF.alignment = { horizontal: "right", vertical: "middle" };
     vCapF.border = borderBlack;
     rCP += 2;
@@ -938,12 +940,12 @@ export async function exportCDRawDataXlsx({
     ];
 
     sumRows.forEach(([l1, v1, l2, v2], idxS) => {
-      wsCP.getRow(rCP).height = 22;
+      wsCP.getRow(rCP).height = 24;
       const isZebra = idxS % 2 === 1;
 
       const cA = wsCP.getCell(`A${rCP}`);
       cA.value = l1;
-      cA.font = { name: "Calibri", size: 10, bold: true };
+      cA.font = { name: "Calibri", size: 10.5, bold: true };
       cA.alignment = { vertical: "middle" };
       cA.border = borderBlack;
       if (isZebra) cA.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_ZEBRA } };
@@ -951,7 +953,7 @@ export async function exportCDRawDataXlsx({
       wsCP.mergeCells(`B${rCP}:C${rCP}`);
       const cB = wsCP.getCell(`B${rCP}`);
       cB.value = v1;
-      cB.font = { name: "Calibri", size: 10, bold: true };
+      cB.font = { name: "Calibri", size: 10.5 };
       cB.alignment = { vertical: "middle" };
       cB.border = borderBlack;
       wsCP.getCell(`C${rCP}`).border = borderBlack;
@@ -963,7 +965,7 @@ export async function exportCDRawDataXlsx({
       wsCP.mergeCells(`D${rCP}:E${rCP}`);
       const cD = wsCP.getCell(`D${rCP}`);
       cD.value = l2;
-      cD.font = { name: "Calibri", size: 10, bold: true };
+      cD.font = { name: "Calibri", size: 10.5, bold: true };
       cD.alignment = { vertical: "middle" };
       cD.border = borderBlack;
       wsCP.getCell(`E${rCP}`).border = borderBlack;
@@ -975,7 +977,7 @@ export async function exportCDRawDataXlsx({
       wsCP.mergeCells(`F${rCP}:G${rCP}`);
       const cF = wsCP.getCell(`F${rCP}`);
       cF.value = v2;
-      cF.font = { name: "Calibri", size: 10, bold: true };
+      cF.font = { name: "Calibri", size: 10.5 };
       cF.alignment = { vertical: "middle" };
       cF.border = borderBlack;
       wsCP.getCell(`G${rCP}`).border = borderBlack;
@@ -991,7 +993,7 @@ export async function exportCDRawDataXlsx({
   });
 
   // =========================================================================
-  // ABA FINAL: REGISTRO FOTOGRÁFICO (COM FOTOS REAIS PROPORCIONAIS)
+  // ABA FINAL: REGISTRO FOTOGRÁFICO (COM FOTOS PROPORCIONAIS E SEM SOBREPOSIÇÃO)
   // =========================================================================
   const wsPhotos = wb.addWorksheet("Registro Fotográfico");
   wsPhotos.columns = defaultColumns;
@@ -1005,29 +1007,29 @@ export async function exportCDRawDataXlsx({
   // SEÇÃO 1: FOTOS DE MOLDAGEM
   rPh = addSectionBar(wsPhotos, rPh, "Etapa de Moldagem / Aspecto Inicial");
   const mImgStart = rPh;
-  for (let i = 0; i < 11; i++) { wsPhotos.getRow(rPh).height = 18; rPh++; }
+  for (let i = 0; i < 12; i++) { wsPhotos.getRow(rPh).height = 22; rPh++; }
 
   specimens.slice(0, 3).forEach((cp, i) => {
     const p = photos.find((x) => (x.specimenId === cp.id || x.specimenId === cp.displayId) && x.kind === "moldagem");
-    const colStart = i === 0 ? 0.15 : i === 1 ? 2.5 : 4.85;
+    const colStart = i === 0 ? 0.2 : i === 1 ? 2.6 : 5.0;
 
     if (p && photoImageIds[p.id]) {
       wsPhotos.addImage(photoImageIds[p.id], {
         tl: { col: colStart, row: mImgStart - 0.9 },
-        ext: { width: 255, height: 180 },
+        ext: { width: 260, height: 180 },
         editAs: "oneCell",
       });
     }
   });
 
-  wsPhotos.getRow(rPh).height = 22;
+  wsPhotos.getRow(rPh).height = 26;
   specimens.slice(0, 3).forEach((cp, i) => {
     const cellStart = i === 0 ? "A" : i === 1 ? "C" : "F";
     const cellEnd = i === 0 ? "B" : i === 1 ? "E" : "G";
     wsPhotos.mergeCells(`${cellStart}${rPh}:${cellEnd}${rPh}`);
     const legCell = wsPhotos.getCell(`${cellStart}${rPh}`);
     legCell.value = `${cp.displayId ?? cp.id} (σn = ${fmt(cp.normalStressTarget, 0)} kPa)`;
-    legCell.font = { name: "Calibri", size: 9.5, bold: true };
+    legCell.font = { name: "Calibri", size: 10.5, bold: true };
     legCell.alignment = { horizontal: "center", vertical: "middle" };
     legCell.border = borderBlack;
   });
@@ -1036,29 +1038,29 @@ export async function exportCDRawDataXlsx({
   // SEÇÃO 2: FOTOS DE RUPTURA
   rPh = addSectionBar(wsPhotos, rPh, "Após Ruptura / Plano de Cisalhamento");
   const rupStart = rPh;
-  for (let i = 0; i < 11; i++) { wsPhotos.getRow(rPh).height = 18; rPh++; }
+  for (let i = 0; i < 12; i++) { wsPhotos.getRow(rPh).height = 22; rPh++; }
 
   specimens.slice(0, 3).forEach((cp, i) => {
     const p = photos.find((x) => (x.specimenId === cp.id || x.specimenId === cp.displayId) && x.kind === "ruptura");
-    const colStart = i === 0 ? 0.15 : i === 1 ? 2.5 : 4.85;
+    const colStart = i === 0 ? 0.2 : i === 1 ? 2.6 : 5.0;
 
     if (p && photoImageIds[p.id]) {
       wsPhotos.addImage(photoImageIds[p.id], {
         tl: { col: colStart, row: rupStart - 0.9 },
-        ext: { width: 255, height: 180 },
+        ext: { width: 260, height: 180 },
         editAs: "oneCell",
       });
     }
   });
 
-  wsPhotos.getRow(rPh).height = 22;
+  wsPhotos.getRow(rPh).height = 26;
   specimens.slice(0, 3).forEach((cp, i) => {
     const cellStart = i === 0 ? "A" : i === 1 ? "C" : "F";
     const cellEnd = i === 0 ? "B" : i === 1 ? "E" : "G";
     wsPhotos.mergeCells(`${cellStart}${rPh}:${cellEnd}${rPh}`);
     const legCell = wsPhotos.getCell(`${cellStart}${rPh}`);
     legCell.value = `${cp.displayId ?? cp.id} (σn = ${fmt(cp.normalStressTarget, 0)} kPa)`;
-    legCell.font = { name: "Calibri", size: 9.5, bold: true };
+    legCell.font = { name: "Calibri", size: 10.5, bold: true };
     legCell.alignment = { horizontal: "center", vertical: "middle" };
     legCell.border = borderBlack;
   });
