@@ -69,9 +69,11 @@ function AppLayout() {
   const nav = useNavigate();
   const { loading, user, profile, isGuest, canAccess } = useAuth();
 
+  const isPublicModel = pathname.startsWith("/modelos-relatorios");
+
   // Guard: sem sessão e sem convidado → /auth
   useEffect(() => {
-    if (loading) return;
+    if (loading || isPublicModel) return;
     if (!user && !isGuest) {
       nav({ to: "/auth", replace: true });
       return;
@@ -87,9 +89,9 @@ function AppLayout() {
         nav({ to: "/entregas", replace: true });
       }
     }
-  }, [loading, user, profile, isGuest, pathname, canAccess, nav]);
+  }, [loading, user, profile, isGuest, pathname, canAccess, nav, isPublicModel]);
 
-  if (loading || (!user && !isGuest)) {
+  if ((loading && !isPublicModel) || (!user && !isGuest && !isPublicModel)) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
