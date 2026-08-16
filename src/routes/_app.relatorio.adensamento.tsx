@@ -1006,7 +1006,17 @@ export function AdensamentoPage() {
                   <CardTitle className="text-primary">Leituras do Defletômetro × Tempo</CardTitle>
                   <CardDescription>Deslocamentos cumulativos (mm). Todas as células são editáveis.</CardDescription>
                 </div>
-                <Badge variant="outline">{stages.length} estágios</Badge>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setImportOpen(true)}
+                    className="h-8 text-xs gap-1.5 font-semibold text-primary border-primary/30 hover:bg-primary/5"
+                  >
+                    <ClipboardPaste className="h-3.5 w-3.5" /> Colar Leituras / Configurar Estágios
+                  </Button>
+                  <Badge variant="outline">{stages.length} estágios</Badge>
+                </div>
               </CardHeader>
               <CardContent className="overflow-x-auto">
                 <Table className="text-xs">
@@ -1351,6 +1361,80 @@ export function AdensamentoPage() {
           © {new Date().getFullYear()} Suporte Infra Engenharia · Plataforma de Ensaios Geotécnicos
         </footer>
       </main>
+
+      
+      {/* Diálogo de Importação de Dados por Colagem Rápida e Sequência de Tensões */}
+      <OedImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        stages={stages as any}
+        selectedStageIndex={selectedStage}
+        onImportStages={(newStages) => {
+          setStages(newStages as any);
+          setSelectedStage((prev) => Math.min(prev, newStages.length - 1));
+          toast.success("Estágios e tensões atualizados com sucesso!");
+        }}
+        onImportSingleStageReadings={(stIdx, readings) => {
+          const updated = [...stages];
+          if (updated[stIdx]) {
+            updated[stIdx] = {
+              ...updated[stIdx],
+              readings,
+              finalDial: readings[readings.length - 1]?.d ?? updated[stIdx].finalDial,
+            };
+            setStages(updated);
+            toast.success(`${readings.length} leituras importadas para o Estágio ${stIdx + 1} (${stages[stIdx]?.sigma} kPa)!`);
+          }
+        }}
+      />
+
+      {/* Pop-up Modal de Visualização do Relatório PDF */}
+      <Dialog
+        open={reportPreviewOpen}
+        onOpenChange={(open) => {
+          setReportPreviewOpen(open);
+        }}
+      >
+        <DialogContent className="max-w-5xl w-[95vw] h-[90vh] flex flex-col p-4 sm:p-6 gap-3">
+          <DialogHeader className="flex flex-row items-center justify-between pb-2 border-b">
+            <div>
+              <DialogTitle className="text-base font-bold flex items-center gap-2">
+                <FileText className="h-5 w-5 text-primary" />
+                Laudo Oficial de Adensamento Edométrico (ABNT NBR 16853 / ASTM D2435)
+              </DialogTitle>
+              <DialogDescription className="text-xs">
+                {sample.client} · {sample.workNumber} · Amostra: {sample.reportNumber || sample.code} ({sample.borehole} - {sample.depth} m)
+              </DialogDescription>
+            </div>
+            <div className="flex items-center gap-2 mr-6">
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 text-xs"
+                onClick={() => window.print()}
+              >
+                Imprimir Laudo
+              </Button>
+            </div>
+          </DialogHeader>
+
+          <div className="flex-1 w-full h-full min-h-0 bg-muted/40 rounded-lg overflow-auto border p-4 flex flex-col items-center gap-6">
+            <PrintableReport
+              sample={sample}
+              phys={phys}
+              stages={stages}
+              eCurve={eCurve}
+              loadingCurve={loadingCurve}
+              cas={cas}
+              ps={ps}
+              ccr={ccr}
+              cvTable={cvTable}
+              photos={ctx?.photos || []}
+              axisCfg={axisCfg}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <div
         ref={printRef}
