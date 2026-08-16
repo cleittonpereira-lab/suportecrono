@@ -3035,14 +3035,6 @@ function MoldagemFicha({
                     className="h-8 text-xs text-right font-mono"
                   />
                 </div>
-                <div>
-                  <Label className="text-[11px] text-muted-foreground">Umidade final w_f (%)</Label>
-                  <PtNumInput
-                    value={cp.wFinalPct ?? 0}
-                    onChange={(v) => onCp({ wFinalPct: v })}
-                    className="h-8 text-xs text-right font-mono"
-                  />
-                </div>
               </div>
             </div>
           </CardContent>
@@ -3054,7 +3046,7 @@ function MoldagemFicha({
         <button
           type="button"
           onClick={onToggleGeom}
-          className="flex w-full items-center justify-between border-b border-border bg-muted/40 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide"
+          className="flex w-full items-center justify-between border-b border-border/40 bg-muted/40 hover:bg-muted/70 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide transition-colors text-primary"
         >
           <span className="flex items-center gap-2">
             {geomOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -3110,20 +3102,7 @@ function MoldagemFicha({
                 </div>
               )}
             </div>
-            <NumField label="Massa inicial CP (g)" value={cp.wetMass} step={0.01} onChange={(v) => onCp({ wetMass: v })} />
             <NumField label="σ3' alvo (kPa)" value={cp.sigma3Target} onChange={(v) => onCp({ sigma3Target: v })} />
-            <NumField
-              label="Massa final CP (g)"
-              value={cp.mFinal ?? 0}
-              step={0.01}
-              onChange={(v) => onCp({ mFinal: v })}
-            />
-            <NumField
-              label="Umidade final w_f (%)"
-              value={cp.wFinalPct ?? 0}
-              step={0.01}
-              onChange={(v) => onCp({ wFinalPct: v })}
-            />
             <div>
               <Label className="text-xs">Critério de ruptura</Label>
               <Select value={cp.failureCriterion} onValueChange={(v) => onCp({ failureCriterion: v as TriaxialSpecimen["failureCriterion"] })}>
@@ -3143,7 +3122,7 @@ function MoldagemFicha({
         <button
           type="button"
           onClick={onToggleIndices}
-          className="flex w-full items-center justify-between border-b border-border bg-muted/40 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide"
+          className="flex w-full items-center justify-between border-b border-border/40 bg-muted/40 hover:bg-muted/70 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide transition-colors text-primary"
         >
           <span className="flex items-center gap-2">
             {indicesOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
