@@ -110,6 +110,8 @@ import { saveOedReportVersion, listOedReportVersions } from "@/features/oedomete
 import { saveOedDraft, loadOedDraft } from "@/features/oedometer/draftStore";
 import { requestApproval, verifyApproval, decideApproval, listApprovals } from "@/lib/approvals.functions";
 import { WorkflowFarol } from "@/features/lab/components/WorkflowFarol";
+import { PickerWithCreate } from "@/features/cisalhamento-direto/PickerWithCreate";
+import { Settings2, Send, ShieldCheck } from "lucide-react";
 import { EnsaioListByType } from "@/features/lab/components/EnsaioListByType";
 import {
   Dialog,
@@ -676,34 +678,198 @@ export function AdensamentoPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-30 border-b border-border bg-card/95 backdrop-blur">
-        <div className="mx-auto flex max-w-[1400px] items-center justify-between px-6 py-3">
-          <SuporteLogo />
-          <div className="flex items-center gap-3">
-            <Badge variant="outline" className="font-mono text-xs">
-              Furo {sample.borehole} • {sample.depth}
-            </Badge>
-            <Badge className="bg-primary text-primary-foreground">Rev. {sample.revision}</Badge>
-            <ThemeToggle />
-            <Button onClick={handleExportPDF} disabled={isExportingPDF} className="gap-2">
-              <Download className="h-4 w-4" /> {isExportingPDF ? "Gerando..." : "Gerar PDF"}
-            </Button>
+    <div className="flex min-h-screen flex-col bg-background p-4 lg:p-6 pb-20">
+      {/* Top Header com Farol e Ações (Padrão Cisalhamento Direto) */}
+      <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <FlaskConical className="h-6 w-6" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline">ABNT NBR 16853 / ASTM D2435</Badge>
+              <WorkflowFarol status={approvals[0]?.status || "em_digitacao"} />
+            </div>
+            <h1 className="mt-1 text-xl font-bold tracking-tight">
+              ENSAIO DE ADENSAMENTO UNIDIMENSIONAL (EDOMÉTRICO)
+            </h1>
+            <p className="text-xs text-muted-foreground">
+              Determinação dos parâmetros de compressibilidade e adensamento: Cc, Cs, Cr, σ'vm, Cv e k.
+            </p>
           </div>
         </div>
-      </header>
 
-      <main className="mx-auto max-w-[1400px] px-6 py-6">
-        <div className="mb-6 grid gap-4 md:grid-cols-4">
-          <KpiCard icon={<Beaker className="h-4 w-4" />} label="e₀" value={fmt(phys.e0)} />
-          <KpiCard icon={<Ruler className="h-4 w-4" />} label="wᵢ" value={`${fmt(phys.wi, 2)}%`} />
-          <KpiCard
-            icon={<Activity className="h-4 w-4" />}
-            label="σ'ᵥₘ Casagrande"
-            value={cas ? `${fmt(cas.sigmaP, 1)} kPa` : "—"}
-          />
-          <KpiCard icon={<BarChart3 className="h-4 w-4" />} label="Cc / Cr" value={`${fmt(ccr.Cc, 3)} / ${fmt(ccr.Cr, 3)}`} />
+        <div className="flex flex-wrap items-center gap-2 justify-end">
+          {/* Botão Contextual de Fluxo */}
+          <Button
+            size="sm"
+            onClick={() => handleSaveVersion()}
+            disabled={savingVersion}
+            className="gap-2 bg-amber-600 hover:bg-amber-700 text-white"
+          >
+            <Send className="h-4 w-4" />
+            {savingVersion ? "Enviando…" : "Terminei a digitação — Enviar para verificação"}
+          </Button>
+
+          {/* Ajustes de Eixos */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setActiveTab("relatorio")}
+            className="gap-1.5 text-xs"
+          >
+            <Settings2 className="h-4 w-4" />
+            Ajustes
+          </Button>
+
+          {/* Exportar Dados Brutos (XLSX) */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportXlsx}
+            className="border-emerald-600/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 gap-1.5 text-xs font-semibold"
+          >
+            <FileSpreadsheet className="h-4 w-4 text-emerald-600" /> Exportar Dados Brutos (XLSX)
+          </Button>
+
+          {/* Visualizar Relatório */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setReportPreviewOpen(true)}
+            className="gap-1.5 text-xs font-semibold"
+          >
+            <Eye className="h-4 w-4" /> Visualizar Relatório
+          </Button>
+
+          <ThemeToggle />
         </div>
+      </div>
+
+      {/* Barra Superior de Operador e Digitador (Padrão Cisalhamento Direto) */}
+      <div className="mb-4 grid gap-3 rounded-lg border border-border bg-card p-3 sm:grid-cols-2">
+        <div className="flex items-center gap-2">
+          <Label className="text-xs text-muted-foreground whitespace-nowrap">
+            Operador do ensaio (Laboratorista)
+          </Label>
+          <div className="flex-1">
+            <PickerWithCreate
+              kind="operators"
+              value={sample.operator ?? ""}
+              onChange={(v) => setSample((s) => ({ ...s, operator: v }))}
+              placeholder="Selecione o laboratorista…"
+              createLabel="Novo laboratorista"
+            />
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Label className="text-xs text-muted-foreground whitespace-nowrap">
+            Digitado por
+          </Label>
+          <div className="flex-1">
+            <PickerWithCreate
+              kind="typists"
+              value={(sample as any).typedBy ?? sample.operator ?? ""}
+              onChange={(v) => setSample((s: any) => ({ ...s, typedBy: v }))}
+              placeholder="Selecione quem digitou…"
+              createLabel="Novo digitador"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Identificação da amostra (comum a todos os estágios) */}
+      <Card className="mb-4 border-primary/30 bg-primary/5">
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-sm font-bold">
+                Amostra {sample.reportNumber || sample.code || "—"} · OS {sample.os || "—"}
+              </CardTitle>
+              <CardDescription className="text-xs">
+                {sample.client || "—"} · Furo {sample.borehole || "—"} · Prof. {sample.depth || "—"}
+              </CardDescription>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab("ficha")}
+              className="text-xs text-primary hover:underline font-medium"
+            >
+              editar amostra →
+            </button>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <div className="grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <div className="text-muted-foreground text-[11px]">Condição do ensaio</div>
+              <div className="font-semibold text-foreground">
+                Adensamento Unidimensional (1D) — Inundado
+              </div>
+            </div>
+            <div>
+              <div className="text-muted-foreground text-[11px]">Condição da amostra</div>
+              <div className="font-semibold text-foreground">
+                Indeformada · {sample.description?.substring(0, 30) || "Argila siltosa"}
+              </div>
+            </div>
+            <div>
+              <div className="text-muted-foreground text-[11px]">Equipamento</div>
+              <div className="font-semibold text-foreground">
+                Célula Edométrica de Anel Fixo
+              </div>
+            </div>
+            <div>
+              <div className="text-muted-foreground text-[11px]">Geometria</div>
+              <div className="font-semibold text-foreground">
+                Circular (Ø {sample.ringDiameter} mm × {sample.ringHeight} mm)
+              </div>
+            </div>
+          </div>
+
+          {/* Estágios de Tensão Pills */}
+          <div className="mt-3 pt-3 border-t border-primary/15">
+            <div className="text-[11px] font-semibold text-muted-foreground uppercase mb-1.5 flex items-center justify-between">
+              <span>Estágios de Tensão ({stages.length})</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setImportOpen(true)}
+                className="h-6 text-[11px] px-2 gap-1 text-primary hover:bg-primary/10"
+              >
+                <ClipboardPaste className="h-3 w-3" /> Configurar / Colar
+              </Button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {stages.map((st, i) => {
+                const isSelected = selectedStage === i;
+                const isSeating = (st as any).isSeatingStage;
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => {
+                      setSelectedStage(i);
+                      setActiveTab("dados");
+                    }}
+                    className={`px-2.5 py-1 rounded text-xs font-semibold transition-all border ${
+                      isSelected
+                        ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                        : isSeating
+                          ? "bg-amber-50 text-amber-900 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-700"
+                          : "bg-background text-foreground hover:bg-muted border-border"
+                    }`}
+                  >
+                    Estágio {i + 1} — σ' = {st.sigma} kPa {isSeating ? "(Assentamento)" : ""}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <main className="w-full">
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-4 bg-muted/60">
