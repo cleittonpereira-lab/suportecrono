@@ -559,8 +559,13 @@ export function CDPage() {
         console.warn("Drive sync standby:", err);
       }
 
-      await requestApproval({ data: { scopeId, rev: saved.rev, filename, skipVerification } });
-      await refreshApprovals();
+      try {
+        await requestApproval({ data: { scopeId, rev: saved.rev, filename, skipVerification } });
+        await refreshApprovals();
+      } catch (err) {
+        console.warn("Approval request standby:", err);
+      }
+
       toast.success(
         skipVerification
           ? `Versão Rev ${String(saved.rev).padStart(2, "0")} gerada e enviada para aprovação!`
