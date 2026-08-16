@@ -1,6 +1,14 @@
 // Oedometer (1D Consolidation) - Suporte Infra
 // Unidades: σ' [kPa], H, ΔH [mm], massas [g], V [cm³], Cv [cm²/s], kv [cm/s]
 
+export interface MoistureCapsule {
+  numero?: string;
+  tipo?: string;
+  tara: number;
+  wet: number;
+  dry: number;
+}
+
 export interface SampleProps {
   project: string;
   client: string;
@@ -17,6 +25,11 @@ export interface SampleProps {
   code: string;
   os: string;
   granulometricDescription: string;
+  equipment?: string;
+  ringNumber?: string;
+  ringMass?: number;
+  wetMassInitialWithRing?: number;
+  wetMassFinalWithRing?: number;
   ringDiameter: number; // mm
   ringHeight: number; // mm (H0)
   wetMassInitial: number; // g
@@ -24,12 +37,15 @@ export interface SampleProps {
   dryMass: number; // g
   Gs: number;
   rhoW: number; // g/cm3
+  capsules?: MoistureCapsule[];
+  finalCapsules?: MoistureCapsule[];
 }
 
 export interface Stage {
   sigma: number; // kPa
   readings: { t: number; d: number }[]; // t [min], d [mm] cumulative settlement
   finalDial: number; // mm
+  isSeatingStage?: boolean;
 }
 
 export const PI = Math.PI;
@@ -37,20 +53,68 @@ export const PI = Math.PI;
 export const ringArea = (d_mm: number) => (PI * (d_mm / 10) ** 2) / 4;
 export const ringVolume = (d_mm: number, h_mm: number) => ringArea(d_mm) * (h_mm / 10);
 
+export function calcMoistureFromCapsules(caps?: MoistureCapsule[]): number | null {
+  if (!caps || caps.length === 0) return null;
+  const valid = caps
+    .map((c) => {
+      const ms = c.dry - c.tara;
+      return ms > 0 && c.wet >= c.dry ? ((c.wet - c.dry) / ms) * 100 : NaN;
+    })
+    .filter((v) => isFinite(v));
+  return valid.length > 0 ? valid.reduce((a, b) => a + b, 0) / valid.length : null;
+}
+
 export function physicalIndices(s: SampleProps) {
   const A = ringArea(s.ringDiameter);
   const V0 = ringVolume(s.ringDiameter, s.ringHeight);
-  const wi = ((s.wetMassInitial - s.dryMass) / s.dryMass) * 100;
-  const wf = ((s.wetMassFinal - s.dryMass) / s.dryMass) * 100;
-  const rho_i = s.wetMassInitial / V0;
-  const rho_d = s.dryMass / V0;
-  const Vs = s.dryMass / (s.Gs * s.rhoW);
-  const e0 = V0 / Vs - 1;
-  const Sr0 = ((wi / 100) * s.Gs) / e0;
-  const Vw_f = (s.wetMassFinal - s.dryMass) / s.rhoW;
-  const ef_assumed_sat = Math.min(e0, Vw_f / Vs);
-  const Srf = Math.min(1, ((wf / 100) * s.Gs) / ef_assumed_sat);
-  return { A, V0, Vs, wi, wf, rho_i, rho_d, rho_f: rho_i, e0, ef: ef_assumed_sat, Sr0: Sr0 * 100, Srf: Srf * 100 };
+
+  // Massa úmida inicial (com desconto do anel se informado com anel)
+  const wetMassInitial =
+    typeof s.wetMassInitialWithRing === "number" && typeof s.ringMass === "number" && s.wetMassInitialWithRing > s.ringMass
+      ? s.wetMassInitialWithRing - s.ringMass
+      : s.wetMassInitial;
+
+  // Massa úmida final
+  const wetMassFinal =
+    typeof s.wetMassFinalWithRing === "number" && typeof s.ringMass === "number" && s.wetMassFinalWithRing > s.ringMass
+      ? s.wetMassFinalWithRing - s.ringMass
+      : s.wetMassFinal;
+
+  // Umidades por cápsulas
+  const wiFromCaps = calcMoistureFromCapsules(s.capsules);
+  const wfFromCaps = calcMoistureFromCapsules(s.finalCapsules);
+
+  // Massa seca calculada
+  const wi = wiFromCaps != null ? wiFromCaps : s.dryMass > 0 ? ((wetMassInitial - s.dryMass) / s.dryMass) * 100 : 0;
+  const dryMass = s.dryMass > 0 ? s.dryMass : wi > 0 ? wetMassInitial / (1 + wi / 100) : wetMassInitial;
+  const wf = wfFromCaps != null ? wfFromCaps : dryMass > 0 ? ((wetMassFinal - dryMass) / dryMass) * 100 : 0;
+
+  const rho_i = V0 > 0 ? wetMassInitial / V0 : 0;
+  const rho_d = V0 > 0 ? dryMass / V0 : 0;
+  const Vs = s.Gs > 0 && s.rhoW > 0 ? dryMass / (s.Gs * s.rhoW) : 0;
+  const e0 = Vs > 0 ? V0 / Vs - 1 : 0;
+  const Sr0 = e0 > 0 && s.Gs > 0 ? ((wi / 100) * s.Gs) / e0 : 0;
+  const Vw_f = s.rhoW > 0 ? (wetMassFinal - dryMass) / s.rhoW : 0;
+  const ef_assumed_sat = Vs > 0 ? Math.min(e0, Vw_f / Vs) : e0;
+  const Srf = ef_assumed_sat > 0 && s.Gs > 0 ? Math.min(1, ((wf / 100) * s.Gs) / ef_assumed_sat) : 0;
+
+  return {
+    A,
+    V0,
+    Vs,
+    wi,
+    wf,
+    wetMassInitial,
+    wetMassFinal,
+    dryMass,
+    rho_i,
+    rho_d,
+    rho_f: V0 > 0 ? wetMassFinal / V0 : 0,
+    e0,
+    ef: ef_assumed_sat,
+    Sr0: Sr0 * 100,
+    Srf: Srf * 100,
+  };
 }
 
 export const voidRatio = (e0: number, H0: number, dH: number) => e0 - (dH / H0) * (1 + e0);

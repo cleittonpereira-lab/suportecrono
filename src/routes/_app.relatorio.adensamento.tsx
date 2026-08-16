@@ -887,115 +887,513 @@ export function AdensamentoPage() {
             </TabsTrigger>
           </TabsList>
 
-          {/* TAB 1 */}
-          <TabsContent value="ficha" className="mt-4 grid gap-4 lg:grid-cols-3">
-            <Card className="lg:col-span-2">
-              <CardHeader>
-                <CardTitle className="text-primary">Identificação do Ensaio</CardTitle>
-                <CardDescription>Dados administrativos do corpo de prova</CardDescription>
-              </CardHeader>
-              <CardContent className="grid grid-cols-2 gap-4">
-                {([
-                  ["project", "Projeto"],
-                  ["client", "Cliente"],
-                  ["workNumber", "Nº Obra"],
-                  ["reportNumber", "Nº Relatório"],
-                  ["borehole", "Furo / Amostra"],
-                  ["depth", "Profundidade"],
-                  ["local", "Local"],
-                  ["date", "Data"],
-                  ["revision", "Revisão"],
-                  ["operator", "Laboratorista"],
-                  ["technicalResp", "Responsável Técnico"],
-                  ["description", "Caracterização Tátil-Visual"],
-                  ["code", "Código"],
-                  ["os", "O.S."],
-                  ["granulometricDescription", "Caracterização Granulométrica"],
-                ] as const).map(([k, l]) => (
-                  <div key={k}>
-                    <Label className="text-xs text-muted-foreground">{l}</Label>
-                    <Input value={(sample as any)[k]} onChange={(e) => updateSample(k, e.target.value)} />
+          {/* TAB 1: FICHA DE PREPARO */}
+          <TabsContent value="ficha" className="mt-4 space-y-4">
+            <div className="grid gap-4 lg:grid-cols-3">
+              {/* Equipamento e Descrição */}
+              <Card className="lg:col-span-1">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-bold text-primary">Operação & Equipamento</CardTitle>
+                  <CardDescription className="text-xs">Dados técnicos do ensaio de consolidação 1D</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Equipamento Utilizado</Label>
+                    <Input
+                      placeholder="Ex.: Célula Edométrica de Anel Fixo - Prensa P-01"
+                      value={sample.equipment ?? "Célula Edométrica de Anel Fixo"}
+                      onChange={(e) => updateSample("equipment", e.target.value)}
+                      className="h-8 text-xs mt-0.5"
+                    />
                   </div>
-                ))}
-              </CardContent>
-            </Card>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Data do Ensaio</Label>
+                    <Input
+                      type="text"
+                      value={sample.date ?? ""}
+                      onChange={(e) => updateSample("date", e.target.value)}
+                      className="h-8 text-xs mt-0.5"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Caracterização Tátil-Visual</Label>
+                    <Input
+                      value={sample.description ?? ""}
+                      onChange={(e) => updateSample("description", e.target.value)}
+                      className="h-8 text-xs mt-0.5"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Caracterização Granulométrica</Label>
+                    <Input
+                      value={sample.granulometricDescription ?? ""}
+                      onChange={(e) => updateSample("granulometricDescription", e.target.value)}
+                      className="h-8 text-xs mt-0.5"
+                    />
+                  </div>
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-primary">Geometria & Massas</CardTitle>
-                <CardDescription>Anel edométrico e amostra</CardDescription>
-              </CardHeader>
-              <CardContent className="grid grid-cols-2 gap-3">
-                {([
-                  ["ringDiameter", "Diâmetro (mm)"],
-                  ["ringHeight", "Altura H₀ (mm)"],
-                  ["wetMassInitial", "M. úmida inicial (g)"],
-                  ["wetMassFinal", "M. úmida final (g)"],
-                  ["dryMass", "Massa seca (g)"],
-                  ["Gs", "Gs"],
-                ] as const).map(([k, l]) => (
-                  <div key={k}>
-                    <Label className="text-xs text-muted-foreground">{l}</Label>
+              {/* Geometria do Anel e Massas com Anel */}
+              <Card className="lg:col-span-2">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-bold text-primary">Geometria do Anel & Massas do Ensaio</CardTitle>
+                  <CardDescription className="text-xs">
+                    Dimensões do anel e pesagens diretas com tara do anel
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Nº do Anel</Label>
+                    <Input
+                      placeholder="Ex.: ANEL-01"
+                      value={sample.ringNumber ?? "ANEL-01"}
+                      onChange={(e) => updateSample("ringNumber", e.target.value)}
+                      className="h-8 text-xs mt-0.5"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Diâmetro D₀ (mm)</Label>
                     <Input
                       type="number"
                       step="0.01"
-                      value={(sample as any)[k]}
-                      onChange={(e) => updateSample(k, e.target.value)}
+                      value={sample.ringDiameter}
+                      onChange={(e) => updateSample("ringDiameter", parseFloat(e.target.value) || 0)}
+                      className="h-8 text-xs mt-0.5"
                     />
                   </div>
-                ))}
-              </CardContent>
-            </Card>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Altura H₀ (mm)</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={sample.ringHeight}
+                      onChange={(e) => updateSample("ringHeight", parseFloat(e.target.value) || 0)}
+                      className="h-8 text-xs mt-0.5"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Densidade Grãos Gs</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={sample.Gs}
+                      onChange={(e) => updateSample("Gs", parseFloat(e.target.value) || 0)}
+                      className="h-8 text-xs mt-0.5"
+                    />
+                  </div>
 
-            <Card className="lg:col-span-3">
-              <CardHeader>
-                <CardTitle className="text-primary">Índices Físicos Calculados</CardTitle>
-                <CardDescription>Estado inicial e final do corpo de prova</CardDescription>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Massa do Anel (g)</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      placeholder="Ex.: 110.45"
+                      value={sample.ringMass ?? 110.45}
+                      onChange={(e) => updateSample("ringMass", parseFloat(e.target.value) || 0)}
+                      className="h-8 text-xs mt-0.5"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Anel + CP Inicial (g)</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      placeholder="Ex.: 256.80"
+                      value={sample.wetMassInitialWithRing ?? (sample.ringMass ? sample.ringMass + sample.wetMassInitial : sample.wetMassInitial + 110.45)}
+                      onChange={(e) => updateSample("wetMassInitialWithRing", parseFloat(e.target.value) || 0)}
+                      className="h-8 text-xs mt-0.5"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Anel + CP Final (g)</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      placeholder="Ex.: 254.10"
+                      value={sample.wetMassFinalWithRing ?? (sample.ringMass ? sample.ringMass + sample.wetMassFinal : sample.wetMassFinal + 110.45)}
+                      onChange={(e) => updateSample("wetMassFinalWithRing", parseFloat(e.target.value) || 0)}
+                      className="h-8 text-xs mt-0.5"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Massa Esp. Água (g/cm³)</Label>
+                    <Input
+                      type="number"
+                      step="0.001"
+                      value={sample.rhoW || 1.0}
+                      onChange={(e) => updateSample("rhoW", parseFloat(e.target.value) || 1.0)}
+                      className="h-8 text-xs mt-0.5"
+                    />
+                  </div>
+
+                  <div className="col-span-2 sm:col-span-4 rounded-md border border-border/60 bg-muted/20 p-2.5 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                    <div>
+                      <span className="text-muted-foreground text-[11px]">Massa Úmida Inicial:</span>
+                      <div className="font-bold text-foreground">{fmt(phys.wetMassInitial, 2)} g</div>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground text-[11px]">Massa Úmida Final:</span>
+                      <div className="font-bold text-foreground">{fmt(phys.wetMassFinal, 2)} g</div>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground text-[11px]">Massa Seca Ms:</span>
+                      <div className="font-bold text-foreground">{fmt(phys.dryMass, 2)} g</div>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground text-[11px]">Volume Inicial V₀:</span>
+                      <div className="font-bold text-foreground">{fmt(phys.V0, 2)} cm³</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* TABELAS DE CÁPSULAS DE UMIDADE (3 CÁPSULAS INICIAIS E 3 FINAIS) */}
+            <div className="grid gap-4 md:grid-cols-2">
+              {/* Cápsulas Iniciais (Moldagem) */}
+              <Card>
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-sm font-bold text-primary">
+                        Determinação da Umidade Inicial (Moldagem)
+                      </CardTitle>
+                      <CardDescription className="text-xs">
+                        3 determinações com cápsulas para cálculo de w₀
+                      </CardDescription>
+                    </div>
+                    <Badge variant="outline" className="text-xs font-bold bg-primary/5 text-primary border-primary/30">
+                      Média w₀ = {fmt(phys.wi, 2)}%
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="overflow-x-auto">
+                  <table className="w-full border-collapse text-xs">
+                    <thead className="bg-muted/40 text-muted-foreground">
+                      <tr>
+                        <th className="border border-border p-1.5 text-left">Determinação</th>
+                        <th className="border border-border p-1.5 text-center w-24">Cápsula 1</th>
+                        <th className="border border-border p-1.5 text-center w-24">Cápsula 2</th>
+                        <th className="border border-border p-1.5 text-center w-24">Cápsula 3</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td className="border border-border p-1.5 font-medium">Nº Cápsula</td>
+                        {[0, 1, 2].map((i) => {
+                          const cap = sample.capsules?.[i] ?? { numero: `C-${i + 1}`, tara: 15.2, wet: 45.3, dry: 35.2 };
+                          return (
+                            <td key={i} className="border border-border p-1">
+                              <Input
+                                value={cap.numero ?? `C-${i + 1}`}
+                                onChange={(e) => {
+                                  const caps = [...(sample.capsules ?? [
+                                    { numero: "C-01", tara: 15.2, wet: 45.3, dry: 35.2 },
+                                    { numero: "C-02", tara: 14.8, wet: 44.9, dry: 34.8 },
+                                    { numero: "C-03", tara: 15.5, wet: 46.1, dry: 35.8 },
+                                  ])];
+                                  caps[i] = { ...caps[i], numero: e.target.value };
+                                  updateSample("capsules", caps);
+                                }}
+                                className="h-7 text-xs text-center"
+                              />
+                            </td>
+                          );
+                        })}
+                      </tr>
+                      <tr>
+                        <td className="border border-border p-1.5 font-medium">Tara da Cápsula (g)</td>
+                        {[0, 1, 2].map((i) => {
+                          const cap = sample.capsules?.[i] ?? { numero: `C-${i + 1}`, tara: 15.2 + i * 0.3, wet: 45.3, dry: 35.2 };
+                          return (
+                            <td key={i} className="border border-border p-1">
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={cap.tara}
+                                onChange={(e) => {
+                                  const caps = [...(sample.capsules ?? [
+                                    { numero: "C-01", tara: 15.2, wet: 45.3, dry: 35.2 },
+                                    { numero: "C-02", tara: 14.8, wet: 44.9, dry: 34.8 },
+                                    { numero: "C-03", tara: 15.5, wet: 46.1, dry: 35.8 },
+                                  ])];
+                                  caps[i] = { ...caps[i], tara: parseFloat(e.target.value) || 0 };
+                                  updateSample("capsules", caps);
+                                }}
+                                className="h-7 text-xs text-right font-mono"
+                              />
+                            </td>
+                          );
+                        })}
+                      </tr>
+                      <tr>
+                        <td className="border border-border p-1.5 font-medium">Solo Úmido + Tara (g)</td>
+                        {[0, 1, 2].map((i) => {
+                          const cap = sample.capsules?.[i] ?? { numero: `C-${i + 1}`, tara: 15.2, wet: 45.3 + i * 0.4, dry: 35.2 };
+                          return (
+                            <td key={i} className="border border-border p-1">
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={cap.wet}
+                                onChange={(e) => {
+                                  const caps = [...(sample.capsules ?? [
+                                    { numero: "C-01", tara: 15.2, wet: 45.3, dry: 35.2 },
+                                    { numero: "C-02", tara: 14.8, wet: 44.9, dry: 34.8 },
+                                    { numero: "C-03", tara: 15.5, wet: 46.1, dry: 35.8 },
+                                  ])];
+                                  caps[i] = { ...caps[i], wet: parseFloat(e.target.value) || 0 };
+                                  updateSample("capsules", caps);
+                                }}
+                                className="h-7 text-xs text-right font-mono"
+                              />
+                            </td>
+                          );
+                        })}
+                      </tr>
+                      <tr>
+                        <td className="border border-border p-1.5 font-medium">Solo Seco + Tara (g)</td>
+                        {[0, 1, 2].map((i) => {
+                          const cap = sample.capsules?.[i] ?? { numero: `C-${i + 1}`, tara: 15.2, wet: 45.3, dry: 35.2 + i * 0.3 };
+                          return (
+                            <td key={i} className="border border-border p-1">
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={cap.dry}
+                                onChange={(e) => {
+                                  const caps = [...(sample.capsules ?? [
+                                    { numero: "C-01", tara: 15.2, wet: 45.3, dry: 35.2 },
+                                    { numero: "C-02", tara: 14.8, wet: 44.9, dry: 34.8 },
+                                    { numero: "C-03", tara: 15.5, wet: 46.1, dry: 35.8 },
+                                  ])];
+                                  caps[i] = { ...caps[i], dry: parseFloat(e.target.value) || 0 };
+                                  updateSample("capsules", caps);
+                                }}
+                                className="h-7 text-xs text-right font-mono"
+                              />
+                            </td>
+                          );
+                        })}
+                      </tr>
+                      <tr className="bg-muted/30">
+                        <td className="border border-border p-1.5 font-medium">Umidade (%)</td>
+                        {[0, 1, 2].map((i) => {
+                          const cap = sample.capsules?.[i] ?? { tara: 15.2, wet: 45.3, dry: 35.2 };
+                          const ms = cap.dry - cap.tara;
+                          const w = ms > 0 ? ((cap.wet - cap.dry) / ms) * 100 : NaN;
+                          return (
+                            <td key={i} className="border border-border p-1.5 text-right font-semibold">
+                              {isFinite(w) ? `${w.toFixed(2)}%` : "—"}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    </tbody>
+                  </table>
+                </CardContent>
+              </Card>
+
+              {/* Cápsulas Finais (Pós-Ensaio) */}
+              <Card>
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-sm font-bold text-primary">
+                        Determinação da Umidade Final (Pós-Ensaio)
+                      </CardTitle>
+                      <CardDescription className="text-xs">
+                        3 determinações com cápsulas para cálculo de w_f
+                      </CardDescription>
+                    </div>
+                    <Badge variant="outline" className="text-xs font-bold bg-primary/5 text-primary border-primary/30">
+                      Média w_f = {fmt(phys.wf, 2)}%
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="overflow-x-auto">
+                  <table className="w-full border-collapse text-xs">
+                    <thead className="bg-muted/40 text-muted-foreground">
+                      <tr>
+                        <th className="border border-border p-1.5 text-left">Determinação</th>
+                        <th className="border border-border p-1.5 text-center w-24">Cápsula 1</th>
+                        <th className="border border-border p-1.5 text-center w-24">Cápsula 2</th>
+                        <th className="border border-border p-1.5 text-center w-24">Cápsula 3</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td className="border border-border p-1.5 font-medium">Nº Cápsula</td>
+                        {[0, 1, 2].map((i) => {
+                          const cap = sample.finalCapsules?.[i] ?? { numero: `CF-${i + 1}`, tara: 14.9, wet: 43.8, dry: 34.6 };
+                          return (
+                            <td key={i} className="border border-border p-1">
+                              <Input
+                                value={cap.numero ?? `CF-${i + 1}`}
+                                onChange={(e) => {
+                                  const caps = [...(sample.finalCapsules ?? [
+                                    { numero: "CF-01", tara: 14.9, wet: 43.8, dry: 34.6 },
+                                    { numero: "CF-02", tara: 15.1, wet: 44.2, dry: 34.9 },
+                                    { numero: "CF-03", tara: 15.3, wet: 44.5, dry: 35.1 },
+                                  ])];
+                                  caps[i] = { ...caps[i], numero: e.target.value };
+                                  updateSample("finalCapsules", caps);
+                                }}
+                                className="h-7 text-xs text-center"
+                              />
+                            </td>
+                          );
+                        })}
+                      </tr>
+                      <tr>
+                        <td className="border border-border p-1.5 font-medium">Tara da Cápsula (g)</td>
+                        {[0, 1, 2].map((i) => {
+                          const cap = sample.finalCapsules?.[i] ?? { numero: `CF-${i + 1}`, tara: 14.9 + i * 0.2, wet: 43.8, dry: 34.6 };
+                          return (
+                            <td key={i} className="border border-border p-1">
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={cap.tara}
+                                onChange={(e) => {
+                                  const caps = [...(sample.finalCapsules ?? [
+                                    { numero: "CF-01", tara: 14.9, wet: 43.8, dry: 34.6 },
+                                    { numero: "CF-02", tara: 15.1, wet: 44.2, dry: 34.9 },
+                                    { numero: "CF-03", tara: 15.3, wet: 44.5, dry: 35.1 },
+                                  ])];
+                                  caps[i] = { ...caps[i], tara: parseFloat(e.target.value) || 0 };
+                                  updateSample("finalCapsules", caps);
+                                }}
+                                className="h-7 text-xs text-right font-mono"
+                              />
+                            </td>
+                          );
+                        })}
+                      </tr>
+                      <tr>
+                        <td className="border border-border p-1.5 font-medium">Solo Úmido + Tara (g)</td>
+                        {[0, 1, 2].map((i) => {
+                          const cap = sample.finalCapsules?.[i] ?? { numero: `CF-${i + 1}`, tara: 14.9, wet: 43.8 + i * 0.4, dry: 34.6 };
+                          return (
+                            <td key={i} className="border border-border p-1">
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={cap.wet}
+                                onChange={(e) => {
+                                  const caps = [...(sample.finalCapsules ?? [
+                                    { numero: "CF-01", tara: 14.9, wet: 43.8, dry: 34.6 },
+                                    { numero: "CF-02", tara: 15.1, wet: 44.2, dry: 34.9 },
+                                    { numero: "CF-03", tara: 15.3, wet: 44.5, dry: 35.1 },
+                                  ])];
+                                  caps[i] = { ...caps[i], wet: parseFloat(e.target.value) || 0 };
+                                  updateSample("finalCapsules", caps);
+                                }}
+                                className="h-7 text-xs text-right font-mono"
+                              />
+                            </td>
+                          );
+                        })}
+                      </tr>
+                      <tr>
+                        <td className="border border-border p-1.5 font-medium">Solo Seco + Tara (g)</td>
+                        {[0, 1, 2].map((i) => {
+                          const cap = sample.finalCapsules?.[i] ?? { numero: `CF-${i + 1}`, tara: 14.9, wet: 43.8, dry: 34.6 + i * 0.3 };
+                          return (
+                            <td key={i} className="border border-border p-1">
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={cap.dry}
+                                onChange={(e) => {
+                                  const caps = [...(sample.finalCapsules ?? [
+                                    { numero: "CF-01", tara: 14.9, wet: 43.8, dry: 34.6 },
+                                    { numero: "CF-02", tara: 15.1, wet: 44.2, dry: 34.9 },
+                                    { numero: "CF-03", tara: 15.3, wet: 44.5, dry: 35.1 },
+                                  ])];
+                                  caps[i] = { ...caps[i], dry: parseFloat(e.target.value) || 0 };
+                                  updateSample("finalCapsules", caps);
+                                }}
+                                className="h-7 text-xs text-right font-mono"
+                              />
+                            </td>
+                          );
+                        })}
+                      </tr>
+                      <tr className="bg-muted/30">
+                        <td className="border border-border p-1.5 font-medium">Umidade (%)</td>
+                        {[0, 1, 2].map((i) => {
+                          const cap = sample.finalCapsules?.[i] ?? { tara: 14.9, wet: 43.8, dry: 34.6 };
+                          const ms = cap.dry - cap.tara;
+                          const w = ms > 0 ? ((cap.wet - cap.dry) / ms) * 100 : NaN;
+                          return (
+                            <td key={i} className="border border-border p-1.5 text-right font-semibold">
+                              {isFinite(w) ? `${w.toFixed(2)}%` : "—"}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    </tbody>
+                  </table>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* ÍNDICES FÍSICOS CALCULADOS */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-bold text-primary">Índices Físicos Calculados do Ensaio</CardTitle>
+                <CardDescription className="text-xs">Estado inicial e final de compressibilidade do corpo de prova</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-2 gap-x-6 gap-y-3 md:grid-cols-4">
-                  <Stat label="Área A (cm²)" value={fmt(phys.A, 2)} />
-                  <Stat label="Volume V_0 (cm³)" value={fmt(phys.V0, 2)} />
+                <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-6">
+                  <Stat label="Área A₀ (cm²)" value={fmt(phys.A, 2)} />
+                  <Stat label="Volume V₀ (cm³)" value={fmt(phys.V0, 2)} />
                   <Stat label="V_s (cm³)" value={fmt(phys.Vs, 2)} />
                   <Stat label="ρ úmida (g/cm³)" value={fmt(phys.rho_i, 2)} />
                   <Stat label="ρ seca (g/cm³)" value={fmt(phys.rho_d, 2)} />
-                  <Stat label="w_i (%)" value={fmt(phys.wi, 2)} />
-                  <Stat label="w_f (%)" value={fmt(phys.wf, 2)} />
-                  <Stat label="e_0" value={fmt(phys.e0, 3)} highlight />
-                  <Stat label="e_f" value={fmt(phys.ef, 3)} />
-                  <Stat label="Sr_0 (%)" value={fmt(phys.Sr0, 2)} />
-                  <Stat label="Sr_f (%)" value={fmt(phys.Srf, 2)} />
                   <Stat label="ρ final (g/cm³)" value={fmt(phys.rho_f, 2)} />
+
+                  <Stat label="w_i (%)" value={`${fmt(phys.wi, 2)}%`} />
+                  <Stat label="w_f (%)" value={`${fmt(phys.wf, 2)}%`} />
+                  <Stat label="Índice Vazios e₀" value={fmt(phys.e0, 3)} highlight />
+                  <Stat label="Índice Vazios e_f" value={fmt(phys.ef, 3)} />
+                  <Stat label="Sr₀ (%)" value={`${fmt(phys.Sr0, 1)}%`} />
+                  <Stat label="Sr_f (%)" value={`${fmt(phys.Srf, 1)}%`} />
                 </div>
               </CardContent>
             </Card>
 
-            {ctx && (
-              <Card className="lg:col-span-3">
-                <CardHeader>
-                  <CardTitle className="text-primary">Registro fotográfico do CP</CardTitle>
-                  <CardDescription>Moldagem e ruptura — incorporado ao relatório deste ensaio.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
+            {/* REGISTRO FOTOGRÁFICO 3:4 */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-bold text-primary">Registro Fotográfico do Corpo de Prova</CardTitle>
+                <CardDescription className="text-xs">
+                  Anexe as fotos de moldagem inicial e aspecto final do ensaio. As fotos são enquadradas no padrão 3:4.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-6 md:grid-cols-2">
                   <PhotoUploader
-                    title="Moldagem do CP"
+                    title="Fotos de Moldagem / Iniciais"
                     kind="moldagem"
-                    photos={ctx.photos ?? []}
-                    onAdd={(p) => ctx.addPhoto(p)}
-                    onRemove={(id) => ctx.removePhoto(id)}
-                    onUpdate={(id, patch) => ctx.updatePhoto(id, patch)}
+                    photos={ctx?.photos ?? []}
+                    onAdd={(p) => ctx?.addPhoto?.(p)}
+                    onRemove={(id) => ctx?.removePhoto?.(id)}
+                    onUpdate={(id, patch) => ctx?.updatePhoto?.(id, patch)}
                   />
                   <PhotoUploader
-                    title="Ruptura do CP"
+                    title="Fotos de Ruptura / Finais"
                     kind="ruptura"
-                    photos={ctx.photos ?? []}
-                    onAdd={(p) => ctx.addPhoto(p)}
-                    onRemove={(id) => ctx.removePhoto(id)}
-                    onUpdate={(id, patch) => ctx.updatePhoto(id, patch)}
+                    photos={ctx?.photos ?? []}
+                    onAdd={(p) => ctx?.addPhoto?.(p)}
+                    onRemove={(id) => ctx?.removePhoto?.(id)}
+                    onUpdate={(id, patch) => ctx?.updatePhoto?.(id, patch)}
                   />
-                </CardContent>
-              </Card>
-            )}
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* TAB 2 */}
