@@ -1,5 +1,5 @@
+import React, { useMemo, useRef, useState, useEffect } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useRef, useState, useEffect } from "react";
 import { flushSync } from "react-dom";
 import {
   CartesianGrid,
@@ -28,15 +28,29 @@ import {
   Activity,
   BarChart3,
   Beaker,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  ClipboardPaste,
+  Cloud,
   Download,
+  Eye,
+  FileSpreadsheet,
   FileText,
   FlaskConical,
+  History,
   LineChart as LineIcon,
+  Maximize2,
   Monitor,
+  Plus,
   Ruler,
+  Save,
+  Send,
+  Settings2,
+  ShieldCheck,
+  Trash2,
   ZoomIn,
   ZoomOut,
-  Maximize2,
 } from "lucide-react";
 import { SuporteLogo } from "@/components/suporte-logo";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -111,7 +125,6 @@ import { saveOedDraft, loadOedDraft } from "@/features/oedometer/draftStore";
 import { requestApproval, verifyApproval, decideApproval, listApprovals } from "@/lib/approvals.functions";
 import { WorkflowFarol } from "@/features/lab/components/WorkflowFarol";
 import { PickerWithCreate } from "@/features/cisalhamento-direto/PickerWithCreate";
-import { Settings2, Send, ShieldCheck } from "lucide-react";
 import { EnsaioListByType } from "@/features/lab/components/EnsaioListByType";
 import {
   Dialog,
@@ -120,9 +133,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ClipboardPaste, FileSpreadsheet, Eye, Save, CheckCircle2, History, Cloud } from "lucide-react";
 import type { Photo } from "@/features/lab/types";
-
+import { useOptionalLabEnsaio } from "@/features/lab/context";
+import { PhotoUploader } from "@/features/lab/components/PhotoUploader";
 
 export const Route = createFileRoute("/_app/relatorio/adensamento")({
   head: () => ({
@@ -146,8 +159,58 @@ function AdensamentoListRoute() {
   return <EnsaioListByType tipo="adensamento" />;
 }
 
-import { useOptionalLabEnsaio } from "@/features/lab/context";
-import { PhotoUploader } from "@/features/lab/components/PhotoUploader";
+
+
+function PtNumInput({
+  value,
+  onChange,
+  className = "h-7 text-xs text-right font-mono",
+  placeholder,
+  disabled,
+}: {
+  value: number | null | undefined;
+  onChange: (val: number) => void;
+  className?: string;
+  placeholder?: string;
+  disabled?: boolean;
+}) {
+  const [localVal, setLocalVal] = useState(() =>
+    value == null || isNaN(value) ? "" : String(value).replace(".", ",")
+  );
+
+  useEffect(() => {
+    const formatted = value == null || isNaN(value) ? "" : String(value).replace(".", ",");
+    setLocalVal(formatted);
+  }, [value]);
+
+  return (
+    <Input
+      type="text"
+      inputMode="decimal"
+      value={localVal}
+      disabled={disabled}
+      placeholder={placeholder}
+      className={className}
+      onChange={(e) => {
+        const text = e.target.value;
+        setLocalVal(text);
+        const parsed = parseFloat(text.replace(",", "."));
+        if (!isNaN(parsed)) {
+          onChange(parsed);
+        } else if (text.trim() === "") {
+          onChange(0);
+        }
+      }}
+      onBlur={() => {
+        const parsed = parseFloat(localVal.replace(",", "."));
+        if (!isNaN(parsed)) {
+          setLocalVal(String(parsed).replace(".", ","));
+          onChange(parsed);
+        }
+      }}
+    />
+  );
+}
 
 export function AdensamentoPage() {
   const ctx = useOptionalLabEnsaio();
@@ -1852,57 +1915,6 @@ export function AdensamentoPage() {
   );
 }
 
-
-function PtNumInput({
-  value,
-  onChange,
-  className = "h-7 text-xs text-right font-mono",
-  placeholder,
-  disabled,
-}: {
-  value: number | null | undefined;
-  onChange: (val: number) => void;
-  className?: string;
-  placeholder?: string;
-  disabled?: boolean;
-}) {
-  const [localVal, setLocalVal] = useState(() =>
-    value == null || isNaN(value) ? "" : String(value).replace(".", ",")
-  );
-
-  useEffect(() => {
-    const formatted = value == null || isNaN(value) ? "" : String(value).replace(".", ",");
-    setLocalVal(formatted);
-  }, [value]);
-
-  return (
-    <Input
-      type="text"
-      inputMode="decimal"
-      value={localVal}
-      disabled={disabled}
-      placeholder={placeholder}
-      className={className}
-      onChange={(e) => {
-        const text = e.target.value;
-        setLocalVal(text);
-        const parsed = parseFloat(text.replace(",", "."));
-        if (!isNaN(parsed)) {
-          onChange(parsed);
-        } else if (text.trim() === "") {
-          onChange(0);
-        }
-      }}
-      onBlur={() => {
-        const parsed = parseFloat(localVal.replace(",", "."));
-        if (!isNaN(parsed)) {
-          setLocalVal(String(parsed).replace(".", ","));
-          onChange(parsed);
-        }
-      }}
-    />
-  );
-}
 
 // ===== Small UI bits =====
 function KpiCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
