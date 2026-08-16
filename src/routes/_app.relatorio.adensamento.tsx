@@ -55,6 +55,7 @@ import { toast } from "sonner";
 import { useOptionalLabEnsaio } from "@/features/lab/context";
 import { PhotoUploader } from "@/features/lab/components/PhotoUploader";
 import { WorkflowFarol } from "@/features/lab/components/WorkflowFarol";
+import { EnsaioListByType } from "@/features/lab/components/EnsaioListByType";
 
 import type {
   OedSampleProps,
@@ -103,7 +104,10 @@ export const Route = createFileRoute("/_app/relatorio/adensamento")({
       },
     ],
   }),
-  component: AdensamentoPage,
+  component: () => {
+    const ctx = useOptionalLabEnsaio();
+    return ctx?.ensaio ? <AdensamentoPage /> : <EnsaioListByType tipo="adensamento" />;
+  },
 });
 
 const defaultSample: OedSampleProps = {
