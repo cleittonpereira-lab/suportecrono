@@ -599,13 +599,24 @@ export function AdensamentoPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <PhotoUploader
-                  title="Fotos do Ensaio"
-                  items={photos}
-                  onAdd={(p) => ctx?.addPhoto?.(p)}
-                  onRemove={(id) => ctx?.removePhoto?.(id)}
-                  onUpdate={(id, patch) => ctx?.updatePhoto?.(id, patch)}
-                />
+                <div className="grid gap-6 md:grid-cols-2">
+                  <PhotoUploader
+                    title="Fotos de Moldagem / Iniciais"
+                    kind="moldagem"
+                    photos={photos}
+                    onAdd={(p) => (ctx?.addPhoto ? ctx.addPhoto(p) : addPhotoLocal(p))}
+                    onRemove={(id) => (ctx?.removePhoto ? ctx.removePhoto(id) : removePhotoLocal(id))}
+                    onUpdate={(id, patch) => (ctx?.updatePhoto ? ctx.updatePhoto(id, patch) : updatePhotoLocal(id, patch))}
+                  />
+                  <PhotoUploader
+                    title="Fotos de Ruptura / Finais"
+                    kind="ruptura"
+                    photos={photos}
+                    onAdd={(p) => (ctx?.addPhoto ? ctx.addPhoto(p) : addPhotoLocal(p))}
+                    onRemove={(id) => (ctx?.removePhoto ? ctx.removePhoto(id) : removePhotoLocal(id))}
+                    onUpdate={(id, patch) => (ctx?.updatePhoto ? ctx.updatePhoto(id, patch) : updatePhotoLocal(id, patch))}
+                  />
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
