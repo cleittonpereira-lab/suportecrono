@@ -393,7 +393,8 @@ export async function buildCDRawDataXlsxWorkbook({
     }
   }
 
-  const totalPages = 2 + specimens.length + (photos.length > 0 ? 1 : 0);
+  const photoPagesCount = Math.max(1, Math.ceil(specimens.length / 3));
+  const totalPages = 2 + specimens.length + photoPagesCount;
   const reportTitle = sample.testCondition === "inundado"
     ? "ENSAIO DE CISALHAMENTO DIRETO INUNDADO (CDinun)"
     : "ENSAIO DE CISALHAMENTO DIRETO NATURAL (CDnat)";
@@ -1027,98 +1028,104 @@ export async function buildCDRawDataXlsxWorkbook({
   });
 
   // =========================================================================
-  // ABA FINAL: REGISTRO FOTOGRÁFICO (COM FOTOS PROPORCIONAIS E SEM SOBREPOSIÇÃO)
+  // ABA(S) FINAL(IS): REGISTRO FOTOGRÁFICO (3 CPs por folha)
   // =========================================================================
-  const wsPhotos = wb.addWorksheet("Registro Fotográfico");
-  wsPhotos.columns = defaultColumns;
-  applyA4PageSetup(wsPhotos);
+  for (let pIdx = 0; pIdx < photoPagesCount; pIdx++) {
+    const cpsForPage = specimens.slice(pIdx * 3, pIdx * 3 + 3);
+    const sheetName = photoPagesCount === 1 ? "Registro Fotográfico" : `Registro Fotográfico (${pIdx + 1})`;
+    const pageNum = 2 + specimens.length + pIdx + 1;
 
-  let rPh = addOfficialReportHeader(wsPhotos, sample, `${reportTitle} — Registro Fotográfico`, totalPages, totalPages, logoImageId);
-  wsPhotos.getRow(rPh).height = 14;
-  rPh++;
+    const wsPhotos = wb.addWorksheet(sheetName);
+    wsPhotos.columns = defaultColumns;
+    applyA4PageSetup(wsPhotos);
 
-  rPh = addSectionBar(wsPhotos, rPh, "Registro Fotográfico do Ensaio");
-  wsPhotos.getRow(rPh).height = 10;
-  rPh++;
+    let rPh = addOfficialReportHeader(wsPhotos, sample, `${reportTitle} — Registro Fotográfico`, pageNum, totalPages, logoImageId);
+    wsPhotos.getRow(rPh).height = 14;
+    rPh++;
 
-  // SEÇÃO 1: FOTOS DE MOLDAGEM
-  rPh = addSectionBar(wsPhotos, rPh, "Etapa de Moldagem / Aspecto Inicial");
-  wsPhotos.getRow(rPh).height = 10;
-  rPh++;
+    rPh = addSectionBar(wsPhotos, rPh, photoPagesCount > 1 ? `Registro Fotográfico do Ensaio — Parte ${pIdx + 1}` : "Registro Fotográfico do Ensaio");
+    wsPhotos.getRow(rPh).height = 10;
+    rPh++;
 
-  const mImgStart = rPh;
-  const mImgEnd = rPh + 11;
-  for (let i = mImgStart; i <= mImgEnd; i++) { wsPhotos.getRow(i).height = 22; }
+    // SEÇÃO 1: FOTOS DE MOLDAGEM
+    rPh = addSectionBar(wsPhotos, rPh, "Etapa de Moldagem / Aspecto Inicial");
+    wsPhotos.getRow(rPh).height = 10;
+    rPh++;
 
-  specimens.slice(0, 3).forEach((cp, i) => {
-    const p = photos.find((x) => (x.specimenId === cp.id || x.specimenId === cp.displayId) && x.kind === "moldagem");
-    const colStart = i === 0 ? 0.1 : i === 1 ? 2.4 : 4.9;
-    const colEnd = i === 0 ? 1.9 : i === 1 ? 4.6 : 6.9;
+    const mImgStart = rPh;
+    const mImgEnd = rPh + 11;
+    for (let i = mImgStart; i <= mImgEnd; i++) { wsPhotos.getRow(i).height = 22; }
 
-    if (p && photoImageIds[p.id]) {
-      wsPhotos.addImage(photoImageIds[p.id], {
-        tl: { col: colStart, row: mImgStart - 1 },
-        br: { col: colEnd, row: mImgEnd },
-        editAs: "twoCell",
-      });
-    }
-  });
+    cpsForPage.forEach((cp, i) => {
+      const p = photos.find((x) => (x.specimenId === cp.id || x.specimenId === cp.displayId) && x.kind === "moldagem");
+      const colStart = i === 0 ? 0.1 : i === 1 ? 2.4 : 4.9;
+      const colEnd = i === 0 ? 1.9 : i === 1 ? 4.6 : 6.9;
 
-  rPh = mImgEnd + 1;
-  wsPhotos.getRow(rPh).height = 26;
-  specimens.slice(0, 3).forEach((cp, i) => {
-    const cellStart = i === 0 ? "A" : i === 1 ? "C" : "F";
-    const cellEnd = i === 0 ? "B" : i === 1 ? "E" : "G";
-    wsPhotos.mergeCells(`${cellStart}${rPh}:${cellEnd}${rPh}`);
-    const legCell = wsPhotos.getCell(`${cellStart}${rPh}`);
-    legCell.value = `${cp.displayId ?? cp.id} (σn = ${fmt(cp.normalStressTarget, 0)} kPa)`;
-    legCell.font = { name: "Calibri", size: 10.5, bold: true };
-    legCell.alignment = { horizontal: "center", vertical: "middle" };
-    legCell.border = borderBlack;
-  });
-  rPh++;
+      if (p && photoImageIds[p.id]) {
+        wsPhotos.addImage(photoImageIds[p.id], {
+          tl: { col: colStart, row: mImgStart - 1 },
+          br: { col: colEnd, row: mImgEnd },
+          editAs: "twoCell",
+        });
+      }
+    });
 
-  wsPhotos.getRow(rPh).height = 14;
-  rPh++;
+    rPh = mImgEnd + 1;
+    wsPhotos.getRow(rPh).height = 26;
+    cpsForPage.forEach((cp, i) => {
+      const cellStart = i === 0 ? "A" : i === 1 ? "C" : "F";
+      const cellEnd = i === 0 ? "B" : i === 1 ? "E" : "G";
+      wsPhotos.mergeCells(`${cellStart}${rPh}:${cellEnd}${rPh}`);
+      const legCell = wsPhotos.getCell(`${cellStart}${rPh}`);
+      legCell.value = `${cp.displayId ?? cp.id} (σn = ${fmt(cp.normalStressTarget, 0)} kPa)`;
+      legCell.font = { name: "Calibri", size: 10.5, bold: true };
+      legCell.alignment = { horizontal: "center", vertical: "middle" };
+      legCell.border = borderBlack;
+    });
+    rPh++;
 
-  // SEÇÃO 2: FOTOS DE RUPTURA
-  rPh = addSectionBar(wsPhotos, rPh, "Após Ruptura / Plano de Cisalhamento");
-  wsPhotos.getRow(rPh).height = 10;
-  rPh++;
+    wsPhotos.getRow(rPh).height = 14;
+    rPh++;
 
-  const rupStart = rPh;
-  const rupEnd = rPh + 11;
-  for (let i = rupStart; i <= rupEnd; i++) { wsPhotos.getRow(i).height = 22; }
+    // SEÇÃO 2: FOTOS DE RUPTURA
+    rPh = addSectionBar(wsPhotos, rPh, "Após Ruptura / Plano de Cisalhamento");
+    wsPhotos.getRow(rPh).height = 10;
+    rPh++;
 
-  specimens.slice(0, 3).forEach((cp, i) => {
-    const p = photos.find((x) => (x.specimenId === cp.id || x.specimenId === cp.displayId) && x.kind === "ruptura");
-    const colStart = i === 0 ? 0.1 : i === 1 ? 2.4 : 4.9;
-    const colEnd = i === 0 ? 1.9 : i === 1 ? 4.6 : 6.9;
+    const rupStart = rPh;
+    const rupEnd = rPh + 11;
+    for (let i = rupStart; i <= rupEnd; i++) { wsPhotos.getRow(i).height = 22; }
 
-    if (p && photoImageIds[p.id]) {
-      wsPhotos.addImage(photoImageIds[p.id], {
-        tl: { col: colStart, row: rupStart - 1 },
-        br: { col: colEnd, row: rupEnd },
-        editAs: "twoCell",
-      });
-    }
-  });
+    cpsForPage.forEach((cp, i) => {
+      const p = photos.find((x) => (x.specimenId === cp.id || x.specimenId === cp.displayId) && x.kind === "ruptura");
+      const colStart = i === 0 ? 0.1 : i === 1 ? 2.4 : 4.9;
+      const colEnd = i === 0 ? 1.9 : i === 1 ? 4.6 : 6.9;
 
-  rPh = rupEnd + 1;
-  wsPhotos.getRow(rPh).height = 26;
-  specimens.slice(0, 3).forEach((cp, i) => {
-    const cellStart = i === 0 ? "A" : i === 1 ? "C" : "F";
-    const cellEnd = i === 0 ? "B" : i === 1 ? "E" : "G";
-    wsPhotos.mergeCells(`${cellStart}${rPh}:${cellEnd}${rPh}`);
-    const legCell = wsPhotos.getCell(`${cellStart}${rPh}`);
-    legCell.value = `${cp.displayId ?? cp.id} (σn = ${fmt(cp.normalStressTarget, 0)} kPa)`;
-    legCell.font = { name: "Calibri", size: 10.5, bold: true };
-    legCell.alignment = { horizontal: "center", vertical: "middle" };
-    legCell.border = borderBlack;
-  });
-  rPh++;
+      if (p && photoImageIds[p.id]) {
+        wsPhotos.addImage(photoImageIds[p.id], {
+          tl: { col: colStart, row: rupStart - 1 },
+          br: { col: colEnd, row: rupEnd },
+          editAs: "twoCell",
+        });
+      }
+    });
 
-  rPh = addOfficialReportFooter(wsPhotos, sample, rPh, assinaturaImageId);
+    rPh = rupEnd + 1;
+    wsPhotos.getRow(rPh).height = 26;
+    cpsForPage.forEach((cp, i) => {
+      const cellStart = i === 0 ? "A" : i === 1 ? "C" : "F";
+      const cellEnd = i === 0 ? "B" : i === 1 ? "E" : "G";
+      wsPhotos.mergeCells(`${cellStart}${rPh}:${cellEnd}${rPh}`);
+      const legCell = wsPhotos.getCell(`${cellStart}${rPh}`);
+      legCell.value = `${cp.displayId ?? cp.id} (σn = ${fmt(cp.normalStressTarget, 0)} kPa)`;
+      legCell.font = { name: "Calibri", size: 10.5, bold: true };
+      legCell.alignment = { horizontal: "center", vertical: "middle" };
+      legCell.border = borderBlack;
+    });
+    rPh++;
+
+    rPh = addOfficialReportFooter(wsPhotos, sample, rPh, assinaturaImageId);
+  }
 
   return wb;
 }
