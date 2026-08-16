@@ -27,6 +27,7 @@ const COLOR_BLACK = "FF141414";
 const COLOR_SECTION_BG = "FFD1D5DB"; // #d1d5db (SectionBar do PDF)
 const COLOR_SECTION_TEXT = "FF111827";
 const COLOR_BORDER = "FF141414"; // Borda preta clássica do laudo
+const COLOR_PHOTO_BG = "FFF8FAFC";
 
 const borderBlack: Partial<ExcelJS.Borders> = {
   top: { style: "thin", color: { argb: COLOR_BORDER } },
@@ -36,6 +37,10 @@ const borderBlack: Partial<ExcelJS.Borders> = {
 };
 
 async function getImageBase64(url: string): Promise<string | null> {
+  if (!url) return null;
+  if (url.startsWith("data:")) {
+    return url.split(",")[1] || null;
+  }
   try {
     const res = await fetch(url);
     if (!res.ok) return null;
@@ -228,15 +233,15 @@ function addOfficialReportFooter(
 
   ws.mergeCells(`D${r}:E${r + 3}`);
   const fMid = ws.getCell(`D${r}`);
-  fMid.value = `\n\n______________________________________\nResponsável Técnico\n${sample.technicalResp || "Eng. Antônio Sérgio Damasco Penna - CREA 0600459308"}`;
+  fMid.value = `\n\n\n______________________________________\nResponsável Técnico\n${sample.technicalResp || "Eng. Antônio Sérgio Damasco Penna - CREA 0600459308"}`;
   fMid.font = { name: "Calibri", size: 8.5, bold: true, color: { argb: COLOR_BLACK } };
   fMid.alignment = { horizontal: "center", vertical: "top", wrapText: true };
 
-  // Inserção da Assinatura do Maurício logo acima da linha
+  // Inserção da Assinatura do Maurício perfeitamente centralizada acima da linha
   if (assinaturaImageId !== null) {
     ws.addImage(assinaturaImageId, {
-      tl: { col: 3.5, row: r + 0.1 },
-      ext: { width: 135, height: 36 },
+      tl: { col: 3.45, row: r + 0.15 },
+      ext: { width: 130, height: 35 },
     });
   }
 
@@ -270,6 +275,28 @@ function addOfficialReportFooter(
   r++;
 
   return r;
+}
+
+/**
+ * Aplica configuração de página A4 pronta para impressão em qualquer impressora ou PDF
+ */
+function applyA4PageSetup(ws: ExcelJS.Worksheet) {
+  ws.pageSetup = {
+    paperSize: 9, // A4
+    orientation: "portrait",
+    fitToPage: true,
+    fitToWidth: 1,
+    fitToHeight: 0,
+    margins: {
+      left: 0.3,
+      right: 0.3,
+      top: 0.4,
+      bottom: 0.4,
+      header: 0.2,
+      footer: 0.2,
+    },
+    showGridLines: true,
+  };
 }
 
 /**
@@ -314,27 +341,39 @@ export async function exportCDRawDataXlsx({
   if (stressStrainB64) stressStrainId = wb.addImage({ base64: stressStrainB64, extension: "png" });
   if (volChangeB64) volChangeId = wb.addImage({ base64: volChangeB64, extension: "png" });
 
+  // Carrega imagens das fotos
+  const photoImageIds: { [photoId: string]: number } = {};
+  for (const p of photos) {
+    if (p.dataUrl) {
+      const b64 = await getImageBase64(p.dataUrl);
+      if (b64) {
+        const ext = p.dataUrl.includes("png") ? "png" : "jpeg";
+        photoImageIds[p.id] = wb.addImage({ base64: b64, extension: ext });
+      }
+    }
+  }
+
   const totalPages = 2 + specimens.length + (photos.length > 0 ? 1 : 0);
   const reportTitle = sample.testCondition === "inundado"
     ? "ENSAIO DE CISALHAMENTO DIRETO INUNDADO (CDinun)"
     : "ENSAIO DE CISALHAMENTO DIRETO NATURAL (CDnat)";
 
-  // Configuração padrão de colunas amplas (para nunca cortar palavras)
   const defaultColumns = [
-    { width: 36 }, // A: Rótulos principais
-    { width: 22 }, // B: Valores / Identificadores
-    { width: 15 }, // C: Rótulos secundários
-    { width: 20 }, // D: Valores secundários
-    { width: 20 }, // E: Coluna intermediária
-    { width: 16 }, // F: Rótulos laterais
-    { width: 20 }, // G: Valores laterais
+    { width: 36 }, // A
+    { width: 22 }, // B
+    { width: 15 }, // C
+    { width: 20 }, // D
+    { width: 20 }, // E
+    { width: 16 }, // F
+    { width: 20 }, // G
   ];
 
   // =========================================================================
   // ABA 1: LAUDO EXECUTIVO (Espelho Fiel do Relatório PDF)
   // =========================================================================
-  const ws1 = wb.addWorksheet("Laudo Executivo", { views: [{ showGridLines: true }] });
+  const ws1 = wb.addWorksheet("Laudo Executivo");
   ws1.columns = defaultColumns;
+  applyA4PageSetup(ws1);
 
   let r1 = addOfficialReportHeader(ws1, sample, reportTitle, 1, totalPages, logoImageId);
   r1++;
@@ -372,7 +411,7 @@ export async function exportCDRawDataXlsx({
   });
   r1++;
 
-  // 2. Parâmetros de Resistência (Mohr-Coulomb) com Gráfico de Largura Total
+  // 2. Parâmetros de Resistência (Mohr-Coulomb) com Gráfico
   r1 = addSectionBar(ws1, r1, "Envoltória de Resistência (Strength Envelopes) — Mohr-Coulomb");
 
   ws1.mergeCells(`A${r1}:B${r1}`);
@@ -414,7 +453,7 @@ export async function exportCDRawDataXlsx({
   ws1.getCell(`F${r1}`).border = borderBlack;
   r1++;
 
-  // Inserção do Gráfico de Mohr-Coulomb ocupando 100% da largura das colunas A a G
+  // Gráfico de Mohr-Coulomb
   if (mohrChartId !== null) {
     const chartStartRow = r1;
     for (let i = 0; i < 20; i++) { ws1.getRow(r1).height = 17; r1++; }
@@ -514,10 +553,11 @@ export async function exportCDRawDataXlsx({
   r1 = addOfficialReportFooter(ws1, sample, r1, assinaturaImageId);
 
   // =========================================================================
-  // ABA 2: CURVAS & GRÁFICOS (Com Gráficos Ocupando Toda a Largura A a G)
+  // ABA 2: CURVAS & GRÁFICOS
   // =========================================================================
-  const wsCharts = wb.addWorksheet("Curvas & Gráficos", { views: [{ showGridLines: true }] });
+  const wsCharts = wb.addWorksheet("Curvas & Gráficos");
   wsCharts.columns = defaultColumns;
+  applyA4PageSetup(wsCharts);
 
   let rC = addOfficialReportHeader(wsCharts, sample, reportTitle, 2, totalPages, logoImageId);
   rC++;
@@ -554,10 +594,9 @@ export async function exportCDRawDataXlsx({
     const res = results[idx];
     const pageNum = 3 + idx;
 
-    const wsCP = wb.addWorksheet(`${cpName} (${cp.normalStressTarget}kPa)`, {
-      views: [{ showGridLines: true }],
-    });
+    const wsCP = wb.addWorksheet(`${cpName} (${cp.normalStressTarget}kPa)`);
     wsCP.columns = defaultColumns;
+    applyA4PageSetup(wsCP);
 
     let rCP = addOfficialReportHeader(wsCP, sample, `${reportTitle} — ${cpName}`, pageNum, totalPages, logoImageId);
     rCP++;
@@ -814,55 +853,72 @@ export async function exportCDRawDataXlsx({
   });
 
   // =========================================================================
-  // ABA FINAL: REGISTRO FOTOGRÁFICO
+  // ABA FINAL: REGISTRO FOTOGRÁFICO (COM FOTOS REAIS EMBUTIDAS EM GRID)
   // =========================================================================
-  const wsPhotos = wb.addWorksheet("Registro Fotográfico", { views: [{ showGridLines: true }] });
+  const wsPhotos = wb.addWorksheet("Registro Fotográfico");
   wsPhotos.columns = defaultColumns;
+  applyA4PageSetup(wsPhotos);
 
   let rPh = addOfficialReportHeader(wsPhotos, sample, `${reportTitle} — Registro Fotográfico`, totalPages, totalPages, logoImageId);
   rPh++;
 
-  rPh = addSectionBar(wsPhotos, rPh, "Catálogo de Evidências Fotográficas do Ensaio");
+  rPh = addSectionBar(wsPhotos, rPh, "Registro Fotográfico do Ensaio");
 
-  const photoHeaders = ["Nº", "Corpo de Prova (CP)", "Etapa / Fase", "Legenda / Descrição da Evidência", "Data de Registro", "Identificador Interno", "Status"];
-  photoHeaders.forEach((h, i) => {
-    const cell = wsPhotos.getRow(rPh).getCell(i + 1);
-    cell.value = h;
-    cell.font = { name: "Calibri", size: 9.5, bold: true, color: { argb: "FFFFFFFF" } };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_BLACK } };
-    cell.border = borderBlack;
-    cell.alignment = { horizontal: "center" };
-  });
-  rPh++;
+  // SEÇÃO 1: FOTOS DE MOLDAGEM
+  rPh = addSectionBar(wsPhotos, rPh, "Etapa de Moldagem / Aspecto Inicial");
+  const moldStartRow = rPh;
+  for (let i = 0; i < 11; i++) { wsPhotos.getRow(rPh).height = 16; rPh++; }
 
-  if (photos.length === 0) {
-    wsPhotos.mergeCells(`A${rPh}:G${rPh}`);
-    wsPhotos.getCell(`A${rPh}`).value = "Nenhuma fotografia anexada a este ensaio.";
-    wsPhotos.getCell(`A${rPh}`).font = { name: "Calibri", size: 9.5, italic: true };
-    wsPhotos.getCell(`A${rPh}`).alignment = { horizontal: "center" };
-    wsPhotos.getCell(`A${rPh}`).border = borderBlack;
-    rPh++;
-  } else {
-    photos.forEach((p, pIdx) => {
-      const row = [
-        pIdx + 1,
-        p.specimenId || "Geral",
-        p.kind === "moldagem" ? "Moldagem do CP" : p.kind === "ruptura" ? "Ruptura / Pós-Ensaio" : "Geral / Amostra",
-        p.caption || `Fotografia ${p.kind} — ${p.specimenId || "Amostra"}`,
-        p.createdAt ? new Date(p.createdAt).toLocaleDateString("pt-BR") : "—",
-        p.id,
-        "Anexado",
-      ];
-      row.forEach((v, i) => {
-        const cell = wsPhotos.getRow(rPh).getCell(i + 1);
-        cell.value = v;
-        cell.font = { name: "Calibri", size: 9.5 };
-        cell.border = borderBlack;
-        if (i === 0 || i === 6) cell.alignment = { horizontal: "center" };
+  specimens.slice(0, 3).forEach((cp, i) => {
+    const p = photos.find((x) => (x.specimenId === cp.id || x.specimenId === cp.displayId) && x.kind === "moldagem");
+    const colStart = i === 0 ? 0.1 : i === 1 ? 2.4 : 4.7;
+    const cellStart = i === 0 ? "A" : i === 1 ? "C" : "F";
+    const cellEnd = i === 0 ? "B" : i === 1 ? "E" : "G";
+
+    if (p && photoImageIds[p.id]) {
+      wsPhotos.addImage(photoImageIds[p.id], {
+        tl: { col: colStart, row: moldStartRow - 0.8 },
+        ext: { width: 260, height: 160 },
       });
-      rPh++;
-    });
-  }
+    }
+
+    // Legenda abaixo da foto
+    wsPhotos.mergeCells(`${cellStart}${rPh}:${cellEnd}${rPh}`);
+    const legCell = wsPhotos.getCell(`${cellStart}${rPh}`);
+    legCell.value = `${cp.displayId ?? cp.id} (σn = ${fmt(cp.normalStressTarget, 0)} kPa)`;
+    legCell.font = { name: "Calibri", size: 9, bold: true };
+    legCell.alignment = { horizontal: "center", vertical: "middle" };
+    legCell.border = borderBlack;
+  });
+  rPh += 2;
+
+  // SEÇÃO 2: FOTOS DE RUPTURA
+  rPh = addSectionBar(wsPhotos, rPh, "Após Ruptura / Plano de Cisalhamento");
+  const rupStartRow = rPh;
+  for (let i = 0; i < 11; i++) { wsPhotos.getRow(rPh).height = 16; rPh++; }
+
+  specimens.slice(0, 3).forEach((cp, i) => {
+    const p = photos.find((x) => (x.specimenId === cp.id || x.specimenId === cp.displayId) && x.kind === "ruptura");
+    const colStart = i === 0 ? 0.1 : i === 1 ? 2.4 : 4.7;
+    const cellStart = i === 0 ? "A" : i === 1 ? "C" : "F";
+    const cellEnd = i === 0 ? "B" : i === 1 ? "E" : "G";
+
+    if (p && photoImageIds[p.id]) {
+      wsPhotos.addImage(photoImageIds[p.id], {
+        tl: { col: colStart, row: rupStartRow - 0.8 },
+        ext: { width: 260, height: 160 },
+      });
+    }
+
+    // Legenda abaixo da foto
+    wsPhotos.mergeCells(`${cellStart}${rPh}:${cellEnd}${rPh}`);
+    const legCell = wsPhotos.getCell(`${cellStart}${rPh}`);
+    legCell.value = `${cp.displayId ?? cp.id} (σn = ${fmt(cp.normalStressTarget, 0)} kPa)`;
+    legCell.font = { name: "Calibri", size: 9, bold: true };
+    legCell.alignment = { horizontal: "center", vertical: "middle" };
+    legCell.border = borderBlack;
+  });
+  rPh += 2;
 
   rPh = addOfficialReportFooter(wsPhotos, sample, rPh, assinaturaImageId);
 
