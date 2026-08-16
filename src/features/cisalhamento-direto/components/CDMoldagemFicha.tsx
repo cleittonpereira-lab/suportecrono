@@ -2,14 +2,67 @@ import React from "react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChevronDown, ChevronRight, Plus, Trash2, Camera } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, Trash2, Camera, Beaker } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import type { CDSpecimen, CDSample, CDSpecimenResults, MoistureCapsule } from "../types";
 import { AvgMeasureDialog } from "./AvgMeasureDialog";
 import { PhotoUploader } from "@/features/lab/components/PhotoUploader";
 
 const fmt = (n: number | null | undefined, d = 2) =>
   n == null || !isFinite(n) ? "—" : n.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
+
+function PtNumInput({
+  value,
+  onChange,
+  className = "h-7 text-xs text-right font-mono",
+  placeholder,
+  disabled,
+}: {
+  value: number | null | undefined;
+  onChange: (val: number) => void;
+  className?: string;
+  placeholder?: string;
+  disabled?: boolean;
+}) {
+  const [localVal, setLocalVal] = React.useState(() =>
+    value == null || isNaN(value) ? "" : String(value).replace(".", ",")
+  );
+
+  React.useEffect(() => {
+    const formatted = value == null || isNaN(value) ? "" : String(value).replace(".", ",");
+    setLocalVal(formatted);
+  }, [value]);
+
+  return (
+    <Input
+      type="text"
+      inputMode="decimal"
+      value={localVal}
+      disabled={disabled}
+      placeholder={placeholder}
+      className={className}
+      onChange={(e) => {
+        const text = e.target.value;
+        setLocalVal(text);
+        const parsed = parseFloat(text.replace(",", "."));
+        if (!isNaN(parsed)) {
+          onChange(parsed);
+        } else if (text.trim() === "") {
+          onChange(0);
+        }
+      }}
+      onBlur={() => {
+        const parsed = parseFloat(localVal.replace(",", "."));
+        if (!isNaN(parsed)) {
+          setLocalVal(String(parsed).replace(".", ","));
+          onChange(parsed);
+        }
+      }}
+    />
+  );
+}
 
 function MiniNum({
   value,
@@ -21,12 +74,10 @@ function MiniNum({
   step?: number;
 }) {
   return (
-    <Input
-      type="number"
-      step={step}
+    <PtNumInput
       value={value}
-      onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-      className="h-7 px-1 text-center text-xs"
+      onChange={onChange}
+      className="h-7 px-1 text-right text-xs font-mono"
     />
   );
 }
@@ -45,12 +96,10 @@ function NumField({
   return (
     <div>
       <Label className="text-[11px] text-muted-foreground">{label}</Label>
-      <Input
-        type="number"
-        step={step}
+      <PtNumInput
         value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-        className="h-8 text-xs"
+        onChange={onChange}
+        className="h-8 text-xs text-right font-mono"
       />
     </div>
   );
@@ -153,107 +202,231 @@ export function CDMoldagemFicha({
 
   return (
     <div className="space-y-4">
-      {/* 1. ETAPA DE MOLDAGEM — CÁPSULAS DE UMIDADE */}
-      <div className="rounded-md border border-border bg-card">
-        <button
-          type="button"
+      {/* 1. CONTAINER RECOLHÍVEL: DETERMINAÇÃO DA UMIDADE (INICIAL E FINAL) */}
+      <Card className="border-primary/30 shadow-sm overflow-hidden">
+        <CardHeader
+          className="cursor-pointer select-none pb-2 pt-3 px-4 hover:bg-muted/40 transition-colors border-b border-border/40"
           onClick={onToggleCaps}
-          className="flex w-full items-center justify-between border-b border-border bg-muted/40 px-3 py-2 text-xs font-semibold uppercase tracking-wide"
         >
-          <span className="flex items-center gap-2">
-            {capsOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            ETAPA DE MOLDAGEM — CÁPSULAS DE UMIDADE ({cp.displayId ?? cp.id})
-          </span>
-          <span className="text-[11px] font-normal text-muted-foreground">
-            MÉDIA W₀ = {fmt(res.moisture0Pct, 2)}%
-          </span>
-        </button>
-        {capsOpen && (
-          <div className="overflow-x-auto p-3">
-            <table className="w-full border-collapse text-xs">
-              <thead className="bg-muted/30 text-muted-foreground">
-                <tr>
-                  <th className="border border-border px-3 py-1.5 text-left w-1/4">Cápsula</th>
-                  <th className="border border-border px-3 py-1.5 text-center w-1/4">1</th>
-                  <th className="border border-border px-3 py-1.5 text-center w-1/4">2</th>
-                  <th className="border border-border px-3 py-1.5 text-center w-1/4">3</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td className="border border-border px-3 py-1.5 font-medium">Tipo</td>
-                  {caps.slice(0, 3).map((c, i) => (
-                    <td key={i} className="border border-border p-1">
-                      <Input
-                        className="h-7 text-xs text-center"
-                        value={c.tipo ?? ""}
-                        onChange={(e) => updateCap(i, { tipo: e.target.value })}
-                        placeholder="M"
-                      />
-                    </td>
-                  ))}
-                </tr>
-                <tr>
-                  <td className="border border-border px-3 py-1.5 font-medium">Nº Cápsula</td>
-                  {caps.slice(0, 3).map((c, i) => (
-                    <td key={i} className="border border-border p-1">
-                      <Input
-                        className="h-7 text-xs text-center"
-                        value={c.numero ?? ""}
-                        onChange={(e) => updateCap(i, { numero: e.target.value })}
-                        placeholder={`#${i + 1}`}
-                      />
-                    </td>
-                  ))}
-                </tr>
-                <tr>
-                  <td className="border border-border px-3 py-1.5 font-medium">Tara (g)</td>
-                  {caps.slice(0, 3).map((c, i) => (
-                    <td key={i} className="border border-border p-1">
-                      <MiniNum value={c.tara} step={0.01} onChange={(v) => updateCap(i, { tara: v })} />
-                    </td>
-                  ))}
-                </tr>
-                <tr>
-                  <td className="border border-border px-3 py-1.5 font-medium">Amostra Úmida + Tara (g)</td>
-                  {caps.slice(0, 3).map((c, i) => (
-                    <td key={i} className="border border-border p-1">
-                      <MiniNum value={c.wet} step={0.01} onChange={(v) => updateCap(i, { wet: v })} />
-                    </td>
-                  ))}
-                </tr>
-                <tr>
-                  <td className="border border-border px-3 py-1.5 font-medium">Amostra Seca + Tara (g)</td>
-                  {caps.slice(0, 3).map((c, i) => (
-                    <td key={i} className="border border-border p-1">
-                      <MiniNum value={c.dry} step={0.01} onChange={(v) => updateCap(i, { dry: v })} />
-                    </td>
-                  ))}
-                </tr>
-                <tr className="bg-muted/20">
-                  <td className="border border-border px-3 py-1.5 font-medium">Umidade (%)</td>
-                  {caps.slice(0, 3).map((c, i) => {
-                    const w = wCap(c);
-                    return (
-                      <td key={i} className="border border-border px-3 py-1.5 text-center text-muted-foreground">
-                        {isFinite(w) ? fmt(w, 2) : "—"}
-                      </td>
-                    );
-                  })}
-                </tr>
-                <tr className="bg-muted/40 font-semibold">
-                  <td className="border border-border px-3 py-1.5">Média (%)</td>
-                  <td className="border border-border px-3 py-1.5 text-center font-bold" colSpan={3}>
-                    {fmt(res.moisture0Pct, 2)}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {capsOpen ? (
+                <ChevronDown className="h-4 w-4 text-primary" />
+              ) : (
+                <ChevronRight className="h-4 w-4 text-primary" />
+              )}
+              <div>
+                <CardTitle className="text-sm font-bold text-primary flex items-center gap-2">
+                  <Beaker className="h-4 w-4" /> Determinação da Umidade da Amostra — Cápsulas (Inicial e Final) — {cp.displayId ?? cp.id}
+                </CardTitle>
+                <CardDescription className="text-[11px]">
+                  3 determinações com pesagens para cada etapa do ensaio (clique para recolher/expandir)
+                </CardDescription>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="text-xs font-semibold bg-background border-primary/30 text-primary">
+                w₀ Inicial = {fmt(res.moisture0Pct, 2)}%
+              </Badge>
+              <Badge variant="outline" className="text-xs font-semibold bg-background border-primary/30 text-primary">
+                w_f Final = {isFinite(wFinalEff) ? fmt(wFinalEff, 2) : "—"}%
+              </Badge>
+            </div>
           </div>
-        )}
-      </div>
+        </CardHeader>
 
-      {/* 2. GEOMETRIA E PROGRAMA */}
+        {capsOpen && (
+          <CardContent className="p-4 grid gap-4 md:grid-cols-2 bg-background">
+            {/* Cápsulas Iniciais (Moldagem) */}
+            <div className="border border-border/70 rounded-md p-3 bg-muted/10">
+              <div className="flex items-center justify-between pb-2 mb-2 border-b border-border/50">
+                <div className="font-bold text-xs text-primary">Umidade Inicial (Moldagem)</div>
+                <Badge variant="secondary" className="text-[11px] font-bold">
+                  Média w₀ = {fmt(res.moisture0Pct, 2)}%
+                </Badge>
+              </div>
+
+              <table className="w-full border-collapse text-xs">
+                <thead className="bg-muted/40 text-muted-foreground">
+                  <tr>
+                    <th className="border border-border p-1.5 text-left">Determinação</th>
+                    <th className="border border-border p-1.5 text-center w-24">Cápsula 1</th>
+                    <th className="border border-border p-1.5 text-center w-24">Cápsula 2</th>
+                    <th className="border border-border p-1.5 text-center w-24">Cápsula 3</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td className="border border-border p-1.5 font-medium">Tipo</td>
+                    {caps.slice(0, 3).map((c, i) => (
+                      <td key={i} className="border border-border p-1">
+                        <Input
+                          className="h-7 text-xs text-center"
+                          value={c.tipo ?? ""}
+                          onChange={(e) => updateCap(i, { tipo: e.target.value })}
+                          placeholder="M"
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="border border-border p-1.5 font-medium">Nº Cápsula</td>
+                    {caps.slice(0, 3).map((c, i) => (
+                      <td key={i} className="border border-border p-1">
+                        <Input
+                          className="h-7 text-xs text-center"
+                          value={c.numero ?? ""}
+                          onChange={(e) => updateCap(i, { numero: e.target.value })}
+                          placeholder={`#${i + 1}`}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="border border-border p-1.5 font-medium">Tara (g)</td>
+                    {caps.slice(0, 3).map((c, i) => (
+                      <td key={i} className="border border-border p-1">
+                        <PtNumInput
+                          value={c.tara}
+                          onChange={(v) => updateCap(i, { tara: v })}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="border border-border p-1.5 font-medium">Solo Úmido + Tara (g)</td>
+                    {caps.slice(0, 3).map((c, i) => (
+                      <td key={i} className="border border-border p-1">
+                        <PtNumInput
+                          value={c.wet}
+                          onChange={(v) => updateCap(i, { wet: v })}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="border border-border p-1.5 font-medium">Solo Seco + Tara (g)</td>
+                    {caps.slice(0, 3).map((c, i) => (
+                      <td key={i} className="border border-border p-1">
+                        <PtNumInput
+                          value={c.dry}
+                          onChange={(v) => updateCap(i, { dry: v })}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                  <tr className="bg-muted/30">
+                    <td className="border border-border p-1.5 font-medium">Umidade (%)</td>
+                    {caps.slice(0, 3).map((c, i) => {
+                      const w = wCap(c);
+                      return (
+                        <td key={i} className="border border-border p-1.5 text-right font-semibold">
+                          {isFinite(w) ? `${w.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%` : "—"}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {/* Cápsulas Finais (Pós-Ensaio) */}
+            <div className="border border-border/70 rounded-md p-3 bg-muted/10">
+              <div className="flex items-center justify-between pb-2 mb-2 border-b border-border/50">
+                <div className="font-bold text-xs text-primary">Umidade Final (Pós-Ensaio)</div>
+                <Badge variant="secondary" className="text-[11px] font-bold">
+                  Média w_f = {isFinite(wFinalEff) ? fmt(wFinalEff, 2) : "—"}%
+                </Badge>
+              </div>
+
+              <table className="w-full border-collapse text-xs">
+                <thead className="bg-muted/40 text-muted-foreground">
+                  <tr>
+                    <th className="border border-border p-1.5 text-left">Determinação</th>
+                    <th className="border border-border p-1.5 text-center w-24">Cápsula 1</th>
+                    <th className="border border-border p-1.5 text-center w-24">Cápsula 2</th>
+                    <th className="border border-border p-1.5 text-center w-24">Cápsula 3</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td className="border border-border p-1.5 font-medium">Tipo</td>
+                    {finalCaps.slice(0, 3).map((c, i) => (
+                      <td key={i} className="border border-border p-1">
+                        <Input
+                          className="h-7 text-xs text-center"
+                          value={c.tipo ?? ""}
+                          onChange={(e) => updateFinalCap(i, { tipo: e.target.value })}
+                          placeholder="F"
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="border border-border p-1.5 font-medium">Nº Cápsula</td>
+                    {finalCaps.slice(0, 3).map((c, i) => (
+                      <td key={i} className="border border-border p-1">
+                        <Input
+                          className="h-7 text-xs text-center"
+                          value={c.numero ?? ""}
+                          onChange={(e) => updateFinalCap(i, { numero: e.target.value })}
+                          placeholder={`#${i + 1}`}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="border border-border p-1.5 font-medium">Tara (g)</td>
+                    {finalCaps.slice(0, 3).map((c, i) => (
+                      <td key={i} className="border border-border p-1">
+                        <PtNumInput
+                          value={c.tara}
+                          onChange={(v) => updateFinalCap(i, { tara: v })}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="border border-border p-1.5 font-medium">Solo Úmido + Tara (g)</td>
+                    {finalCaps.slice(0, 3).map((c, i) => (
+                      <td key={i} className="border border-border p-1">
+                        <PtNumInput
+                          value={c.wet}
+                          onChange={(v) => updateFinalCap(i, { wet: v })}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="border border-border p-1.5 font-medium">Solo Seco + Tara (g)</td>
+                    {finalCaps.slice(0, 3).map((c, i) => (
+                      <td key={i} className="border border-border p-1">
+                        <PtNumInput
+                          value={c.dry}
+                          onChange={(v) => updateFinalCap(i, { dry: v })}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                  <tr className="bg-muted/30">
+                    <td className="border border-border p-1.5 font-medium">Umidade (%)</td>
+                    {finalCaps.slice(0, 3).map((c, i) => {
+                      const w = wCap(c);
+                      return (
+                        <td key={i} className="border border-border p-1.5 text-right font-semibold">
+                          {isFinite(w) ? `${w.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%` : "—"}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        )}
+      </Card>
+
+      {/* 2. GEOMETRIA E PROGRAMA DE TENSÕES */}
       <div className="rounded-md border border-border bg-card">
         <button
           type="button"
@@ -265,46 +438,40 @@ export function CDMoldagemFicha({
             GEOMETRIA E PROGRAMA — {cp.displayId ?? cp.id}
           </span>
           <span className="text-[11px] font-normal text-muted-foreground">
-            D₀={fmt(cp.diameterMm || sample.dimensionMm, 2)} mm · H₀={fmt(cp.height0Mm, 2)} mm · σn={fmt(cp.normalStressTarget, 0)} kPa
+            D₀={fmt(res.diam0, 2)} mm · H₀={fmt(res.height0, 2)} mm · σn={fmt(cp.normalStressTarget, 0)} kPa
           </span>
         </button>
         {geomOpen && (
-          <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-4">
-            <div>
-              <Label className="text-xs">Diâmetro / Lado D₀ (mm)</Label>
-              <div className="flex items-center gap-1 mt-1">
-                <Input
-                  type="number"
+          <div className="grid gap-3 p-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
+            <div className="flex items-end gap-1">
+              <div className="flex-1">
+                <NumField
+                  label="Diâmetro D₀ (mm)"
+                  value={res.diam0}
                   step={0.01}
-                  value={cp.diameterMm || sample.dimensionMm}
-                  onChange={(e) => onCp({ diameterMm: parseFloat(e.target.value) || 0 })}
-                  className="h-8 text-xs"
-                />
-                <AvgMeasureDialog
-                  label={`Diâmetro D₀ — ${cp.displayId ?? cp.id}`}
-                  unit="mm"
-                  values={cp.D0measurements ?? []}
-                  onSave={(avg, vals) => onCp({ diameterMm: avg, D0measurements: vals })}
+                  onChange={(v) => onCp({ diam0: v, diamMeasures: [v, v, v] })}
                 />
               </div>
+              <AvgMeasureDialog
+                title="Diâmetro do CP (mm)"
+                measures={cp.diamMeasures ?? [res.diam0, res.diam0, res.diam0]}
+                onSave={(ms, avg) => onCp({ diamMeasures: ms, diam0: avg })}
+              />
             </div>
-            <div>
-              <Label className="text-xs">Altura CP H₀ (mm)</Label>
-              <div className="flex items-center gap-1 mt-1">
-                <Input
-                  type="number"
+            <div className="flex items-end gap-1">
+              <div className="flex-1">
+                <NumField
+                  label="Altura H₀ (mm)"
+                  value={res.height0}
                   step={0.01}
-                  value={cp.height0Mm}
-                  onChange={(e) => onCp({ height0Mm: parseFloat(e.target.value) || 0 })}
-                  className="h-8 text-xs"
-                />
-                <AvgMeasureDialog
-                  label={`Altura H₀ — ${cp.displayId ?? cp.id}`}
-                  unit="mm"
-                  values={cp.H0measurements ?? []}
-                  onSave={(avg, vals) => onCp({ height0Mm: avg, H0measurements: vals })}
+                  onChange={(v) => onCp({ height0: v, heightMeasures: [v, v, v] })}
                 />
               </div>
+              <AvgMeasureDialog
+                title="Altura do CP (mm)"
+                measures={cp.heightMeasures ?? [res.height0, res.height0, res.height0]}
+                onSave={(ms, avg) => onCp({ heightMeasures: ms, height0: avg })}
+              />
             </div>
             <NumField
               label="Massa inicial CP (g)"
@@ -323,12 +490,6 @@ export function CDMoldagemFicha({
               step={0.01}
               onChange={(v) => onCp({ mFinal: v })}
             />
-            <NumField
-              label="Umidade final w_f (%)"
-              value={cp.wFinalPct ?? 0}
-              step={0.01}
-              onChange={(v) => onCp({ wFinalPct: v })}
-            />
             <div>
               <Label className="text-xs">Critério de ruptura</Label>
               <Select
@@ -339,8 +500,10 @@ export function CDMoldagemFicha({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="max_tau">Máx. Tensão Cisalhante (τ)</SelectItem>
-                  <SelectItem value="residual">Resistência Residual</SelectItem>
+                  <SelectItem value="max_tau">Máxima Tensão Cisalhante (τ_max)</SelectItem>
+                  <SelectItem value="residual">Tensão Residual (Final)</SelectItem>
+                  <SelectItem value="delta_h_10pct">Deslocamento Horizontal de 10%</SelectItem>
+                  <SelectItem value="delta_h_15pct">Deslocamento Horizontal de 15%</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -360,177 +523,48 @@ export function CDMoldagemFicha({
             ÍNDICES FÍSICOS CALCULADOS — {cp.displayId ?? cp.id}
           </span>
           <span className="text-[11px] font-normal text-muted-foreground">
-            e₀={fmt(res.voidRatio0, 3)} · Sr₀={fmt(res.saturation0Pct, 1)}%
+            e₀={fmt(res.e0, 3)} · Sr₀={fmt(res.Sr0Pct, 1)}% · γd={fmt(res.gammaDry0, 2)} kN/m³
           </span>
         </button>
         {indicesOpen && (
-          <div className="grid grid-cols-2 gap-2 bg-muted/20 p-3 text-xs sm:grid-cols-4">
-            <Stat label="VOLUME V₀" value={`${fmt(res.volume0, 2)} cm³`} />
-            <Stat label="ÁREA A₀" value={`${fmt(res.area0, 2)} cm²`} />
-            <Stat label="γ NATURAL" value={`${fmt(res.wetDensity * 9.807, 2)} kN/m³`} />
-            <Stat label="γ SECA" value={`${fmt(res.dryDensity * 9.807, 2)} kN/m³`} />
-            <Stat label="MASSA SECA CP" value={`${fmt(res.dryMass, 2)} g`} />
-            <Stat label="ÍNDICE DE VAZIOS E₀" value={fmt(res.voidRatio0, 3)} />
-            <Stat label="SR₀" value={`${fmt(res.saturation0Pct, 1)} %`} />
-            <Stat label="UMIDADE MÉDIA W₀" value={`${fmt(res.moisture0Pct, 2)} %`} />
+          <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-4 lg:grid-cols-8">
+            <Stat label="Massa Úmida (g)" value={fmt(res.wetMass, 2)} />
+            <Stat label="Massa Seca (g)" value={fmt(res.dryMass0, 2)} />
+            <Stat label="Volume (cm³)" value={fmt(res.volume0, 2)} />
+            <Stat label="Área (cm²)" value={fmt(res.area0, 3)} />
+            <Stat label="γnat (kN/m³)" value={fmt(res.gammaNat0, 2)} />
+            <Stat label="γd (kN/m³)" value={fmt(res.gammaDry0, 2)} />
+            <Stat label="Índice Vazios e₀" value={fmt(res.e0, 3)} />
+            <Stat label="Saturação Sr₀ (%)" value={`${fmt(res.Sr0Pct, 1)}%`} />
           </div>
         )}
       </div>
 
-      {/* 4. ETAPA FINAL — CÁPSULAS DE UMIDADE E MASSA FINAL */}
+      {/* 4. REGISTRO FOTOGRÁFICO */}
       <div className="rounded-md border border-border bg-card">
         <button
           type="button"
-          onClick={onToggleFinal}
+          onClick={onTogglePhoto}
           className="flex w-full items-center justify-between border-b border-border bg-muted/40 px-3 py-2 text-xs font-semibold uppercase tracking-wide"
         >
           <span className="flex items-center gap-2">
-            {finalOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            ETAPA FINAL — CÁPSULAS DE UMIDADE E MASSA FINAL DO CP ({cp.displayId ?? cp.id})
+            {photoOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            REGISTRO FOTOGRÁFICO — {cp.displayId ?? cp.id}
           </span>
           <span className="text-[11px] font-normal text-muted-foreground">
-            {isFinite(wFinalEff) && wFinalEff > 0 ? `w_f = ${fmt(wFinalEff, 2)}%` : "SEM DADOS"}
+            {(cp.photos || []).length} FOTO(S)
           </span>
         </button>
-        {finalOpen && (
-          <div className="p-3 space-y-4">
-            <table className="w-full border-collapse text-xs">
-              <thead className="bg-muted/30 text-muted-foreground">
-                <tr>
-                  <th className="border border-border px-3 py-1.5 text-left w-1/4">Cápsula (final)</th>
-                  <th className="border border-border px-3 py-1.5 text-center w-1/4">1</th>
-                  <th className="border border-border px-3 py-1.5 text-center w-1/4">2</th>
-                  <th className="border border-border px-3 py-1.5 text-center w-1/4">3</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td className="border border-border px-3 py-1.5 font-medium">Tipo</td>
-                  {finalCaps.slice(0, 3).map((c, i) => (
-                    <td key={i} className="border border-border p-1">
-                      <Input
-                        className="h-7 text-xs text-center"
-                        value={c.tipo ?? ""}
-                        onChange={(e) => updateFinalCap(i, { tipo: e.target.value })}
-                        placeholder="M"
-                      />
-                    </td>
-                  ))}
-                </tr>
-                <tr>
-                  <td className="border border-border px-3 py-1.5 font-medium">Nº Cápsula</td>
-                  {finalCaps.slice(0, 3).map((c, i) => (
-                    <td key={i} className="border border-border p-1">
-                      <Input
-                        className="h-7 text-xs text-center"
-                        value={c.numero ?? ""}
-                        onChange={(e) => updateFinalCap(i, { numero: e.target.value })}
-                        placeholder={`#${i + 1}`}
-                      />
-                    </td>
-                  ))}
-                </tr>
-                <tr>
-                  <td className="border border-border px-3 py-1.5 font-medium">Tara (g)</td>
-                  {finalCaps.slice(0, 3).map((c, i) => (
-                    <td key={i} className="border border-border p-1">
-                      <MiniNum value={c.tara} step={0.01} onChange={(v) => updateFinalCap(i, { tara: v })} />
-                    </td>
-                  ))}
-                </tr>
-                <tr>
-                  <td className="border border-border px-3 py-1.5 font-medium">Amostra Úmida + Tara (g)</td>
-                  {finalCaps.slice(0, 3).map((c, i) => (
-                    <td key={i} className="border border-border p-1">
-                      <MiniNum value={c.wet} step={0.01} onChange={(v) => updateFinalCap(i, { wet: v })} />
-                    </td>
-                  ))}
-                </tr>
-                <tr>
-                  <td className="border border-border px-3 py-1.5 font-medium">Amostra Seca + Tara (g)</td>
-                  {finalCaps.slice(0, 3).map((c, i) => (
-                    <td key={i} className="border border-border p-1">
-                      <MiniNum value={c.dry} step={0.01} onChange={(v) => updateFinalCap(i, { dry: v })} />
-                    </td>
-                  ))}
-                </tr>
-                <tr className="bg-muted/20">
-                  <td className="border border-border px-3 py-1.5 font-medium">Umidade final (%)</td>
-                  {finalCaps.slice(0, 3).map((c, i) => {
-                    const w = wCap(c);
-                    return (
-                      <td key={i} className="border border-border px-3 py-1.5 text-center text-muted-foreground">
-                        {isFinite(w) ? fmt(w, 2) : "—"}
-                      </td>
-                    );
-                  })}
-                </tr>
-                <tr className="bg-muted/40 font-semibold">
-                  <td className="border border-border px-3 py-1.5">Média w_f (%)</td>
-                  <td className="border border-border px-3 py-1.5 text-center font-bold" colSpan={3}>
-                    {fmt(wFinalEff, 2)}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-
-            <div className="grid grid-cols-2 gap-2 bg-muted/20 p-3 text-xs sm:grid-cols-4">
-              <Stat label="W_F MÉDIO" value={`${fmt(wFinalEff, 2)} %`} />
-              <Stat label="MASSA SECA FINAL M_SD,F" value={`${fmt(dryMassFinal, 2)} g`} />
-              <Stat label="ΔW = W_F − W₀" value={`${fmt(deltaW, 2)} %`} />
-              <Stat label="ΔM = M_F − M₀" value={`${fmt(deltaM, 2)} g`} />
-              <Stat label="E_F (APÓS ADEN.)" value={fmt(eFinalApprox, 3)} />
-              <Stat label="SR_F" value={`${fmt(SrFinal, 1)} %`} />
-              <Stat label="γ_NAT,F" value={`${fmt(gammaNatFinal, 2)} kN/m³`} />
-              <Stat label="γ_D,F" value={`${fmt(gammaDryFinal, 2)} kN/m³`} />
-            </div>
-
-            <div className="text-[10px] text-muted-foreground leading-relaxed">
-              Equações: w = (m_água / m_sólidos) · 100; m_sd = m / (1 + w); γ = (m / V) · g; e = (Gs · γw / γd) − 1;
-              Sr = (w · Gs) / e.
-            </div>
+        {photoOpen && (
+          <div className="p-3">
+            <PhotoUploader
+              photos={cp.photos || []}
+              onChange={(photos) => onCp({ photos })}
+              title="Fotos do Ensaio de Cisalhamento Direto (Moldagem / Pós-Ruptura)"
+            />
           </div>
         )}
       </div>
-
-      {/* 5. REGISTRO FOTOGRÁFICO EMBUTIDO */}
-      {ctx && (
-        <div className="rounded-md border border-border bg-card">
-          <button
-            type="button"
-            onClick={onTogglePhoto}
-            className="flex w-full items-center justify-between border-b border-border bg-muted/40 px-3 py-2 text-xs font-semibold uppercase tracking-wide"
-          >
-            <span className="flex items-center gap-2">
-              {photoOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-              REGISTRO FOTOGRÁFICO — {cp.displayId ?? cp.id}
-            </span>
-            <span className="text-[11px] font-normal text-muted-foreground">
-              {(ctx.photos ?? []).filter((p: any) => p.specimenId === cp.id).length} FOTO(S)
-            </span>
-          </button>
-          {photoOpen && (
-            <div className="space-y-4 p-4">
-              <PhotoUploader
-                title={`Moldagem — ${cp.displayId ?? cp.id}`}
-                kind="moldagem"
-                photos={(ctx.photos ?? []).filter((p: any) => p.specimenId === cp.id && p.kind === "moldagem")}
-                onAdd={(p) => ctx.addPhoto({ ...p, specimenId: cp.id, kind: "moldagem" })}
-                onRemove={(id) => ctx.removePhoto(id)}
-                onUpdate={(id, patch) => ctx.updatePhoto(id, patch)}
-              />
-              <PhotoUploader
-                title={`Ruptura — ${cp.displayId ?? cp.id}`}
-                kind="ruptura"
-                photos={(ctx.photos ?? []).filter((p: any) => p.specimenId === cp.id && p.kind === "ruptura")}
-                onAdd={(p) => ctx.addPhoto({ ...p, specimenId: cp.id, kind: "ruptura" })}
-                onRemove={(id) => ctx.removePhoto(id)}
-                onUpdate={(id, patch) => ctx.updatePhoto(id, patch)}
-              />
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
