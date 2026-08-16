@@ -686,7 +686,7 @@ export function CDReportPage5({
   const cpsForPage = specimens.slice(pageIndex * 3, pageIndex * 3 + 3);
 
   return (
-    <div style={REPORT_PAGE_STYLE} className="printable-report">
+    <div style={REPORT_PAGE_STYLE} className="printable-report flex flex-col justify-between">
       <ReportHeader
         sample={sample}
         page={5 + pageIndex}
@@ -695,69 +695,86 @@ export function CDReportPage5({
         norms={NORMS}
       />
 
-      <div className="flex-1 flex flex-col justify-start mt-2 space-y-2">
+      <div className="flex-1 flex flex-col justify-start mt-2 space-y-3">
         <SectionBar>Registro Fotográfico do Ensaio</SectionBar>
-        <div className="grid grid-rows-2 gap-3 flex-1">
-          {/* Linha 1: Etapa de Moldagem */}
-          <div className="rounded border border-[#141414]/60 bg-white p-2 flex flex-col justify-between">
-            <div className="text-[9px] font-bold text-[#141414] uppercase mb-1">
-              Etapa de Moldagem / Aspecto Inicial
-            </div>
-            <div className="grid grid-cols-3 gap-3 flex-1 items-center">
-              {cpsForPage.map((cp) => {
-                const p = photos.find((x) => x.specimenId === cp.id && x.kind === "moldagem");
-                return (
-                  <div key={cp.id} className="flex flex-col items-center justify-center h-full">
-                    <div className="w-full aspect-[4/3] max-h-36 bg-black/5 border border-[#141414]/20 rounded overflow-hidden flex items-center justify-center">
-                      {p ? (
-                        <img
-                          src={p.dataUrl}
-                          alt={cp.id}
-                          className="h-full w-full object-cover"
-                          crossOrigin="anonymous"
-                        />
-                      ) : (
-                        <span className="text-[8px] text-muted-foreground">Foto {cp.displayId ?? cp.id}</span>
-                      )}
-                    </div>
-                    <span className="text-[8px] font-semibold mt-1">
-                      {cp.displayId ?? cp.id} (σn = {fmt(cp.normalStressTarget, 0)} kPa)
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
 
-          {/* Linha 2: Após Ruptura */}
-          <div className="rounded border border-[#141414]/60 bg-white p-2 flex flex-col justify-between">
-            <div className="text-[9px] font-bold text-[#141414] uppercase mb-1">
-              Após Ruptura / Plano de Cisalhamento
-            </div>
-            <div className="grid grid-cols-3 gap-3 flex-1 items-center">
-              {cpsForPage.map((cp) => {
-                const p = photos.find((x) => x.specimenId === cp.id && x.kind === "ruptura");
-                return (
-                  <div key={cp.id} className="flex flex-col items-center justify-center h-full">
-                    <div className="w-full aspect-[4/3] max-h-36 bg-black/5 border border-[#141414]/20 rounded overflow-hidden flex items-center justify-center">
-                      {p ? (
-                        <img
-                          src={p.dataUrl}
-                          alt={cp.id}
-                          className="h-full w-full object-cover"
-                          crossOrigin="anonymous"
-                        />
-                      ) : (
-                        <span className="text-[8px] text-muted-foreground">Foto {cp.displayId ?? cp.id}</span>
-                      )}
-                    </div>
-                    <span className="text-[8px] font-semibold mt-1">
-                      {cp.displayId ?? cp.id} (σn = {fmt(cp.normalStressTarget, 0)} kPa)
-                    </span>
+        {/* Bloco 1: Etapa de Moldagem */}
+        <div className="rounded border border-[#141414]/60 bg-white p-2.5 flex flex-col shadow-sm">
+          <div className="text-[9.5px] font-bold text-[#141414] uppercase mb-2 border-b border-[#141414]/15 pb-1 flex items-center justify-between">
+            <span>Etapa de Moldagem / Aspecto Inicial</span>
+            <span className="text-[8px] font-normal text-muted-foreground">Proporção 4:3</span>
+          </div>
+          <div className="grid grid-cols-3 gap-3 items-start">
+            {cpsForPage.map((cp) => {
+              const p = photos.find((x) => (x.specimenId === cp.id || x.specimenId === cp.displayId) && x.kind === "moldagem");
+              return (
+                <div key={cp.id} className="flex flex-col items-center">
+                  <div className="w-full aspect-[4/3] bg-neutral-100 border border-[#141414]/25 rounded overflow-hidden flex items-center justify-center shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+                    {p ? (
+                      <img
+                        src={p.dataUrl}
+                        alt={cp.id}
+                        className="h-full w-full object-cover"
+                        crossOrigin="anonymous"
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center gap-1 text-muted-foreground p-2 text-center">
+                        <span className="text-[9.5px] font-medium">Foto Moldagem</span>
+                        <span className="text-[8px] opacity-75">{cp.displayId ?? cp.id}</span>
+                      </div>
+                    )}
                   </div>
-                );
-              })}
-            </div>
+                  <span className="text-[8.5px] font-bold text-[#141414] mt-1 text-center">
+                    {cp.displayId ?? cp.id} (σn = {fmt(cp.normalStressTarget, 0)} kPa)
+                  </span>
+                  {p?.caption && (
+                    <span className="text-[7.5px] text-muted-foreground italic text-center truncate max-w-full">
+                      {p.caption}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Bloco 2: Após Ruptura */}
+        <div className="rounded border border-[#141414]/60 bg-white p-2.5 flex flex-col shadow-sm">
+          <div className="text-[9.5px] font-bold text-[#141414] uppercase mb-2 border-b border-[#141414]/15 pb-1 flex items-center justify-between">
+            <span>Após Ruptura / Plano de Cisalhamento</span>
+            <span className="text-[8px] font-normal text-muted-foreground">Proporção 4:3</span>
+          </div>
+          <div className="grid grid-cols-3 gap-3 items-start">
+            {cpsForPage.map((cp) => {
+              const p = photos.find((x) => (x.specimenId === cp.id || x.specimenId === cp.displayId) && x.kind === "ruptura");
+              return (
+                <div key={cp.id} className="flex flex-col items-center">
+                  <div className="w-full aspect-[4/3] bg-neutral-100 border border-[#141414]/25 rounded overflow-hidden flex items-center justify-center shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+                    {p ? (
+                      <img
+                        src={p.dataUrl}
+                        alt={cp.id}
+                        className="h-full w-full object-cover"
+                        crossOrigin="anonymous"
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center gap-1 text-muted-foreground p-2 text-center">
+                        <span className="text-[9.5px] font-medium">Foto Ruptura</span>
+                        <span className="text-[8px] opacity-75">{cp.displayId ?? cp.id}</span>
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-[8.5px] font-bold text-[#141414] mt-1 text-center">
+                    {cp.displayId ?? cp.id} (σn = {fmt(cp.normalStressTarget, 0)} kPa)
+                  </span>
+                  {p?.caption && (
+                    <span className="text-[7.5px] text-muted-foreground italic text-center truncate max-w-full">
+                      {p.caption}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
