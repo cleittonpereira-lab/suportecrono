@@ -110,6 +110,9 @@ export const Route = createFileRoute("/_app/relatorio/adensamento")({
   },
 });
 
+const fmt = (n: number | null | undefined, d = 2) =>
+  n == null || !isFinite(n) ? "—" : n.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
+
 const defaultSample: OedSampleProps = {
   project: "Caracterização Geotécnica",
   client: "Suporte Infra Engenharia",
@@ -260,7 +263,19 @@ export function AdensamentoPage() {
   );
 
   // Páginas do laudo
-  const photos = ctx?.photos || [];
+  const [localPhotos, setLocalPhotos] = useState<import("@/features/lab/types").Photo[]>([]);
+  const photos = ctx?.photos && ctx.photos.length > 0 ? ctx.photos : localPhotos;
+
+  const addPhotoLocal = (p: Omit<import("@/features/lab/types").Photo, "id" | "createdAt">) => {
+    const newPhoto = { ...p, id: "ph_" + Math.random().toString(36).substring(2, 9), createdAt: new Date().toISOString() };
+    setLocalPhotos((prev) => [...prev, newPhoto]);
+  };
+  const removePhotoLocal = (id: string) => {
+    setLocalPhotos((prev) => prev.filter((item) => item.id !== id));
+  };
+  const updatePhotoLocal = (id: string, patch: Partial<import("@/features/lab/types").Photo>) => {
+    setLocalPhotos((prev) => prev.map((item) => item.id === id ? { ...item, ...patch } : item));
+  };
   const photoPagesCount = Math.max(1, Math.ceil(photos.length / 3));
   const totalReportPages = 2 + photoPagesCount;
 
