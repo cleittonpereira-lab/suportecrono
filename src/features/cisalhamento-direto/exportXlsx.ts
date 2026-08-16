@@ -72,12 +72,15 @@ function addOfficialReportHeader(
 ): number {
   let r = startRow;
 
-  // Inserção do Logo Suporte no topo esquerdo travado dentro de A1:A3 (twoCell)
+  // Quadro reservado para o Logo Suporte (A1:B3)
+  ws.mergeCells(`A${r}:B${r + 2}`);
+
+  // Inserção do Logo com proporção perfeita (185px x 48px)
   if (logoImageId !== null) {
     ws.addImage(logoImageId, {
-      tl: { col: 0.05, row: r - 1 },
-      br: { col: 0.95, row: r + 2 },
-      editAs: "twoCell",
+      tl: { col: 0.15, row: r - 0.85 },
+      ext: { width: 185, height: 48 },
+      editAs: "oneCell",
     });
   }
 
