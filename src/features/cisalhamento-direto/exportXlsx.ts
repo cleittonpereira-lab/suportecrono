@@ -72,12 +72,12 @@ function addOfficialReportHeader(
 ): number {
   let r = startRow;
 
-  // Inserção do Logo Suporte no topo esquerdo (A1:B3)
+  // Inserção do Logo Suporte no topo esquerdo travado dentro de A1:A3 (twoCell)
   if (logoImageId !== null) {
     ws.addImage(logoImageId, {
-      tl: { col: 0.15, row: r - 0.9 },
-      ext: { width: 170, height: 46 },
-      editAs: "oneCell",
+      tl: { col: 0.05, row: r - 1 },
+      br: { col: 0.95, row: r + 2 },
+      editAs: "twoCell",
     });
   }
 
@@ -225,7 +225,7 @@ function addSectionBar(ws: ExcelJS.Worksheet, r: number, text: string): number {
 }
 
 /**
- * Adiciona o Rodapé Oficial com Assinatura Limpa e Isolada
+ * Adiciona o Rodapé Oficial com Assinatura Totalmente Travada em twoCell
  */
 function addOfficialReportFooter(
   ws: ExcelJS.Worksheet,
@@ -252,12 +252,12 @@ function addOfficialReportFooter(
   fLeft.font = { name: "Calibri", size: 9.5, color: { argb: COLOR_BLACK } };
   fLeft.alignment = { horizontal: "left", vertical: "middle", wrapText: true };
 
-  // Assinatura do Maurício centralizada em D..E
+  // Assinatura do Maurício centralizada em D..E com twoCell travado
   if (assinaturaImageId !== null) {
     ws.addImage(assinaturaImageId, {
-      tl: { col: 3.45, row: rTop - 0.95 },
-      ext: { width: 125, height: 35 },
-      editAs: "oneCell",
+      tl: { col: 3.3, row: rTop - 1 },
+      br: { col: 4.7, row: rTop },
+      editAs: "twoCell",
     });
   }
 
@@ -504,17 +504,19 @@ export async function exportCDRawDataXlsx({
   ws1.getCell(`F${r1}`).border = borderBlack;
   r1++;
 
-  // Inserção do Gráfico de Mohr-Coulomb com isolamento total (nunca sobrepõe nada)
+  // Inserção do Gráfico de Mohr-Coulomb com twoCell travado de A a G
   if (mohrChartId !== null) {
     ws1.getRow(r1).height = 10;
     r1++;
     const chartStartRow = r1;
-    for (let i = 0; i < 18; i++) { ws1.getRow(r1).height = 22; r1++; }
+    const chartEndRow = r1 + 17;
+    for (let i = chartStartRow; i <= chartEndRow; i++) { ws1.getRow(i).height = 22; }
     ws1.addImage(mohrChartId, {
-      tl: { col: 0.15, row: chartStartRow - 0.7 },
-      ext: { width: 820, height: 350 },
-      editAs: "oneCell",
+      tl: { col: 0.05, row: chartStartRow - 1 },
+      br: { col: 6.95, row: chartEndRow },
+      editAs: "twoCell",
     });
+    r1 = chartEndRow + 1;
     ws1.getRow(r1).height = 14;
     r1++;
   }
@@ -619,7 +621,7 @@ export async function exportCDRawDataXlsx({
   r1 = addOfficialReportFooter(ws1, sample, r1, assinaturaImageId);
 
   // =========================================================================
-  // ABA 2: CURVAS & GRÁFICOS (Com Isolamento Absoluto de Cada Gráfico)
+  // ABA 2: CURVAS & GRÁFICOS (Com twoCell Travado Sem Sobreposição)
   // =========================================================================
   const wsCharts = wb.addWorksheet("Curvas & Gráficos");
   wsCharts.columns = defaultColumns;
@@ -634,12 +636,14 @@ export async function exportCDRawDataXlsx({
     wsCharts.getRow(rC).height = 10;
     rC++;
     const g1Start = rC;
-    for (let i = 0; i < 16; i++) { wsCharts.getRow(rC).height = 22; rC++; }
+    const g1End = rC + 15;
+    for (let i = g1Start; i <= g1End; i++) { wsCharts.getRow(i).height = 22; }
     wsCharts.addImage(stressStrainId, {
-      tl: { col: 0.15, row: g1Start - 0.7 },
-      ext: { width: 820, height: 310 },
-      editAs: "oneCell",
+      tl: { col: 0.05, row: g1Start - 1 },
+      br: { col: 6.95, row: g1End },
+      editAs: "twoCell",
     });
+    rC = g1End + 1;
     wsCharts.getRow(rC).height = 14;
     rC++;
   }
@@ -649,12 +653,14 @@ export async function exportCDRawDataXlsx({
     wsCharts.getRow(rC).height = 10;
     rC++;
     const g2Start = rC;
-    for (let i = 0; i < 16; i++) { wsCharts.getRow(rC).height = 22; rC++; }
+    const g2End = rC + 15;
+    for (let i = g2Start; i <= g2End; i++) { wsCharts.getRow(i).height = 22; }
     wsCharts.addImage(volChangeId, {
-      tl: { col: 0.15, row: g2Start - 0.7 },
-      ext: { width: 820, height: 310 },
-      editAs: "oneCell",
+      tl: { col: 0.05, row: g2Start - 1 },
+      br: { col: 6.95, row: g2End },
+      editAs: "twoCell",
     });
+    rC = g2End + 1;
     wsCharts.getRow(rC).height = 14;
     rC++;
   }
@@ -1039,21 +1045,24 @@ export async function exportCDRawDataXlsx({
   rPh++;
 
   const mImgStart = rPh;
-  for (let i = 0; i < 12; i++) { wsPhotos.getRow(rPh).height = 22; rPh++; }
+  const mImgEnd = rPh + 11;
+  for (let i = mImgStart; i <= mImgEnd; i++) { wsPhotos.getRow(i).height = 22; }
 
   specimens.slice(0, 3).forEach((cp, i) => {
     const p = photos.find((x) => (x.specimenId === cp.id || x.specimenId === cp.displayId) && x.kind === "moldagem");
-    const colStart = i === 0 ? 0.2 : i === 1 ? 2.6 : 5.0;
+    const colStart = i === 0 ? 0.1 : i === 1 ? 2.4 : 4.9;
+    const colEnd = i === 0 ? 1.9 : i === 1 ? 4.6 : 6.9;
 
     if (p && photoImageIds[p.id]) {
       wsPhotos.addImage(photoImageIds[p.id], {
-        tl: { col: colStart, row: mImgStart - 0.7 },
-        ext: { width: 250, height: 165 },
-        editAs: "oneCell",
+        tl: { col: colStart, row: mImgStart - 1 },
+        br: { col: colEnd, row: mImgEnd },
+        editAs: "twoCell",
       });
     }
   });
 
+  rPh = mImgEnd + 1;
   wsPhotos.getRow(rPh).height = 26;
   specimens.slice(0, 3).forEach((cp, i) => {
     const cellStart = i === 0 ? "A" : i === 1 ? "C" : "F";
@@ -1076,21 +1085,24 @@ export async function exportCDRawDataXlsx({
   rPh++;
 
   const rupStart = rPh;
-  for (let i = 0; i < 12; i++) { wsPhotos.getRow(rPh).height = 22; rPh++; }
+  const rupEnd = rPh + 11;
+  for (let i = rupStart; i <= rupEnd; i++) { wsPhotos.getRow(i).height = 22; }
 
   specimens.slice(0, 3).forEach((cp, i) => {
     const p = photos.find((x) => (x.specimenId === cp.id || x.specimenId === cp.displayId) && x.kind === "ruptura");
-    const colStart = i === 0 ? 0.2 : i === 1 ? 2.6 : 5.0;
+    const colStart = i === 0 ? 0.1 : i === 1 ? 2.4 : 4.9;
+    const colEnd = i === 0 ? 1.9 : i === 1 ? 4.6 : 6.9;
 
     if (p && photoImageIds[p.id]) {
       wsPhotos.addImage(photoImageIds[p.id], {
-        tl: { col: colStart, row: rupStart - 0.7 },
-        ext: { width: 250, height: 165 },
-        editAs: "oneCell",
+        tl: { col: colStart, row: rupStart - 1 },
+        br: { col: colEnd, row: rupEnd },
+        editAs: "twoCell",
       });
     }
   });
 
+  rPh = rupEnd + 1;
   wsPhotos.getRow(rPh).height = 26;
   specimens.slice(0, 3).forEach((cp, i) => {
     const cellStart = i === 0 ? "A" : i === 1 ? "C" : "F";
