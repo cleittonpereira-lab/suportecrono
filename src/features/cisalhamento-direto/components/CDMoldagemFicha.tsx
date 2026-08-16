@@ -328,6 +328,17 @@ export function CDMoldagemFicha({
                   </tr>
                 </tbody>
               </table>
+
+              <div className="mt-3 pt-2 border-t border-border/40 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-[11px] text-muted-foreground">Massa inicial CP (g)</Label>
+                  <PtNumInput
+                    value={cp.wetMass}
+                    onChange={(v) => onCp({ wetMass: v })}
+                    className="h-8 text-xs text-right font-mono"
+                  />
+                </div>
+              </div>
             </div>
 
             {/* Cápsulas Finais (Pós-Ensaio) */}
