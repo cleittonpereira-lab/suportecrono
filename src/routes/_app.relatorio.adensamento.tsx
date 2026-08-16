@@ -3971,47 +3971,49 @@ function PrintableReport(p: ReportProps) {
       <div data-pdf-page style={pageStyle}>
         <ReportHeader sample={p.sample} page={4} total={total} />
         <div className="flex-1 pt-3">
-          <SectionBar>Registro Fotográfico da Amostra (Moldagem, Ensaio e Pós-Ruptura)</SectionBar>
+          <SectionBar>Registro Fotográfico da Amostra (Moldagem e Pós-Ensaio)</SectionBar>
           
-          {/* Grid de 3 Fotos por Linha na Proporção 3:4 */}
-          <div className="mt-3 grid grid-cols-3 gap-3">
+          {/* Grid de 2 Fotos Centralizadas na Proporção 3:4 */}
+          <div className="mt-4 grid grid-cols-2 gap-6 max-w-[160mm] mx-auto">
             {p.photos && p.photos.length > 0 ? (
-              p.photos.slice(0, 3).map((ph, idx) => (
+              [
+                p.photos.find((ph) => ph.phase === "moldagem") || p.photos[0],
+                p.photos.find((ph) => ph.phase === "pos_ensaio" || ph.phase === "ruptura" || ph.phase === "final") || p.photos[1]
+              ].filter(Boolean).map((ph, idx) => (
                 <div key={idx} className="flex flex-col rounded border border-gray-400 bg-white overflow-hidden shadow-sm">
-                  <div className="bg-[#141414] px-2 py-1 text-center text-[9px] font-bold uppercase tracking-wider text-white">
-                    Foto {idx + 1} — {ph.phase === "moldagem" ? "Moldagem Inicial" : ph.phase === "ensaio" ? "Durante o Ensaio" : "Pós-Ensaio"}
+                  <div className="bg-[#141414] px-2 py-1.5 text-center text-[9.5px] font-bold uppercase tracking-wider text-white">
+                    Foto {idx + 1} — {idx === 0 ? "Moldagem Inicial da Amostra" : "Aspecto do Solo Pós-Ensaio"}
                   </div>
                   <div className="relative w-full aspect-[3/4] bg-slate-100 flex items-center justify-center overflow-hidden">
                     <img
                       src={ph.url}
-                      alt={ph.caption || `Foto ${idx + 1}`}
+                      alt={ph.caption || (idx === 0 ? "Moldagem" : "Pós-Ensaio")}
                       crossOrigin="anonymous"
                       className="w-full h-full object-cover"
                     />
                   </div>
-                  <div className="p-1.5 text-center text-[8.5px] leading-tight text-gray-700 bg-slate-50 border-t border-gray-200">
-                    {ph.caption || (idx === 0 ? "Aspecto do corpo de prova na moldagem e anel de corte" : idx === 1 ? "Montagem na célula edométrica inundada" : "Aspecto do solo após término do carregamento")}
+                  <div className="p-2 text-center text-[9px] leading-tight text-gray-700 bg-slate-50 border-t border-gray-200">
+                    {ph.caption || (idx === 0 ? "Aspecto do corpo de prova na moldagem e anel cortante" : "Aspecto do solo após o ciclo completo de descarregamento")}
                   </div>
                 </div>
               ))
             ) : (
               [
-                { title: "Moldagem Inicial do CP", desc: "Aspecto do corpo de prova indeformado e inserção no anel cortante." },
-                { title: "Célula Edométrica Inundada", desc: "Corpo de prova instalado na prensa com pedras porosas e extensômetro." },
-                { title: "Aspecto Pós-Ensaio", desc: "Aspecto final do solo após o ciclo completo de descarregamento." }
+                { title: "Moldagem Inicial da Amostra", desc: "Aspecto do corpo de prova indeformado e inserção no anel cortante." },
+                { title: "Aspecto do Solo Pós-Ensaio", desc: "Aspecto final do solo após o ciclo completo de descarregamento." }
               ].map((item, idx) => (
                 <div key={idx} className="flex flex-col rounded border border-gray-400 bg-white overflow-hidden shadow-sm">
-                  <div className="bg-[#141414] px-2 py-1 text-center text-[9px] font-bold uppercase tracking-wider text-white">
+                  <div className="bg-[#141414] px-2 py-1.5 text-center text-[9.5px] font-bold uppercase tracking-wider text-white">
                     Foto {idx + 1} — {item.title}
                   </div>
-                  <div className="relative w-full aspect-[3/4] bg-slate-100 flex flex-col items-center justify-center p-4 text-center border-b border-gray-200">
-                    <div className="w-16 h-16 rounded-full border-4 border-dashed border-amber-600/40 bg-amber-50 flex items-center justify-center text-amber-700 mb-2">
-                      <Camera className="w-8 h-8" />
+                  <div className="relative w-full aspect-[3/4] bg-slate-100 flex flex-col items-center justify-center p-6 text-center border-b border-gray-200">
+                    <div className="w-20 h-20 rounded-full border-4 border-dashed border-amber-600/40 bg-amber-50 flex items-center justify-center text-amber-700 mb-3">
+                      <Camera className="w-10 h-10" />
                     </div>
-                    <span className="text-[10px] font-semibold text-gray-600">Registro Fotográfico 3:4</span>
-                    <span className="text-[8px] text-gray-400 mt-1">Carregue fotos na aba Ficha de Preparo</span>
+                    <span className="text-[11px] font-semibold text-gray-700">Registro Fotográfico 3:4</span>
+                    <span className="text-[8.5px] text-gray-400 mt-1">Carregue fotos na aba Ficha de Preparo</span>
                   </div>
-                  <div className="p-1.5 text-center text-[8.5px] leading-tight text-gray-700 bg-slate-50">
+                  <div className="p-2 text-center text-[9px] leading-tight text-gray-700 bg-slate-50">
                     {item.desc}
                   </div>
                 </div>
@@ -4019,8 +4021,8 @@ function PrintableReport(p: ReportProps) {
             )}
           </div>
 
-          <SectionBar className="mt-4">Caracterização Tátil-Visual e Observações Geotécnicas</SectionBar>
-          <div className="mt-2 min-h-[100px] rounded border border-gray-400 bg-white p-3 text-[11px] leading-relaxed text-gray-800">
+          <SectionBar className="mt-5">Caracterização Tátil-Visual e Observações Geotécnicas</SectionBar>
+          <div className="mt-2 min-h-[110px] rounded border border-gray-400 bg-white p-3 text-[11px] leading-relaxed text-gray-800">
             <div className="font-semibold mb-1 text-primary">Descrição Tátil-Visual da Amostra:</div>
             <p>{p.sample.description || "Solo fino argilo-siltoso, consistência rija, coloração variegada, sem presença de matéria orgânica visível."}</p>
             <div className="font-semibold mt-2 mb-1 text-primary">Condições do Ensaio Edométrico:</div>
