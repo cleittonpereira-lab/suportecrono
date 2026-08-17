@@ -182,28 +182,62 @@ function EnsaioEditor() {
           <span className="font-medium text-foreground">{ENSAIO_LABEL[ensaio.tipo]}</span>
         </div>
       </div>
-      <Editor />
+      <EditorErrorBoundary>
+        <Editor />
+      </EditorErrorBoundary>
     </LabEnsaioProvider>
   );
 }
 
-function pickEditor(tipo: string): React.FC {
-  switch (tipo) {
-    case "triaxial-cid":
-    case "triaxial-cid-sat":
-    case "triaxial-cid-nat":
-      return TriaxialCidPageInner as unknown as React.FC;
-    case "adensamento":
-      return AdensamentoPageInner as unknown as React.FC;
-    case "cisalhamento-direto":
-      return CDPageInner as unknown as React.FC;
-    case "mesp-a":
-      return MEspAEnsaioEditor as unknown as React.FC;
-    default:
-      return () => (
-        <div className="px-6 py-6 text-sm text-muted-foreground">
-          Editor para <b>{tipo}</b> ainda não disponível.
+import React, { Component, type ErrorInfo, type ReactNode } from "react";
+
+class EditorErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error("[EditorErrorBoundary] Erro no editor:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-8 max-w-xl mx-auto my-12 text-center bg-card border rounded-xl shadow-xs space-y-4">
+          <div className="text-destructive font-bold text-base">Erro ao renderizar o editor do ensaio</div>
+          <p className="text-xs text-muted-foreground">
+            {this.state.error?.message || "Ocorreu um erro inesperado ao carregar os dados deste ensaio."}
+          </p>
+          <div className="flex justify-center gap-2 pt-2">
+            <Button size="sm" onClick={() => window.location.reload()}>
+              Recarregar Página
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => window.history.back()}>
+              Voltar
+            </Button>
+          </div>
         </div>
       );
+    }
+    return this.props.children;
   }
+}
+
+function pickEditor(tipo: string): React.FC {
+  const norm = (tipo || "").toLowerCase();
+  if (norm.includes("tri") || norm.includes("tx")) {
+    return TriaxialCidPageInner as unknown as React.FC;
+  }
+  if (norm.includes("aden") || norm.includes("oed")) {
+    return AdensamentoPageInner as unknown as React.FC;
+  }
+  if (norm.includes("mesp") || norm.includes("m.esp")) {
+    return MEspAEnsaioEditor as unknown as React.FC;
+  }
+  return CDPageInner as unknown as React.FC;
 }

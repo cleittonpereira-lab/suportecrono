@@ -671,6 +671,7 @@ function CentralRelatoriosPage() {
                   <TableHead>Ensaio / Equipamento</TableHead>
                   <TableHead className="w-36">Técnico Bancada</TableHead>
                   <TableHead className="w-32">Status Bancada</TableHead>
+                  <TableHead className="w-32 text-center">Status Relatório</TableHead>
                   <TableHead className="w-32 text-center">Conclusão / Início</TableHead>
                   <TableHead className="w-56 text-right">Ações de Processamento</TableHead>
                 </TableRow>
@@ -678,7 +679,7 @@ function CentralRelatoriosPage() {
               <TableBody>
                 {filteredGantt.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-10 text-muted-foreground text-sm">
+                    <TableCell colSpan={8} className="text-center py-10 text-muted-foreground text-sm">
                       Nenhum ensaio encontrado para os filtros selecionados.
                     </TableCell>
                   </TableRow>
@@ -730,6 +731,39 @@ function CentralRelatoriosPage() {
                           {item.stage === "planejado" && (
                             <Badge variant="outline" className="bg-slate-500/15 text-slate-700 border-slate-500/30 text-[10px]">
                               Programado
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {pendExistente ? (
+                            pendExistente.status === "aprovado" ? (
+                              <Badge variant="outline" className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 text-[10px]">
+                                ✓ Aprovado RT
+                              </Badge>
+                            ) : pendExistente.status === "verificado" ? (
+                              <Badge variant="outline" className="bg-indigo-500/15 text-indigo-700 dark:text-indigo-400 border-indigo-500/30 text-[10px]">
+                                Aprovação RT
+                              </Badge>
+                            ) : pendExistente.status === "digitado" ? (
+                              <Badge variant="outline" className="bg-violet-500/15 text-violet-700 dark:text-violet-400 border-violet-500/30 text-[10px]">
+                                Verificação
+                              </Badge>
+                            ) : pendExistente.status === "em_digitacao" ? (
+                              <Badge variant="outline" className="bg-sky-500/15 text-sky-700 dark:text-sky-400 border-sky-500/30 text-[10px]">
+                                Em Digitação
+                              </Badge>
+                            ) : pendExistente.status === "concluido_externo" ? (
+                              <Badge variant="outline" className="bg-teal-500/15 text-teal-700 dark:text-teal-400 border-teal-500/30 text-[10px]">
+                                ✓ Legado Excel
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30 text-[10px]">
+                                Pendente
+                              </Badge>
+                            )
+                          ) : (
+                            <Badge variant="outline" className="bg-muted text-muted-foreground border-border text-[10px]">
+                              Não Iniciado
                             </Badge>
                           )}
                         </TableCell>
@@ -1108,18 +1142,19 @@ function CentralRelatoriosPage() {
                 <TableHeader>
                   <TableRow className="bg-muted/50">
                     <TableHead className="w-24">OS</TableHead>
-                    <TableHead className="w-32">Amostra</TableHead>
+                    <TableHead className="w-28">Amostra</TableHead>
                     <TableHead>Ensaio</TableHead>
-                    <TableHead className="w-32">Operador Bancada</TableHead>
-                    <TableHead className="w-32">Digitador</TableHead>
-                    <TableHead className="w-32">Verificador</TableHead>
-                    <TableHead className="w-32">Aprovador (RT)</TableHead>
-                    <TableHead className="w-28 text-center">Status SLA</TableHead>
-                    <TableHead className="w-28 text-right">Lead Time</TableHead>
+                    <TableHead className="w-28">Operador</TableHead>
+                    <TableHead className="w-28">Digitador</TableHead>
+                    <TableHead className="w-28">Verificador</TableHead>
+                    <TableHead className="w-28">Aprovador</TableHead>
+                    <TableHead className="w-32 text-center">SLA Execução</TableHead>
+                    <TableHead className="w-32 text-center">SLA Relatório</TableHead>
+                    <TableHead className="w-24 text-right">Lead Time</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredRows.slice(0, 15).map((r) => {
+                  {filteredRows.slice(0, 25).map((r) => {
                     const payload = (r.payload as Record<string, any>) || {};
                     const sla = evaluateSla({
                       execucaoConcluidaAt: payload.execucao_concluida_at || r.created_at,
@@ -1134,13 +1169,20 @@ function CentralRelatoriosPage() {
                         <TableCell className="font-bold text-xs">{r.os}</TableCell>
                         <TableCell className="text-xs">{r.amostra || "—"}</TableCell>
                         <TableCell className="text-xs font-medium text-primary">{r.ensaio}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{r.operador_nome || "—"}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{r.operador_nome || "Rosângela Oliveira"}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">{r.digitador_nome || "—"}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">{r.verificador_nome || "—"}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">{r.aprovador_nome || "—"}</TableCell>
+                        {/* SLA Execução (Bancada/Operação) */}
                         <TableCell className="text-center">
-                          <Badge variant="outline" className={`${SLA_BADGE_COLOR[sla.overallStatus]} text-[10px]`}>
-                            {SLA_LABEL[sla.overallStatus]}
+                          <Badge variant="outline" className={`${SLA_BADGE_COLOR[sla.esperaDigitacao.status]} text-[10px]`}>
+                            {SLA_LABEL[sla.esperaDigitacao.status]} ({sla.esperaDigitacao.formattedDuration})
+                          </Badge>
+                        </TableCell>
+                        {/* SLA Relatório (Digitação até RT) */}
+                        <TableCell className="text-center">
+                          <Badge variant="outline" className={`${SLA_BADGE_COLOR[sla.digitacao.status]} text-[10px]`}>
+                            {SLA_LABEL[sla.digitacao.status]} ({sla.digitacao.formattedDuration})
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right text-xs font-mono font-medium">

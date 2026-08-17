@@ -54,6 +54,8 @@ interface SampleEditDialogProps {
   onSave: (updated: SampleEditData) => void;
 }
 
+import { parseGanttSampleData } from "@/lib/sample-parser";
+
 export function SampleEditDialog({
   open,
   onOpenChange,
@@ -78,7 +80,7 @@ export function SampleEditDialog({
       }
 
       // Se faltar furo ou profundidade, resolve automaticamente a partir da tabela do Gantt
-      if ((!next.borehole || !next.depth) && amostrasGantt.length > 0) {
+      if (amostrasGantt.length > 0) {
         const needle = (next.reportNumber || next.code || "").trim();
         const matchAm =
           amostrasGantt.find(
@@ -89,11 +91,12 @@ export function SampleEditDialog({
           amostrasGantt.find((a) => a.codigo_amostra === needle || a.identificacao === needle || String(a.id) === needle);
 
         if (matchAm) {
-          if (!next.borehole && matchAm.identificacao) next.borehole = matchAm.identificacao;
-          if (!next.depth && matchAm.topo_m && matchAm.base_m) next.depth = `${matchAm.topo_m} – ${matchAm.base_m} m`;
-          else if (!next.depth && matchAm.profundidade) next.depth = String(matchAm.profundidade);
-          if (!next.sampleType && matchAm.tipo) next.sampleType = matchAm.tipo;
-          if (!next.description && matchAm.descricao) next.description = matchAm.descricao;
+          const parsed = parseGanttSampleData(matchAm);
+          if (!next.borehole && parsed.furo) next.borehole = parsed.furo;
+          if (!next.depth && parsed.prof) next.depth = parsed.prof;
+          if (!next.sampleType && parsed.tipo) next.sampleType = parsed.tipo;
+          if (!next.description && parsed.desc) next.description = parsed.desc;
+          if (!next.code && parsed.codigo) next.code = parsed.codigo;
         }
       }
 

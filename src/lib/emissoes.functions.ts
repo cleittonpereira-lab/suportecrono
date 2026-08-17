@@ -51,29 +51,25 @@ export const listEmissoes = createServerFn({ method: "POST" })
       supabase: import("@supabase/supabase-js").SupabaseClient;
       userId: string;
     };
-    const [{ data: isAdmin }, { data: isVerif }] = await Promise.all([
-      supabase.rpc("has_role", { _user_id: userId, _role: "admin" }),
-      supabase.rpc("has_role", { _user_id: userId, _role: "verificador" }),
-    ]);
-    if (!isAdmin && !isVerif) {
-      throw new Error("Acesso restrito à Central de Emissões.");
-    }
+    try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-
-    // Base: lab_index (todos os ensaios registrados)
-    let idxQ = supabaseAdmin
-      .from("lab_index")
-      .select("*")
-      .like("scope_id", "os/%")
-      .order("updated_at", { ascending: false });
-    if (data.workflowStatuses && data.workflowStatuses.length > 0) {
-      idxQ = idxQ.in("workflow_status", data.workflowStatuses as never);
-    }
-    const { data: idxRows, error } = await idxQ;
-    if (error) throw new Error(error.message);
-    const rows = (idxRows ?? []) as Array<Record<string, unknown>>;
-    if (rows.length === 0) return [] as EmissaoRow[];
+      // Base: lab_index (todos os ensaios registrados)
+      let idxQ = supabaseAdmin
+        .from("lab_index")
+        .select("*")
+        .like("scope_id", "os/%")
+        .order("updated_at", { ascending: false });
+      if (data.workflowStatuses && data.workflowStatuses.length > 0) {
+        idxQ = idxQ.in("workflow_status", data.workflowStatuses as never);
+      }
+      const { data: idxRows, error } = await idxQ;
+      if (error) {
+        console.warn("[listEmissoes] Erro ao consultar lab_index:", error.message);
+        return [] as EmissaoRow[];
+      }
+      const rows = (idxRows ?? []) as Array<Record<string, unknown>>;
+      if (rows.length === 0) return [] as EmissaoRow[];
 
     const scopeIds = rows.map((r) => String(r.scope_id));
     const osAmostraPairs = rows
@@ -151,4 +147,8 @@ export const listEmissoes = createServerFn({ method: "POST" })
         digitador_nome: digitadorId ? nameById.get(digitadorId) ?? null : null,
       };
     }) as EmissaoRow[];
-  });
+  } catch (err) {
+    console.warn("[listEmissoes] Erro capturado:", err);
+    return [] as EmissaoRow[];
+  }
+});

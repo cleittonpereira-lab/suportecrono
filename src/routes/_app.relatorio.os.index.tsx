@@ -113,43 +113,16 @@ const STATUS_BADGE: Record<EnsaioItemOS["status"], { label: string; color: strin
   concluido_externo: { label: "✓ Concluído Externo (Excel)", color: "bg-teal-500/15 text-teal-700 dark:text-teal-400 border-teal-500/30" },
 };
 
+import { parseGanttSampleData } from "@/lib/sample-parser";
+
 function extractSampleDetails(a: any) {
   if (!a) return { furo: "", prof: "", codigo: "" };
-
-  // Furo / Identificação de Campo (nome da amostra em campo)
-  let furo = a.furo || "";
-  if (!furo && a.identificacao) {
-    furo = String(a.identificacao).trim();
-  }
-  if (!furo && a.descricao) {
-    const descParts = String(a.descricao).split(" — ");
-    if (descParts[0]) {
-      furo = descParts[0].trim();
-    }
-  }
-
-  // Profundidade
-  let prof = "";
-  if (a.topo_m && a.base_m) {
-    prof = `${a.topo_m} – ${a.base_m} m`;
-  } else if (a.profundidade) {
-    prof = String(a.profundidade).includes("m") ? String(a.profundidade) : `${a.profundidade} m`;
-  } else if (a.topo_m) {
-    prof = `${a.topo_m} m`;
-  } else if (a.depth) {
-    prof = String(a.depth).includes("m") ? String(a.depth) : `${a.depth} m`;
-  }
-
-  // Fallback se estiver no texto descritivo
-  if (!prof && a.descricao) {
-    const m = String(a.descricao).match(/(\d+[.,]?\d*)\s*[-–aà]\s*(\d+[.,]?\d*)\s*m?/i);
-    if (m) {
-      prof = `${m[1]} – ${m[2]} m`;
-    }
-  }
-
-  const codigo = a.codigo_amostra || a.code || a.reportNumber || a.identificacao || "";
-  return { furo, prof, codigo };
+  const p = parseGanttSampleData(a);
+  return {
+    furo: p.furo,
+    prof: p.prof,
+    codigo: p.codigo || a.codigo_amostra || a.code || a.reportNumber || a.identificacao || "",
+  };
 }
 
 function CentralOsPage() {

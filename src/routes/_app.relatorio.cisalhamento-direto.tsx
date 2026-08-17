@@ -159,6 +159,7 @@ import { labStore } from "@/features/lab/store";
 import { SampleEditDialog } from "@/components/SampleEditDialog";
 import { AneisManagerDialog } from "@/components/AneisManagerDialog";
 import { useAuth } from "@/hooks/use-auth";
+import { parseGanttSampleData } from "@/lib/sample-parser";
 
 export function CDPage() {
   const ctx = useOptionalLabEnsaio();
@@ -263,10 +264,12 @@ export function CDPage() {
       });
 
     if (found) {
-      const furoFound = found.identificacao || found.furo || "";
-      const depthFound = found.topo_m && found.base_m ? `${found.topo_m} – ${found.base_m} m` : found.profundidade || "";
-      const codeFound = found.codigo_amostra || found.id || "";
-      const typeFound = found.tipo || "";
+      const parsed = parseGanttSampleData(found);
+      const furoFound = parsed.furo;
+      const depthFound = parsed.prof;
+      const codeFound = parsed.codigo;
+      const typeFound = parsed.tipo;
+      const descFound = parsed.desc;
 
       // Busca equipamento alocado
       let equipFound = "";
@@ -282,6 +285,7 @@ export function CDPage() {
         if (!next.borehole && furoFound) { next.borehole = furoFound; changed = true; }
         if (!next.depth && depthFound) { next.depth = depthFound; changed = true; }
         if (!next.code && codeFound) { next.code = codeFound; changed = true; }
+        if (descFound && !next.description) { next.description = descFound; changed = true; }
         if (typeFound && !next.sampleState) {
           next.sampleState = typeFound.toLowerCase().includes("deform") ? "recompactada" : "indeformada";
           changed = true;

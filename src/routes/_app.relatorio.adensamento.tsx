@@ -223,6 +223,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listRows } from "@/lib/programacao.functions";
 import { labStore } from "@/features/lab/store";
+import { parseGanttSampleData } from "@/lib/sample-parser";
 
 export function AdensamentoPage() {
   const ctx = useOptionalLabEnsaio();
@@ -303,10 +304,12 @@ export function AdensamentoPage() {
       });
 
     if (found) {
-      const furoFound = found.identificacao || found.furo || "";
-      const depthFound = found.topo_m && found.base_m ? `${found.topo_m} – ${found.base_m} m` : found.profundidade || "";
-      const codeFound = found.codigo_amostra || found.id || "";
-      const typeFound = found.tipo || "";
+      const parsed = parseGanttSampleData(found);
+      const furoFound = parsed.furo;
+      const depthFound = parsed.prof;
+      const codeFound = parsed.codigo;
+      const typeFound = parsed.tipo;
+      const descFound = parsed.desc;
 
       // Busca equipamento alocado
       let equipFound = "";
@@ -322,6 +325,7 @@ export function AdensamentoPage() {
         if (!next.borehole && furoFound) { next.borehole = furoFound; changed = true; }
         if (!next.depth && depthFound) { next.depth = depthFound; changed = true; }
         if (!next.code && codeFound) { next.code = codeFound; changed = true; }
+        if (descFound && !next.description) { next.description = descFound; changed = true; }
         if (typeFound && !next.sampleType) {
           next.sampleType = typeFound;
           changed = true;
