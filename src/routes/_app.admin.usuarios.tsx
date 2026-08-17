@@ -33,7 +33,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { ALL_TABS, TAB_META, type TabKey } from "@/lib/tab-permissions";
 import { toast } from "sonner";
-import { Shield, CheckCircle2, Ban, Settings2, Loader2, UserRound, UserPlus, AtSign, KeyRound, Pencil, Mail } from "lucide-react";
+import { Shield, CheckCircle2, Ban, Settings2, Loader2, UserRound, UserPlus, AtSign, KeyRound, Pencil, Mail, RefreshCw } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
 import {
   setUserLabRole,
@@ -44,6 +44,7 @@ import {
   setUserPassword,
   setUserNome,
   setUserEmail,
+  syncAndActivateUsers,
 } from "@/lib/lab-adminUsers.functions";
 
 export const Route = createFileRoute("/_app/admin/usuarios")({
@@ -254,6 +255,16 @@ function AdminUsuariosPage() {
     onError: (e: any) => toast.error(e.message),
   });
 
+  const syncAllFn = useServerFn(syncAndActivateUsers);
+  const syncAllMut = useMutation({
+    mutationFn: () => syncAllFn(),
+    onSuccess: (res: any) => {
+      qc.invalidateQueries({ queryKey: ["admin-users"] });
+      toast.success(`${res?.updatedCount || 0} conta(s) sincronizada(s) e ativada(s) com sucesso!`);
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
   const [permsFor, setPermsFor] = useState<Row | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
 
@@ -273,9 +284,25 @@ function AdminUsuariosPage() {
         title="Gestão de usuários"
         description="Aprovações, papéis e permissões de aba por usuário."
         actions={
-          <Button size="sm" className="h-8" onClick={() => setInviteOpen(true)}>
-            <UserPlus className="h-3.5 w-3.5 mr-1.5" /> Convidar usuário
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8"
+              onClick={() => syncAllMut.mutate()}
+              disabled={syncAllMut.isPending}
+            >
+              {syncAllMut.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+              )}
+              Sincronizar & Ativar Contas
+            </Button>
+            <Button size="sm" className="h-8" onClick={() => setInviteOpen(true)}>
+              <UserPlus className="h-3.5 w-3.5 mr-1.5" /> Convidar usuário
+            </Button>
+          </div>
         }
       />
       <Card>

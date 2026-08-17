@@ -52,9 +52,13 @@ import {
   Trash2,
   ZoomIn,
   ZoomOut,
+  CircleDot,
 } from "lucide-react";
 import { SuporteLogo } from "@/components/suporte-logo";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { SampleEditDialog } from "@/components/SampleEditDialog";
+import { AneisManagerDialog } from "@/components/AneisManagerDialog";
+import { getAneisCatalog } from "@/lib/aneis-catalog";
 const logoAsset = { url: "/suporte-infra-logo.png" };
 import {
   casagrandeSigmaP,
@@ -213,29 +217,45 @@ function PtNumInput({
   );
 }
 
+import { useCadastroByOs } from "@/hooks/use-cadastro-by-os";
+import { useAuth } from "@/hooks/use-auth";
+
 export function AdensamentoPage() {
   const ctx = useOptionalLabEnsaio();
+  const { lookup } = useCadastroByOs();
+  const cad = ctx?.os?.numero ? lookup(ctx.os.numero) : undefined;
+  const { displayName, user, profile } = useAuth();
+  const currentUserName = displayName || profile?.nome || user?.email?.split("@")[0] || "Maurício Malanconi";
+
   const [sample, setSample] = useState<SampleProps>(() => {
-    if (!ctx) return seedSample;
+    if (!ctx) return { ...seedSample, operator: currentUserName, typedBy: currentUserName };
     return {
       ...seedSample,
-      client: ctx.os.client || seedSample.client,
-      workNumber: ctx.os.workNumber || seedSample.workNumber,
-      local: ctx.os.local || seedSample.local,
-      technicalResp: ctx.os.technicalResp || seedSample.technicalResp,
-      revision: ctx.os.revision || seedSample.revision,
-      os: ctx.os.numero,
-      operator: ctx.ensaio.operator || ctx.os.operator || seedSample.operator,
-      reportNumber: ctx.amostra.reportNumber || seedSample.reportNumber,
-      borehole: ctx.amostra.borehole || seedSample.borehole,
-      depth: ctx.amostra.depth || seedSample.depth,
-      description: ctx.amostra.description || seedSample.description,
-      code: ctx.amostra.code || seedSample.code,
-      granulometricDescription: ctx.amostra.granulometricDescription || seedSample.granulometricDescription,
+      client: ctx.os.client || cad?.tomador || "",
+      workNumber: ctx.os.workNumber || cad?.obra || "",
+      local: ctx.os.local || cad?.local || "",
+      technicalResp: ctx.os.technicalResp || "Engº Maurício Malanconi - CREA: 5063078630",
+      revision: ctx.os.revision || "0",
+      os: ctx.os.numero || "",
+      operator: ctx.ensaio.operator || ctx.os.operator || currentUserName,
+      typedBy: (ctx.ensaio.payload as any)?.sample?.typedBy || ctx.ensaio.operator || currentUserName,
+      equipment: (ctx.ensaio.payload as any)?.sample?.equipment || "Adensamento Edométrico",
+      reportNumber: ctx.amostra.reportNumber || "",
+      borehole: ctx.amostra.borehole || "",
+      depth: ctx.amostra.depth || "",
+      description: ctx.amostra.description || "",
+      code: ctx.amostra.code || "",
+      granulometricDescription: ctx.amostra.granulometricDescription || "",
     };
   });
+
+  useEffect(() => {
+    if (!(sample as any).typedBy && currentUserName) {
+      setSample((prev: any) => ({ ...prev, typedBy: currentUserName }));
+    }
+  }, [currentUserName]);
   const phys = useMemo(() => physicalIndices(sample), [sample]);
-  const [stages, setStages] = useState<Stage[]>(() => seedStages(phys.e0, sample.ringHeight));
+  const [stages, setStages] = useState<Stage[]>(() => (!ctx ? seedStages(phys.e0, sample.ringHeight) : []));
   const [selectedStage, setSelectedStage] = useState(5);
   const [activeTab, setActiveTab] = useState<string>("ficha");
   const [capsOpen, setCapsOpen] = useState(true);
@@ -251,6 +271,9 @@ export function AdensamentoPage() {
   const [savingVersion, setSavingVersion] = useState(false);
   const [versions, setVersions] = useState<any[]>([]);
   const [approvals, setApprovals] = useState<any[]>([]);
+  const [sampleEditOpen, setSampleEditOpen] = useState(false);
+  const [aneisCatalogOpen, setAneisCatalogOpen] = useState(false);
+  const aneisList = useMemo(() => getAneisCatalog(), [aneisCatalogOpen]);
 
   // Carrega rascunho salvo
   useEffect(() => {
@@ -308,7 +331,7 @@ export function AdensamentoPage() {
         sample,
         stages: stages as any,
         phys,
-        stagesCalc,
+        stagesCalc: stagesCalc as any,
         params: {
           Cc: ccr.Cc,
           Cs: ccr.Cr,
@@ -371,7 +394,7 @@ export function AdensamentoPage() {
         sample,
         stages: stages as any,
         phys,
-        stagesCalc,
+        stagesCalc: stagesCalc as any,
         params: {
           Cc: ccr.Cc,
           Cs: ccr.Cr,
@@ -585,8 +608,8 @@ export function AdensamentoPage() {
     [stageData.readings],
   );
 
-  const updateSample = (k: keyof SampleProps, v: string | number) =>
-    setSample((s) => ({ ...s, [k]: typeof s[k] === "number" ? Number(v) : v }));
+  const updateSample = (k: keyof SampleProps, v: any) =>
+    setSample((s) => ({ ...s, [k]: typeof s[k] === "number" && typeof v === "string" ? Number(v) : v }));
   const updateReading = (si: number, ri: number, val: number) => {
     setStages((sts) => {
       const copy = sts.map((s) => ({ ...s, readings: s.readings.map((r) => ({ ...r })) }));
@@ -857,8 +880,8 @@ export function AdensamentoPage() {
             </div>
             <button
               type="button"
-              onClick={() => setActiveTab("ficha")}
-              className="text-xs text-primary hover:underline font-medium"
+              onClick={() => setSampleEditOpen(true)}
+              className="text-xs text-primary hover:underline font-semibold cursor-pointer flex items-center gap-1"
             >
               editar amostra →
             </button>
@@ -1007,16 +1030,68 @@ export function AdensamentoPage() {
                     Dimensões do anel e pesagens diretas com tara do anel
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div>
-                    <Label className="text-xs text-muted-foreground">Nº do Anel</Label>
-                    <Input
-                      placeholder="Ex.: ANEL-01"
-                      value={sample.ringNumber ?? "ANEL-01"}
-                      onChange={(e) => updateSample("ringNumber", e.target.value)}
-                      className="h-8 text-xs mt-0.5"
-                    />
+                <CardContent className="space-y-3">
+                  {/* Seletor de Anel de Adensamento */}
+                  <div className="rounded border bg-muted/20 p-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex items-center gap-1.5 font-semibold text-xs text-primary">
+                        <CircleDot className="h-4 w-4" /> Anel de Adensamento:
+                      </div>
+                      <Select
+                        value={sample.ringNumber || ""}
+                        onValueChange={(anelNum) => {
+                          const anel = aneisList.find((a) => a.numero === anelNum);
+                          if (anel) {
+                            const dim = anel.secao === "circular" ? (anel.diametro_mm || 70) : (anel.lado_mm || 70);
+                            updateSample("ringNumber", anel.numero);
+                            updateSample("ringDiameter", dim);
+                            updateSample("ringHeight", anel.altura_mm);
+                            updateSample("ringMass", anel.massa_g);
+                            toast.success(`Anel ${anel.numero} aplicado (${anel.secao === "circular" ? `Ø${dim}mm` : `${dim}x${dim}mm`}, H=${anel.altura_mm}mm, Tara=${anel.massa_g}g)`);
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="h-7 text-xs w-64 font-mono font-medium">
+                          <SelectValue placeholder="Escolha um anel cadastrado…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {aneisList.filter(a => a.ensaio === "adensamento" || a.ensaio === "ambos").map((a) => (
+                            <SelectItem key={a.id} value={a.numero} className="text-xs">
+                              {a.numero} — {a.secao === "circular" ? `Ø ${a.diametro_mm}mm` : `${a.lado_mm}x${a.lado_mm}mm`} (H={a.altura_mm}mm · {a.massa_g}g)
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {sample.ringMass ? (
+                        <Badge variant="outline" className="text-[11px] font-mono bg-background text-emerald-700 dark:text-emerald-400">
+                          Tara: {sample.ringMass.toFixed(2)} g
+                        </Badge>
+                      ) : null}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs gap-1"
+                        onClick={() => setAneisCatalogOpen(true)}
+                      >
+                        <Plus className="h-3 w-3" /> Gerenciar Anéis
+                      </Button>
+                    </div>
                   </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Nº do Anel</Label>
+                      <Input
+                        placeholder="Ex.: ANEL-01"
+                        value={sample.ringNumber ?? "ANEL-01"}
+                        onChange={(e) => updateSample("ringNumber", e.target.value)}
+                        className="h-8 text-xs mt-0.5"
+                      />
+                    </div>
                   <div>
                     <Label className="text-xs text-muted-foreground">Diâmetro D₀ (mm)</Label>
                     <PtNumInput
@@ -1095,6 +1170,7 @@ export function AdensamentoPage() {
                       <span className="text-muted-foreground text-[11px]">Volume Inicial V₀:</span>
                       <div className="font-bold text-foreground">{fmt(phys.V0, 2)} cm³</div>
                     </div>
+                  </div>
                   </div>
                 </CardContent>
               </Card>
@@ -1877,6 +1953,8 @@ export function AdensamentoPage() {
               cvTable={cvTable}
               photos={ctx?.photos || []}
               axisCfg={axisCfg}
+              ringHeight={sample.ringHeight}
+              e0={phys.e0}
             />
           </div>
         </DialogContent>
@@ -1912,6 +1990,65 @@ export function AdensamentoPage() {
           />
         )}
       </div>
+
+      {/* Modal de Edição da Amostra */}
+      <SampleEditDialog
+        open={sampleEditOpen}
+        onOpenChange={setSampleEditOpen}
+        data={{
+          osId: ctx?.os?.id,
+          amostraId: ctx?.amostra?.id,
+          osNumero: sample.os,
+          client: sample.client,
+          workNumber: sample.workNumber,
+          local: sample.local,
+          technicalResp: sample.technicalResp,
+          revision: sample.revision,
+          reportNumber: sample.reportNumber,
+          code: sample.code,
+          borehole: sample.borehole,
+          depth: sample.depth,
+          coordN: (sample as any).coordN,
+          coordE: (sample as any).coordE,
+          coordCota: (sample as any).coordCota,
+          sampleType: (sample as any).sampleType || "Bloco indeformado",
+          sampleState: (sample as any).sampleState || "indeformada",
+          description: sample.description,
+          granulometricDescription: sample.granulometricDescription,
+          equipment: sample.equipment,
+        }}
+        onSave={(updated) => {
+          setSample((prev) => ({
+            ...prev,
+            ...updated,
+            client: updated.client || prev.client,
+            workNumber: updated.workNumber || prev.workNumber,
+            local: updated.local || prev.local,
+            technicalResp: updated.technicalResp || prev.technicalResp,
+            reportNumber: updated.reportNumber || prev.reportNumber,
+            code: updated.code || prev.code,
+            borehole: updated.borehole || prev.borehole,
+            depth: updated.depth || prev.depth,
+            description: updated.description || prev.description,
+            granulometricDescription: updated.granulometricDescription || prev.granulometricDescription,
+            equipment: updated.equipment || prev.equipment,
+          }));
+        }}
+      />
+
+      {/* Modal de Gestão e Cadastro de Anéis */}
+      <AneisManagerDialog
+        open={aneisCatalogOpen}
+        onOpenChange={setAneisCatalogOpen}
+        ensaioFiltro="adensamento"
+        onSelectAnel={(anel) => {
+          const dim = anel.secao === "circular" ? (anel.diametro_mm || 70) : (anel.lado_mm || 70);
+          updateSample("ringNumber", anel.numero);
+          updateSample("ringDiameter", dim);
+          updateSample("ringHeight", anel.altura_mm);
+          updateSample("ringMass", anel.massa_g);
+        }}
+      />
     </div>
   );
 }
@@ -3664,9 +3801,11 @@ type ReportProps = {
   ps: ReturnType<typeof pachecoSilvaSigmaP>;
   ccr: { Cc: number; Cr: number };
   eCurve: { sigma: number; e: number }[];
+  loadingCurve?: any;
   stages: Stage[];
   ringHeight: number;
   e0: number;
+  photos?: any[];
   cvAdjust?: Record<number, CvLineAdjust>;
   axisCfg?: {
     eMin: number; eMax: number;

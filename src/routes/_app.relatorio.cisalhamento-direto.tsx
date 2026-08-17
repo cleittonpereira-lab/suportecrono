@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useRef, useState, useEffect } from "react";
+import { useCadastroByOs } from "@/hooks/use-cadastro-by-os";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -40,6 +41,9 @@ import {
   AlertTriangle,
   Upload,
   FileSpreadsheet,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { toCanvas, toPng } from "html-to-image";
@@ -73,6 +77,7 @@ import type {
   CDSpecimenResults,
   CDEnvelopeResult,
   CDReading,
+  CDAxisCfg,
 } from "@/features/cisalhamento-direto/types";
 import { SEED_CD_SAMPLE, makeEmptyCDSpecimen } from "@/features/cisalhamento-direto/seed";
 import { loadDraft, saveDraft } from "@/features/cisalhamento-direto/draftStore";
@@ -92,6 +97,7 @@ import {
   CDReportPage4,
   CDReportPage5,
   CDReportPage6,
+  CDReportPages,
   getReportTitle,
 } from "@/features/cisalhamento-direto/components/CDReportPages";
 import { CDSpecimensSummaryCard } from "@/features/cisalhamento-direto/components/CDSpecimensSummaryCard";
@@ -146,12 +152,21 @@ function NumField({
   );
 }
 
+import { SampleEditDialog } from "@/components/SampleEditDialog";
+import { AneisManagerDialog } from "@/components/AneisManagerDialog";
+import { useAuth } from "@/hooks/use-auth";
+
 export function CDPage() {
   const ctx = useOptionalLabEnsaio();
+  const { lookup } = useCadastroByOs();
+  const cad = ctx?.os?.numero ? lookup(ctx.os.numero) : undefined;
+  const { displayName, user, profile } = useAuth();
+  const currentUserName = displayName || profile?.nome || user?.email?.split("@")[0] || "Maurício Malanconi";
   const navigate = useNavigate();
+  const [sampleEditOpen, setSampleEditOpen] = useState(false);
 
   const scopeId =
-    ctx?.os && ctx.amostra && ctx.ensaio
+    ctx && ctx.os && ctx.amostra && ctx.ensaio
       ? `os/${ctx.os.id}/amostra/${ctx.amostra.id}/ensaio/${ctx.ensaio.id}`
       : (ctx?.ensaio?.id ?? "local");
 
@@ -163,24 +178,42 @@ export function CDPage() {
 
   const initialSample: CDSample = ctx
     ? {
-        ...SEED_CD_SAMPLE,
-        client: ctx.os.client ?? SEED_CD_SAMPLE.client,
-        workNumber: ctx.os.workNumber ?? SEED_CD_SAMPLE.workNumber,
-        os: ctx.os.numero || SEED_CD_SAMPLE.os,
-        local: ctx.os.local ?? SEED_CD_SAMPLE.local,
-        operator: ctx.ensaio.operator || ctx.os.operator || SEED_CD_SAMPLE.operator,
-        technicalResp: ctx.os.technicalResp ?? SEED_CD_SAMPLE.technicalResp,
-        revision: ctx.os.revision ?? SEED_CD_SAMPLE.revision,
-        reportNumber: ctx.amostra.reportNumber || SEED_CD_SAMPLE.reportNumber,
-        borehole: ctx.amostra.borehole || SEED_CD_SAMPLE.borehole,
-        depth: ctx.amostra.depth || SEED_CD_SAMPLE.depth,
-        description: ctx.amostra.description || SEED_CD_SAMPLE.description,
-        code: ctx.amostra.code || SEED_CD_SAMPLE.code,
-        granulometricDescription: ctx.amostra.granulometricDescription ?? SEED_CD_SAMPLE.granulometricDescription,
+        client: ctx.os.client || cad?.tomador || "",
+        workNumber: ctx.os.workNumber || cad?.obra || "",
+        os: ctx.os.numero || "",
+        local: ctx.os.local || cad?.local || "",
+        operator: draft?.sample?.operator || ctx.ensaio.operator || ctx.os.operator || currentUserName,
+        technicalResp: ctx.os.technicalResp || "Engº Maurício Malanconi - CREA: 5063078630",
+        revision: ctx.os.revision || "0",
+        reportNumber: ctx.amostra.reportNumber || "",
+        borehole: ctx.amostra.borehole || "",
+        depth: ctx.amostra.depth || "",
+        description: ctx.amostra.description || "",
+        code: ctx.amostra.code || "",
+        granulometricDescription: ctx.amostra.granulometricDescription || "",
+        date: new Date().toISOString().split("T")[0],
+        typedBy: draft?.sample?.typedBy || ctx.ensaio.operator || currentUserName,
+        geometry: "circular",
+        dimensionMm: 60,
+        equipment: (ctx.ensaio.payload as any)?.sample?.equipment || "Cisalhamento Direto",
+        Gs: 2.70,
+        rhoW: 1.0,
+        applyMembrane: false,
+        membraneE: 1400,
+        membraneT: 0.3,
+        testCondition: "inundado",
+        applyAreaCorrection: true,
+        sampleState: "indeformada",
       }
-    : SEED_CD_SAMPLE;
+    : { ...SEED_CD_SAMPLE, typedBy: currentUserName, operator: currentUserName };
 
   const [sample, setSample] = useState<CDSample>(() => (draft?.sample ? { ...initialSample, ...draft.sample } : initialSample));
+
+  useEffect(() => {
+    if (!sample.typedBy && currentUserName) {
+      setSample((prev) => ({ ...prev, typedBy: currentUserName }));
+    }
+  }, [currentUserName]);
   const [specimens, setSpecimens] = useState<CDSpecimen[]>(() =>
     draft?.specimens && draft.specimens.length > 0
       ? draft.specimens
@@ -197,13 +230,18 @@ export function CDPage() {
     fAtritoPistao: 0,
   });
 
-  const [axisCfg, setAxisCfg] = useState(() => draft?.axisCfg ?? {
-    eaMax: 0,
+  const [axisCfg, setAxisCfg] = useState<CDAxisCfg>(() => draft?.axisCfg ?? {
+    ehMax: 0,
     tauMax: 0,
-    sigmaNMax: 0,
     vertDispMin: 0,
     vertDispMax: 0,
+    sigmaNMax: 0,
+    tauEnvelopeMax: 0,
+    sqrtTMax: 0,
+    adensDispMax: 0,
   });
+
+  const [zoom, setZoom] = useState(85);
 
   const [idOpen, setIdOpen] = useState(true);
   const [reportOpen, setReportOpen] = useState(false);
@@ -333,6 +371,46 @@ export function CDPage() {
     return fitEnvelope(pts);
   }, [results, sortedSpecimens]);
 
+  const suggestedAxisCfg = useMemo<CDAxisCfg>(() => {
+    let maxStrain = 15;
+    let maxTau = 100;
+    let minVert = -5;
+    let maxVert = 5;
+
+    results.forEach((r) => {
+      r.curve.forEach((p) => {
+        if (p.horizStrainPct > maxStrain) maxStrain = p.horizStrainPct;
+        if (p.shearStress > maxTau) maxTau = p.shearStress;
+        if (p.vertDispMm < minVert) minVert = p.vertDispMm;
+        if (p.vertDispMm > maxVert) maxVert = p.vertDispMm;
+      });
+    });
+
+    const sigmaVals = results.map((r) => r.sigmaN);
+    const maxSigma = sigmaVals.length ? Math.max(...sigmaVals, 100) : 100;
+    const sigmaNMax = Math.max(100, Math.ceil((maxSigma * 1.25) / 50) * 50);
+
+    const tauVals = results.map((r) => r.tauPeak);
+    const envEnd = envelope ? envelope.c + sigmaNMax * Math.tan((envelope.phiDeg * Math.PI) / 180) : 100;
+    const maxTauEnv = Math.max(...tauVals, envEnd, 100);
+    const tauEnvelopeMax = Math.max(100, Math.ceil((maxTauEnv * 1.15) / 50) * 50);
+
+    return {
+      ehMax: Math.ceil(maxStrain / 5) * 5,
+      tauMax: Math.ceil(maxTau / 20) * 20,
+      vertDispMin: Math.floor(minVert),
+      vertDispMax: Math.ceil(maxVert),
+      sigmaNMax,
+      tauEnvelopeMax,
+      sqrtTMax: 5,
+      adensDispMax: 2,
+    };
+  }, [results, envelope]);
+
+  const updateAxis = <K extends keyof CDAxisCfg>(k: K, v: number) => {
+    setAxisCfg((s) => ({ ...s, [k]: v }));
+  };
+
   const updateSample = (k: keyof CDSample, v: any) => setSample((s) => ({ ...s, [k]: v }));
   const updateSpecimen = (id: string, patch: Partial<CDSpecimen>) =>
     setSpecimens((sps) => sps.map((s) => (s.id === id ? { ...s, ...patch } : s)));
@@ -408,64 +486,73 @@ export function CDPage() {
    * Renderiza o PDF do relatório e devolve como Blob (para download direto ou salvar como versão).
    */
   const buildReportPdfBlob = async (): Promise<Blob> => {
-    let pages: HTMLElement[] = [];
-    
-    // Se o modal de pré-visualização estiver aberto, busca primeiro as páginas visíveis nele
-    const modalEl = document.querySelector("[role='dialog']");
-    if (modalEl) {
-      pages = Array.from(modalEl.querySelectorAll<HTMLElement>(".printable-report"));
-    }
-    if (pages.length === 0 && reportRef.current) {
-      pages = Array.from(reportRef.current.querySelectorAll<HTMLElement>(".printable-report"));
-    }
-    if (pages.length === 0) {
-      pages = Array.from(document.querySelectorAll<HTMLElement>(".printable-report"));
-    }
-    if (pages.length === 0) throw new Error("Nenhuma página do relatório encontrada.");
+    const el = reportRef.current;
+    if (!el) throw new Error("Container do relatório não encontrado.");
 
-    // Aguarda frames para que os gráficos SVG renderizem
+    // Salva estilos originais do container de impressão
+    const prevStyle = {
+      position: el.style.position,
+      top: el.style.top,
+      left: el.style.left,
+      width: el.style.width,
+      zIndex: el.style.zIndex,
+      opacity: el.style.opacity,
+      visibility: el.style.visibility,
+    };
+
+    // Força o container em tamanho real 210mm 1:1 (sem influência de zoom da tela)
+    Object.assign(el.style, {
+      position: "fixed",
+      top: "0",
+      left: "0",
+      width: "210mm",
+      background: "#ffffff",
+      pointerEvents: "none",
+      zIndex: "2147483647",
+      opacity: "1",
+      visibility: "visible",
+    });
+
+    // Aguarda renderização dos componentes e gráficos SVG
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
     await new Promise((r) => setTimeout(r, 200));
 
-    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
-    const W = 210, H = 297;
+    try {
+      const pages = Array.from(el.querySelectorAll<HTMLElement>(".printable-report"));
+      if (pages.length === 0) throw new Error("Nenhuma página do relatório encontrada.");
 
-    for (let i = 0; i < pages.length; i++) {
-      const page = pages[i];
-      const rect = page.getBoundingClientRect();
-      const w = Math.ceil(rect.width) || 794;
-      const h = Math.ceil(rect.height) || 1123;
+      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
+      const W = 210, H = 297;
 
-      const canvas = await toCanvas(page, {
-        pixelRatio: 2,
-        cacheBust: true,
-        backgroundColor: "#ffffff",
-        width: w,
-        height: h,
-        skipAutoScale: true,
-        style: {
-          background: "#ffffff",
-          color: "#0f172a",
-          transform: "none",
-        },
-        filter: (node) => !(node instanceof HTMLElement && node.classList.contains("no-print")),
-      });
+      for (let i = 0; i < pages.length; i++) {
+        const page = pages[i];
+        const dataUrl = await toPng(page, {
+          pixelRatio: 2.5,
+          cacheBust: true,
+          backgroundColor: "#ffffff",
+          style: {
+            transform: "none",
+            margin: "0",
+            padding: "5mm 8mm",
+            width: "210mm",
+            height: "297mm",
+            maxWidth: "210mm",
+            maxHeight: "297mm",
+            boxSizing: "border-box",
+            overflow: "hidden",
+          },
+          filter: (node) => !(node instanceof HTMLElement && node.classList.contains("no-print")),
+        });
 
-      const dataUrl = canvas.toDataURL("image/png");
-      if (!dataUrl || !dataUrl.startsWith("data:image/png;base64,")) {
-        const jpegUrl = canvas.toDataURL("image/jpeg", 0.95);
-        if (!jpegUrl || !jpegUrl.startsWith("data:image/jpeg;base64,")) {
-          throw new Error(`Falha ao capturar imagem da página ${i + 1}`);
-        }
-        if (i > 0) pdf.addPage("a4", "portrait");
-        pdf.addImage(jpegUrl, "JPEG", 0, 0, W, H, undefined, "FAST");
-      } else {
         if (i > 0) pdf.addPage("a4", "portrait");
         pdf.addImage(dataUrl, "PNG", 0, 0, W, H, undefined, "FAST");
       }
-    }
 
-    return pdf.output("blob");
+      return pdf.output("blob");
+    } finally {
+      // Restaura estilos originais do container
+      Object.assign(el.style, prevStyle);
+    }
   };
 
   const handleGeneratePdf = async () => {
@@ -939,18 +1026,19 @@ export function CDPage() {
                     Amostra {ctx.amostra.reportNumber || "—"} · OS {ctx.os.numero}
                   </CardTitle>
                   <CardDescription className="text-xs">
-                    {ctx.os.client || "—"} · Furo {ctx.amostra.borehole || "—"} · Prof. {ctx.amostra.depth || "—"}
+                    {sample.client || ctx.os.client || "—"} · Furo {sample.borehole || ctx.amostra.borehole || "—"} · Prof. {sample.depth || ctx.amostra.depth || "—"}
                     {ctx.coords && (
                       <> · N {ctx.coords.N ?? "—"} · E {ctx.coords.E ?? "—"} · Cota {ctx.coords.cota ?? "—"}</>
                     )}
                   </CardDescription>
                 </div>
-                <a
-                  href={`/os/${ctx.os.id}/amostra/${ctx.amostra.id}`}
-                  className="text-xs text-primary hover:underline"
+                <button
+                  type="button"
+                  onClick={() => setSampleEditOpen(true)}
+                  className="text-xs text-primary hover:underline font-semibold cursor-pointer flex items-center gap-1"
                 >
                   editar amostra →
-                </a>
+                </button>
               </div>
             </CardHeader>
             <CardContent className="pt-0">
@@ -1426,8 +1514,9 @@ export function CDPage() {
                         <TableHeader>
                           <TableRow>
                             <TableHead className="text-xs">Disp. H (mm)</TableHead>
-                            <TableHead className="text-xs">Carga (kgf)</TableHead>
                             <TableHead className="text-xs">Recalque V (mm)</TableHead>
+                            <TableHead className="text-xs">Força (N)</TableHead>
+                            <TableHead className="text-xs">Carga (kgf)</TableHead>
                             <TableHead className="text-xs">Área Corrigida (cm²)</TableHead>
                             <TableHead className="text-xs">τ (kPa)</TableHead>
                             <TableHead className="w-10"></TableHead>
@@ -1436,6 +1525,8 @@ export function CDPage() {
                         <TableBody>
                           {cp.shearData.map((r, i) => {
                             const calcPoint = res.curve[i];
+                            const forceN = r.shearForce ?? (r.loadKgf ? r.loadKgf * 9.80665 : 0);
+                            const loadKgf = r.loadKgf ?? (r.shearForce ? r.shearForce / 9.80665 : 0);
                             return (
                               <TableRow key={i}>
                                 <TableCell className="py-1">
@@ -1454,21 +1545,6 @@ export function CDPage() {
                                 <TableCell className="py-1">
                                   <Input
                                     type="number"
-                                    step="0.1"
-                                    value={r.loadKgf ?? r.shearForce / 9.80665}
-                                    onChange={(e) => {
-                                      const next = [...cp.shearData];
-                                      const v = parseFloat(e.target.value) || 0;
-                                      next[i].loadKgf = v;
-                                      next[i].shearForce = v * 9.80665;
-                                      updateSpecimen(cp.id, { shearData: next });
-                                    }}
-                                    className="h-7 w-20 text-xs"
-                                  />
-                                </TableCell>
-                                <TableCell className="py-1">
-                                  <Input
-                                    type="number"
                                     step="0.001"
                                     value={r.vertDispMm}
                                     onChange={(e) => {
@@ -1478,6 +1554,24 @@ export function CDPage() {
                                     }}
                                     className="h-7 w-20 text-xs"
                                   />
+                                </TableCell>
+                                <TableCell className="py-1">
+                                  <Input
+                                    type="number"
+                                    step="0.01"
+                                    value={parseFloat(forceN.toFixed(2))}
+                                    onChange={(e) => {
+                                      const next = [...cp.shearData];
+                                      const nVal = parseFloat(e.target.value) || 0;
+                                      next[i].shearForce = nVal;
+                                      next[i].loadKgf = nVal / 9.80665;
+                                      updateSpecimen(cp.id, { shearData: next });
+                                    }}
+                                    className="h-7 w-20 text-xs font-mono"
+                                  />
+                                </TableCell>
+                                <TableCell className="py-1 text-xs text-muted-foreground font-mono">
+                                  {fmt(loadKgf, 2)}
                                 </TableCell>
                                 <TableCell className="py-1 text-xs text-muted-foreground">
                                   {fmt(calcPoint?.areaCorr, 2)}
@@ -1613,7 +1707,6 @@ export function CDPage() {
                                   timeZone: "America/Sao_Paulo",
                                   dateStyle: "short",
                                   timeStyle: "medium",
-                                daylight: false,
                                 }).format(new Date(v.createdAt))}
                               </TableCell>
                               <TableCell className="text-xs font-mono">{v.filename}</TableCell>
@@ -1768,8 +1861,8 @@ export function CDPage() {
         >
           <CDReportPage1 sample={sample} specimens={sortedSpecimens} totalPages={totalPages} />
           <CDReportPage2 sample={sample} specimens={sortedSpecimens} results={results} totalPages={totalPages} />
-          <CDReportPage3 sample={sample} specimens={sortedSpecimens} results={results} totalPages={totalPages} />
-          <CDReportPage4 sample={sample} specimens={sortedSpecimens} results={results} envelope={envelope} totalPages={totalPages} />
+          <CDReportPage3 sample={sample} specimens={sortedSpecimens} results={results} totalPages={totalPages} axisCfg={axisCfg} />
+          <CDReportPage4 sample={sample} specimens={sortedSpecimens} results={results} envelope={envelope} totalPages={totalPages} axisCfg={axisCfg} />
           {Array.from({ length: photoPagesCount }).map((_, pIdx) => (
             <CDReportPage5
               key={pIdx}
@@ -1798,54 +1891,179 @@ export function CDPage() {
           }
         `}</style>
 
-        {/* Modal de Pré-visualização do Relatório Completo */}
+        {/* Modal de Pré-visualização do Relatório Completo com Ajuste de Eixos */}
         <Dialog open={reportOpen} onOpenChange={setReportOpen}>
-          <DialogContent className="max-w-[95vw] w-[95vw] h-[95vh] flex flex-col p-0">
-            <DialogHeader className="px-6 py-4 border-b">
-              <DialogTitle>{getReportTitle(sample.testCondition)} — Pré-visualização ({totalPages} Páginas)</DialogTitle>
-            </DialogHeader>
-            <div className="flex-1 overflow-auto bg-[#525659] p-8">
-              <div className="mx-auto max-w-fit flex flex-col items-center gap-8">
-                {/* Página 1 */}
-                <div className="w-[210mm] h-[297mm] shadow-2xl bg-white shrink-0 overflow-hidden">
-                  <CDReportPage1 sample={sample} specimens={sortedSpecimens} totalPages={totalPages} />
-                </div>
-
-                {/* Página 2 */}
-                <div className="w-[210mm] h-[297mm] shadow-2xl bg-white shrink-0 overflow-hidden">
-                  <CDReportPage2 sample={sample} specimens={sortedSpecimens} results={results} totalPages={totalPages} />
-                </div>
-
-                {/* Página 3 */}
-                <div className="w-[210mm] h-[297mm] shadow-2xl bg-white shrink-0 overflow-hidden">
-                  <CDReportPage3 sample={sample} specimens={sortedSpecimens} results={results} totalPages={totalPages} />
-                </div>
-
-                {/* Página 4 */}
-                <div className="w-[210mm] h-[297mm] shadow-2xl bg-white shrink-0 overflow-hidden">
-                  <CDReportPage4 sample={sample} specimens={sortedSpecimens} results={results} envelope={envelope} totalPages={totalPages} />
-                </div>
-
-                {/* Páginas de Fotos (Página 5 em diante) */}
-                {Array.from({ length: photoPagesCount }).map((_, pIdx) => (
-                  <div key={pIdx} className="w-[210mm] h-[297mm] shadow-2xl bg-white shrink-0 overflow-hidden">
-                    <CDReportPage5
-                      sample={sample}
-                      specimens={sortedSpecimens}
-                      photos={ctx?.photos || []}
-                      pageIndex={pIdx}
-                      totalPages={totalPages}
-                    />
-                  </div>
-                ))}
-
-                {/* Página Final: Fórmulas */}
-                <div className="w-[210mm] h-[297mm] shadow-2xl bg-white shrink-0 overflow-hidden">
-                  <CDReportPage6 sample={sample} totalPages={totalPages} />
-                </div>
+          <DialogContent className="max-w-[96vw] w-[96vw] h-[95vh] flex flex-col p-0 overflow-hidden">
+            {/* Cabeçalho com Controles de Zoom */}
+            <div className="flex flex-wrap items-center justify-between px-6 py-3 border-b bg-card gap-2">
+              <div>
+                <DialogTitle className="text-base font-bold text-foreground">
+                  {getReportTitle(sample.testCondition)} — Pré-visualização ({totalPages} Páginas)
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground">
+                  A4 · Use o painel lateral para ajustar as escalas e limites dos eixos em tempo real.
+                </DialogDescription>
+              </div>
+              <div className="flex items-center gap-2 bg-muted/60 rounded-md p-1 border">
+                <span className="text-[11px] font-medium text-muted-foreground px-1.5">Zoom da pré-visualização:</span>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7"
+                  onClick={() => setZoom((z) => Math.max(40, z - 10))}
+                  title="Diminuir Zoom"
+                >
+                  <ZoomOut className="h-3.5 w-3.5" />
+                </Button>
+                <span className="text-xs font-semibold px-1.5 min-w-[36px] text-center">{zoom}%</span>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7"
+                  onClick={() => setZoom((z) => Math.min(150, z + 10))}
+                  title="Aumentar Zoom"
+                >
+                  <ZoomIn className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7"
+                  onClick={() => setZoom(85)}
+                  title="Ajustar Padrão (85%)"
+                >
+                  <Maximize2 className="h-3.5 w-3.5" />
+                </Button>
               </div>
             </div>
-            <DialogFooter className="px-6 py-4 border-t bg-background flex flex-wrap items-center justify-between gap-2">
+
+            {/* Conteúdo: Relatório + Painel Lateral de Ajuste de Eixos */}
+            <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden">
+              {/* Lado Esquerdo: Visualizador de Páginas */}
+              <div className="flex-1 min-w-0 h-full overflow-auto bg-[#525659] p-8 flex justify-center">
+                <div
+                  style={{
+                    transform: `scale(${zoom / 100})`,
+                    transformOrigin: "top center",
+                    transition: "transform 0.12s ease-out",
+                  }}
+                  className="flex flex-col items-center gap-8 shrink-0 pb-12"
+                >
+                  {/* Página 1 */}
+                  <div className="w-[210mm] h-[297mm] shadow-2xl bg-white shrink-0 overflow-hidden">
+                    <CDReportPage1 sample={sample} specimens={sortedSpecimens} totalPages={totalPages} />
+                  </div>
+
+                  {/* Página 2 */}
+                  <div className="w-[210mm] h-[297mm] shadow-2xl bg-white shrink-0 overflow-hidden">
+                    <CDReportPage2 sample={sample} specimens={sortedSpecimens} results={results} totalPages={totalPages} />
+                  </div>
+
+                  {/* Página 3 */}
+                  <div className="w-[210mm] h-[297mm] shadow-2xl bg-white shrink-0 overflow-hidden">
+                    <CDReportPage3 sample={sample} specimens={sortedSpecimens} results={results} totalPages={totalPages} axisCfg={axisCfg} />
+                  </div>
+
+                  {/* Página 4 */}
+                  <div className="w-[210mm] h-[297mm] shadow-2xl bg-white shrink-0 overflow-hidden">
+                    <CDReportPage4 sample={sample} specimens={sortedSpecimens} results={results} envelope={envelope} totalPages={totalPages} axisCfg={axisCfg} />
+                  </div>
+
+                  {/* Páginas de Fotos (Página 5 em diante) */}
+                  {Array.from({ length: photoPagesCount }).map((_, pIdx) => (
+                    <div key={pIdx} className="w-[210mm] h-[297mm] shadow-2xl bg-white shrink-0 overflow-hidden">
+                      <CDReportPage5
+                        sample={sample}
+                        specimens={sortedSpecimens}
+                        photos={ctx?.photos || []}
+                        pageIndex={pIdx}
+                        totalPages={totalPages}
+                      />
+                    </div>
+                  ))}
+
+                  {/* Página Final: Fórmulas */}
+                  <div className="w-[210mm] h-[297mm] shadow-2xl bg-white shrink-0 overflow-hidden">
+                    <CDReportPage6 sample={sample} totalPages={totalPages} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Lado Direito: Painel de Ajuste de Eixos dos Gráficos */}
+              <aside className="w-full lg:w-[380px] shrink-0 h-full overflow-y-auto border-l bg-card flex flex-col shadow-sm">
+                <div className="border-b p-4 bg-muted/20">
+                  <div className="text-sm font-semibold text-primary">Ajuste de Eixos dos Gráficos</div>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Define os limites de cada eixo. Aplicado a todos os gráficos do relatório e da análise.
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="mt-3 w-full font-medium"
+                    onClick={() => setAxisCfg(suggestedAxisCfg)}
+                  >
+                    Aplicar valores sugeridos pelos dados
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="mt-1 w-full text-xs text-muted-foreground"
+                    onClick={() =>
+                      setAxisCfg({
+                        ehMax: 0,
+                        tauMax: 0,
+                        vertDispMin: 0,
+                        vertDispMax: 0,
+                        sigmaNMax: 0,
+                        tauEnvelopeMax: 0,
+                        sqrtTMax: 0,
+                        adensDispMax: 0,
+                      })
+                    }
+                  >
+                    Restaurar automático
+                  </Button>
+                  <p className="mt-1 text-[10px] text-muted-foreground text-center">
+                    Calcula automaticamente os limites ideais a partir dos resultados do ensaio.
+                  </p>
+                </div>
+
+                <div className="grid gap-3 p-4">
+                  <AxisGroup title="Deformação Horizontal (εh [%])">
+                    <AxisField label="máximo" step="1" value={axisCfg.ehMax} onChange={(v) => updateAxis("ehMax", v)} />
+                  </AxisGroup>
+
+                  <AxisGroup title="Tensão Cisalhante — Curvas (τ [kPa])">
+                    <AxisField label="máximo" step="10" value={axisCfg.tauMax} onChange={(v) => updateAxis("tauMax", v)} />
+                  </AxisGroup>
+
+                  <AxisGroup title="Deformação Vertical (εv [%])">
+                    <AxisField label="mínimo (expansão)" step="0.5" value={axisCfg.vertDispMin} onChange={(v) => updateAxis("vertDispMin", v)} />
+                    <AxisField label="máximo (contração)" step="0.5" value={axisCfg.vertDispMax} onChange={(v) => updateAxis("vertDispMax", v)} />
+                  </AxisGroup>
+
+                  <AxisGroup title="Tensão Normal Efetiva — Envoltória (σ'n [kPa])">
+                    <AxisField label="máximo" step="25" value={axisCfg.sigmaNMax} onChange={(v) => updateAxis("sigmaNMax", v)} />
+                  </AxisGroup>
+
+                  <AxisGroup title="Tensão Cisalhante — Envoltória (τ [kPa])">
+                    <AxisField label="máximo" step="25" value={axisCfg.tauEnvelopeMax} onChange={(v) => updateAxis("tauEnvelopeMax", v)} />
+                  </AxisGroup>
+
+                  <AxisGroup title="Adensamento (√t [min^0,5])">
+                    <AxisField label="máximo" step="0.5" value={axisCfg.sqrtTMax} onChange={(v) => updateAxis("sqrtTMax", v)} />
+                  </AxisGroup>
+
+                  <AxisGroup title="Adensamento Recalque (Δh [mm])">
+                    <AxisField label="máximo" step="0.1" value={axisCfg.adensDispMax} onChange={(v) => updateAxis("adensDispMax", v)} />
+                  </AxisGroup>
+                </div>
+              </aside>
+            </div>
+
+            <DialogFooter className="px-6 py-3 border-t bg-background flex flex-wrap items-center justify-between gap-2">
               <Button variant="outline" onClick={() => setReportOpen(false)}>
                 Fechar
               </Button>
@@ -1867,7 +2085,90 @@ export function CDPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Modal Completo de Edição da Amostra */}
+        <SampleEditDialog
+          open={sampleEditOpen}
+          onOpenChange={setSampleEditOpen}
+          data={{
+            osId: ctx?.os?.id,
+            amostraId: ctx?.amostra?.id,
+            osNumero: sample.os,
+            client: sample.client,
+            workNumber: sample.workNumber,
+            local: sample.local,
+            technicalResp: sample.technicalResp,
+            revision: String(sample.revision ?? "0"),
+            reportNumber: sample.reportNumber,
+            code: sample.code,
+            borehole: sample.borehole,
+            depth: sample.depth,
+            coordN: sample.coordN,
+            coordE: sample.coordE,
+            coordCota: sample.coordCota,
+            datum: (sample as any).datum || "SIRGAS 2000",
+            sampleType: sample.sampleType,
+            sampleState: sample.sampleState,
+            description: sample.description,
+            granulometricDescription: sample.granulometricDescription,
+            equipment: sample.equipment,
+          }}
+          onSave={(updated) => {
+            setSample((prev) => ({
+              ...prev,
+              ...updated,
+              client: updated.client || prev.client,
+              workNumber: updated.workNumber || prev.workNumber,
+              local: updated.local || prev.local,
+              technicalResp: updated.technicalResp || prev.technicalResp,
+              reportNumber: updated.reportNumber || prev.reportNumber,
+              code: updated.code || prev.code,
+              borehole: updated.borehole || prev.borehole,
+              depth: updated.depth || prev.depth,
+              description: updated.description || prev.description,
+              granulometricDescription: updated.granulometricDescription || prev.granulometricDescription,
+              sampleType: updated.sampleType || prev.sampleType,
+              sampleState: (updated.sampleState as any) || prev.sampleState,
+              equipment: updated.equipment || prev.equipment,
+            }));
+          }}
+        />
       </div>
     </>
+  );
+}
+
+function AxisGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border border-border bg-card p-3 shadow-xs">
+      <div className="mb-2 text-xs font-semibold text-foreground">{title}</div>
+      <div className="grid grid-cols-2 gap-2">{children}</div>
+    </div>
+  );
+}
+
+function AxisField({
+  label,
+  value,
+  onChange,
+  step = "any",
+}: {
+  label: string;
+  value?: number;
+  onChange: (v: number) => void;
+  step?: string;
+}) {
+  return (
+    <label className="flex flex-col gap-1 text-xs">
+      <span className="text-[11px] text-muted-foreground">{label}</span>
+      <Input
+        className="h-8 text-xs bg-background"
+        type="number"
+        step={step}
+        value={value === 0 || value == null ? "" : value}
+        placeholder="Auto"
+        onChange={(e) => onChange(e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)}
+      />
+    </label>
   );
 }

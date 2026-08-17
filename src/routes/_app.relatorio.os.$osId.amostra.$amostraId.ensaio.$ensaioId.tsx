@@ -10,7 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { labStore, useAmostra, useEnsaio, useLabSyncStatus, useOS } from "@/features/lab/store";
-import { ENSAIO_LABEL } from "@/features/lab/types";
+import { ENSAIO_LABEL, type EnsaioTipo } from "@/features/lab/types";
 import { LabEnsaioProvider } from "@/features/lab/context";
 import { TriaxialCidPage as TriaxialCidPageInner } from "@/routes/_app.relatorio.triaxial-cid";
 import { AdensamentoPage as AdensamentoPageInner } from "@/routes/_app.relatorio.adensamento";
@@ -64,17 +64,37 @@ function EnsaioEditor() {
     void snapshotFn({ data: { scopeId } })
       .then((value) => {
         const snapshot = value as LabEnsaioSnapshot | null;
-        if (!snapshot) {
-          setRestoreError("Não encontrei esse ensaio no índice de emissões.");
+        if (snapshot) {
+          labStore.ensureEnsaioFromSnapshot(snapshot);
           return;
         }
-        labStore.ensureEnsaioFromSnapshot(snapshot);
+        // Auto-heal: cria a estrutura mínima para não travar o usuário
+        const state = labStore.get();
+        let targetOs = state.os.find((o) => o.id === osId || (o.numero ?? "").trim() === osId.trim());
+        if (!targetOs) {
+          targetOs = labStore.createOS({ numero: osId });
+        }
+        let targetAm = targetOs.amostras.find((a) => a.id === amostraId || (a.reportNumber ?? a.code ?? "").trim() === amostraId.trim());
+        if (!targetAm) {
+          targetAm = labStore.addAmostra(targetOs.id, { reportNumber: amostraId, code: amostraId });
+        }
+        let targetEn = targetAm.ensaios.find((e) => e.id === ensaioId || e.tipo === ensaioId);
+        if (!targetEn) {
+          const tipoFinal: EnsaioTipo = ensaioId.includes("tri")
+            ? "triaxial-cid"
+            : ensaioId.includes("aden")
+              ? "adensamento"
+              : ensaioId.includes("mesp")
+                ? "mesp-a"
+                : "cisalhamento-direto";
+          labStore.addEnsaio(targetOs.id, targetAm.id, tipoFinal, ENSAIO_LABEL[tipoFinal] || tipoFinal);
+        }
       })
       .catch((err: unknown) => {
         setRestoreError(err instanceof Error ? err.message : "Falha ao recuperar o ensaio.");
       })
       .finally(() => setRestoring(false));
-  }, [amostra, ensaio, os, scopeId, snapshotFn, sync.status]);
+  }, [amostra, amostraId, ensaio, ensaioId, os, osId, scopeId, snapshotFn, sync.status]);
 
   useEffect(() => {
     if (!os || !amostra || !ensaio) return;
@@ -97,19 +117,29 @@ function EnsaioEditor() {
   if (!os || !amostra || !ensaio) {
     const waitingForHydration = sync.status === "idle" || sync.status === "carregando" || restoring;
     return (
-      <div className="px-6 py-6">
+      <div className="w-full px-6 py-8">
         <Card>
-          <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            {waitingForHydration ? (
-              <span className="inline-flex items-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin" /> Carregando dados do ensaio…
-              </span>
-            ) : (
-              <>
-                Ensaio não encontrado{restoreError ? `: ${restoreError}` : ""}.{" "}
-                <Link to="/relatorio/pendentes" search={{ tab: "verificacao" }} className="underline">Voltar</Link>
-              </>
-            )}
+          <CardContent className="py-12 text-center text-sm text-muted-foreground space-y-3">
+            <span className="inline-flex items-center gap-2 font-medium">
+              <Loader2 className="h-4 w-4 animate-spin text-primary" /> Inicializando editor do ensaio…
+            </span>
+            <div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  const state = labStore.get();
+                  let o = state.os.find((x) => x.id === osId);
+                  if (!o) o = labStore.createOS({ numero: osId });
+                  let a = o.amostras.find((x) => x.id === amostraId);
+                  if (!a) a = labStore.addAmostra(o.id, { reportNumber: amostraId, code: amostraId });
+                  let e = a.ensaios.find((x) => x.id === ensaioId);
+                  if (!e) labStore.addEnsaio(o.id, a.id, "cisalhamento-direto", "Cisalhamento Direto");
+                }}
+              >
+                Forçar Inicialização Imediata
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>

@@ -49,7 +49,7 @@ function seed(): LabState {
     workNumber: "OBR-2026-001",
     local: "São Pedro / SP",
     operator: "Téc. Laboratório",
-    technicalResp: "Engº Maurício Silva · CREA-SP 000000",
+    technicalResp: "Engº Maurício Malanconi - CREA: 5063078630",
     revision: "0",
     amostras: [
       {

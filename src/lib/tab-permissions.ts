@@ -57,7 +57,7 @@ export const TAB_META: Record<TabKey, { label: string; adminOnly?: boolean }> = 
   digitalizacao: { label: "Digitalização de Ensaios" },
   relatorio: { label: "Relatório · Visão geral" },
   relatorio_os: { label: "Relatório · OS / Amostras" },
-  relatorio_pendentes: { label: "Relatório · Digitação & Emissões" },
+  relatorio_pendentes: { label: "Relatório · Central de Relatórios & SLAs" },
   relatorio_adensamento: { label: "Relatório · Adensamento" },
   relatorio_triaxial: { label: "Relatório · Triaxial CID" },
   relatorio_mesp_a: { label: "Relatório · M.ESP.A Natural" },

@@ -1,6 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
+import { useCadastroByOs } from "@/hooks/use-cadastro-by-os";
 import {
   CartesianGrid,
   ComposedChart,
@@ -38,6 +39,7 @@ import { ChevronDown, ChevronRight, Info } from "lucide-react";
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { ReportPage, type ReportNorm } from "@/components/report/ReportShell";
+import { SampleEditDialog } from "@/components/SampleEditDialog";
 import { toPng } from "html-to-image";
 import { jsPDF } from "jspdf";
 import {
@@ -53,6 +55,7 @@ import { useEffect } from "react";
 import { History, Trash2, Eye } from "lucide-react";
 import { Cloud, CloudCheck, CloudAlert, ExternalLink, RefreshCw } from "lucide-react";
 import { PickerWithCreate } from "@/features/triaxial-cid/PickerWithCreate";
+import { useAuth } from "@/hooks/use-auth";
 import { syncRevision, fetchDriveStatus } from "@/features/triaxial-cid/driveSync";
 import { getWorkflowStatuses } from "@/lib/driveSync.functions";
 import {
@@ -176,12 +179,14 @@ const fmt = (n: number | null | undefined, d = 2) =>
 
 export function TriaxialCidPage() {
   const ctx = useOptionalLabEnsaio();
-  // Escopo hierárquico (os/.../amostra/.../ensaio/...) precisa bater com o que
-  // `registerEnsaioDraft` grava em `lab_index`. Caso contrário, o registro do
-  // fluxo (report_approvals) fica em um scope_id diferente do índice do lab
-  // e o ensaio não aparece em "Aguardando verificação".
+  const { lookup } = useCadastroByOs();
+  const cad = ctx?.os?.numero ? lookup(ctx.os.numero) : undefined;
+  const { displayName, user, profile } = useAuth();
+  const currentUserName = displayName || profile?.nome || user?.email?.split("@")[0] || "Maurício Malanconi";
+  const navigate = useNavigate();
+
   const scopeId =
-    ctx?.os && ctx.amostra && ctx.ensaio
+    ctx && ctx.os && ctx.amostra && ctx.ensaio
       ? `os/${ctx.os.id}/amostra/${ctx.amostra.id}/ensaio/${ctx.ensaio.id}`
       : (ctx?.ensaio?.id ?? "local");
   // Rascunho persistido em localStorage (por escopo), carregado uma única vez no mount.
@@ -198,25 +203,46 @@ export function TriaxialCidPage() {
   const draft = payloadDraft ?? draftRef.current ?? undefined;
   const initialSample: TriaxialSample = ctx
     ? {
-        ...SEED_SAMPLE,
-        client: ctx.os.client ?? SEED_SAMPLE.client,
-        workNumber: ctx.os.workNumber ?? SEED_SAMPLE.workNumber,
-        local: ctx.os.local ?? SEED_SAMPLE.local,
-        operator: ctx.ensaio.operator || ctx.os.operator || SEED_SAMPLE.operator,
-        technicalResp: ctx.os.technicalResp ?? SEED_SAMPLE.technicalResp,
-        revision: ctx.os.revision ?? SEED_SAMPLE.revision,
-        os: ctx.os.numero,
-        reportNumber: ctx.amostra.reportNumber ?? SEED_SAMPLE.reportNumber,
-        borehole: ctx.amostra.borehole ?? SEED_SAMPLE.borehole,
-        depth: ctx.amostra.depth ?? SEED_SAMPLE.depth,
-        description: ctx.amostra.description ?? SEED_SAMPLE.description,
-        code: ctx.amostra.code ?? SEED_SAMPLE.code,
-        granulometricDescription: ctx.amostra.granulometricDescription ?? SEED_SAMPLE.granulometricDescription,
+        client: ctx.os.client || cad?.tomador || "",
+        workNumber: ctx.os.workNumber || cad?.obra || "",
+        local: ctx.os.local || cad?.local || "",
+        operator: draft?.sample?.operator || ctx.ensaio.operator || ctx.os.operator || currentUserName,
+        technicalResp: ctx.os.technicalResp || "Engº Maurício Malanconi - CREA: 5063078630",
+        revision: ctx.os.revision || "0",
+        os: ctx.os.numero || "",
+        reportNumber: ctx.amostra.reportNumber || "",
+        borehole: ctx.amostra.borehole || "",
+        depth: ctx.amostra.depth || "",
+        description: ctx.amostra.description || "",
+        code: ctx.amostra.code || "",
+        granulometricDescription: ctx.amostra.granulometricDescription || "",
+        date: new Date().toISOString().split("T")[0],
+        typedBy: draft?.sample?.typedBy || ctx.ensaio.operator || currentUserName,
+        condition: "saturado",
+        sampleType: "Bloco Indeformado",
+        equipment: (ctx.ensaio.payload as any)?.sample?.equipment || "Triaxial CID",
+        specDimensions: "38x76 mm",
+        filterPaperResistance: 0,
+        labManager: "Engº Cleitton Pereira",
+        saturationConditionText: "Saturação por Percolação e Contra-pressão",
+        Gs: 2.70,
+        rhoW: 1.0,
+        wL: 0,
+        wP: 0,
+        applyMembrane: false,
+        membraneE: 1400,
+        membraneT: 0.3,
       }
-    : SEED_SAMPLE;
+    : { ...SEED_SAMPLE, typedBy: currentUserName, operator: currentUserName };
   const [sample, setSample] = useState<TriaxialSample>(
     () => (draft?.sample ? { ...initialSample, ...draft.sample } : initialSample),
   );
+
+  useEffect(() => {
+    if (!sample.typedBy && currentUserName) {
+      setSample((prev) => ({ ...prev, typedBy: currentUserName }));
+    }
+  }, [currentUserName]);
   const [specimens, setSpecimens] = useState<TriaxialSpecimen[]>(
     () => (draft?.specimens && draft.specimens.length > 0 ? draft.specimens : EMPTY_SPECIMENS),
   );
@@ -233,6 +259,7 @@ export function TriaxialCidPage() {
   const [indicesOpen, setIndicesOpen] = useState(false);
   const [finalOpen, setFinalOpen] = useState(true);
   const [axisPanelOpen, setAxisPanelOpen] = useState(true);
+  const [sampleEditOpen, setSampleEditOpen] = useState(false);
 
   // Diálogo de confirmação bonito (substitui window.confirm)
   const [confirmState, setConfirmState] = useState<{
@@ -1012,18 +1039,19 @@ export function TriaxialCidPage() {
                     Amostra {ctx.amostra.reportNumber || "—"} · OS {ctx.os.numero}
                   </CardTitle>
                   <CardDescription className="text-xs">
-                    {ctx.os.client || "—"} · Furo {ctx.amostra.borehole || "—"} · Prof. {ctx.amostra.depth || "—"}
+                    {sample.client || ctx.os.client || "—"} · Furo {sample.borehole || ctx.amostra.borehole || "—"} · Prof. {sample.depth || ctx.amostra.depth || "—"}
                     {ctx.coords && (
                       <> · N {ctx.coords.N ?? "—"} · E {ctx.coords.E ?? "—"} · Cota {ctx.coords.cota ?? "—"}</>
                     )}
                   </CardDescription>
                 </div>
-                <a
-                  href={`/os/${ctx.os.id}/amostra/${ctx.amostra.id}`}
-                  className="text-xs text-primary hover:underline"
+                <button
+                  type="button"
+                  onClick={() => setSampleEditOpen(true)}
+                  className="text-xs text-primary hover:underline font-semibold cursor-pointer flex items-center gap-1"
                 >
                   editar amostra →
-                </a>
+                </button>
               </div>
             </CardHeader>
             <CardContent className="pt-0">
@@ -2178,6 +2206,55 @@ export function TriaxialCidPage() {
           axisCfg={axisCfg}
         />
       </div>
+
+      {/* Modal Completo de Edição da Amostra */}
+      <SampleEditDialog
+        open={sampleEditOpen}
+        onOpenChange={setSampleEditOpen}
+        data={{
+          osId: ctx?.os?.id,
+          amostraId: ctx?.amostra?.id,
+          osNumero: sample.os,
+          client: sample.client,
+          workNumber: sample.workNumber,
+          local: sample.local,
+          technicalResp: sample.technicalResp,
+          revision: String(sample.revision ?? "0"),
+          reportNumber: sample.reportNumber,
+          code: sample.code,
+          borehole: sample.borehole,
+          depth: sample.depth,
+          coordN: sample.coordN,
+          coordE: sample.coordE,
+          coordCota: sample.coordCota,
+          datum: (sample as any).datum || "SIRGAS 2000",
+          sampleType: sample.sampleType,
+          sampleState: sample.sampleState,
+          description: sample.description,
+          granulometricDescription: sample.granulometricDescription,
+          equipment: sample.equipment,
+        }}
+        onSave={(updated) => {
+          setSample((prev) => ({
+            ...prev,
+            ...updated,
+            client: updated.client || prev.client,
+            workNumber: updated.workNumber || prev.workNumber,
+            local: updated.local || prev.local,
+            technicalResp: updated.technicalResp || prev.technicalResp,
+            reportNumber: updated.reportNumber || prev.reportNumber,
+            code: updated.code || prev.code,
+            borehole: updated.borehole || prev.borehole,
+            depth: updated.depth || prev.depth,
+            description: updated.description || prev.description,
+            granulometricDescription: updated.granulometricDescription || prev.granulometricDescription,
+            sampleType: updated.sampleType || prev.sampleType,
+            sampleState: (updated.sampleState as any) || prev.sampleState,
+            equipment: updated.equipment || prev.equipment,
+          }));
+        }}
+      />
+
       <style>{`
         .print-only-report {
           position: fixed;
@@ -2926,8 +3003,8 @@ function MoldagemFicha({
                 <div>
                   <Label className="text-[11px] text-muted-foreground">Massa inicial CP (g)</Label>
                   <PtNumInput
-                    value={cp.m0}
-                    onChange={(v) => onCp({ m0: v })}
+                    value={cp.wetMass}
+                    onChange={(v) => onCp({ wetMass: v })}
                     className="h-8 text-xs text-right font-mono"
                   />
                 </div>

@@ -114,6 +114,10 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
+import { getAneisCatalog, type AnelItem } from "@/lib/aneis-catalog";
+import { AneisManagerDialog } from "@/components/AneisManagerDialog";
+import { CircleDot } from "lucide-react";
+
 export function CDMoldagemFicha({
   cp,
   res,
@@ -147,6 +151,9 @@ export function CDMoldagemFicha({
   onTogglePhoto?: () => void;
   ctx?: any;
 }) {
+  const [aneisCatalogOpen, setAneisCatalogOpen] = React.useState(false);
+  const aneisList = React.useMemo(() => getAneisCatalog(), [aneisCatalogOpen]);
+
   const caps = cp.capsules ?? [
     { tara: 0, wet: 0, dry: 0 },
     { tara: 0, wet: 0, dry: 0 },
@@ -329,13 +336,31 @@ export function CDMoldagemFicha({
                 </tbody>
               </table>
 
-              <div className="mt-3 pt-2 border-t border-border/40 grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="mt-3 pt-2 border-t border-border/40 grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <Label className="text-[11px] text-muted-foreground">Massa inicial CP (g)</Label>
+                  <Label className="text-[11px] text-muted-foreground">Massa CP + Anel (g)</Label>
                   <PtNumInput
-                    value={cp.wetMass}
-                    onChange={(v) => onCp({ wetMass: v })}
-                    className="h-8 text-xs text-right font-mono"
+                    value={cp.wetMassCPAnel ?? (cp.ringMass && cp.wetMass ? cp.wetMass + cp.ringMass : undefined)}
+                    onChange={(v) => {
+                      const tara = cp.ringMass || 0;
+                      const solo = v > tara ? v - tara : v;
+                      onCp({ wetMassCPAnel: v, wetMass: solo });
+                    }}
+                    placeholder="Ex: 166,30"
+                    className="h-8 text-xs text-right font-mono font-medium"
+                  />
+                </div>
+                <div>
+                  <Label className="text-[11px] text-muted-foreground">Tara do Anel (g)</Label>
+                  <PtNumInput
+                    value={cp.ringMass}
+                    onChange={(v) => {
+                      const total = cp.wetMassCPAnel || 0;
+                      const solo = total > v ? total - v : cp.wetMass;
+                      onCp({ ringMass: v, wetMass: solo });
+                    }}
+                    placeholder="Ex: 113,10"
+                    className="h-8 text-xs text-right font-mono font-medium"
                   />
                 </div>
               </div>
@@ -459,39 +484,96 @@ export function CDMoldagemFicha({
             GEOMETRIA E PROGRAMA — {cp.displayId ?? cp.id}
           </span>
           <span className="text-[11px] font-normal text-muted-foreground">
-            D₀={fmt(res.diam0, 2)} mm · H₀={fmt(res.height0, 2)} mm · σn={fmt(cp.normalStressTarget, 0)} kPa
+            D₀={fmt(res.D0, 2)} mm · H₀={fmt(res.H0, 2)} mm · σn={fmt(cp.normalStressTarget, 0)} kPa
           </span>
         </button>
         {geomOpen && (
-          <div className="grid gap-3 p-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
+          <div className="p-3 space-y-3">
+            {/* Seletor de Anel Cadastrado */}
+            <div className="rounded border bg-muted/20 p-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1.5 font-semibold text-xs text-primary">
+                  <CircleDot className="h-4 w-4" /> Anel de Moldagem:
+                </div>
+                <Select
+                  value={cp.ringNumber || ""}
+                  onValueChange={(anelNum) => {
+                    const anel = aneisList.find((a) => a.numero === anelNum);
+                    if (anel) {
+                      const dim = anel.secao === "circular" ? (anel.diametro_mm || 60) : (anel.lado_mm || 60);
+                      onCp({
+                        ringNumber: anel.numero,
+                        ringMass: anel.massa_g,
+                        diameterMm: dim,
+                        D0measurements: [dim, dim, dim],
+                        height0Mm: anel.altura_mm,
+                        H0measurements: [anel.altura_mm, anel.altura_mm, anel.altura_mm],
+                      });
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-7 text-xs w-64 font-mono font-medium">
+                    <SelectValue placeholder="Escolha um anel cadastrado…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {aneisList.map((a) => (
+                      <SelectItem key={a.id} value={a.numero} className="text-xs">
+                        {a.numero} — {a.secao === "circular" ? `Ø ${a.diametro_mm}mm` : `${a.lado_mm}x${a.lado_mm}mm`} (H={a.altura_mm}mm · {a.massa_g}g)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {cp.ringMass ? (
+                  <Badge variant="outline" className="text-[11px] font-mono bg-background text-emerald-700 dark:text-emerald-400">
+                    Tara: {cp.ringMass.toFixed(2)} g
+                  </Badge>
+                ) : null}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs gap-1"
+                  onClick={() => setAneisCatalogOpen(true)}
+                >
+                  <Plus className="h-3 w-3" /> Gerenciar Anéis
+                </Button>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
             <div className="flex items-end gap-1">
               <div className="flex-1">
                 <NumField
                   label="Diâmetro D₀ (mm)"
-                  value={res.diam0}
+                  value={res.D0}
                   step={0.01}
-                  onChange={(v) => onCp({ diam0: v, diamMeasures: [v, v, v] })}
+                  onChange={(v) => onCp({ diameterMm: v, D0measurements: [v, v, v] })}
                 />
               </div>
               <AvgMeasureDialog
-                title="Diâmetro do CP (mm)"
-                measures={cp.diamMeasures ?? [res.diam0, res.diam0, res.diam0]}
-                onSave={(ms, avg) => onCp({ diamMeasures: ms, diam0: avg })}
+                label="Diâmetro do CP"
+                unit="mm"
+                values={cp.D0measurements ?? [res.D0, res.D0, res.D0]}
+                onSave={(avg, ms) => onCp({ D0measurements: ms, diameterMm: avg })}
               />
             </div>
             <div className="flex items-end gap-1">
               <div className="flex-1">
                 <NumField
                   label="Altura H₀ (mm)"
-                  value={res.height0}
+                  value={res.H0}
                   step={0.01}
-                  onChange={(v) => onCp({ height0: v, heightMeasures: [v, v, v] })}
+                  onChange={(v) => onCp({ height0Mm: v, H0measurements: [v, v, v] })}
                 />
               </div>
               <AvgMeasureDialog
-                title="Altura do CP (mm)"
-                measures={cp.heightMeasures ?? [res.height0, res.height0, res.height0]}
-                onSave={(ms, avg) => onCp({ heightMeasures: ms, height0: avg })}
+                label="Altura do CP"
+                unit="mm"
+                values={cp.H0measurements ?? [res.H0, res.H0, res.H0]}
+                onSave={(avg, ms) => onCp({ H0measurements: ms, height0Mm: avg })}
               />
             </div>
             <NumField
@@ -517,6 +599,7 @@ export function CDMoldagemFicha({
               </Select>
             </div>
           </div>
+          </div>
         )}
       </div>
 
@@ -532,19 +615,19 @@ export function CDMoldagemFicha({
             ÍNDICES FÍSICOS CALCULADOS — {cp.displayId ?? cp.id}
           </span>
           <span className="text-[11px] font-normal text-muted-foreground">
-            e₀={fmt(res.e0, 3)} · Sr₀={fmt(res.Sr0Pct, 1)}% · γd={fmt(res.gammaDry0, 2)} kN/m³
+            e₀={fmt(res.voidRatio0, 3)} · Sr₀={fmt(res.saturation0Pct, 1)}% · γd={fmt(res.gammaDry, 2)} kN/m³
           </span>
         </button>
         {indicesOpen && (
           <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-4 lg:grid-cols-8">
             <Stat label="Massa Úmida (g)" value={fmt(res.wetMass, 2)} />
-            <Stat label="Massa Seca (g)" value={fmt(res.dryMass0, 2)} />
+            <Stat label="Massa Seca (g)" value={fmt(res.dryMass, 2)} />
             <Stat label="Volume (cm³)" value={fmt(res.volume0, 2)} />
             <Stat label="Área (cm²)" value={fmt(res.area0, 3)} />
-            <Stat label="γnat (kN/m³)" value={fmt(res.gammaNat0, 2)} />
-            <Stat label="γd (kN/m³)" value={fmt(res.gammaDry0, 2)} />
-            <Stat label="Índice Vazios e₀" value={fmt(res.e0, 3)} />
-            <Stat label="Saturação Sr₀ (%)" value={`${fmt(res.Sr0Pct, 1)}%`} />
+            <Stat label="γnat (kN/m³)" value={fmt(res.gammaNat, 2)} />
+            <Stat label="γd (kN/m³)" value={fmt(res.gammaDry, 2)} />
+            <Stat label="Índice Vazios e₀" value={fmt(res.voidRatio0, 3)} />
+            <Stat label="Saturação Sr₀ (%)" value={`${fmt(res.saturation0Pct, 1)}%`} />
           </div>
         )}
       </div>
@@ -561,19 +644,48 @@ export function CDMoldagemFicha({
             REGISTRO FOTOGRÁFICO — {cp.displayId ?? cp.id}
           </span>
           <span className="text-[11px] font-normal text-muted-foreground">
-            {(cp.photos || []).length} FOTO(S)
+            {((ctx?.photos || []).filter((p: any) => p.specimenId === cp.id)).length} FOTO(S)
           </span>
         </button>
         {photoOpen && (
-          <div className="p-3">
+          <div className="grid grid-cols-1 gap-4 p-3 md:grid-cols-2">
             <PhotoUploader
-              photos={cp.photos || []}
-              onChange={(photos) => onCp({ photos })}
-              title="Fotos do Ensaio de Cisalhamento Direto (Moldagem / Pós-Ruptura)"
+              title="Foto da Moldagem"
+              kind="moldagem"
+              photos={(ctx?.photos || []).filter((p: any) => p.specimenId === cp.id)}
+              onAdd={(p: any) => ctx?.addPhoto?.({ ...p, specimenId: cp.id })}
+              onRemove={(id: string) => ctx?.removePhoto?.(id)}
+              onUpdate={(id: string, patch: any) => ctx?.updatePhoto?.(id, patch)}
+            />
+            <PhotoUploader
+              title="Foto da Ruptura"
+              kind="ruptura"
+              photos={(ctx?.photos || []).filter((p: any) => p.specimenId === cp.id)}
+              onAdd={(p: any) => ctx?.addPhoto?.({ ...p, specimenId: cp.id })}
+              onRemove={(id: string) => ctx?.removePhoto?.(id)}
+              onUpdate={(id: string, patch: any) => ctx?.updatePhoto?.(id, patch)}
             />
           </div>
         )}
       </div>
+
+      {/* Modal de Gestão e Cadastro de Anéis */}
+      <AneisManagerDialog
+        open={aneisCatalogOpen}
+        onOpenChange={setAneisCatalogOpen}
+        ensaioFiltro="cisalhamento"
+        onSelectAnel={(anel) => {
+          const dim = anel.secao === "circular" ? (anel.diametro_mm || 60) : (anel.lado_mm || 60);
+          onCp({
+            ringNumber: anel.numero,
+            ringMass: anel.massa_g,
+            diameterMm: dim,
+            D0measurements: [dim, dim, dim],
+            height0Mm: anel.altura_mm,
+            H0measurements: [anel.altura_mm, anel.altura_mm, anel.altura_mm],
+          });
+        }}
+      />
     </div>
   );
 }

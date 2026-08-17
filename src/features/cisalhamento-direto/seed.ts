@@ -31,45 +31,65 @@ export const SEED_CD_SAMPLE: CDSample = {
 };
 
 export function makeEmptyCDSpecimen(id: string, index: number): CDSpecimen {
-  const ringMass = 100 + index * 2;
-  const cpMass = 110.5 + index * 5;
   return {
     id,
     displayId: `CP${index + 1}`,
     color: CP_COLORS[index % CP_COLORS.length],
     height0Mm: 20,
-    ringId: `ANEL-0${index + 1}`,
-    ringMass: ringMass,
-    wetMassCPAnel: cpMass + ringMass,
-    wetMass: cpMass,
-    w0Pct: 25.5,
-    capsules: [
-      { tara: 15.2, wet: 45.8, dry: 39.5 },
-      { tara: 15.4, wet: 46.2, dry: 40.1 },
-    ],
-    finalCapsules: [
-      { tara: 15.1, wet: 44.9, dry: 38.8 },
-    ],
-    normalStressTarget: (index + 1) * 50,
+    ringId: "",
+    ringMass: 0,
+    wetMassCPAnel: 0,
+    wetMass: 0,
+    w0Pct: 0,
+    capsules: [],
+    finalCapsules: [],
+    normalStressTarget: 0,
     failureCriterion: "max_tau",
     consolidationSettlementMm: 0,
     consolidationData: [],
-    shearData: generateSynth((index + 1) * 50),
-
+    shearData: [],
   };
+}
+
+export function makeDemoCDSpecimens(): CDSpecimen[] {
+  return [0, 1, 2].map((index) => {
+    const ringMass = 100 + index * 2;
+    const cpMass = 110.5 + index * 5;
+    const normalStress = (index + 1) * 50;
+    return {
+      id: `CP${index + 1}`,
+      displayId: `CP${index + 1}`,
+      color: CP_COLORS[index % CP_COLORS.length],
+      height0Mm: 20,
+      ringId: `ANEL-0${index + 1}`,
+      ringMass: ringMass,
+      wetMassCPAnel: cpMass + ringMass,
+      wetMass: cpMass,
+      w0Pct: 25.5,
+      capsules: [
+        { tara: 15.2, wet: 45.8, dry: 39.5 },
+        { tara: 15.4, wet: 46.2, dry: 40.1 },
+      ],
+      finalCapsules: [
+        { tara: 15.1, wet: 44.9, dry: 38.8 },
+      ],
+      normalStressTarget: normalStress,
+      failureCriterion: "max_tau",
+      consolidationSettlementMm: 0,
+      consolidationData: [],
+      shearData: generateSynth(normalStress),
+    };
+  });
 }
 
 function generateSynth(sigma: number): CDReading[] {
   const phi = 30 * Math.PI / 180;
   const c = 10;
   const peakTau = sigma * Math.tan(phi) + c;
-  
-  // A = 28.27 cm2 para 60mm circular
-  const area = 28.27;
+  const area = 28.27; // A = 28.27 cm2 para 60mm circular
   
   return Array.from({ length: 30 }, (_, i) => {
     const disp = i * 0.2;
-    // Curva hiperbólica simples
     const tau = peakTau * (disp / (disp + 1));
     const forceN = (tau * area) / 10;
     return {
@@ -81,8 +101,5 @@ function generateSynth(sigma: number): CDReading[] {
   });
 }
 
-export const SEED_CD_SPECIMENS: CDSpecimen[] = [
-  makeEmptyCDSpecimen("CP1", 0),
-  makeEmptyCDSpecimen("CP2", 1),
-  makeEmptyCDSpecimen("CP3", 2),
-];
+export const SEED_CD_SPECIMENS: CDSpecimen[] = makeDemoCDSpecimens();
+

@@ -28,7 +28,7 @@ const CriarInput = z.object({
   tipo_ensaio: z.string().nullable().optional(),
   equipamento: z.string().nullable().optional(),
   programacao_id: z.string().uuid().nullable().optional(),
-  origem: z.enum(["gantt", "digitalizacao"]).optional(),
+  origem: z.enum(["gantt", "digitalizacao", "avulso"]).optional(),
   // Nome do operador que executou o ensaio (ex.: técnico definido na
   // programação do Gantt). Preserva o autor mesmo quando quem clica em
   // "Concluir" é o supervisor.
@@ -68,6 +68,11 @@ export const criarPendenciaDigitacao = createServerFn({ method: "POST" })
       }
       return { ok: true, id: existing.id, created: false };
     }
+    const nowIso = new Date().toISOString();
+    const initialPayload = {
+      ...(data.payload && typeof data.payload === "object" ? data.payload : {}),
+      execucao_concluida_at: nowIso,
+    };
     const { data: inserted, error } = await context.supabase
       .from("lab_pendencias_digitacao")
       .insert({
@@ -81,7 +86,7 @@ export const criarPendenciaDigitacao = createServerFn({ method: "POST" })
         operador_nome: data.operador_nome ?? null,
         status: "pendente",
         origem: data.origem ?? "gantt",
-        payload: (data.payload ?? null) as never,
+        payload: initialPayload as never,
       })
       .select("id")
       .single();
@@ -97,8 +102,8 @@ export type PendenciaDigitacao = {
   tipo_ensaio: string | null;
   equipamento: string | null;
   data_conclusao: string;
-  status: "pendente" | "em_digitacao" | "digitado" | "verificado" | "aprovado";
-  origem: "gantt" | "digitalizacao";
+  status: "pendente" | "em_digitacao" | "digitado" | "verificado" | "aprovado" | "concluido_externo";
+  origem: "gantt" | "digitalizacao" | "avulso";
   operador_user_id: string | null;
   operador_nome_text?: string | null;
   digitador_user_id: string | null;
@@ -159,7 +164,7 @@ export const listPendenciasDigitacao = createServerFn({ method: "GET" })
 
 const AtualizarInput = z.object({
   id: z.string().uuid(),
-  status: z.enum(["pendente", "em_digitacao", "digitado", "verificado", "aprovado"]),
+  status: z.enum(["pendente", "em_digitacao", "digitado", "verificado", "aprovado", "concluido_externo"]),
   observacao: z.string().nullable().optional(),
   payload: z.record(z.string(), z.any()).nullable().optional() as z.ZodType<JsonValue | undefined | null>,
 });
@@ -190,6 +195,24 @@ export const atualizarPendenciaDigitacao = createServerFn({ method: "POST" })
         digitacao_finished_at: incomingPayload.digitacao_finished_at ?? now,
       };
     }
+    if (data.status === "verificado") {
+      nextPayload = {
+        ...incomingPayload,
+        verificado_at: incomingPayload.verificado_at ?? now,
+      };
+    }
+    if (data.status === "aprovado") {
+      nextPayload = {
+        ...incomingPayload,
+        aprovado_at: incomingPayload.aprovado_at ?? now,
+      };
+    }
+    if (data.status === "concluido_externo") {
+      nextPayload = {
+        ...incomingPayload,
+        concluido_externo_at: incomingPayload.concluido_externo_at ?? now,
+      };
+    }
     const patch: {
       status: typeof data.status;
       observacao?: string | null;
@@ -209,6 +232,82 @@ export const atualizarPendenciaDigitacao = createServerFn({ method: "POST" })
       .eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
+  });
+
+const ConcluirExternoInput = z.object({
+  id: z.string().uuid(),
+  observacao: z.string().optional(),
+});
+
+export const concluirPendenciaExterna = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => ConcluirExternoInput.parse(i))
+  .handler(async ({ context, data }) => {
+    const now = new Date().toISOString();
+    const { data: existing } = await context.supabase
+      .from("lab_pendencias_digitacao")
+      .select("payload")
+      .eq("id", data.id)
+      .maybeSingle();
+    const prev = asJsonObject((existing?.payload as JsonValue | null | undefined) ?? null);
+    const nextPayload = {
+      ...prev,
+      concluido_externo_at: now,
+      concluido_externo_user_id: context.userId,
+      concluido_externo_obs: data.observacao || "Processado na planilha de Excel antiga",
+    };
+    const { error } = await context.supabase
+      .from("lab_pendencias_digitacao")
+      .update({
+        status: "concluido_externo",
+        observacao: data.observacao || "Relatório Concluído fora da Central (Planilha Excel)",
+        payload: nextPayload as never,
+      } as never)
+      .eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+const CriarAvulsoInput = z.object({
+  os: z.string().min(1),
+  cliente: z.string().optional(),
+  obra: z.string().optional(),
+  amostra: z.string().optional(),
+  ensaio: z.string().min(1),
+  tipo_ensaio: z.string().min(1),
+  operador_nome: z.string().optional(),
+  observacoes: z.string().optional(),
+});
+
+export const criarRelatorioAvulso = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => CriarAvulsoInput.parse(i))
+  .handler(async ({ context, data }) => {
+    const now = new Date().toISOString();
+    const payload = {
+      cliente: data.cliente || "",
+      obra: data.obra || "",
+      digitacao_started_at: now,
+      avulso: true,
+    };
+    const { data: inserted, error } = await context.supabase
+      .from("lab_pendencias_digitacao")
+      .insert({
+        os: data.os,
+        amostra: data.amostra || null,
+        ensaio: data.ensaio,
+        tipo_ensaio: data.tipo_ensaio,
+        status: "em_digitacao",
+        origem: "avulso",
+        digitador_user_id: context.userId,
+        operador_nome: data.operador_nome || null,
+        observacao: data.observacoes || null,
+        payload: payload as never,
+      })
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    return { ok: true, id: inserted.id };
   });
 
 const DeleteInput = z.object({ id: z.string().uuid() });

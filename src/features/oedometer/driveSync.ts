@@ -1,6 +1,6 @@
 import { syncRevisionToDrive } from "@/lib/driveSync.functions";
 import { blobToBase64 } from "@/lib/drive-sync-client";
-import type { OedSampleProps, OedStage, OedStageCalculated, PhysicalIndices, CompressibilityParams } from "./types";
+import type { OedSampleProps, OedStage, OedStageCalculated, OedPhysicalIndices, OedCompressibilityParams } from "./types";
 import type { Photo } from "@/features/lab/types";
 
 export interface SyncDriveResult {
@@ -13,9 +13,9 @@ export interface SyncDriveResult {
 export async function syncOedometerRevisionToDrive(args: {
   sample: OedSampleProps;
   stages: OedStage[];
-  phys: PhysicalIndices;
+  phys: OedPhysicalIndices;
   stagesCalc: OedStageCalculated[];
-  params: CompressibilityParams;
+  params: OedCompressibilityParams;
   photos: Photo[];
   pdfBlob: Blob;
   revNumber: number;

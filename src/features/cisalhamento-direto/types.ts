@@ -77,6 +77,7 @@ export interface CDSpecimen {
   wetMassCPAnel: number; // CP + Anel (g)
   ringMass: number; // Anel (g)
   ringId?: string;
+  ringNumber?: string;
   mFinal?: number; // massa final (g)
   
   // Umidades
@@ -157,6 +158,17 @@ export interface CDEnvelopeResult {
   points: { sigma: number; tau: number; cp: string }[];
 }
 
+export interface CDAxisCfg {
+  ehMax?: number;          // Deformação Horizontal máxima [%]
+  tauMax?: number;         // Tensão Cisalhante máxima nas curvas dos CPs [kPa]
+  vertDispMin?: number;    // Deformação Vertical / Variação de Altura mínima [mm ou %] (expansão)
+  vertDispMax?: number;    // Deformação Vertical / Variação de Altura máxima [mm ou %] (contração)
+  sigmaNMax?: number;      // Tensão Normal Efetiva máxima na Envoltória [kPa]
+  tauEnvelopeMax?: number; // Tensão Cisalhante máxima na Envoltória [kPa]
+  sqrtTMax?: number;      // √t máximo no adensamento [min^0,5]
+  adensDispMax?: number;  // Recalque máx no adensamento [mm]
+}
+
 export interface CDDraft {
   sample: CDSample;
   specimens: CDSpecimen[];
@@ -169,5 +181,5 @@ export interface CDDraft {
     hTopcap: number;
     fAtritoPistao: number;
   };
-  axisCfg?: any;
+  axisCfg?: CDAxisCfg;
 }

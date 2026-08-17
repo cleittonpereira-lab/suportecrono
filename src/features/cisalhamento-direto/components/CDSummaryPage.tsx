@@ -65,6 +65,7 @@ export function CDSummaryPage({
               </XAxis>
               <YAxis 
                 type="number" 
+                dataKey="tau"
                 domain={[0, "auto"]}
                 tick={{ fontSize: 10, fill: '#374151' }}
                 stroke="#374151"
@@ -79,11 +80,11 @@ export function CDSummaryPage({
               {/* Linha da Envoltória */}
               {envelope && (
                 <Line 
-                  name="Envoltória Linear"
+                  name={`Envoltória (c' = ${fmt(envelope.c, 2)} kPa, φ' = ${fmt(envelope.phiDeg, 2)}°)`}
                   data={envelopeLine}
                   dataKey="tau"
-                  stroke="#111827"
-                  strokeWidth={2}
+                  stroke="#0f172a"
+                  strokeWidth={2.5}
                   dot={false}
                   activeDot={false}
                   legendType="line"
@@ -93,23 +94,25 @@ export function CDSummaryPage({
               {/* Pontos de Ruptura Individuais Sólidos e Discretos */}
               {results.map((r, i) => {
                 const color = specimens[i]?.color || lineColors[i % lineColors.length];
+                const name = `${specimens[i]?.displayId ?? `CP${i + 1}`} (σn = ${fmt(r.sigmaN, 0)} kPa)`;
                 return (
                   <Scatter 
                     key={i}
-                    name={`${specimens[i]?.displayId ?? `CP-${i + 1}`} (σn = ${fmt(r.sigmaN, 0)} kPa)`}
-                    data={[{ sigma: r.sigmaN, tau: r.tauPeak }]}
+                    name={name}
+                    data={[{ sigma: r.sigmaN, tau: r.tauPeak, x: r.sigmaN, y: r.tauPeak }]}
+                    dataKey="tau"
                     fill={color}
                     shape={(props: any) => {
                       const { cx, cy } = props;
-                      if (cx == null || cy == null || isNaN(cx) || isNaN(cy)) return null;
+                      if (cx == null || cy == null || isNaN(cx) || isNaN(cy)) return <g />;
                       return (
                         <circle
                           cx={cx}
                           cy={cy}
-                          r={4.5}
+                          r={5.5}
                           fill={color}
-                          stroke="#111827"
-                          strokeWidth={1}
+                          stroke="#0f172a"
+                          strokeWidth={1.5}
                         />
                       );
                     }}

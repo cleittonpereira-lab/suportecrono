@@ -67,7 +67,7 @@ function EnsaiosDashboard() {
     o.amostras.flatMap((a) => a.ensaios.filter((e) => e.status !== "concluido").map((e) => ({ os: o, a, e }))),
   );
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8">
+    <div className="w-full px-4 sm:px-6 md:px-8 py-8">
       {/* Header */}
       <div className="mb-8">
         <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Suporte LAB · Ensaios Especiais</div>
@@ -77,12 +77,30 @@ function EnsaiosDashboard() {
         </p>
       </div>
 
+      {/* Banner de Acesso à Nova Central de Relatórios */}
+      <div className="mb-8 p-4 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent rounded-xl border border-primary/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <Badge className="bg-primary text-primary-foreground text-[10px]">Novo</Badge>
+            <h3 className="font-bold text-sm text-foreground">Central de Processamento de Relatórios & SLAs</h3>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            Veja a fila de ensaios finalizados na bancada (Gantt), gerencie o Kanban de digitação e acompanhe os tempos de SLA.
+          </p>
+        </div>
+        <Button asChild className="gap-1.5 shrink-0 bg-primary text-primary-foreground shadow-sm">
+          <Link to="/relatorio/pendentes" search={{ tab: undefined }}>
+            Acessar Central <ArrowRight className="h-4 w-4" />
+          </Link>
+        </Button>
+      </div>
+
       {/* KPIs */}
       <div className="mb-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi label="Ordens de Serviço" value={os.length} icon={FolderKanban} to="/relatorio/os" />
         <Kpi label="Amostras" value={nAmostras} icon={Beaker} to="/relatorio/os" />
         <Kpi label="Ensaios" value={nEnsaios} icon={FlaskConical} to="/relatorio/os" />
-        <Kpi label="Em andamento" value={rascunhos.length} icon={Pencil} accent to="/relatorio/os" />
+        <Kpi label="Em andamento" value={rascunhos.length} icon={Pencil} accent to="/relatorio/pendentes" />
       </div>
 
       {/* Filas de aprovação — verificador/admin */}

@@ -73,6 +73,8 @@ export function PickerWithCreate({
     );
   }
 
+  const displayItems = value && !items.includes(value) ? [value, ...items] : items;
+
   return (
     <div className="flex items-center gap-1">
       <Select value={value || undefined} onValueChange={(v) => onChange(v)}>
@@ -80,10 +82,10 @@ export function PickerWithCreate({
           <SelectValue placeholder={placeholder ?? "Selecione…"} />
         </SelectTrigger>
         <SelectContent>
-          {items.length === 0 ? (
+          {displayItems.length === 0 ? (
             <div className="px-2 py-1.5 text-xs text-muted-foreground">Nenhum item cadastrado</div>
           ) : (
-            items.map((it) => (
+            displayItems.map((it) => (
               <SelectItem key={it} value={it}>
                 {it}
               </SelectItem>

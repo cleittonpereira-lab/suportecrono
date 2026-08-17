@@ -387,7 +387,7 @@ export function OedReportPhotoPage({
                   )}
                 </div>
                 <span className="text-[8.5px] font-bold text-[#141414] mt-1 text-center truncate max-w-full">
-                  {p.caption || (p.kind === "inicial" ? "Aspecto Inicial" : p.kind === "final" ? "Aspecto Final" : `Foto ${idx + 1}`)}
+                  {p.caption || (p.kind === "moldagem" ? "Aspecto Inicial" : p.kind === "ruptura" ? "Aspecto Final" : `Foto ${idx + 1}`)}
                 </span>
               </div>
             ))}

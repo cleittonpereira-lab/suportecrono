@@ -134,14 +134,30 @@ export function isAdensamentoTag(raw: string | null | undefined): boolean {
   );
 }
 
+/** true se o ensaio for Cisalhamento Direto. */
+export function isCisalhamentoDiretoTag(raw: string | null | undefined): boolean {
+  const t = (raw ?? "").toLowerCase().replace(/\s+/g, "");
+  if (!t) return false;
+  return (
+    t.includes("cisalhamento") ||
+    t.includes("cisalh.") ||
+    t.includes("directshear") ||
+    t.includes("cdinun") ||
+    t.includes("cdnat") ||
+    t === "cd" ||
+    t === "cdin"
+  );
+}
+
 /** Metodologias com processamento/relatório disponíveis hoje. */
-export type SupportedMethodology = "mesp-a" | "triaxial-cid" | "adensamento";
+export type SupportedMethodology = "mesp-a" | "triaxial-cid" | "adensamento" | "cisalhamento-direto";
 
 export function detectMethodology(
   ensaio: string | null | undefined,
   tipoEnsaio?: string | null,
 ): SupportedMethodology | null {
   const candidates = [ensaio, tipoEnsaio];
+  if (candidates.some((c) => isCisalhamentoDiretoTag(c))) return "cisalhamento-direto";
   if (candidates.some((c) => isMespANaturalTag(c))) return "mesp-a";
   if (candidates.some((c) => isTriaxialCidTag(c))) return "triaxial-cid";
   if (candidates.some((c) => isAdensamentoTag(c))) return "adensamento";
@@ -150,6 +166,7 @@ export function detectMethodology(
 
 export function methodologyRoute(m: SupportedMethodology): string {
   switch (m) {
+    case "cisalhamento-direto": return "/relatorio/cisalhamento-direto";
     case "mesp-a": return "/relatorio/mesp-a";
     case "triaxial-cid": return "/relatorio/triaxial-cid";
     case "adensamento": return "/relatorio/adensamento";

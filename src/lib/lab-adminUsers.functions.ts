@@ -93,6 +93,17 @@ export const createAppUser = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     const uid = created.user?.id;
     if (uid) {
+      const defaultUsername = data.email.split("@")[0].toLowerCase();
+      // Ativa o perfil imediatamente e define o username padrão
+      await supabaseAdmin
+        .from("profiles")
+        .update({
+          status: "ativo",
+          username: defaultUsername,
+          nome: data.email.split("@")[0],
+        })
+        .eq("id", uid);
+
       await supabaseAdmin.from("user_roles").delete().eq("user_id", uid);
       await supabaseAdmin.from("user_roles").insert({ user_id: uid, role: data.role });
     }
@@ -118,7 +129,38 @@ export const setUserPassword = createServerFn({ method: "POST" })
       email_confirm: true,
     });
     if (error) throw new Error(error.message);
+    // Garante que o status do perfil está ativo
+    await supabaseAdmin
+      .from("profiles")
+      .update({ status: "ativo" })
+      .eq("id", data.userId);
     return { ok: true };
+  });
+
+/** Sincroniza e ativa todos os perfis cadastrados que estejam pendentes ou sem username */
+export const syncAndActivateUsers = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: profs, error } = await supabaseAdmin.from("profiles").select("id, email, username, status");
+    if (error) throw new Error(error.message);
+
+    let updatedCount = 0;
+    for (const p of profs || []) {
+      const updates: any = {};
+      if (!p.username && p.email) {
+        updates.username = p.email.split("@")[0].toLowerCase();
+      }
+      if (p.status === "pendente") {
+        updates.status = "ativo";
+      }
+      if (Object.keys(updates).length > 0) {
+        await supabaseAdmin.from("profiles").update(updates).eq("id", p.id);
+        updatedCount++;
+      }
+    }
+    return { ok: true, updatedCount };
   });
 
 export const deleteAppUser = createServerFn({ method: "POST" })
@@ -341,9 +383,12 @@ export const inviteAppUser = createServerFn({ method: "POST" })
     const uid = invited.user?.id;
     if (!uid) throw new Error("Não foi possível criar o usuário.");
 
-    // 3) grava nome + username no profile (trigger de novo usuário já criou a linha)
-    const update: { nome: string; username?: string } = { nome: data.nome };
-    if (data.username) update.username = data.username;
+    // 3) grava nome + username + status ativo no profile (trigger de novo usuário já criou a linha)
+    const update: { nome: string; username?: string; status?: "ativo" } = {
+      nome: data.nome,
+      status: "ativo",
+      username: data.username || data.email.split("@")[0].toLowerCase(),
+    };
     await supabaseAdmin.from("profiles").update(update).eq("id", uid);
 
     // 4) papel inicial

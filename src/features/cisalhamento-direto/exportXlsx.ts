@@ -261,7 +261,7 @@ function addOfficialReportFooter(
       tl: { col: 3.3, row: rTop - 1 },
       br: { col: 4.7, row: rTop },
       editAs: "twoCell",
-    });
+    } as any);
   }
 
   // Traço de Assinatura
@@ -518,7 +518,7 @@ export async function buildCDRawDataXlsxWorkbook({
       tl: { col: 0.05, row: chartStartRow - 1 },
       br: { col: 6.95, row: chartEndRow },
       editAs: "twoCell",
-    });
+    } as any);
     r1 = chartEndRow + 1;
     ws1.getRow(r1).height = 14;
     r1++;
@@ -558,7 +558,7 @@ export async function buildCDRawDataXlsxWorkbook({
   });
   r1++;
 
-  const rowsData = [
+  const rowsData: [string, string, string, (res: CDSpecimenResults) => number | "—"][] = [
     ["Tensão Normal Efetiva Aplicada", "σ'n", "kPa", (res: CDSpecimenResults) => fmt(res.sigmaN, 0)],
     ["Diâmetro / Dimensão Inicial", "D₀", "mm", (res: CDSpecimenResults) => fmt(res.D0, 2)],
     ["Altura Inicial", "H₀", "mm", (res: CDSpecimenResults) => fmt(res.H0, 2)],
@@ -645,7 +645,7 @@ export async function buildCDRawDataXlsxWorkbook({
       tl: { col: 0.05, row: g1Start - 1 },
       br: { col: 6.95, row: g1End },
       editAs: "twoCell",
-    });
+    } as any);
     rC = g1End + 1;
     wsCharts.getRow(rC).height = 14;
     rC++;
@@ -662,7 +662,7 @@ export async function buildCDRawDataXlsxWorkbook({
       tl: { col: 0.05, row: g2Start - 1 },
       br: { col: 6.95, row: g2End },
       editAs: "twoCell",
-    });
+    } as any);
     rC = g2End + 1;
     wsCharts.getRow(rC).height = 14;
     rC++;
@@ -1066,7 +1066,7 @@ export async function buildCDRawDataXlsxWorkbook({
           tl: { col: colStart, row: mImgStart - 1 },
           br: { col: colEnd, row: mImgEnd },
           editAs: "twoCell",
-        });
+        } as any);
       }
     });
 
@@ -1106,7 +1106,7 @@ export async function buildCDRawDataXlsxWorkbook({
           tl: { col: colStart, row: rupStart - 1 },
           br: { col: colEnd, row: rupEnd },
           editAs: "twoCell",
-        });
+        } as any);
       }
     });
 

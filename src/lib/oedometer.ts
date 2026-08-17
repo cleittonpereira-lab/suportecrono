@@ -348,7 +348,7 @@ export const seedSample: SampleProps = {
   date: "31/07/2025",
   revision: "R00",
   operator: "Eng. Lab. Suporte Infra",
-  technicalResp: "CREA: 5063078630",
+  technicalResp: "Engº Maurício Malanconi - CREA: 5063078630",
   description: "Argila siltosa de coloração cinza",
   code: "6128-AD-01",
   os: "OS-2025-0731",

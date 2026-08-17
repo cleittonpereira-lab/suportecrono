@@ -271,7 +271,6 @@ export async function buildOedometerXlsxWorkbook({
   top2.alignment = { horizontal: "center", vertical: "middle" };
   ws2.getRow(r2).height = 26;
   r2 += 2;
-
   // Gráfico 1: e x log sigma
   const eCurveData = stagesCalc.map((s) => ({ sigma: s.sigma, e: s.e, phase: s.phase }));
   const casObj = null; // Podem ser passados se disponíveis
@@ -283,7 +282,7 @@ export async function buildOedometerXlsxWorkbook({
       tl: { col: 0.2, row: r2 },
       br: { col: 6.8, row: r2 + 20 },
       editAs: "twoCell",
-    });
+    } as any);
     r2 += 22;
   }
 
@@ -295,7 +294,7 @@ export async function buildOedometerXlsxWorkbook({
       tl: { col: 0.2, row: r2 },
       br: { col: 6.8, row: r2 + 18 },
       editAs: "twoCell",
-    });
+    } as any);
   }
 
   // =========================================================================
@@ -407,7 +406,7 @@ export async function buildOedometerXlsxWorkbook({
             tl: { col: colStart, row: imgRowStart - 1 },
             br: { col: colEnd, row: imgRowEnd },
             editAs: "twoCell",
-          });
+          } as any);
         }
       }
     }
@@ -419,7 +418,7 @@ export async function buildOedometerXlsxWorkbook({
       const cellEnd = i === 0 ? "B" : i === 1 ? "E" : "G";
       wsPh.mergeCells(`${cellStart}${rPh}:${cellEnd}${rPh}`);
       const legCell = wsPh.getCell(`${cellStart}${rPh}`);
-      legCell.value = p.caption || (p.kind === "inicial" ? "Aspecto Inicial" : "Aspecto Final");
+      legCell.value = p.caption || (p.kind === "moldagem" ? "Aspecto Inicial" : "Aspecto Final");
       legCell.font = { name: "Calibri", size: 10, bold: true };
       legCell.alignment = { horizontal: "center", vertical: "middle" };
       legCell.border = borderBlack;

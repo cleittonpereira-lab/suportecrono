@@ -10,7 +10,7 @@ import {
   Label as RLabel,
   Legend,
 } from "recharts";
-import type { CDSample, CDSpecimen, CDSpecimenResults, CDEnvelopeResult } from "../types";
+import type { CDSample, CDSpecimen, CDSpecimenResults, CDEnvelopeResult, CDAxisCfg } from "../types";
 import { ReportHeader, ReportFooter, REPORT_PAGE_STYLE } from "@/components/report/ReportShell";
 import type { ReportNorm } from "@/components/report/ReportShell";
 
@@ -353,14 +353,38 @@ export function CDReportPage3({
   specimens,
   results,
   totalPages = 6,
+  axisCfg,
 }: {
   sample: CDSample;
   specimens: CDSpecimen[];
   results: CDSpecimenResults[];
   totalPages?: number;
+  axisCfg?: CDAxisCfg;
 }) {
   const lineColors = ["#1e40af", "#b45309", "#15803d", "#7e22ce", "#b91c1c", "#0284c7"];
   const title = getReportTitle(sample.testCondition);
+
+  // Escala Deformação Horizontal
+  const ehMax = axisCfg?.ehMax && axisCfg.ehMax > 0 ? axisCfg.ehMax : 20;
+  const ehStep = ehMax <= 10 ? 1 : ehMax <= 25 ? 2 : 5;
+  const ehTicks = React.useMemo(() => {
+    const list: number[] = [];
+    for (let t = 0; t <= ehMax; t += ehStep) list.push(t);
+    return list;
+  }, [ehMax, ehStep]);
+
+  // Escala Deformação Vertical
+  const evMin = axisCfg?.vertDispMin !== undefined && axisCfg.vertDispMin !== 0 ? axisCfg.vertDispMin : -10;
+  const evMax = axisCfg?.vertDispMax !== undefined && axisCfg.vertDispMax !== 0 ? axisCfg.vertDispMax : 10;
+  const evStep = (evMax - evMin) <= 10 ? 1 : (evMax - evMin) <= 25 ? 2 : 5;
+  const evTicks = React.useMemo(() => {
+    const list: number[] = [];
+    for (let t = evMin; t <= evMax; t += evStep) list.push(t);
+    return list;
+  }, [evMin, evMax, evStep]);
+
+  // Escala Tensão Cisalhante
+  const tauMax = axisCfg?.tauMax && axisCfg.tauMax > 0 ? axisCfg.tauMax : "auto";
 
   return (
     <div style={REPORT_PAGE_STYLE} className="printable-report">
@@ -383,8 +407,8 @@ export function CDReportPage3({
                 <XAxis
                   type="number"
                   dataKey="horizStrainPct"
-                  domain={[0, 20]}
-                  ticks={[0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20]}
+                  domain={[0, ehMax]}
+                  ticks={ehTicks}
                   tick={{ fontSize: 8 }}
                 >
                   <RLabel
@@ -396,8 +420,8 @@ export function CDReportPage3({
                 </XAxis>
                 <YAxis
                   type="number"
-                  domain={[-10, 10]}
-                  ticks={[-10, -8, -6, -4, -2, 0, 2, 4, 6, 8, 10]}
+                  domain={[evMin, evMax]}
+                  ticks={evTicks}
                   tick={{ fontSize: 8 }}
                   reversed
                 >
@@ -441,8 +465,8 @@ export function CDReportPage3({
                 <XAxis
                   type="number"
                   dataKey="horizStrainPct"
-                  domain={[0, 20]}
-                  ticks={[0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20]}
+                  domain={[0, ehMax]}
+                  ticks={ehTicks}
                   tick={{ fontSize: 8 }}
                 >
                   <RLabel
@@ -454,7 +478,7 @@ export function CDReportPage3({
                 </XAxis>
                 <YAxis
                   type="number"
-                  domain={[0, "auto"]}
+                  domain={[0, tauMax]}
                   tick={{ fontSize: 8 }}
                 >
                   <RLabel
@@ -502,22 +526,25 @@ export function CDReportPage4({
   results,
   envelope,
   totalPages = 6,
+  axisCfg,
 }: {
   sample: CDSample;
   specimens: CDSpecimen[];
   results: CDSpecimenResults[];
   envelope: CDEnvelopeResult | null;
   totalPages?: number;
+  axisCfg?: CDAxisCfg;
 }) {
   const lineColors = ["#1e40af", "#b45309", "#15803d", "#7e22ce", "#b91c1c", "#0284c7"];
   const title = getReportTitle(sample.testCondition);
 
-  // Eixo horizontal limita o gráfico com base nas tensões normais dos CPs
+  // Eixo horizontal limita o gráfico com base nas tensões normais dos CPs ou axisCfg
   const xMax = React.useMemo(() => {
+    if (axisCfg?.sigmaNMax && axisCfg.sigmaNMax > 0) return axisCfg.sigmaNMax;
     const sigmaVals = results.map((r) => r.sigmaN);
     const maxVal = sigmaVals.length ? Math.max(...sigmaVals, 100) : 100;
     return Math.max(100, Math.ceil((maxVal * 1.25) / 50) * 50);
-  }, [results]);
+  }, [results, axisCfg?.sigmaNMax]);
 
   const xTicks = React.useMemo(() => {
     const list: number[] = [];
@@ -525,6 +552,21 @@ export function CDReportPage4({
     for (let t = 0; t <= xMax; t += step) list.push(t);
     return list;
   }, [xMax]);
+
+  const yMax = React.useMemo(() => {
+    if (axisCfg?.tauEnvelopeMax && axisCfg.tauEnvelopeMax > 0) return axisCfg.tauEnvelopeMax;
+    const tauVals = results.map((r) => r.tauPeak);
+    const envEnd = envelope ? envelope.c + xMax * Math.tan((envelope.phiDeg * Math.PI) / 180) : 100;
+    const maxVal = Math.max(...tauVals, envEnd, 100);
+    return Math.max(100, Math.ceil((maxVal * 1.15) / 50) * 50);
+  }, [results, envelope, xMax, axisCfg?.tauEnvelopeMax]);
+
+  const yTicks = React.useMemo(() => {
+    const list: number[] = [];
+    const step = yMax <= 100 ? 20 : yMax <= 250 ? 50 : 100;
+    for (let t = 0; t <= yMax; t += step) list.push(t);
+    return list;
+  }, [yMax]);
 
   const envelopeLine = React.useMemo(() => {
     if (!envelope) return [];
@@ -577,43 +619,45 @@ export function CDReportPage4({
                   dataKey="sigma"
                   domain={[0, xMax]}
                   ticks={xTicks}
-                  tick={{ fontSize: 8 }}
+                  tick={{ fontSize: 8.5 }}
                 >
                   <RLabel
-                    value="Tensão Normal σ'n [kPa]"
+                    value="Tensão Normal Efetiva σ'n [kPa]"
                     offset={-15}
                     position="insideBottom"
-                    style={{ fontSize: 9, fontWeight: 600, fill: "#374151" }}
+                    style={{ fontSize: 9.5, fontWeight: 600, fill: "#1e293b" }}
                   />
                 </XAxis>
                 <YAxis
                   type="number"
-                  domain={[0, "auto"]}
-                  tick={{ fontSize: 8 }}
+                  dataKey="tau"
+                  domain={[0, yMax]}
+                  ticks={yTicks}
+                  tick={{ fontSize: 8.5 }}
                 >
                   <RLabel
                     value="Tensão Cisalhante τ [kPa]"
                     angle={-90}
                     position="insideLeft"
                     offset={5}
-                    style={{ fontSize: 9, fontWeight: 600, fill: "#374151" }}
+                    style={{ fontSize: 9.5, fontWeight: 600, fill: "#1e293b" }}
                   />
                 </YAxis>
 
                 <Legend
                   verticalAlign="top"
                   align="center"
-                  wrapperStyle={{ top: -5, fontSize: 8.5, fontWeight: 500 }}
+                  wrapperStyle={{ top: -6, fontSize: 9, fontWeight: 500 }}
                 />
 
                 {/* Linha da Envoltória Linear */}
                 {envelope && (
                   <Line
-                    name="Envoltória Linear (τ = c' + σ'·tan φ')"
+                    name={`Envoltória (c' = ${fmt(envelope.c, 2)} kPa, φ' = ${fmt(envelope.phiDeg, 2)}°)`}
                     data={envelopeLine}
                     dataKey="tau"
-                    stroke="#374151"
-                    strokeWidth={2}
+                    stroke="#0f172a"
+                    strokeWidth={2.5}
                     dot={false}
                     activeDot={false}
                   />
@@ -622,23 +666,25 @@ export function CDReportPage4({
                 {/* Pontos de Ruptura Individuais Sólidos e Discretos */}
                 {results.map((r, i) => {
                   const color = specimens[i]?.color || lineColors[i % lineColors.length];
+                  const name = `${specimens[i]?.displayId ?? `CP${i + 1}`} (σn = ${fmt(r.sigmaN, 0)} kPa)`;
                   return (
                     <Scatter
                       key={i}
-                      name={`${specimens[i]?.displayId ?? `CP-${i + 1}`} (σn = ${fmt(r.sigmaN, 0)} kPa)`}
-                      data={[{ sigma: r.sigmaN, tau: r.tauPeak }]}
+                      name={name}
+                      data={[{ sigma: r.sigmaN, tau: r.tauPeak, x: r.sigmaN, y: r.tauPeak }]}
+                      dataKey="tau"
                       fill={color}
                       shape={(props: any) => {
                         const { cx, cy } = props;
-                        if (cx == null || cy == null || isNaN(cx) || isNaN(cy)) return null;
+                        if (cx == null || cy == null || isNaN(cx) || isNaN(cy)) return <g />;
                         return (
                           <circle
                             cx={cx}
                             cy={cy}
-                            r={4.5}
+                            r={5.5}
                             fill={color}
-                            stroke="#111827"
-                            strokeWidth={1}
+                            stroke="#0f172a"
+                            strokeWidth={1.5}
                           />
                         );
                       }}
@@ -889,6 +935,72 @@ export function CDReportPage6({
       </div>
 
       <ReportFooter sample={sample} />
+    </div>
+  );
+}
+
+/* =========================================================================================
+   COMPONENTE COMPLETO DE TODAS AS PÁGINAS DO RELATÓRIO
+   ========================================================================================= */
+export function CDReportPages({
+  sample,
+  specimens,
+  results,
+  envelope,
+  photos = [],
+  axisCfg,
+  totalPages,
+}: {
+  sample: CDSample;
+  specimens: CDSpecimen[];
+  results: CDSpecimenResults[];
+  envelope: CDEnvelopeResult | null;
+  photos?: { id: string; dataUrl: string; kind: string; specimenId?: string; caption?: string }[];
+  axisCfg?: CDAxisCfg;
+  totalPages?: number;
+}) {
+  const photoPagesCount = Math.max(1, Math.ceil(specimens.length / 3));
+  const calcTotal = totalPages ?? (5 + photoPagesCount);
+
+  return (
+    <div className="flex flex-col items-center gap-8">
+      {/* Página 1 */}
+      <div className="w-[210mm] h-[297mm] shadow-2xl bg-white shrink-0 overflow-hidden">
+        <CDReportPage1 sample={sample} specimens={specimens} totalPages={calcTotal} />
+      </div>
+
+      {/* Página 2 */}
+      <div className="w-[210mm] h-[297mm] shadow-2xl bg-white shrink-0 overflow-hidden">
+        <CDReportPage2 sample={sample} specimens={specimens} results={results} totalPages={calcTotal} />
+      </div>
+
+      {/* Página 3 */}
+      <div className="w-[210mm] h-[297mm] shadow-2xl bg-white shrink-0 overflow-hidden">
+        <CDReportPage3 sample={sample} specimens={specimens} results={results} totalPages={calcTotal} axisCfg={axisCfg} />
+      </div>
+
+      {/* Página 4 */}
+      <div className="w-[210mm] h-[297mm] shadow-2xl bg-white shrink-0 overflow-hidden">
+        <CDReportPage4 sample={sample} specimens={specimens} results={results} envelope={envelope} totalPages={calcTotal} axisCfg={axisCfg} />
+      </div>
+
+      {/* Páginas de Fotos (Página 5 em diante) */}
+      {Array.from({ length: photoPagesCount }).map((_, pIdx) => (
+        <div key={pIdx} className="w-[210mm] h-[297mm] shadow-2xl bg-white shrink-0 overflow-hidden">
+          <CDReportPage5
+            sample={sample}
+            specimens={specimens}
+            photos={photos}
+            pageIndex={pIdx}
+            totalPages={calcTotal}
+          />
+        </div>
+      ))}
+
+      {/* Página Final: Fórmulas */}
+      <div className="w-[210mm] h-[297mm] shadow-2xl bg-white shrink-0 overflow-hidden">
+        <CDReportPage6 sample={sample} totalPages={calcTotal} />
+      </div>
     </div>
   );
 }

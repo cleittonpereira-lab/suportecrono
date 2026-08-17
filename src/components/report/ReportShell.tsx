@@ -61,6 +61,8 @@ export interface ReportNorm {
 export const REPORT_PAGE_STYLE: CSSProperties = {
   width: "210mm",
   height: "297mm",
+  maxWidth: "210mm",
+  maxHeight: "297mm",
   padding: "5mm 8mm",
   background: "#fff",
   color: "#0f172a",
@@ -70,6 +72,7 @@ export const REPORT_PAGE_STYLE: CSSProperties = {
   display: "flex",
   flexDirection: "column",
   position: "relative",
+  overflow: "hidden",
 };
 
 export function ReportHeader({

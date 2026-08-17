@@ -56,6 +56,8 @@ export interface Amostra {
   description?: string;
   granulometricDescription?: string;
   code?: string;
+  sampleType?: string; // Bloco indeformado, etc.
+  materialType?: string;
   // Localização
   coords?: Coords;
   // Registro fotográfico
@@ -72,6 +74,9 @@ export interface Ensaio {
   updatedAt: string;
   /** Nome curto opcional (ex.: "CP1..CP3 · σ3 = 100/200/400"). */
   label?: string;
+  /** Nome / sigla de referência (ex.: "CD4.IN", "TRI3.CU"). */
+  nome?: string;
+  sigla?: string;
   /** Operador/laboratorista responsável por ESTE ensaio (não da OS). */
   operator?: string;
   /** Registro fotográfico do ensaio (moldagem/ruptura). */
