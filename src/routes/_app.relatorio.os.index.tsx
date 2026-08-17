@@ -860,13 +860,47 @@ function CentralOsPage() {
     });
   }
 
+  const kpiStats = useMemo(() => {
+    let totalOs = osGroups.length;
+    let osConcluidas = 0;
+    let osEmAndamento = 0;
+    let totalEnsaios = 0;
+    let ensaiosAprovados = 0;
+    let ensaiosEmDigitacao = 0;
+    let ensaiosFilaGantt = 0;
+
+    for (const g of osGroups) {
+      const gTotal = g.ensaios.length;
+      const gAprov = g.ensaios.filter((e) => e.status === "aprovado" || e.status === "concluido_externo").length;
+      if (gTotal > 0 && gAprov === gTotal) {
+        osConcluidas++;
+      } else {
+        osEmAndamento++;
+      }
+      totalEnsaios += gTotal;
+      ensaiosAprovados += gAprov;
+      ensaiosEmDigitacao += g.ensaios.filter((e) => e.status === "em_digitacao" || e.status === "verificacao").length;
+      ensaiosFilaGantt += g.ensaios.filter((e) => e.status === "programado" || e.status === "execucao").length;
+    }
+
+    return {
+      totalOs,
+      osConcluidas,
+      osEmAndamento,
+      totalEnsaios,
+      ensaiosAprovados,
+      ensaiosEmDigitacao,
+      ensaiosFilaGantt,
+    };
+  }, [osGroups]);
+
   return (
     <div className="space-y-6 w-full px-4 sm:px-6 md:px-8 py-6 pb-20">
       {/* Header Central da OS */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-4">
         <div>
-          <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground flex items-center gap-1.5 font-semibold">
-            <FolderKanban className="h-3.5 w-3.5 text-primary" /> Painel de Laudos por Ordem de Serviço
+          <div className="text-[11px] uppercase tracking-[0.18em] text-primary flex items-center gap-1.5 font-bold">
+            <Sparkles className="h-3.5 w-3.5 text-amber-500" /> PAINEL INTEGRADO DE LAUDOS POR ORDEM DE SERVIÇO
           </div>
           <h1 className="mt-1 font-display text-2xl md:text-3xl font-bold tracking-tight text-foreground">
             Central de Ordens de Serviço & Laudos
@@ -880,10 +914,10 @@ function CentralOsPage() {
           <Button
             variant="outline"
             asChild
-            className="gap-1.5"
+            className="gap-1.5 shadow-2xs"
           >
             <Link to="/relatorio/pendentes" search={{ tab: undefined }}>
-              <Layers className="h-4 w-4 text-muted-foreground" /> Central de Relatórios & SLAs
+              <Layers className="h-4 w-4 text-primary" /> Central de Relatórios & SLAs
             </Link>
           </Button>
           <Button
@@ -898,19 +932,94 @@ function CentralOsPage() {
         </div>
       </div>
 
+      {/* Cards de Indicadores Rápidos (Identidade Visual 100% Unificada) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <Card className="border-l-4 border-l-amber-500 bg-card/60 shadow-2xs">
+          <CardHeader className="p-3 pb-1">
+            <CardTitle className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Total de OS
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-3 pt-0">
+            <div className="text-xl font-bold text-foreground">{kpiStats.totalOs}</div>
+            <div className="text-[10px] text-muted-foreground">Ordens cadastradas</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-l-4 border-l-sky-500 bg-card/60 shadow-2xs">
+          <CardHeader className="p-3 pb-1">
+            <CardTitle className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Em Andamento
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-3 pt-0">
+            <div className="text-xl font-bold text-sky-700 dark:text-sky-400">{kpiStats.osEmAndamento}</div>
+            <div className="text-[10px] text-muted-foreground">OS ativas na esteira</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-l-4 border-l-emerald-500 bg-card/60 shadow-2xs">
+          <CardHeader className="p-3 pb-1">
+            <CardTitle className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              100% Concluídas
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-3 pt-0">
+            <div className="text-xl font-bold text-emerald-700 dark:text-emerald-400">{kpiStats.osConcluidas}</div>
+            <div className="text-[10px] text-muted-foreground">Laudos emitidos</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-l-4 border-l-indigo-500 bg-card/60 shadow-2xs">
+          <CardHeader className="p-3 pb-1">
+            <CardTitle className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Total de Laudos
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-3 pt-0">
+            <div className="text-xl font-bold text-foreground">{kpiStats.totalEnsaios}</div>
+            <div className="text-[10px] text-muted-foreground">Ensaios vinculados</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-l-4 border-l-violet-500 bg-card/60 shadow-2xs">
+          <CardHeader className="p-3 pb-1">
+            <CardTitle className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Em Digitação
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-3 pt-0">
+            <div className="text-xl font-bold text-violet-700 dark:text-violet-400">{kpiStats.ensaiosEmDigitacao}</div>
+            <div className="text-[10px] text-muted-foreground">Cálculos & gráficos</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-l-4 border-l-emerald-600 bg-card/60 shadow-2xs">
+          <CardHeader className="p-3 pb-1">
+            <CardTitle className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Laudos Aprovados
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-3 pt-0">
+            <div className="text-xl font-bold text-emerald-700 dark:text-emerald-400">{kpiStats.ensaiosAprovados}</div>
+            <div className="text-[10px] text-muted-foreground">Prontos p/ entrega</div>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Barra de Busca e Filtros */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-muted/20 p-3 rounded-lg border">
         <div className="relative w-full sm:max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
             placeholder="Buscar por OS, cliente, obra, local ou amostra..."
-            className="pl-9 text-xs"
+            className="pl-9 text-xs bg-background"
           />
         </div>
 
-        <div className="flex items-center gap-1 bg-muted/40 p-1 rounded-md border text-xs">
+        <div className="flex items-center gap-1 bg-background p-0.5 rounded-md border text-xs">
           <Button
             size="sm"
             variant={statusFilter === "all" ? "secondary" : "ghost"}
@@ -925,7 +1034,7 @@ function CentralOsPage() {
             className="h-7 text-xs font-medium"
             onClick={() => setStatusFilter("em_andamento")}
           >
-            Em Andamento
+            Em Andamento ({kpiStats.osEmAndamento})
           </Button>
           <Button
             size="sm"
@@ -933,7 +1042,7 @@ function CentralOsPage() {
             className="h-7 text-xs font-medium"
             onClick={() => setStatusFilter("concluidas")}
           >
-            Concluídas
+            Concluídas ({kpiStats.osConcluidas})
           </Button>
         </div>
       </div>

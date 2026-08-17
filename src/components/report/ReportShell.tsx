@@ -75,6 +75,15 @@ export const REPORT_PAGE_STYLE: CSSProperties = {
   overflow: "hidden",
 };
 
+export function formatCoordsText(sample: ReportSample): string {
+  const parts: string[] = [];
+  if (sample.coordN) parts.push(`N: ${sample.coordN}`);
+  if (sample.coordE) parts.push(`E: ${sample.coordE}`);
+  if (sample.coordCota) parts.push(`Cota: ${sample.coordCota} m`);
+  if (sample.coordDatum) parts.push(`(${sample.coordDatum})`);
+  return parts.length > 0 ? parts.join(" | ") : "—";
+}
+
 export function ReportHeader({
   sample,
   page,
@@ -142,23 +151,20 @@ export function ReportHeader({
             <Field label="Amostra:" value={sample.reportNumber} />
             <Field label="Revisão:" value={sample.revision} />
           </tr>
-          {(sample.coordN != null || sample.coordE != null || sample.coordCota != null) && (
-            <tr>
-              <Field label="N (m):" value={sample.coordN ?? "—"} />
-              <Field label="E (m):" value={sample.coordE ?? "—"} />
-              <Field label="Cota (m):" value={sample.coordCota ?? "—"} />
-            </tr>
-          )}
           <tr className="border-t border-[#141414]">
-            <td className={cell} colSpan={3}>
+            <td className={`${cell} w-2/3`} colSpan={2}>
               <span className="font-semibold">Descrição Tátil-Visual:</span>{" "}
-              {sample.description}
+              {sample.description || "—"}
+            </td>
+            <td className={`${cell} w-1/3 text-left`}>
+              <span className="font-semibold">Coordenadas:</span>{" "}
+              {formatCoordsText(sample)}
             </td>
           </tr>
           <tr>
             <td className={cell} colSpan={2}>
               <span className="font-semibold">Descrição Granulométrica:</span>{" "}
-              {sample.granulometricDescription}
+              {sample.granulometricDescription || "—"}
             </td>
             <td className={`${cell} text-right`}>
               <span className="font-semibold">Folha:</span> {page} / {total}

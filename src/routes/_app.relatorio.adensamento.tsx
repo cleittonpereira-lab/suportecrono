@@ -53,6 +53,8 @@ import {
   ZoomIn,
   ZoomOut,
   CircleDot,
+  User,
+  FileEdit,
 } from "lucide-react";
 import { SuporteLogo } from "@/components/suporte-logo";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -935,35 +937,28 @@ export function AdensamentoPage() {
         </div>
       </div>
 
-      {/* Barra Superior de Operador e Digitador (Padrão Cisalhamento Direto) */}
-      <div className="mb-4 grid gap-3 rounded-lg border border-border bg-card p-3 sm:grid-cols-2">
+      {/* Barra Superior: Responsáveis com herança automática (Gantt & Login) */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-card/60 px-4 py-2.5 shadow-xs">
         <div className="flex items-center gap-2">
-          <Label className="text-xs text-muted-foreground whitespace-nowrap">
-            Operador do ensaio (Laboratorista)
-          </Label>
-          <div className="flex-1">
-            <PickerWithCreate
-              kind="operators"
-              value={sample.operator ?? ""}
-              onChange={(v) => setSample((s) => ({ ...s, operator: v }))}
-              placeholder="Selecione o laboratorista…"
-              createLabel="Novo laboratorista"
-            />
-          </div>
+          <User className="h-4 w-4 text-primary" />
+          <span className="text-xs text-muted-foreground font-medium">Operador Bancada (Gantt):</span>
+          <Badge variant="secondary" className="font-semibold text-xs text-foreground px-2 py-0.5">
+            {sample.operator || "Rosângela Oliveira"}
+          </Badge>
         </div>
         <div className="flex items-center gap-2">
-          <Label className="text-xs text-muted-foreground whitespace-nowrap">
-            Digitado por
-          </Label>
-          <div className="flex-1">
-            <PickerWithCreate
-              kind="typists"
-              value={(sample as any).typedBy ?? sample.operator ?? ""}
-              onChange={(v) => setSample((s: any) => ({ ...s, typedBy: v }))}
-              placeholder="Selecione quem digitou…"
-              createLabel="Novo digitador"
-            />
-          </div>
+          <FileEdit className="h-4 w-4 text-primary" />
+          <span className="text-xs text-muted-foreground font-medium">Digitado por (Login):</span>
+          <Badge variant="secondary" className="font-semibold text-xs text-foreground px-2 py-0.5">
+            {(sample as any).typedBy || currentUserName}
+          </Badge>
+        </div>
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="h-4 w-4 text-emerald-600" />
+          <span className="text-xs text-muted-foreground font-medium">Resp. Técnico:</span>
+          <span className="text-xs font-semibold text-foreground">
+            {sample.technicalResp || "Engº Maurício Malanconi - CREA: 5063078630"}
+          </span>
         </div>
       </div>
 
@@ -3972,13 +3967,23 @@ function ReportHeader({ sample, page, total }: { sample: SampleProps; page: numb
             <Field label="Revisão:" value={sample.revision} />
           </tr>
           <tr className="border-t border-[#141414]">
-            <td className={cell} colSpan={3}>
-              <span className="font-semibold">Descrição Tátil-Visual:</span> {sample.description}
+            <td className={`${cell} w-2/3`} colSpan={2}>
+              <span className="font-semibold">Descrição Tátil-Visual:</span> {sample.description || "—"}
+            </td>
+            <td className={`${cell} w-1/3 text-left`}>
+              <span className="font-semibold">Coordenadas:</span> {(() => {
+                const parts: string[] = [];
+                if ((sample as any).coordN) parts.push(`N: ${(sample as any).coordN}`);
+                if ((sample as any).coordE) parts.push(`E: ${(sample as any).coordE}`);
+                if ((sample as any).coordCota) parts.push(`Cota: ${(sample as any).coordCota} m`);
+                if ((sample as any).datum) parts.push(`(${(sample as any).datum})`);
+                return parts.length > 0 ? parts.join(" | ") : "—";
+              })()}
             </td>
           </tr>
           <tr>
             <td className={cell} colSpan={2}>
-              <span className="font-semibold">Descrição Granulométrica:</span> {sample.granulometricDescription}
+              <span className="font-semibold">Descrição Granulométrica:</span> {sample.granulometricDescription || "—"}
             </td>
             <td className={`${cell} text-right`}>
               <span className="font-semibold">Folha:</span> {page} / {total}

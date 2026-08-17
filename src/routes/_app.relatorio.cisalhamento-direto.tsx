@@ -43,6 +43,8 @@ import {
   FileSpreadsheet,
   ZoomIn,
   ZoomOut,
+  User,
+  FileEdit,
   Maximize2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -1085,35 +1087,28 @@ export function CDPage() {
           </div>
         </div>
 
-        {/* Barra Superior de Operador e Digitador (Igual Triaxial CID) */}
-        <div className="mb-4 grid gap-3 rounded-lg border border-border bg-card p-3 sm:grid-cols-2">
+        {/* Barra Superior: Responsáveis com herança automática (Gantt & Login) */}
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-card/60 px-4 py-2.5 shadow-xs">
           <div className="flex items-center gap-2">
-            <Label className="text-xs text-muted-foreground whitespace-nowrap">
-              Operador do ensaio (Laboratorista)
-            </Label>
-            <div className="flex-1">
-              <PickerWithCreate
-                kind="operators"
-                value={sample.operator ?? ""}
-                onChange={(v) => updateSample("operator", v)}
-                placeholder="Selecione o laboratorista…"
-                createLabel="Novo laboratorista"
-              />
-            </div>
+            <User className="h-4 w-4 text-primary" />
+            <span className="text-xs text-muted-foreground font-medium">Operador Bancada (Gantt):</span>
+            <Badge variant="secondary" className="font-semibold text-xs text-foreground px-2 py-0.5">
+              {sample.operator || "Rosângela Oliveira"}
+            </Badge>
           </div>
           <div className="flex items-center gap-2">
-            <Label className="text-xs text-muted-foreground whitespace-nowrap">
-              Digitado por
-            </Label>
-            <div className="flex-1">
-              <PickerWithCreate
-                kind="typists"
-                value={sample.typedBy ?? ""}
-                onChange={(v) => updateSample("typedBy", v)}
-                placeholder="Selecione quem digitou…"
-                createLabel="Novo digitador"
-              />
-            </div>
+            <FileEdit className="h-4 w-4 text-primary" />
+            <span className="text-xs text-muted-foreground font-medium">Digitado por (Login):</span>
+            <Badge variant="secondary" className="font-semibold text-xs text-foreground px-2 py-0.5">
+              {sample.typedBy || currentUserName}
+            </Badge>
+          </div>
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-emerald-600" />
+            <span className="text-xs text-muted-foreground font-medium">Resp. Técnico:</span>
+            <span className="text-xs font-semibold text-foreground">
+              {sample.technicalResp || "Engº Maurício Malanconi - CREA: 5063078630"}
+            </span>
           </div>
         </div>
 

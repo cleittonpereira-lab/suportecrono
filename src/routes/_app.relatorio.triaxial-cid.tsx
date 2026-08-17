@@ -34,7 +34,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Download, FileText, Beaker, Activity, BarChart3, FlaskConical, Settings2, Plus, X, Ruler } from "lucide-react";
+import { Download, FileText, Beaker, Activity, BarChart3, FlaskConical, Settings2, Plus, X, Ruler, User, FileEdit, ShieldCheck } from "lucide-react";
 import { ChevronDown, ChevronRight, Info } from "lucide-react";
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
@@ -66,7 +66,7 @@ import {
   type ApprovalRow,
 } from "@/lib/approvals.functions";
 import { supabase } from "@/integrations/supabase/client";
-import { CheckCircle2, XCircle, Clock, ShieldCheck, Send } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, Send } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { PhotoUploader } from "@/features/lab/components/PhotoUploader";
 import { WorkflowFarol } from "@/features/lab/components/WorkflowFarol";
@@ -1257,42 +1257,30 @@ export function TriaxialCidPage() {
 
         <Tabs value={tab} onValueChange={setTab}>
 
-          {/* Operador do ensaio — acima das abas */}
-          {ctx && (
-            <div className="mb-2 grid gap-2 rounded-md border border-border bg-muted/30 px-3 py-1.5 sm:grid-cols-2">
-              <div className="flex items-center gap-2">
-                <Label className="text-[11px] text-muted-foreground whitespace-nowrap">
-                  Operador do ensaio (Laboratorista)
-                </Label>
-                <div className="flex-1">
-                  <PickerWithCreate
-                    kind="operators"
-                    value={ctx.ensaio.operator ?? ""}
-                    onChange={(v) => {
-                      updateSample("operator", v);
-                      labStore.patchEnsaio(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, { operator: v });
-                    }}
-                    placeholder="Selecione o operador…"
-                    createLabel="Novo operador"
-                  />
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Label className="text-[11px] text-muted-foreground whitespace-nowrap">
-                  Digitado por
-                </Label>
-                <div className="flex-1">
-                  <PickerWithCreate
-                    kind="typists"
-                    value={sample.typedBy ?? ""}
-                    onChange={(v) => updateSample("typedBy", v)}
-                    placeholder="Selecione quem digitou…"
-                    createLabel="Novo digitador"
-                  />
-                </div>
-              </div>
+          {/* Barra Superior: Responsáveis com herança automática (Gantt & Login) */}
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-card/60 px-4 py-2.5 shadow-xs">
+            <div className="flex items-center gap-2">
+              <User className="h-4 w-4 text-primary" />
+              <span className="text-xs text-muted-foreground font-medium">Operador Bancada (Gantt):</span>
+              <Badge variant="secondary" className="font-semibold text-xs text-foreground px-2 py-0.5">
+                {sample.operator || ctx?.ensaio?.operator || "Rosângela Oliveira"}
+              </Badge>
             </div>
-          )}
+            <div className="flex items-center gap-2">
+              <FileEdit className="h-4 w-4 text-primary" />
+              <span className="text-xs text-muted-foreground font-medium">Digitado por (Login):</span>
+              <Badge variant="secondary" className="font-semibold text-xs text-foreground px-2 py-0.5">
+                {sample.typedBy || currentUserName}
+              </Badge>
+            </div>
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-emerald-600" />
+              <span className="text-xs text-muted-foreground font-medium">Resp. Técnico:</span>
+              <span className="text-xs font-semibold text-foreground">
+                {sample.technicalResp || "Engº Maurício Malanconi - CREA: 5063078630"}
+              </span>
+            </div>
+          </div>
 
           <div className="flex items-center gap-2">
           <TabsList className={`grid flex-1 ${sample.condition === "natural" ? "grid-cols-5" : "grid-cols-6"}`}>
