@@ -357,8 +357,16 @@ export function AdensamentoPage() {
       }
     }
   }, [amostrasProg, progsGantt, equipsGantt, cad, ctx]);
+
+  const scopeId = ctx?.ensaio?.id || `os/${sample.os || "OS"}/amostra/${sample.code || "AMOSTRA"}/ensaio/adensamento`;
   const phys = useMemo(() => physicalIndices(sample), [sample]);
-  const [stages, setStages] = useState<Stage[]>(() => (!ctx ? seedStages(phys.e0, sample.ringHeight) : []));
+  const [stages, setStages] = useState<Stage[]>(() => {
+    const payloadStages = (ctx?.ensaio?.payload as any)?.stages;
+    if (Array.isArray(payloadStages) && payloadStages.length > 0) return payloadStages;
+    const initialDraft = typeof window !== "undefined" ? loadOedDraft(scopeId) : null;
+    if (Array.isArray(initialDraft?.stages) && initialDraft.stages.length > 0) return initialDraft.stages;
+    return seedStages(phys.e0, sample.ringHeight);
+  });
   const [selectedStage, setSelectedStage] = useState(5);
   const [activeTab, setActiveTab] = useState<string>("ficha");
   const [capsOpen, setCapsOpen] = useState(true);
@@ -368,7 +376,6 @@ export function AdensamentoPage() {
   const [validation, setValidation] = useState<ValidationState>({});
   const [preAdjust, setPreAdjust] = useState<PreconsolidationAdjust>({});
   const [cvAdjust, setCvAdjust] = useState<Record<number, CvLineAdjust>>({});
-  const scopeId = ctx?.ensaio?.id || `os/${sample.os || "OS"}/amostra/${sample.code || "AMOSTRA"}/ensaio/adensamento`;
   const [importOpen, setImportOpen] = useState(false);
   const [reportPreviewOpen, setReportPreviewOpen] = useState(false);
   const [savingVersion, setSavingVersion] = useState(false);
@@ -564,13 +571,16 @@ export function AdensamentoPage() {
     setAxisCfg((s) => ({ ...s, [k]: v }));
 
   const eCurve = useMemo(() => {
+    if (!stages || stages.length === 0) return [];
     return stages.map((st, i) => {
-      const e = voidRatio(phys.e0, sample.ringHeight, st.finalDial);
+      const stFinalDial = st?.finalDial ?? 0;
+      const e = voidRatio(phys.e0, sample.ringHeight, stFinalDial);
+      const prevSigma = i > 0 && stages[i - 1] ? stages[i - 1].sigma : 0;
       return {
-        sigma: st.sigma,
+        sigma: st?.sigma ?? 0,
         e,
-        phase: i > 0 && st.sigma < stages[i - 1].sigma ? "unload" : "load",
-        isSeatingStage: (st as any).isSeatingStage || false,
+        phase: i > 0 && st?.sigma < prevSigma ? "unload" : "load",
+        isSeatingStage: (st as any)?.isSeatingStage || false,
       } as const;
     });
   }, [stages, phys.e0, sample.ringHeight]);
@@ -602,28 +612,35 @@ export function AdensamentoPage() {
   const kvLogDomainShared: [number, number] = [axisCfg.kvMin, axisCfg.kvMax];
 
   const cvTable = useMemo(() => {
+    if (!stages || stages.length === 0) return [];
     return stages.map((st, i) => {
-      const prevDial = i === 0 ? 0 : stages[i - 1].finalDial;
-      const Havg_mm = sample.ringHeight - (prevDial + st.finalDial) / 2;
+      const prevDial = i === 0 ? 0 : (stages[i - 1]?.finalDial ?? 0);
+      const stFinalDial = st?.finalDial ?? 0;
+      const Havg_mm = sample.ringHeight - (prevDial + stFinalDial) / 2;
       const Hdrain_mm = Havg_mm / 2;
-      const phase = i > 0 && st.sigma < stages[i - 1].sigma ? "unload" : "load";
-      const baseT = phase === "load" ? cvTaylor(st, Hdrain_mm) : null;
-      const baseC = phase === "load" ? cvCasagrande(st, Hdrain_mm) : null;
-      const t = phase === "load" ? applyTaylorAdjustment(st, Hdrain_mm, baseT, cvAdjust[i]) : null;
-      const c = phase === "load" ? applyCgrAdjustment(st, Hdrain_mm, baseC, cvAdjust[i]) : null;
-      const e = voidRatio(phys.e0, sample.ringHeight, st.finalDial);
+      const prevSigma = i > 0 && stages[i - 1] ? stages[i - 1].sigma : 0;
+      const phase = i > 0 && st.sigma < prevSigma ? "unload" : "load";
+      const baseT = phase === "load" && st?.readings?.length ? cvTaylor(st, Hdrain_mm) : null;
+      const baseC = phase === "load" && st?.readings?.length ? cvCasagrande(st, Hdrain_mm) : null;
+      const t = phase === "load" && baseT ? applyTaylorAdjustment(st, Hdrain_mm, baseT, cvAdjust[i]) : null;
+      const c = phase === "load" && baseC ? applyCgrAdjustment(st, Hdrain_mm, baseC, cvAdjust[i]) : null;
+      const e = voidRatio(phys.e0, sample.ringHeight, stFinalDial);
       const ePrev = voidRatio(phys.e0, sample.ringHeight, prevDial);
-      const dSigma = i === 0 ? st.sigma : st.sigma - stages[i - 1].sigma;
+      const dSigma = i === 0 ? st.sigma : (stages[i - 1] ? st.sigma - stages[i - 1].sigma : st.sigma);
       const mv = dSigma === 0 ? null : Math.abs((ePrev - e) / (1 + ePrev) / dSigma);
       const av = dSigma === 0 ? null : Math.abs((ePrev - e) / dSigma);
       const Ed_kPa = phase === "load" && mv ? 1 / mv : null;
       const kvTaylor = t && mv ? t.cv * mv * GAMMA_W : null;
       const kvCas = c && mv ? c.cv * mv * GAMMA_W : null;
+      const readings = st?.readings || [];
+      const ca = phase === "load" && readings.length >= 3
+        ? Math.max(0, Math.abs((readings[readings.length - 1]?.d ?? stFinalDial) - (readings[readings.length - 3]?.d ?? stFinalDial)) / sample.ringHeight)
+        : null;
       return {
         phase,
         sigma: st.sigma,
-        finalDial: st.finalDial,
-        Hfinal: sample.ringHeight - st.finalDial,
+        finalDial: stFinalDial,
+        Hfinal: sample.ringHeight - stFinalDial,
         e,
         cvTaylor: t?.cv ?? null,
         cvCas: c?.cv ?? null,
@@ -633,7 +650,7 @@ export function AdensamentoPage() {
         kvCas,
         mv,
         av,
-        ca: phase === "load" ? Math.max(0, Math.abs((st.readings[st.readings.length - 1]?.d ?? st.finalDial) - (st.readings[st.readings.length - 3]?.d ?? st.finalDial)) / sample.ringHeight) : null,
+        ca,
         Ed: Ed_kPa,
         Ed_MPa: Ed_kPa ? Ed_kPa / 1000 : null,
         Hdrain: Hdrain_mm,
@@ -677,38 +694,39 @@ export function AdensamentoPage() {
   }, [eCurve, cvTable, phys.e0]);
 
   const loadingStageOptions = useMemo(
-    () => stages.map((s, i) => ({ s, i })).filter(({ s, i }) => i === 0 || s.sigma >= stages[i - 1].sigma),
+    () => stages.map((s, i) => ({ s, i })).filter(({ s, i }) => i === 0 || s.sigma >= (stages[i - 1]?.sigma ?? 0)),
     [stages]
   );
 
-  const stageData = stages[selectedStage];
-  const stagePrevDial = selectedStage === 0 ? 0 : stages[selectedStage - 1].finalDial;
+  const safeSelectedStage = Math.max(0, Math.min(selectedStage, Math.max(0, stages.length - 1)));
+  const stageData = stages[safeSelectedStage] || stages[0] || { sigma: 0, finalDial: 0, readings: [] };
+  const stagePrevDial = safeSelectedStage === 0 ? 0 : (stages[safeSelectedStage - 1]?.finalDial ?? 0);
   const stageHdrain = useMemo(
-    () => (sample.ringHeight - (stagePrevDial + stageData.finalDial) / 2) / 2,
-    [sample.ringHeight, stagePrevDial, stageData.finalDial],
+    () => (sample.ringHeight - (stagePrevDial + (stageData?.finalDial ?? 0)) / 2) / 2,
+    [sample.ringHeight, stagePrevDial, stageData?.finalDial],
   );
-  const selectedIsLoading = selectedStage === 0 || stageData.sigma >= stages[selectedStage - 1].sigma;
+  const selectedIsLoading = safeSelectedStage === 0 || (stages[safeSelectedStage - 1] && stageData.sigma >= stages[safeSelectedStage - 1].sigma);
   const tay = useMemo(() => {
-    if (!selectedIsLoading) return null;
+    if (!selectedIsLoading || !stageData?.readings?.length) return null;
     const base = cvTaylor(stageData, stageHdrain);
-    return applyTaylorAdjustment(stageData, stageHdrain, base, cvAdjust[selectedStage]);
-  }, [selectedIsLoading, stageData, stageHdrain, cvAdjust, selectedStage]);
+    return applyTaylorAdjustment(stageData, stageHdrain, base, cvAdjust[safeSelectedStage]);
+  }, [selectedIsLoading, stageData, stageHdrain, cvAdjust, safeSelectedStage]);
   const cgr = useMemo(() => {
-    if (!selectedIsLoading) return null;
+    if (!selectedIsLoading || !stageData?.readings?.length) return null;
     const base = cvCasagrande(stageData, stageHdrain);
-    return applyCgrAdjustment(stageData, stageHdrain, base, cvAdjust[selectedStage]);
-  }, [selectedIsLoading, stageData, stageHdrain, cvAdjust, selectedStage]);
+    return applyCgrAdjustment(stageData, stageHdrain, base, cvAdjust[safeSelectedStage]);
+  }, [selectedIsLoading, stageData, stageHdrain, cvAdjust, safeSelectedStage]);
 
   const sqrtData = useMemo(
-    () => stageData.readings.map((r) => ({ x: +Math.sqrt(r.t).toFixed(4), d: r.d, t: r.t })),
-    [stageData.readings],
+    () => (stageData?.readings || []).map((r) => ({ x: +Math.sqrt(r.t).toFixed(4), d: r.d, t: r.t })),
+    [stageData?.readings],
   );
   const logData = useMemo(
     () =>
-      stageData.readings
+      (stageData?.readings || [])
         .filter((r) => r.t > 0)
         .map((r) => ({ x: +Math.log10(r.t).toFixed(4), d: r.d, t: r.t })),
-    [stageData.readings],
+    [stageData?.readings],
   );
 
   const updateSample = (k: keyof SampleProps, v: any) =>
@@ -2986,8 +3004,8 @@ function MultiTaylorChart({
     ? loadStages.map(({ s, i: si }, seriesIdx) => {
         const isLoading = si === 0 || s.sigma >= stages[si - 1].sigma;
         if (!isLoading) return null;
-        const prevDial = si === 0 ? 0 : stages[si - 1].finalDial;
-        const Hdrain = (ringHeight - (prevDial + s.finalDial) / 2) / 2;
+        const prevDial = si === 0 ? 0 : (stages[si - 1]?.finalDial ?? 0);
+        const Hdrain = (ringHeight - (prevDial + (s?.finalDial ?? 0)) / 2) / 2;
         const base = cvTaylor(s, Hdrain);
         const tay = applyTaylorAdjustment(s, Hdrain, base, cvAdjust?.[si]);
         if (!tay) return null;
@@ -3097,8 +3115,8 @@ function MultiCasagrandeChart({
     ? loadStages.map(({ s, i: si }, seriesIdx) => {
         const isLoading = si === 0 || s.sigma >= stages[si - 1].sigma;
         if (!isLoading) return null;
-        const prevDial = si === 0 ? 0 : stages[si - 1].finalDial;
-        const Hdrain = (ringHeight - (prevDial + s.finalDial) / 2) / 2;
+        const prevDial = si === 0 ? 0 : (stages[si - 1]?.finalDial ?? 0);
+        const Hdrain = (ringHeight - (prevDial + (s?.finalDial ?? 0)) / 2) / 2;
         const base = cvCasagrande(s, Hdrain);
         const cgr = applyCgrAdjustment(s, Hdrain, base, cvAdjust?.[si]);
         if (!cgr) return null;
@@ -3781,8 +3799,8 @@ function CvMemorial({
   return (
     <div className="space-y-4">
       {loadStages.map(({ s, i: si }) => {
-        const prevDial = si === 0 ? 0 : stages[si - 1].finalDial;
-        const Hdrain_mm = (ringHeight - (prevDial + s.finalDial) / 2) / 2;
+        const prevDial = si === 0 ? 0 : (stages[si - 1]?.finalDial ?? 0);
+        const Hdrain_mm = (ringHeight - (prevDial + (s?.finalDial ?? 0)) / 2) / 2;
         const Hd_cm = Hdrain_mm / 10;
         const baseT = cvTaylor(s, Hdrain_mm);
         const baseC = cvCasagrande(s, Hdrain_mm);
@@ -4126,7 +4144,7 @@ function PrintableReport(p: ReportProps) {
               {([
                 ["Massa da Amostra (g)", fmt(p.sample.wetMassInitial, 2), "Massa Específica dos Grãos (g/cm³)", fmt(p.sample.Gs, 3)],
                 ["Altura Inicial H_0 (mm)", fmt(p.sample.ringHeight, 2), "Massa Específica Aparente Úmida (g/cm³)", fmt(p.phys.rho_i, 2)],
-                ["Altura Final (mm)", fmt(p.ringHeight - lastStage.finalDial, 2), "Massa Específica Aparente Seca (g/cm³)", fmt(p.phys.rho_d, 2)],
+                ["Altura Final (mm)", fmt(p.ringHeight - (lastStage?.finalDial ?? 0), 2), "Massa Específica Aparente Seca (g/cm³)", fmt(p.phys.rho_d, 2)],
                 ["Diâmetro da Amostra (mm)", fmt(p.sample.ringDiameter, 2), "Tipo da Amostra", "Indeformada"],
                 ["Área da Amostra (cm²)", fmt(p.phys.A, 2), "Condição do Ensaio", "Inundado"],
                 ["Índice de Vazios Inicial e_0", fmt(p.phys.e0, 3), "Tipo de Célula", "Anel Fixo"],
