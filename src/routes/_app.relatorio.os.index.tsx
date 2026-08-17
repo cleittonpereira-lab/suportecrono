@@ -48,6 +48,7 @@ import { ENSAIO_LABEL, type EnsaioTipo } from "@/features/lab/types";
 import {
   listPendenciasDigitacao,
   concluirPendenciaExterna,
+  removerPendenciaDigitacao,
   type PendenciaDigitacao,
 } from "@/lib/lab-pendencias.functions";
 import { listRows } from "@/lib/programacao.functions";
@@ -209,6 +210,7 @@ function CentralOsPage() {
   const listPendenciasFn = useServerFn(listPendenciasDigitacao);
   const rows0Fn = useServerFn(listRows);
   const conclExtFn = useServerFn(concluirPendenciaExterna);
+  const delFn = useServerFn(removerPendenciaDigitacao);
 
   const { data: pendencias = [], refetch: refetchPend } = useQuery({
     queryKey: ["lab-pendencias"],
@@ -242,7 +244,7 @@ function CentralOsPage() {
     queryFn: async () => rows0Fn({ data: { sheet: "Equipamentos" } }),
   });
 
-  // Agrupamento consolidado por OS
+  // Agrupamento consolidado por OS com deduplicação rigorosa por Amostra + Tipo de Ensaio
   const osGroups = useMemo<OsGroup[]>(() => {
     const amMap = new Map<string, any>();
     const amByCode = new Map<string, any>();
@@ -264,37 +266,47 @@ function CentralOsPage() {
     const enMap = new Map(ensaiosProg.map((e) => [e.id, e]));
     const tpMap = new Map(tiposProg.map((t) => [t.id, t]));
 
-    const groups = new Map<string, OsGroup>();
+    const groups = new Map<string, { group: OsGroup; itemsMap: Map<string, EnsaioItemOS> }>();
 
-    const getOrCreateGroup = (osNum: string) => {
+    const getOrCreateGroupData = (osNum: string) => {
       const cleanNum = (osNum || "").trim();
       if (!cleanNum || deletedOs.has(normOs(cleanNum))) return null;
       if (!groups.has(cleanNum)) {
         const cad = cadastro.lookup(cleanNum);
         groups.set(cleanNum, {
-          osNumero: cleanNum,
-          cliente: cad?.tomador || `OS ${cleanNum}`,
-          obra: cad?.obra || "",
-          local: cad?.local || "",
-          sup: cad?.sup || "",
-          ensaios: [],
+          group: {
+            osNumero: cleanNum,
+            cliente: cad?.tomador || `OS ${cleanNum}`,
+            obra: cad?.obra || "",
+            local: cad?.local || "",
+            sup: cad?.sup || "",
+            ensaios: [],
+          },
+          itemsMap: new Map<string, EnsaioItemOS>(),
         });
       }
       return groups.get(cleanNum)!;
     };
 
+    // Helper para chave canônica única por amostra + metodologia
+    const getTestKey = (amostraCodeOrId: string, tipoOrSigla: string) => {
+      const amKey = (amostraCodeOrId || "AM-01").trim().toLowerCase();
+      const m = detectMethodology(tipoOrSigla, tipoOrSigla) || "cisalhamento-direto";
+      return `${amKey}::${m}`;
+    };
+
     // 1. Inclui ensaios do labStore
     for (const os of labState.os) {
       if (deletedOs.has(normOs(os.numero))) continue;
-      const g = getOrCreateGroup(os.numero);
-      if (!g) continue;
+      const gData = getOrCreateGroupData(os.numero);
+      if (!gData) continue;
+      const { group: g, itemsMap } = gData;
       g.osId = os.id;
       if (os.client && (!g.cliente || g.cliente.startsWith("OS "))) g.cliente = os.client;
       if (!g.obra && os.workNumber) g.obra = os.workNumber;
       if (!g.local && os.local) g.local = os.local;
 
       for (const am of os.amostras) {
-        // Tenta resolver dados de profundidade/furo da amostra na programação se não preenchidos
         const amProg =
           amMap.get(am.id) ||
           (am.code ? amByCode.get(`${normOs(os.numero)}:${am.code}`) || amByCode.get(am.code) : undefined) ||
@@ -302,15 +314,22 @@ function CentralOsPage() {
         const details = extractSampleDetails(amProg);
 
         for (const en of am.ensaios) {
-          const siglaEnsaio = (en as any).sigla || (en as any).ensaioNome || en.nome || (en as any).label || (en as any).codigo || ENSAIO_LABEL[en.tipo] || en.tipo;
+          const rawSigla = (en as any).sigla || (en as any).ensaioNome || en.nome || (en as any).label || (en as any).codigo;
+          const siglaEnsaio = rawSigla && rawSigla !== en.tipo && rawSigla !== ENSAIO_LABEL[en.tipo]
+            ? rawSigla
+            : ENSAIO_LABEL[en.tipo] || en.tipo;
+
           const enKey = `${normOs(os.numero)}:${am.reportNumber || am.code}:${siglaEnsaio}`;
           const enIdKey = `${normOs(os.numero)}:${en.id}`;
           if (deletedEnsaios.has(enKey) || deletedEnsaios.has(enIdKey)) continue;
 
-          g.ensaios.push({
+          const sampleIdent = am.code || details.codigo || am.reportNumber || "AM-01";
+          const testKey = getTestKey(sampleIdent, en.tipo);
+
+          const item: EnsaioItemOS = {
             id: en.id,
             amostraId: am.id,
-            amostra: am.reportNumber || am.code || "AM-01",
+            amostra: sampleIdent,
             furo: am.borehole || details.furo || "",
             prof: am.depth || details.prof || "",
             codigo: am.code || details.codigo || "",
@@ -319,7 +338,9 @@ function CentralOsPage() {
             status: en.status === "concluido" ? "aprovado" : "em_digitacao",
             digitador: en.operator || currentUserName,
             revisao: os.revision || "0",
-          });
+          };
+
+          itemsMap.set(testKey, item);
         }
       }
     }
@@ -327,8 +348,9 @@ function CentralOsPage() {
     // 2. Inclui ensaios das pendências de digitação
     for (const p of pendencias) {
       if (deletedOs.has(normOs(p.os))) continue;
-      const g = getOrCreateGroup(p.os);
-      if (!g) continue;
+      const gData = getOrCreateGroupData(p.os);
+      if (!gData) continue;
+      const { group: g, itemsMap } = gData;
 
       const m = detectMethodology(p.ensaio, p.tipo_ensaio) || "cisalhamento-direto";
       const tipo = m as EnsaioTipo;
@@ -337,25 +359,43 @@ function CentralOsPage() {
       const enIdKey = `${normOs(p.os)}:${p.id}`;
       if (deletedEnsaios.has(enKey) || deletedEnsaios.has(enIdKey)) continue;
 
-      const exists = g.ensaios.some(
-        (e) => (e.ensaio.toLowerCase() === p.ensaio.toLowerCase() || e.id === p.id) && e.amostra === amName,
-      );
-      if (!exists) {
-        let st: EnsaioItemOS["status"] = "em_digitacao";
-        if (p.status === "digitado") st = "verificacao";
-        if (p.status === "aprovado") st = "aprovado";
-        if (p.status === "concluido_externo") st = "concluido_externo";
+      const amProg =
+        amByCode.get(`${normOs(p.os)}:${p.amostra}`) ||
+        amByCode.get(p.amostra || "") ||
+        amMap.get(p.amostra || "");
+      const details = extractSampleDetails(amProg);
 
-        const amProg =
-          amByCode.get(`${normOs(p.os)}:${p.amostra}`) ||
-          amByCode.get(p.amostra || "") ||
-          amMap.get(p.amostra || "");
-        const details = extractSampleDetails(amProg);
+      let st: EnsaioItemOS["status"] = "em_digitacao";
+      if (p.status === "digitado") st = "verificacao";
+      if (p.status === "aprovado") st = "aprovado";
+      if (p.status === "concluido_externo") st = "concluido_externo";
 
-        g.ensaios.push({
+      const sampleIdent = details.codigo || p.amostra || "AM-01";
+      const testKey = getTestKey(sampleIdent, tipo);
+      const existing = itemsMap.get(testKey);
+
+      if (existing) {
+        // Atualiza campos com dados enriquecidos da pendência
+        existing.pendenciaId = p.id;
+        if (!existing.furo && details.furo) existing.furo = details.furo;
+        if (!existing.prof && details.prof) existing.prof = details.prof;
+        if (!existing.codigo && details.codigo) existing.codigo = details.codigo;
+        // Prioriza a sigla oficial da pendência (ex: "CD4.IN") se existente tiver nome genérico
+        if (p.ensaio && (!existing.ensaio || existing.ensaio === existing.tipo || existing.ensaio.includes("cisalhamento-direto"))) {
+          existing.ensaio = p.ensaio;
+        }
+        if (st === "aprovado" || st === "concluido_externo" || (st === "verificacao" && existing.status !== "aprovado")) {
+          existing.status = st;
+        }
+        if (p.operador_nome) existing.tecnico = p.operador_nome;
+        if (p.digitador_nome) existing.digitador = p.digitador_nome;
+        if (p.verificador_nome) existing.verificador = p.verificador_nome;
+        if (p.aprovador_nome) existing.aprovador = p.aprovador_nome;
+      } else {
+        itemsMap.set(testKey, {
           id: p.id,
           pendenciaId: p.id,
-          amostra: amName,
+          amostra: sampleIdent,
           furo: details.furo,
           prof: details.prof,
           codigo: details.codigo,
@@ -379,32 +419,45 @@ function CentralOsPage() {
       const osNum = a?.os_numero;
       if (!osNum || deletedOs.has(normOs(osNum))) continue;
 
-      const g = getOrCreateGroup(osNum);
-      if (!g) continue;
+      const gData = getOrCreateGroupData(osNum);
+      if (!gData) continue;
+      const { group: g, itemsMap } = gData;
 
-      const amName = a?.codigo_amostra || a?.identificacao || "—";
-      const enNome = t?.nome ?? "Ensaio";
-      const m = detectMethodology(enNome, t?.nome) || "cisalhamento-direto";
-      const enKey = `${normOs(osNum)}:${amName}:${enNome}`;
+      const details = extractSampleDetails(a);
+      const sampleIdent = details.codigo || a?.codigo_amostra || a?.identificacao || "—";
+      const siglaEnsaio = t?.sigla || t?.codigo || e?.sigla || e?.codigo || t?.nome || "Ensaio";
+      const m = detectMethodology(siglaEnsaio, t?.nome) || "cisalhamento-direto";
+      const tipo = m as EnsaioTipo;
+
+      const enKey = `${normOs(osNum)}:${sampleIdent}:${siglaEnsaio}`;
       const enIdKey = `${normOs(osNum)}:${prog.id}`;
       if (deletedEnsaios.has(enKey) || deletedEnsaios.has(enIdKey)) continue;
 
-      const exists = g.ensaios.some((item) => item.amostra === amName && item.ensaio === enNome);
-      if (!exists) {
+      const testKey = getTestKey(sampleIdent, tipo);
+      const existing = itemsMap.get(testKey);
+
+      if (existing) {
+        // Melhora furo, prof e sigla com os dados diretos da programação do Gantt
+        if (!existing.furo && details.furo) existing.furo = details.furo;
+        if (!existing.prof && details.prof) existing.prof = details.prof;
+        if (!existing.codigo && details.codigo) existing.codigo = details.codigo;
+        if (siglaEnsaio && (!existing.ensaio || existing.ensaio === existing.tipo || existing.ensaio.includes("cisalhamento-direto"))) {
+          existing.ensaio = siglaEnsaio;
+        }
+        if (!existing.tecnico && prog.tecnico) existing.tecnico = prog.tecnico;
+      } else {
         const concluiu = !!prog.data_fim_real || prog.status === "concluido";
         const iniciou = !!prog.data_inicio_real || prog.status === "em_execucao";
         const st: EnsaioItemOS["status"] = concluiu ? "em_digitacao" : iniciou ? "execucao" : "programado";
 
-        const details = extractSampleDetails(a);
-
-        g.ensaios.push({
+        itemsMap.set(testKey, {
           id: prog.id,
-          amostra: amName,
+          amostra: sampleIdent,
           furo: details.furo,
           prof: details.prof,
           codigo: details.codigo,
-          ensaio: enNome,
-          tipo: m as EnsaioTipo,
+          ensaio: siglaEnsaio,
+          tipo,
           status: st,
           tecnico: prog.tecnico || undefined,
           revisao: "0",
@@ -412,7 +465,14 @@ function CentralOsPage() {
       }
     }
 
-    return Array.from(groups.values()).sort((a, b) => a.osNumero.localeCompare(b.osNumero));
+    // Monta o array final de ensaios para cada grupo
+    const result: OsGroup[] = [];
+    for (const { group, itemsMap } of groups.values()) {
+      group.ensaios = Array.from(itemsMap.values()).sort((a, b) => a.amostra.localeCompare(b.amostra));
+      result.push(group);
+    }
+
+    return result.sort((a, b) => a.osNumero.localeCompare(b.osNumero));
   }, [labState, pendencias, progs, amostrasProg, ensaiosProg, tiposProg, equipsProg, cadastro, deletedOs, deletedEnsaios, currentUserName]);
 
   // Filtro de busca
@@ -692,17 +752,28 @@ function CentralOsPage() {
       next.add(normOs(deleteModal.osNumero));
       setDeletedOs(next);
       localStorage.setItem("suporte_infra_deleted_os_v1", JSON.stringify(Array.from(next)));
+
+      // Remove também pendências vinculadas de forma segura
+      const pendenciasOs = pendencias.filter((p) => normOs(p.os) === normOs(deleteModal.osNumero));
+      for (const p of pendenciasOs) {
+        delFn({ data: { id: p.id } }).catch(() => {});
+      }
+      qc.invalidateQueries({ queryKey: ["lab-pendencias"] });
       toast.success(`OS ${deleteModal.osNumero} excluída.`);
     } else if (deleteModal.type === "ensaio" && deleteModal.ensaio) {
       const en = deleteModal.ensaio;
       if (deleteModal.osId && en.amostraId && en.id) {
         labStore.deleteEnsaio(deleteModal.osId, en.amostraId, en.id);
       }
+      if (en.pendenciaId) {
+        delFn({ data: { id: en.pendenciaId } }).catch(() => {});
+      }
       const next = new Set(deletedEnsaios);
       next.add(`${normOs(deleteModal.osNumero)}:${en.amostra}:${en.ensaio}`);
       next.add(`${normOs(deleteModal.osNumero)}:${en.id}`);
       setDeletedEnsaios(next);
       localStorage.setItem("suporte_infra_deleted_ensaios_v1", JSON.stringify(Array.from(next)));
+      qc.invalidateQueries({ queryKey: ["lab-pendencias"] });
       toast.success(`Ensaio ${en.ensaio} excluído.`);
     }
     setDeleteModal(null);

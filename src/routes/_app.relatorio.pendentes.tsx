@@ -5,7 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useNavigate } from "@tanstack/react-router";
 import { detectMethodology, methodologyRoute, type SupportedMethodology } from "@/features/mesp-natural/calc";
 import { labStore } from "@/features/lab/store";
-import type { EnsaioTipo } from "@/features/lab/types";
+import { ENSAIO_LABEL, type EnsaioTipo } from "@/features/lab/types";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   listPendenciasDigitacao,
@@ -80,6 +80,7 @@ import {
   Calendar,
   User,
   Building,
+  Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -353,6 +354,7 @@ function CentralRelatoriosPage() {
     cliente?: string,
     obra?: string,
     pendenciaId?: string,
+    siglaOficial?: string,
   ) {
     if (tipo === "mesp-a") {
       navigate({
@@ -364,23 +366,81 @@ function CentralRelatoriosPage() {
 
     const state = labStore.get();
     let os = state.os.find((o) => (o.numero ?? "").trim() === osNum.trim());
+    const cad = cadastro.lookup(osNum);
+    const client = cliente || cad?.tomador || `OS ${osNum}`;
+    const work = obra || cad?.obra || osNum;
+    const loc = cad?.local || "";
+
+    // Resolve dados da amostra do Gantt
+    const amProg =
+      amostrasProg.find((a) => (a.codigo_amostra || a.identificacao || a.id) === amCode && (a.os_numero || "").trim() === osNum.trim()) ||
+      amostrasProg.find((a) => (a.codigo_amostra || a.identificacao) === amCode) ||
+      amostrasProg.find((a) => a.id === amCode);
+
+    const furo = amProg?.identificacao || amProg?.furo || "";
+    const prof = amProg?.topo_m && amProg?.base_m ? `${amProg.topo_m} – ${amProg.base_m} m` : amProg?.profundidade || "";
+    const codigo = amProg?.codigo_amostra || amProg?.id || amCode;
+
     if (!os) {
-      const cad = cadastro.lookup(osNum);
       os = labStore.createOS({
         numero: osNum,
-        client: cliente || cad?.tomador || "Cliente",
-        workNumber: obra || cad?.obra || osNum,
+        client,
+        workNumber: work,
+        local: loc,
+        technicalResp: "Engº Maurício Malanconi - CREA: 5063078630",
       });
-    }
-    const cleanAm = amCode.trim() || "AM-01";
-    let am = os.amostras.find((a) => (a.reportNumber ?? a.code ?? "").trim() === cleanAm);
-    if (!am) {
-      am = labStore.addAmostra(os.id, { reportNumber: cleanAm, code: cleanAm });
+    } else {
+      let updated = false;
+      if ((!os.client || os.client.startsWith("OS ")) && client) { os.client = client; updated = true; }
+      if (!os.workNumber && work) { os.workNumber = work; updated = true; }
+      if (!os.local && loc) { os.local = loc; updated = true; }
+      if (os.technicalResp !== "Engº Maurício Malanconi - CREA: 5063078630") {
+        os.technicalResp = "Engº Maurício Malanconi - CREA: 5063078630";
+        updated = true;
+      }
+      if (updated) labStore.patchOS(os.id, { client: os.client, workNumber: os.workNumber, local: os.local, technicalResp: os.technicalResp });
     }
 
+    const cleanAm = amCode.trim() || "AM-01";
+    let am = os.amostras.find((a) => (a.reportNumber ?? a.code ?? "").trim() === cleanAm || (a.code && a.code === codigo));
+    if (!am) {
+      am = labStore.addAmostra(os.id, {
+        reportNumber: cleanAm,
+        code: codigo,
+        borehole: furo,
+        depth: prof,
+        sampleType: amProg?.tipo || "Bloco indeformado",
+        description: amProg?.descricao || "",
+      });
+    } else {
+      let patchAm: any = {};
+      if (!am.borehole && furo) patchAm.borehole = furo;
+      if (!am.depth && prof) patchAm.depth = prof;
+      if (!am.code && codigo) patchAm.code = codigo;
+      if (Object.keys(patchAm).length > 0) {
+        labStore.patchAmostra(os.id, am.id, patchAm);
+      }
+    }
+
+    const sigla = siglaOficial || ENSAIO_LABEL[tipo as EnsaioTipo] || tipo;
     let en = am.ensaios.find((e) => e.tipo === tipo);
     if (!en) {
-      en = labStore.addEnsaio(os.id, am.id, tipo as EnsaioTipo, tipo);
+      en = labStore.addEnsaio(os.id, am.id, tipo as EnsaioTipo, sigla);
+      labStore.patchEnsaio(os.id, am.id, en.id, {
+        nome: sigla,
+        sigla: sigla,
+        operator: "Maurício Malanconi",
+      });
+    }
+
+    // Se temos pendência vinculada, marca como em_digitacao
+    if (pendenciaId) {
+      updFn({
+        data: {
+          id: pendenciaId,
+          status: "em_digitacao",
+        },
+      }).catch(() => {});
     }
 
     navigate({
@@ -692,18 +752,50 @@ function CentralRelatoriosPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1.5">
-                            {/* Botão Iniciar Relatório */}
-                            <Button
-                              size="sm"
-                              className="h-8 text-xs gap-1 shadow-xs bg-primary text-primary-foreground hover:bg-primary/90"
-                              onClick={() => {
-                                const tipo =
-                                  detectMethodology(item.ensaio, item.tipoEnsaioNome) || "cisalhamento-direto";
-                                abrirPorTipo(tipo, item.os, item.amostra, cad?.tomador, cad?.obra);
-                              }}
-                            >
-                              <Play className="h-3.5 w-3.5 fill-current" /> Iniciar Relatório
-                            </Button>
+                            {/* Botão Contextual: Iniciar / Continuar / Verificar / Ver */}
+                            {(() => {
+                              const isAprovado = pendExistente?.status === "aprovado";
+                              const isVerificacao = pendExistente?.status === "digitado" || pendExistente?.status === "verificado";
+                              const isEmDigitacao = pendExistente?.status === "em_digitacao";
+
+                              return (
+                                <Button
+                                  size="sm"
+                                  className={`h-8 text-xs gap-1 shadow-xs font-medium ${
+                                    isAprovado
+                                      ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                                      : isVerificacao
+                                        ? "bg-violet-600 text-white hover:bg-violet-700"
+                                        : isEmDigitacao
+                                          ? "bg-sky-600 text-white hover:bg-sky-700"
+                                          : "bg-primary text-primary-foreground hover:bg-primary/90"
+                                  }`}
+                                  onClick={() => {
+                                    const tipo =
+                                      detectMethodology(item.ensaio, item.tipoEnsaioNome) || "cisalhamento-direto";
+                                    abrirPorTipo(tipo, item.os, item.amostra, cad?.tomador, cad?.obra, pendExistente?.id, item.ensaio);
+                                  }}
+                                >
+                                  {isAprovado ? (
+                                    <>
+                                      <CheckCircle2 className="h-3.5 w-3.5" /> Ver Laudo Aprovado
+                                    </>
+                                  ) : isVerificacao ? (
+                                    <>
+                                      <Eye className="h-3.5 w-3.5" /> Verificar Laudo
+                                    </>
+                                  ) : isEmDigitacao ? (
+                                    <>
+                                      <Play className="h-3.5 w-3.5 fill-current" /> Continuar Digitação
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Play className="h-3.5 w-3.5 fill-current" /> Iniciar Relatório
+                                    </>
+                                  )}
+                                </Button>
+                              );
+                            })()}
 
                             {/* Botão Relatório Concluído fora da Central */}
                             <TooltipProvider>

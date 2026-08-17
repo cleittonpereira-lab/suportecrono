@@ -219,6 +219,10 @@ function PtNumInput({
 
 import { useCadastroByOs } from "@/hooks/use-cadastro-by-os";
 import { useAuth } from "@/hooks/use-auth";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { listRows } from "@/lib/programacao.functions";
+import { labStore } from "@/features/lab/store";
 
 export function AdensamentoPage() {
   const ctx = useOptionalLabEnsaio();
@@ -226,6 +230,23 @@ export function AdensamentoPage() {
   const cad = ctx?.os?.numero ? lookup(ctx.os.numero) : undefined;
   const { displayName, user, profile } = useAuth();
   const currentUserName = displayName || profile?.nome || user?.email?.split("@")[0] || "Maurício Malanconi";
+
+  const rows0Fn = useServerFn(listRows);
+  const { data: amostrasProg = [] } = useQuery({
+    queryKey: ["oed-gantt-amostras"],
+    queryFn: async () => rows0Fn({ data: { sheet: "Amostras" } }),
+    staleTime: 60_000,
+  });
+  const { data: progsGantt = [] } = useQuery({
+    queryKey: ["oed-gantt-progs"],
+    queryFn: async () => rows0Fn({ data: { sheet: "Programações" } }),
+    staleTime: 60_000,
+  });
+  const { data: equipsGantt = [] } = useQuery({
+    queryKey: ["oed-gantt-equips"],
+    queryFn: async () => rows0Fn({ data: { sheet: "Equipamentos" } }),
+    staleTime: 60_000,
+  });
 
   const [sample, setSample] = useState<SampleProps>(() => {
     if (!ctx) return { ...seedSample, operator: currentUserName, typedBy: currentUserName };
@@ -254,6 +275,82 @@ export function AdensamentoPage() {
       setSample((prev: any) => ({ ...prev, typedBy: currentUserName }));
     }
   }, [currentUserName]);
+
+  // Resolução automática e instantânea de Furo, Profundidade e Metadados do Gantt
+  useEffect(() => {
+    if (amostrasProg.length === 0) return;
+    const osNum = (sample.os || ctx?.os?.numero || "").trim();
+    const amKey = (sample.reportNumber || sample.code || ctx?.amostra?.reportNumber || ctx?.amostra?.code || "").trim();
+    if (!amKey && !osNum) return;
+
+    const found =
+      amostrasProg.find((a: any) => {
+        const aOs = (a.os_numero || "").trim();
+        if (osNum && aOs && aOs !== osNum) return false;
+        return (
+          (a.codigo_amostra && String(a.codigo_amostra).trim() === amKey) ||
+          (a.identificacao && String(a.identificacao).trim() === amKey) ||
+          (a.id && String(a.id).trim() === amKey) ||
+          (a.numero_amostra && String(a.numero_amostra).trim() === amKey)
+        );
+      }) ||
+      amostrasProg.find((a: any) => {
+        return (
+          (a.codigo_amostra && String(a.codigo_amostra).trim() === amKey) ||
+          (a.identificacao && String(a.identificacao).trim() === amKey) ||
+          (a.id && String(a.id).trim() === amKey)
+        );
+      });
+
+    if (found) {
+      const furoFound = found.identificacao || found.furo || "";
+      const depthFound = found.topo_m && found.base_m ? `${found.topo_m} – ${found.base_m} m` : found.profundidade || "";
+      const codeFound = found.codigo_amostra || found.id || "";
+      const typeFound = found.tipo || "";
+
+      // Busca equipamento alocado
+      let equipFound = "";
+      if (progsGantt.length > 0 && equipsGantt.length > 0) {
+        const eqMap = new Map(equipsGantt.map((eq: any) => [eq.id, eq.nome]));
+        const pr = progsGantt.find((p: any) => p.ensaio_id && p.equipamento_id);
+        if (pr?.equipamento_id) equipFound = String(eqMap.get(pr.equipamento_id) || "");
+      }
+
+      setSample((prev: any) => {
+        let changed = false;
+        const next = { ...prev };
+        if (!next.borehole && furoFound) { next.borehole = furoFound; changed = true; }
+        if (!next.depth && depthFound) { next.depth = depthFound; changed = true; }
+        if (!next.code && codeFound) { next.code = codeFound; changed = true; }
+        if (typeFound && !next.sampleType) {
+          next.sampleType = typeFound;
+          changed = true;
+        }
+        if ((!next.equipment || next.equipment === "Adensamento Edométrico") && equipFound) {
+          next.equipment = equipFound;
+          changed = true;
+        }
+        if (cad?.tomador && (!next.client || next.client.startsWith("OS "))) { next.client = cad.tomador; changed = true; }
+        if (cad?.obra && !next.workNumber) { next.workNumber = cad.obra; changed = true; }
+        if (cad?.local && !next.local) { next.local = cad.local; changed = true; }
+        if (!next.technicalResp || next.technicalResp.includes("Maurício Silva")) {
+          next.technicalResp = "Engº Maurício Malanconi - CREA: 5063078630";
+          changed = true;
+        }
+        return changed ? next : prev;
+      });
+
+      if (ctx && ctx.os && ctx.amostra) {
+        if (!ctx.amostra.borehole && furoFound) {
+          labStore.patchAmostra(ctx.os.id, ctx.amostra.id, {
+            borehole: furoFound,
+            depth: depthFound || ctx.amostra.depth,
+            code: codeFound || ctx.amostra.code,
+          });
+        }
+      }
+    }
+  }, [amostrasProg, progsGantt, equipsGantt, cad, ctx]);
   const phys = useMemo(() => physicalIndices(sample), [sample]);
   const [stages, setStages] = useState<Stage[]>(() => (!ctx ? seedStages(phys.e0, sample.ringHeight) : []));
   const [selectedStage, setSelectedStage] = useState(5);
