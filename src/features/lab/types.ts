@@ -17,7 +17,14 @@ export type EnsaioTipo =
   | "cisalhamento-direto"
   | "mesp-a";            // Massa Específica Aparente Natural (NBR 16867:2020)
 
-export type EnsaioStatus = "rascunho" | "processando" | "concluido";
+export type EnsaioStatus =
+  | "rascunho"
+  | "processando"
+  | "concluido"
+  | "em_digitacao"
+  | "aguardando_verificacao"
+  | "aguardando_aprovacao"
+  | "aprovado";
 
 export interface Coords {
   N?: number;   // Norte [m]

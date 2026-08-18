@@ -56,6 +56,7 @@ import {
   CircleDot,
   User,
   FileEdit,
+  Check,
 } from "lucide-react";
 import { SuporteLogo } from "@/components/suporte-logo";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -235,8 +236,10 @@ export function AdensamentoPage() {
   const ctx = useOptionalLabEnsaio();
   const { lookup } = useCadastroByOs();
   const cad = ctx?.os?.numero ? lookup(ctx.os.numero) : undefined;
-  const { displayName, user, profile } = useAuth();
+  const { displayName, user, profile, role } = useAuth();
   const currentUserName = displayName || profile?.nome || user?.email?.split("@")[0] || "Cleitton Pereira";
+  const isAdmin = role === "admin";
+  const isVerificador = role === "verificador" || role === "gestor" || isAdmin;
 
   const rows0Fn = useServerFn(listRows);
   const { data: amostrasProg = [] } = useQuery({
@@ -399,8 +402,6 @@ export function AdensamentoPage() {
   const [savingVersion, setSavingVersion] = useState(false);
   const [versions, setVersions] = useState<any[]>([]);
   const [approvals, setApprovals] = useState<any[]>([]);
-  const isAdmin = true;
-  const isVerificador = true;
   const [sampleEditOpen, setSampleEditOpen] = useState(false);
   const [obsDialogOpen, setObsDialogOpen] = useState(false);
   const [obsGanttOpen, setObsGanttOpen] = useState(false);
@@ -446,6 +447,8 @@ export function AdensamentoPage() {
   useEffect(() => {
     loadVersions();
   }, [scopeId]);
+
+  const refreshApprovals = loadVersions;
 
   // Exportacao XLSX
   const handleExportXlsx = async () => {
@@ -1043,7 +1046,7 @@ export function AdensamentoPage() {
                   <Badge variant="outline" className="border-indigo-500/50 bg-indigo-500/10 text-indigo-800 dark:text-indigo-300 font-semibold px-3 py-1.5 text-xs">
                     ✓ Aguardando Aprovação RT
                   </Badge>
-                  <Button
+<Button
                     size="sm"
                     onClick={async () => {
                       setSavingVersion(true);
