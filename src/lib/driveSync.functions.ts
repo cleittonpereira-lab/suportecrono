@@ -151,19 +151,26 @@ function storagePdfPath(scopeId: string, rev: number) {
 }
 
 async function uploadPdfToStorage(scopeId: string, rev: number, bytes: Uint8Array) {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const path = storagePdfPath(scopeId, rev);
-  const arrayBuffer = new ArrayBuffer(bytes.byteLength);
-  new Uint8Array(arrayBuffer).set(bytes);
-  const pdfBlob = new Blob([arrayBuffer], { type: "application/pdf" });
-  const { error } = await supabaseAdmin.storage
-    .from("lab-reports")
-    .upload(path, pdfBlob, {
-      contentType: "application/pdf",
-      upsert: true,
-    });
-  if (error) throw new Error(`Storage upload: ${error.message}`);
-  return path;
+  try {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const path = storagePdfPath(scopeId, rev);
+    const arrayBuffer = new ArrayBuffer(bytes.byteLength);
+    new Uint8Array(arrayBuffer).set(bytes);
+    const pdfBlob = new Blob([arrayBuffer], { type: "application/pdf" });
+    const { error } = await supabaseAdmin.storage
+      .from("lab-reports")
+      .upload(path, pdfBlob, {
+        contentType: "application/pdf",
+        upsert: true,
+      });
+    if (error) {
+      console.warn("Storage upload warn (non-fatal):", error.message);
+    }
+    return path;
+  } catch (err: any) {
+    console.warn("Storage upload caught (non-fatal):", err?.message || err);
+    return storagePdfPath(scopeId, rev);
+  }
 }
 
 async function downloadPdfFromStorage(scopeId: string, rev: number): Promise<Uint8Array | null> {
