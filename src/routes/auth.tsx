@@ -7,8 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Loader2, LogIn, UserPlus, Eye, Lock, Mail, User as UserIcon } from "lucide-react";
+import { Loader2, LogIn, UserPlus, Eye, Lock, Mail, User as UserIcon, ShieldAlert } from "lucide-react";
 import { lovable } from "@/integrations/lovable";
 import { SuporteLogo } from "@/components/suporte-logo";
 
@@ -93,7 +94,6 @@ async function resolveCandidateEmails(rawIdentifier: string): Promise<string[]> 
   const input = rawIdentifier.trim().toLowerCase();
   if (!input) return [];
 
-  // Se já contém '@', é um e-mail direto
   if (input.includes("@")) {
     return [input];
   }
@@ -111,9 +111,7 @@ async function resolveCandidateEmails(rawIdentifier: string): Promise<string[]> 
     if (!error && email && typeof email === "string") {
       candidates.push(email.trim().toLowerCase());
     }
-  } catch (err) {
-    // Silently continue
-  }
+  } catch {}
 
   // 2) Tenta buscar no profiles
   try {
@@ -126,9 +124,7 @@ async function resolveCandidateEmails(rawIdentifier: string): Promise<string[]> 
     if (profile?.email && !candidates.includes(profile.email.toLowerCase())) {
       candidates.push(profile.email.toLowerCase());
     }
-  } catch (err) {
-    // Silently continue
-  }
+  } catch {}
 
   // 3) Domínios padrão suportados
   const standardDomains = [
@@ -170,7 +166,7 @@ function UnifiedSignInForm() {
       let loggedUser: any = null;
       let lastError: any = null;
 
-      // 1. Tenta autenticação via Supabase Auth
+      // Autenticação oficial via Supabase Auth
       for (const emailCandidate of candidates) {
         try {
           const { data, error } = await supabase.auth.signInWithPassword({
@@ -187,75 +183,35 @@ function UnifiedSignInForm() {
         }
       }
 
-      // 2. Se Supabase autenticou com sucesso:
-      if (loggedUser) {
-        const { data: prof } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", loggedUser.id)
-          .maybeSingle();
-
-        if (prof?.status === "pendente") {
-          setLoading(false);
-          toast.info("Cadastro criado! Aguarde a aprovação do administrador.", { id: tid });
-          window.location.replace("/pendente");
-          return;
-        }
-
-        if (prof?.status === "bloqueado") {
-          await supabase.auth.signOut();
-          setLoading(false);
-          toast.error("Sua conta está bloqueada pelo administrador.", { id: tid });
-          return;
-        }
-
-        toast.success("Login realizado com sucesso! ✓", { id: tid });
-        window.location.replace("/entregas");
+      if (!loggedUser) {
+        setLoading(false);
+        toast.error(friendlySignInError(lastError?.message || "Senha incorreta ou usuário não encontrado."), { id: tid });
         return;
       }
 
-      // 3. Fallback inteligente e seguro para a equipe do laboratório
-      const normalizedId = idf.toLowerCase().replace("@suportesolos.com.br", "").replace("@suporteinfra.com.br", "").replace("@gmail.com", "");
-      const isCleitton = normalizedId.includes("cleitton");
-      const isBianca = normalizedId.includes("bianca");
-      const isAdminUser = normalizedId.includes("admin") || isCleitton;
+      // Verifica status do perfil
+      const { data: prof } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", loggedUser.id)
+        .maybeSingle();
 
-      const fallbackEmail = candidates[0] || `${normalizedId}@suportesolos.com.br`;
-      const fallbackName = isCleitton
-        ? "Cleitton Pereira"
-        : isBianca
-        ? "Bianca Bueno"
-        : normalizedId.charAt(0).toUpperCase() + normalizedId.slice(1);
+      if (prof?.status === "pendente") {
+        setLoading(false);
+        toast.info("Cadastro criado! Aguarde a aprovação do administrador.", { id: tid });
+        window.location.replace("/pendente");
+        return;
+      }
 
-      const fallbackUser = {
-        id: "usr-" + normalizedId,
-        email: fallbackEmail,
-        user_metadata: { full_name: fallbackName },
-      };
-      const fallbackProfile = {
-        id: fallbackUser.id,
-        email: fallbackEmail,
-        nome: fallbackName,
-        cargo: isAdminUser ? "Administrador do Sistema" : "Laboratorista / Técnico",
-        avatar_url: null,
-        status: "ativo" as const,
-      };
+      if (prof?.status === "bloqueado") {
+        await supabase.auth.signOut();
+        setLoading(false);
+        toast.error("Sua conta está bloqueada pelo administrador.", { id: tid });
+        return;
+      }
 
-      localStorage.setItem("labflow:auth_session", JSON.stringify({
-        user: fallbackUser,
-        profile: fallbackProfile,
-        role: isAdminUser ? "admin" : isBianca ? "verificador" : "usuario",
-      }));
-
-      // Tenta gravar perfil no banco
-      try {
-        await supabase.from("profiles").upsert(fallbackProfile);
-      } catch {}
-
-      toast.success(`Bem-vindo, ${fallbackName}! Login realizado com sucesso ✓`, { id: tid });
-      setTimeout(() => {
-        window.location.replace("/entregas");
-      }, 500);
+      toast.success("Login realizado com sucesso! ✓", { id: tid });
+      window.location.replace("/entregas");
     } catch (err: any) {
       setLoading(false);
       toast.error(friendlySignInError(err?.message || "Erro ao efetuar login."), { id: tid });
@@ -275,7 +231,7 @@ function UnifiedSignInForm() {
             required
             autoCapitalize="none"
             autoComplete="username"
-            placeholder="ex.: bianca.bueno ou bianca.bueno@suportesolos.com.br"
+            placeholder="ex.: bianca.bueno ou seu.nome@suportesolos.com.br"
             value={identifier}
             onChange={(e) => setIdentifier(e.target.value)}
             className="pl-9 h-9 text-xs"
@@ -310,18 +266,119 @@ function UnifiedSignInForm() {
   );
 }
 
+/** Carrega dinamicamente a biblioteca oficial do Google Identity Services */
+function loadGoogleGsi(): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (typeof window === "undefined") return resolve(false);
+    if ((window as any).google?.accounts?.oauth2 || (window as any).google?.accounts?.id) {
+      return resolve(true);
+    }
+    const existing = document.querySelector("script[src='https://accounts.google.com/gsi/client']");
+    if (existing) {
+      existing.addEventListener("load", () => resolve(true));
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.head.appendChild(script);
+  });
+}
+
 function GoogleButton() {
   const [loading, setLoading] = useState(false);
+  const [helpDialogOpen, setHelpDialogOpen] = useState(false);
 
   const onClick = async () => {
     setLoading(true);
-    const tid = toast.loading("Conectando conta Google…");
+    const tid = toast.loading("Iniciando seleção de conta Google…");
+
     try {
+      // 1. Tenta carregar Google Identity Services oficial (abre o popup real do Google de seleção de contas)
+      const gsiReady = await loadGoogleGsi();
+      const googleClientId =
+        (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID ||
+        (process as any)?.env?.VITE_GOOGLE_CLIENT_ID ||
+        "112017692174156672577-web.apps.googleusercontent.com"; // ou ID do projeto Google Cloud
+
+      if (gsiReady && (window as any).google?.accounts?.oauth2) {
+        try {
+          const client = (window as any).google.accounts.oauth2.initTokenClient({
+            client_id: googleClientId,
+            scope: "openid email profile",
+            prompt: "select_account",
+            callback: async (tokenResponse: any) => {
+              if (tokenResponse?.access_token) {
+                try {
+                  // Busca dados reais do usuário autenticado no Google
+                  const userInfoRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+                    headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
+                  });
+                  const gUser = await userInfoRes.json();
+
+                  if (gUser?.email) {
+                    const emailLower = gUser.email.toLowerCase();
+                    const isCleitton = emailLower.includes("cleitton");
+                    const isBianca = emailLower.includes("bianca");
+                    const userRole = isCleitton ? "admin" : isBianca ? "verificador" : "usuario";
+
+                    const authedUser = {
+                      id: "g-" + (gUser.sub || Date.now()),
+                      email: gUser.email,
+                      user_metadata: {
+                        full_name: gUser.name || gUser.email.split("@")[0],
+                        avatar_url: gUser.picture || null,
+                      },
+                    };
+                    const authedProfile = {
+                      id: authedUser.id,
+                      email: gUser.email,
+                      nome: gUser.name || gUser.email.split("@")[0],
+                      cargo: isCleitton ? "Administrador do Sistema" : "Usuário",
+                      avatar_url: gUser.picture || null,
+                      status: "ativo" as const,
+                    };
+
+                    localStorage.setItem("labflow:auth_session", JSON.stringify({
+                      user: authedUser,
+                      profile: authedProfile,
+                      role: userRole,
+                    }));
+
+                    toast.success(`Autenticado como ${gUser.email}! ✓`, { id: tid });
+                    setTimeout(() => window.location.replace("/entregas"), 400);
+                    return;
+                  }
+                } catch (fetchErr) {
+                  console.error("Erro ao obter dados do Google:", fetchErr);
+                }
+              }
+              setLoading(false);
+            },
+            error_callback: (nonOAuthErr: any) => {
+              console.warn("Google popup cancelado ou erro:", nonOAuthErr);
+              setLoading(false);
+              toast.dismiss(tid);
+            },
+          });
+
+          client.requestAccessToken({ prompt: "select_account" });
+          return;
+        } catch (oauthErr) {
+          console.warn("GIS token client falhou, tentando Supabase OAuth:", oauthErr);
+        }
+      }
+
+      // 2. Se estiver em ambiente Lovable Cloud Preview
       const isLovable = typeof window !== "undefined" && (window.location.hostname.includes("lovable.app") || window.location.hostname.includes("lovableproject.com"));
       if (isLovable) {
         try {
           const res = await lovable.auth.signInWithOAuth("google", {
             redirect_uri: `${window.location.origin}/auth`,
+            extraParams: { prompt: "select_account" },
           });
           if (res?.redirected) return;
         } catch (e) {
@@ -329,60 +386,79 @@ function GoogleButton() {
         }
       }
 
-      // Autenticação corporativa com Google
-      const googleUser = {
-        id: "google-usr-" + Date.now(),
-        email: "cleitton.pereira@suportesolos.com.br",
-        user_metadata: {
-          full_name: "Cleitton Pereira",
-          avatar_url: "https://lh3.googleusercontent.com/a/default-user",
+      // 3. Tenta Supabase OAuth oficial com seleção de conta
+      const { data: supData, error: supErr } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/auth`,
+          queryParams: {
+            prompt: "select_account",
+          },
         },
-      };
-      const googleProfile = {
-        id: googleUser.id,
-        email: googleUser.email,
-        nome: "Cleitton Pereira",
-        cargo: "Engenheiro Geotécnico / Gestor",
-        avatar_url: googleUser.user_metadata.avatar_url,
-        status: "ativo" as const,
-      };
+      });
 
-      localStorage.setItem("labflow:auth_session", JSON.stringify({
-        user: googleUser,
-        profile: googleProfile,
-        role: "admin",
-      }));
+      if (!supErr && supData?.url) {
+        toast.dismiss(tid);
+        window.location.href = supData.url;
+        return;
+      }
 
-      // Tenta gravar perfil no banco
-      try {
-        await supabase.from("profiles").upsert(googleProfile);
-      } catch {}
-
-      toast.success("Login com Google realizado com sucesso! ✓", { id: tid });
-      setTimeout(() => {
-        window.location.replace("/entregas");
-      }, 500);
+      // Se o provedor OAuth não estiver ativado no Supabase Dashboard
+      setLoading(false);
+      toast.dismiss(tid);
+      setHelpDialogOpen(true);
     } catch (e: any) {
       console.error("Erro no login Google:", e);
-      toast.error("Não foi possível conectar com o Google.", { id: tid });
-    } finally {
       setLoading(false);
+      toast.error("Não foi possível abrir o Google.", { id: tid });
     }
   };
 
   return (
-    <Button variant="outline" className="w-full" onClick={onClick} disabled={loading}>
-      {loading ? (
-        <Loader2 className="h-4 w-4 animate-spin" />
-      ) : (
-        <>
-          <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
-            <path fill="#EA4335" d="M12 10.2v3.9h5.5c-.24 1.4-1.68 4.1-5.5 4.1-3.3 0-6-2.7-6-6.1s2.7-6.1 6-6.1c1.9 0 3.15.8 3.87 1.5l2.64-2.55C16.9 3.3 14.7 2.3 12 2.3 6.9 2.3 2.8 6.4 2.8 11.6S6.9 20.9 12 20.9c6.9 0 9.4-4.8 9.4-7.4 0-.5-.05-.9-.13-1.3H12z"/>
-          </svg>
-          Entrar com Google
-        </>
-      )}
-    </Button>
+    <>
+      <Button variant="outline" className="w-full" onClick={onClick} disabled={loading}>
+        {loading ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <>
+            <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="#EA4335" d="M12 10.2v3.9h5.5c-.24 1.4-1.68 4.1-5.5 4.1-3.3 0-6-2.7-6-6.1s2.7-6.1 6-6.1c1.9 0 3.15.8 3.87 1.5l2.64-2.55C16.9 3.3 14.7 2.3 12 2.3 6.9 2.3 2.8 6.4 2.8 11.6S6.9 20.9 12 20.9c6.9 0 9.4-4.8 9.4-7.4 0-.5-.05-.9-.13-1.3H12z"/>
+            </svg>
+            Entrar com Google
+          </>
+        )}
+      </Button>
+
+      {/* Diálogo de Orientação caso OAuth do Google não esteja ativo no Dashboard */}
+      <Dialog open={helpDialogOpen} onOpenChange={setHelpDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold text-foreground">
+              <ShieldAlert className="h-5 w-5 text-amber-600" />
+              Autenticação com o Google
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Para entrar com o Google diretamente por esta tela:
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 text-xs text-muted-foreground leading-relaxed">
+            <p>
+              1. O provedor <b>Google OAuth</b> deve estar ativado no painel do <b>Supabase</b> (com as credenciais Client ID e Client Secret do Google Cloud Console).
+            </p>
+            <p>
+              2. Enquanto o provedor Google não for configurado no console, acesse com segurança digitando seu <b>E-mail e Senha</b> na aba <b>Entrar</b> ou registre sua conta na aba <b>Cadastrar</b>.
+            </p>
+          </div>
+
+          <DialogFooter>
+            <Button variant="default" size="sm" onClick={() => setHelpDialogOpen(false)}>
+              Entendi, vou usar e-mail e senha
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -400,7 +476,7 @@ function SignUpForm() {
     }
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail.includes("@") || !cleanEmail.includes(".")) {
-      toast.error("Informe um endereço de e-mail corporativo válido.");
+      toast.error("Informe um endereço de e-mail válido.");
       return;
     }
     setLoading(true);
@@ -421,10 +497,10 @@ function SignUpForm() {
     const { error: signInErr } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
     setLoading(false);
     if (signInErr) {
-      toast.success("Cadastro enviado com sucesso! Faça login na aba Entrar para continuar.");
+      toast.success("Cadastro realizado com sucesso! Faça login na aba Entrar.");
       return;
     }
-    toast.success("Cadastro realizado com sucesso!");
+    toast.success("Cadastro realizado com sucesso! ✓");
     window.location.replace("/entregas");
   };
 
