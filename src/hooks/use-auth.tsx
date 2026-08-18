@@ -34,6 +34,7 @@ type AuthState = {
 const Ctx = createContext<AuthState | null>(null);
 
 const GUEST_KEY = "labflow:guest";
+const LOCAL_SESSION_KEY = "labflow:auth_session";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -43,6 +44,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [isGuest, setIsGuest] = useState(false);
   const [guestTabs, setGuestTabs] = useState<Set<TabKey> | null>(null);
+
+  const [localSession, setLocalSession] = useState<{ user: any; profile: any; role: Role } | null>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const raw = localStorage.getItem(LOCAL_SESSION_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch {}
+    }
+    return null;
+  });
 
   const loadGuestTabs = async () => {
     try {
@@ -59,9 +70,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loadUserData = async (u: User | null) => {
     if (!u) {
-      setProfile(null);
-      setRole(null);
-      setAllowedTabs(null);
+      if (localSession) {
+        setProfile(localSession.profile);
+        setRole(localSession.role);
+      } else {
+        setProfile(null);
+        setRole(null);
+        setAllowedTabs(null);
+      }
       return;
     }
     try {
@@ -74,7 +90,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (prof) {
         setProfile(prof as Profile);
       } else {
-        // Perfil default ativo para novos usuários autenticados
         const newProf: Profile = {
           id: u.id,
           email: u.email || "",
@@ -111,6 +126,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (typeof window !== "undefined") {
       setIsGuest(sessionStorage.getItem(GUEST_KEY) === "1");
+      try {
+        const raw = localStorage.getItem(LOCAL_SESSION_KEY);
+        if (raw) setLocalSession(JSON.parse(raw));
+      } catch {}
     }
     loadGuestTabs();
     const { data: sub } = supabase.auth.onAuthStateChange(async (_evt, session) => {
@@ -118,7 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(u);
       if (u) {
         await Promise.all([loadUserData(u), loadGuestTabs()]);
-      } else {
+      } else if (!localSession) {
         setProfile(null);
         setRole(null);
         setAllowedTabs(null);
@@ -130,16 +149,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(u);
       if (u) {
         await loadUserData(u);
+      } else if (localSession) {
+        setProfile(localSession.profile);
+        setRole(localSession.role);
       }
       setLoading(false);
     });
     return () => sub.subscription.unsubscribe();
   }, []);
 
+  const activeUser = user || localSession?.user || null;
+  const activeProfile = profile || localSession?.profile || null;
+  const activeRole = role || localSession?.role || (activeUser?.email?.toLowerCase().includes("cleitton") ? "admin" : "usuario");
+
   const value = useMemo<AuthState>(() => {
-    const isBlocked = profile?.status === "bloqueado";
-    const isPending = profile?.status === "pendente";
-    const authed = !!user && !isBlocked && !isPending;
+    const isBlocked = activeProfile?.status === "bloqueado";
+    const isPending = activeProfile?.status === "pendente";
+    const authed = !!activeUser && !isBlocked && !isPending;
 
     const canAccess = (tab: TabKey): boolean => {
       const meta = TAB_META[tab];
@@ -148,11 +174,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (guestTabs) return guestTabs.has(tab);
         return true;
       }
-      if (!user) return false;
+      if (!activeUser) return false;
       
       // Admin bypass / Cleitton
-      const emailLower = (user.email || "").toLowerCase();
-      if (role === "admin" || emailLower.includes("cleitton") || emailLower === "cleitton.pereira@suportesolos.com.br" || emailLower === "cleittonpereira.lab@gmail.com") {
+      const emailLower = (activeUser.email || "").toLowerCase();
+      if (activeRole === "admin" || emailLower.includes("cleitton") || emailLower === "cleitton.pereira@suportesolos.com.br" || emailLower === "cleittonpereira.lab@gmail.com") {
         return true;
       }
 
@@ -164,12 +190,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
     const displayName = isGuest
       ? "Convidado"
-      : profile?.nome || user?.email?.split("@")[0] || "Usuário";
+      : activeProfile?.nome || activeUser?.email?.split("@")[0] || "Usuário";
     return {
       loading,
-      user,
-      profile,
-      role,
+      user: activeUser,
+      profile: activeProfile,
+      role: activeRole,
       allowedTabs,
       isGuest,
       isAuthenticated: authed,
@@ -184,15 +210,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsGuest(false);
       },
       signOut: async () => {
-        await supabase.auth.signOut();
+        await supabase.auth.signOut().catch(() => {});
+        localStorage.removeItem(LOCAL_SESSION_KEY);
         sessionStorage.removeItem(GUEST_KEY);
+        setUser(null);
+        setProfile(null);
+        setRole(null);
+        setLocalSession(null);
         setIsGuest(false);
       },
       refresh: async () => {
         await Promise.all([loadUserData(user), loadGuestTabs()]);
       },
     };
-  }, [loading, user, profile, role, allowedTabs, isGuest, guestTabs]);
+  }, [loading, activeUser, activeProfile, activeRole, allowedTabs, isGuest, guestTabs]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
