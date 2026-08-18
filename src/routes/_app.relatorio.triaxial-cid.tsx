@@ -730,7 +730,26 @@ export function TriaxialCidPage() {
 
       // Envia automaticamente para verificação — o fluxo é "Terminei a digitação".
       try {
-        await requestApproval({ data: { scopeId, rev: saved.rev, filename, skipVerification } });
+        await requestApproval({
+          data: {
+            scopeId,
+            rev: saved.rev,
+            filename,
+            skipVerification,
+            index: {
+              os_numero: sample.os,
+              os_cliente: sample.client,
+              amostra_code: sample.reportNumber || sample.code,
+              ensaio_tipo: "triaxial-cid",
+              ensaio_nome: "Triaxial CID",
+            },
+          },
+        });
+        if (ctx && ctx.os && ctx.amostra && ctx.ensaio) {
+          labStore.patchEnsaio(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, {
+            status: skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao",
+          });
+        }
         await refreshApprovals();
         toast.success(
           skipVerification

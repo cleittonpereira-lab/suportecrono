@@ -754,7 +754,26 @@ export function CDPage() {
       }
 
       try {
-        await requestApproval({ data: { scopeId, rev: saved.rev, filename, skipVerification } });
+        await requestApproval({
+          data: {
+            scopeId,
+            rev: saved.rev,
+            filename,
+            skipVerification,
+            index: {
+              os_numero: sample.os,
+              os_cliente: sample.client,
+              amostra_code: sample.reportNumber || sample.code,
+              ensaio_tipo: "cisalhamento-direto",
+              ensaio_nome: "Cisalhamento Direto",
+            },
+          },
+        });
+        if (ctx && ctx.os && ctx.amostra && ctx.ensaio) {
+          labStore.patchEnsaio(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, {
+            status: skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao",
+          });
+        }
         await refreshApprovals();
       } catch (err) {
         console.warn("Approval request standby:", err);
