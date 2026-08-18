@@ -913,16 +913,125 @@ export function AdensamentoPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 justify-end">
-          {/* Botão Contextual de Fluxo */}
-          <Button
-            size="sm"
-            onClick={() => handleSaveVersion()}
-            disabled={savingVersion}
-            className="gap-2 bg-amber-600 hover:bg-amber-700 text-white"
-          >
-            <Send className="h-4 w-4" />
-            {savingVersion ? "Enviando…" : "Terminei a digitação — Enviar para verificação"}
-          </Button>
+          {/* Botão Contextual de Fluxo Dinâmico */}
+          {(() => {
+            const st = approvals[0]?.status || (ctx?.ensaio as any)?.status || "em_digitacao";
+            const rev = approvals[0]?.rev;
+
+            if (st === "aguardando_verificacao") {
+              return (
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="border-amber-500/50 bg-amber-500/10 text-amber-800 dark:text-amber-300 font-semibold px-3 py-1.5 text-xs">
+                    ✓ Enviado para Verificação
+                  </Badge>
+                  {(isVerificador || isAdmin) && (
+                    <Button
+                      size="sm"
+                      onClick={async () => {
+                        if (typeof rev !== "number") return;
+                        setSavingVersion(true);
+                        const tid = toast.loading("Enviando para aprovação RT…");
+                        try {
+                          await verifyApproval({ data: { scopeId, rev, decision: "verificado" } });
+                          await refreshApprovals();
+                          if (ctx && ctx.os && ctx.amostra && ctx.ensaio) {
+                            labStore.patchEnsaio(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, { status: "aguardando_aprovacao" });
+                          }
+                          toast.success("Enviado para Aprovação RT com sucesso! ✓", { id: tid });
+                        } catch (err: any) {
+                          toast.error("Falha: " + (err?.message || err), { id: tid });
+                        } finally {
+                          setSavingVersion(false);
+                        }
+                      }}
+                      disabled={savingVersion}
+                      className="gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs"
+                    >
+                      <ShieldCheck className="h-4 w-4" />
+                      Enviar para Aprovação RT
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleSaveVersion()}
+                    disabled={savingVersion}
+                    className="text-xs"
+                  >
+                    Re-enviar
+                  </Button>
+                </div>
+              );
+            }
+
+            if (st === "aguardando_aprovacao") {
+              return (
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="border-indigo-500/50 bg-indigo-500/10 text-indigo-800 dark:text-indigo-300 font-semibold px-3 py-1.5 text-xs">
+                    ✓ Aguardando Aprovação RT
+                  </Badge>
+                  {(isAdmin || isVerificador) && (
+                    <Button
+                      size="sm"
+                      onClick={async () => {
+                        if (typeof rev !== "number") return;
+                        setSavingVersion(true);
+                        const tid = toast.loading("Aprovando laudo oficial…");
+                        try {
+                          await approveApproval({ data: { scopeId, rev, decision: "aprovado" } });
+                          await refreshApprovals();
+                          if (ctx && ctx.os && ctx.amostra && ctx.ensaio) {
+                            labStore.patchEnsaio(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, { status: "aprovado" });
+                          }
+                          toast.success("Laudo oficial aprovado e emitido com sucesso! ✓", { id: tid });
+                        } catch (err: any) {
+                          toast.error("Falha: " + (err?.message || err), { id: tid });
+                        } finally {
+                          setSavingVersion(false);
+                        }
+                      }}
+                      disabled={savingVersion}
+                      className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs"
+                    >
+                      <Check className="h-4 w-4" />
+                      Aprovar Laudo Oficial
+                    </Button>
+                  )}
+                </div>
+              );
+            }
+
+            if (st === "aprovado") {
+              return (
+                <div className="flex items-center gap-2">
+                  <Badge className="bg-emerald-600 text-white font-semibold px-3 py-1.5 text-xs">
+                    ✓ Laudo Oficial Aprovado
+                  </Badge>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleSaveVersion()}
+                    disabled={savingVersion}
+                    className="text-xs gap-1.5"
+                  >
+                    <Send className="h-3.5 w-3.5" /> Gerar Nova Revisão
+                  </Button>
+                </div>
+              );
+            }
+
+            return (
+              <Button
+                size="sm"
+                onClick={() => handleSaveVersion()}
+                disabled={savingVersion}
+                className="gap-2 bg-amber-600 hover:bg-amber-700 text-white font-semibold shadow-xs"
+              >
+                <Send className="h-4 w-4" />
+                {savingVersion ? "Enviando…" : "Terminei a digitação — Enviar para verificação"}
+              </Button>
+            );
+          })()}
 
           {/* Ajustes de Eixos */}
           <Button
