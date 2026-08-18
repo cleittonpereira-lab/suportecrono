@@ -248,7 +248,7 @@ export function AneisManagerDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-6">
+      <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col p-6 overflow-hidden">
         <DialogHeader className="pb-3 border-b">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
@@ -334,11 +334,11 @@ export function AneisManagerDialog({
             </div>
 
             {/* TAB 1: LISTAGEM DE ANÉIS */}
-            <TabsContent value="lista" className="m-0 space-y-3">
-              <div className="rounded border overflow-hidden">
+            <TabsContent value="lista" className="m-0 space-y-3 flex-1 overflow-hidden flex flex-col">
+              <div className="rounded-lg border overflow-y-auto max-h-[50vh] relative shadow-2xs">
                 <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/50 text-[11px]">
+                  <TableHeader className="sticky top-0 bg-muted/95 backdrop-blur-xs z-10 shadow-2xs">
+                    <TableRow className="bg-muted/90 text-[11px] hover:bg-muted/90">
                       <TableHead className="w-20 font-bold">Nº / Cód.</TableHead>
                       <TableHead className="w-32">Aplicação</TableHead>
                       <TableHead>Seção / Geometria</TableHead>
@@ -431,7 +431,7 @@ export function AneisManagerDialog({
             </TabsContent>
 
             {/* TAB 2: IMPORTAR / COLAR PLANILHA */}
-            <TabsContent value="importar" className="m-0 space-y-4">
+            <TabsContent value="importar" className="m-0 space-y-4 overflow-y-auto max-h-[55vh] pr-1">
               <div className="border rounded-lg p-4 bg-muted/20 space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
@@ -517,7 +517,7 @@ export function AneisManagerDialog({
             </TabsContent>
 
             {/* TAB 3: CADASTRO MANUAL / EDIÇÃO */}
-            <TabsContent value="novo" className="m-0 space-y-4">
+            <TabsContent value="novo" className="m-0 space-y-4 overflow-y-auto max-h-[55vh] pr-1">
               <div className="border rounded-lg p-4 bg-muted/20 space-y-4">
                 <div className="font-semibold text-xs text-primary flex items-center justify-between">
                   <span>{editingId ? "Editar Anel" : "Cadastrar Novo Anel"}</span>
