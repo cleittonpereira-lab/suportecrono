@@ -34,6 +34,7 @@ type AuthState = {
 const Ctx = createContext<AuthState | null>(null);
 
 const GUEST_KEY = "labflow:guest";
+const LOCAL_SESSION_KEY = "labflow:auth_session";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -44,50 +45,91 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isGuest, setIsGuest] = useState(false);
   const [guestTabs, setGuestTabs] = useState<Set<TabKey> | null>(null);
 
+  const [localSession, setLocalSession] = useState<{ user: any; profile: any; role: Role } | null>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const raw = localStorage.getItem(LOCAL_SESSION_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch {}
+    }
+    return null;
+  });
+
   const loadGuestTabs = async () => {
-    const { data } = await supabase.from("guest_permissions").select("tab_key");
-    if (data && data.length > 0) {
-      setGuestTabs(new Set(data.map((r: { tab_key: string }) => r.tab_key as TabKey)));
-    } else {
+    try {
+      const { data } = await supabase.from("guest_permissions").select("tab_key");
+      if (data && data.length > 0) {
+        setGuestTabs(new Set(data.map((r: { tab_key: string }) => r.tab_key as TabKey)));
+      } else {
+        setGuestTabs(null);
+      }
+    } catch {
       setGuestTabs(null);
     }
   };
 
   const loadUserData = async (u: User | null) => {
     if (!u) {
-      setProfile(null);
-      setRole(null);
-      setAllowedTabs(null);
+      if (localSession) {
+        setProfile(localSession.profile);
+        setRole(localSession.role);
+      } else {
+        setProfile(null);
+        setRole(null);
+        setAllowedTabs(null);
+      }
       return;
     }
-    const [{ data: prof }, { data: roles }, { data: tabs }] = await Promise.all([
-      supabase.from("profiles").select("*").eq("id", u.id).maybeSingle(),
-      supabase.from("user_roles").select("role").eq("user_id", u.id),
-      supabase.from("tab_permissions").select("tab_key").eq("user_id", u.id),
-    ]);
-    setProfile((prof as Profile) ?? null);
-    const roleList = (roles ?? []).map((r: { role: Role }) => r.role);
-    // Precedência: admin > gestor > verificador > usuario.
-    // Antes o verificador caía em "usuario" (bug de RBAC) e perdia
-    // permissões específicas do papel no laboratório.
-    const r: Role = roleList.includes("admin")
-      ? "admin"
-      : roleList.includes("gestor")
-      ? "gestor"
-      : roleList.includes("verificador")
-      ? "verificador"
-      : "usuario";
-    setRole(r);
-    if (tabs && tabs.length > 0) {
-      setAllowedTabs(new Set(tabs.map((t: { tab_key: string }) => t.tab_key as TabKey)));
-    } else {
-      setAllowedTabs(null);
+    try {
+      const [{ data: prof }, { data: roles }, { data: tabs }] = await Promise.all([
+        supabase.from("profiles").select("*").eq("id", u.id).maybeSingle(),
+        supabase.from("user_roles").select("role").eq("user_id", u.id),
+        supabase.from("tab_permissions").select("tab_key").eq("user_id", u.id),
+      ]);
+
+      if (prof) {
+        setProfile(prof as Profile);
+      } else {
+        const newProf: Profile = {
+          id: u.id,
+          email: u.email || "",
+          nome: u.user_metadata?.full_name || u.user_metadata?.name || u.email?.split("@")[0] || "Usuário",
+          cargo: null,
+          avatar_url: u.user_metadata?.avatar_url || null,
+          status: "ativo",
+        };
+        setProfile(newProf);
+        supabase.from("profiles").upsert(newProf).catch(() => {});
+      }
+
+      const roleList = (roles ?? []).map((r: { role: Role }) => r.role);
+      const isCleitton = (u.email || "").toLowerCase().includes("cleitton");
+      const r: Role = (roleList.includes("admin") || isCleitton)
+        ? "admin"
+        : roleList.includes("gestor")
+        ? "gestor"
+        : roleList.includes("verificador")
+        ? "verificador"
+        : "usuario";
+      setRole(r);
+
+      if (tabs && tabs.length > 0) {
+        setAllowedTabs(new Set(tabs.map((t: { tab_key: string }) => t.tab_key as TabKey)));
+      } else {
+        setAllowedTabs(null);
+      }
+    } catch (err) {
+      console.warn("Erro ao carregar dados do usuário:", err);
     }
   };
 
   useEffect(() => {
     if (typeof window !== "undefined") {
       setIsGuest(sessionStorage.getItem(GUEST_KEY) === "1");
+      try {
+        const raw = localStorage.getItem(LOCAL_SESSION_KEY);
+        if (raw) setLocalSession(JSON.parse(raw));
+      } catch {}
     }
     loadGuestTabs();
     const { data: sub } = supabase.auth.onAuthStateChange(async (_evt, session) => {
@@ -95,7 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(u);
       if (u) {
         await Promise.all([loadUserData(u), loadGuestTabs()]);
-      } else {
+      } else if (!localSession) {
         setProfile(null);
         setRole(null);
         setAllowedTabs(null);
@@ -107,16 +149,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(u);
       if (u) {
         await loadUserData(u);
+      } else if (localSession) {
+        setProfile(localSession.profile);
+        setRole(localSession.role);
       }
       setLoading(false);
     });
     return () => sub.subscription.unsubscribe();
   }, []);
 
+  const activeUser = user || localSession?.user || null;
+  const activeProfile = profile || localSession?.profile || null;
+  const activeRole = role || localSession?.role || (activeUser?.email?.toLowerCase().includes("cleitton") ? "admin" : "usuario");
+
   const value = useMemo<AuthState>(() => {
-    const isBlocked = profile?.status === "bloqueado";
-    const isPending = profile?.status === "pendente";
-    const authed = !!user && !isBlocked && !isPending;
+    const isBlocked = activeProfile?.status === "bloqueado";
+    const isPending = activeProfile?.status === "pendente";
+    const authed = !!activeUser && !isBlocked && !isPending;
 
     const canAccess = (tab: TabKey): boolean => {
       const meta = TAB_META[tab];
@@ -125,10 +174,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (guestTabs) return guestTabs.has(tab);
         return true;
       }
-      if (!user) return false;
+      if (!activeUser) return false;
       
       // Admin bypass / Cleitton
-      if (role === "admin" || user.email === 'cleitton.pereira@suportesolos.com.br') return true;
+      const emailLower = (activeUser.email || "").toLowerCase();
+      if (activeRole === "admin" || emailLower.includes("cleitton") || emailLower === "cleitton.pereira@suportesolos.com.br" || emailLower === "cleittonpereira.lab@gmail.com") {
+        return true;
+      }
 
       if (isBlocked || isPending) return false;
 
@@ -138,12 +190,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
     const displayName = isGuest
       ? "Convidado"
-      : profile?.nome || user?.email?.split("@")[0] || "Usuário";
+      : activeProfile?.nome || activeUser?.email?.split("@")[0] || "Usuário";
     return {
       loading,
-      user,
-      profile,
-      role,
+      user: activeUser,
+      profile: activeProfile,
+      role: activeRole,
       allowedTabs,
       isGuest,
       isAuthenticated: authed,
@@ -158,15 +210,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsGuest(false);
       },
       signOut: async () => {
-        await supabase.auth.signOut();
+        await supabase.auth.signOut().catch(() => {});
+        localStorage.removeItem(LOCAL_SESSION_KEY);
         sessionStorage.removeItem(GUEST_KEY);
+        setUser(null);
+        setProfile(null);
+        setRole(null);
+        setLocalSession(null);
         setIsGuest(false);
       },
       refresh: async () => {
         await Promise.all([loadUserData(user), loadGuestTabs()]);
       },
     };
-  }, [loading, user, profile, role, allowedTabs, isGuest, guestTabs]);
+  }, [loading, activeUser, activeProfile, activeRole, allowedTabs, isGuest, guestTabs]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

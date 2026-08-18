@@ -160,7 +160,11 @@ function EnsaioEditor() {
         ensaio,
         photos: ensaio.photos ?? [],
         coords: amostra.coords,
-        onPayloadChange: (payload) => labStore.patchEnsaio(os.id, amostra.id, ensaio.id, { payload }),
+        onPayloadChange: (payload) => {
+          const currentStatus = ensaio.status;
+          const nextStatus = currentStatus === "pendente_digitacao" || currentStatus === "agendado" ? "em_digitacao" : currentStatus;
+          labStore.patchEnsaio(os.id, amostra.id, ensaio.id, { payload, status: nextStatus });
+        },
         addPhoto: (p) => labStore.addEnsaioPhoto(os.id, amostra.id, ensaio.id, p),
         removePhoto: (id) => labStore.removeEnsaioPhoto(os.id, amostra.id, ensaio.id, id),
         updatePhoto: (id, patch) => labStore.updateEnsaioPhoto(os.id, amostra.id, ensaio.id, id, patch),
