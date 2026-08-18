@@ -38,6 +38,7 @@ import {
   Eye,
   FileSpreadsheet,
   FileText,
+  MessageSquareQuote,
   FlaskConical,
   History,
   LineChart as LineIcon,
@@ -70,6 +71,8 @@ import {
   pachecoSilvaSigmaP,
   physicalIndices,
   seedSample,
+  blankSample,
+  createBlankStage,
   seedStages,
   voidRatio,
   type SampleProps,
@@ -382,6 +385,7 @@ export function AdensamentoPage() {
   const [versions, setVersions] = useState<any[]>([]);
   const [approvals, setApprovals] = useState<any[]>([]);
   const [sampleEditOpen, setSampleEditOpen] = useState(false);
+  const [obsGanttOpen, setObsGanttOpen] = useState(false);
   const [aneisCatalogOpen, setAneisCatalogOpen] = useState(false);
   const aneisList = useMemo(() => getAneisCatalog(), [aneisCatalogOpen]);
 

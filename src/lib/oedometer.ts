@@ -403,3 +403,35 @@ export function seedStages(_e0: number, _H0: number): Stage[] {
   }
   return stages;
 }
+
+
+export const blankSample: SampleProps = {
+  project: "",
+  client: "",
+  workNumber: "",
+  reportNumber: "",
+  borehole: "",
+  depth: "",
+  local: "",
+  date: new Date().toLocaleDateString("pt-BR"),
+  revision: "0",
+  operator: "",
+  technicalResp: "Engº Maurício Malanconi - CREA: 5063078630",
+  description: "",
+  code: "",
+  os: "",
+  granulometricDescription: "",
+  ringDiameter: 0,
+  ringHeight: 0,
+  wetMassInitial: 0,
+  wetMassFinal: 0,
+  dryMass: 0,
+  Gs: 2.70,
+  rhoW: 1.0,
+};
+
+export function createBlankStage(sigma: number = 10): Stage {
+  const standardTimes = [0.1, 0.25, 0.5, 1, 2, 4, 8, 15, 30, 60, 120, 240, 480, 1440];
+  const readings = standardTimes.map((t) => ({ t, d: 0 }));
+  return { sigma, readings, finalDial: 0 };
+}
