@@ -56,6 +56,7 @@ import {
   CircleDot,
   User,
   FileEdit,
+  Check,
 } from "lucide-react";
 import { SuporteLogo } from "@/components/suporte-logo";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -234,8 +235,10 @@ export function AdensamentoPage() {
   const ctx = useOptionalLabEnsaio();
   const { lookup } = useCadastroByOs();
   const cad = ctx?.os?.numero ? lookup(ctx.os.numero) : undefined;
-  const { displayName, user, profile } = useAuth();
+  const { displayName, user, profile, role } = useAuth();
   const currentUserName = displayName || profile?.nome || user?.email?.split("@")[0] || "Cleitton Pereira";
+  const isAdmin = role === "admin";
+  const isVerificador = role === "verificador" || role === "gestor" || isAdmin;
 
   const rows0Fn = useServerFn(listRows);
   const { data: amostrasProg = [] } = useQuery({
@@ -415,6 +418,8 @@ export function AdensamentoPage() {
   useEffect(() => {
     loadVersions();
   }, [scopeId]);
+
+  const refreshApprovals = loadVersions;
 
   // Exportacao XLSX
   const handleExportXlsx = async () => {
@@ -978,7 +983,7 @@ export function AdensamentoPage() {
                         setSavingVersion(true);
                         const tid = toast.loading("Aprovando laudo oficial…");
                         try {
-                          await approveApproval({ data: { scopeId, rev, decision: "aprovado" } });
+                          await decideApproval({ data: { scopeId, rev, decision: "aprovado" } });
                           await refreshApprovals();
                           if (ctx && ctx.os && ctx.amostra && ctx.ensaio) {
                             labStore.patchEnsaio(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, { status: "aprovado" });
