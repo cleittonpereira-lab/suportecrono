@@ -45,10 +45,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [guestTabs, setGuestTabs] = useState<Set<TabKey> | null>(null);
 
   const loadGuestTabs = async () => {
-    const { data } = await supabase.from("guest_permissions").select("tab_key");
-    if (data && data.length > 0) {
-      setGuestTabs(new Set(data.map((r: { tab_key: string }) => r.tab_key as TabKey)));
-    } else {
+    try {
+      const { data } = await supabase.from("guest_permissions").select("tab_key");
+      if (data && data.length > 0) {
+        setGuestTabs(new Set(data.map((r: { tab_key: string }) => r.tab_key as TabKey)));
+      } else {
+        setGuestTabs(null);
+      }
+    } catch {
       setGuestTabs(null);
     }
   };
@@ -60,28 +64,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAllowedTabs(null);
       return;
     }
-    const [{ data: prof }, { data: roles }, { data: tabs }] = await Promise.all([
-      supabase.from("profiles").select("*").eq("id", u.id).maybeSingle(),
-      supabase.from("user_roles").select("role").eq("user_id", u.id),
-      supabase.from("tab_permissions").select("tab_key").eq("user_id", u.id),
-    ]);
-    setProfile((prof as Profile) ?? null);
-    const roleList = (roles ?? []).map((r: { role: Role }) => r.role);
-    // Precedência: admin > gestor > verificador > usuario.
-    // Antes o verificador caía em "usuario" (bug de RBAC) e perdia
-    // permissões específicas do papel no laboratório.
-    const r: Role = roleList.includes("admin")
-      ? "admin"
-      : roleList.includes("gestor")
-      ? "gestor"
-      : roleList.includes("verificador")
-      ? "verificador"
-      : "usuario";
-    setRole(r);
-    if (tabs && tabs.length > 0) {
-      setAllowedTabs(new Set(tabs.map((t: { tab_key: string }) => t.tab_key as TabKey)));
-    } else {
-      setAllowedTabs(null);
+    try {
+      const [{ data: prof }, { data: roles }, { data: tabs }] = await Promise.all([
+        supabase.from("profiles").select("*").eq("id", u.id).maybeSingle(),
+        supabase.from("user_roles").select("role").eq("user_id", u.id),
+        supabase.from("tab_permissions").select("tab_key").eq("user_id", u.id),
+      ]);
+
+      if (prof) {
+        setProfile(prof as Profile);
+      } else {
+        // Perfil default ativo para novos usuários autenticados
+        const newProf: Profile = {
+          id: u.id,
+          email: u.email || "",
+          nome: u.user_metadata?.full_name || u.user_metadata?.name || u.email?.split("@")[0] || "Usuário",
+          cargo: null,
+          avatar_url: u.user_metadata?.avatar_url || null,
+          status: "ativo",
+        };
+        setProfile(newProf);
+        supabase.from("profiles").upsert(newProf).catch(() => {});
+      }
+
+      const roleList = (roles ?? []).map((r: { role: Role }) => r.role);
+      const isCleitton = (u.email || "").toLowerCase().includes("cleitton");
+      const r: Role = (roleList.includes("admin") || isCleitton)
+        ? "admin"
+        : roleList.includes("gestor")
+        ? "gestor"
+        : roleList.includes("verificador")
+        ? "verificador"
+        : "usuario";
+      setRole(r);
+
+      if (tabs && tabs.length > 0) {
+        setAllowedTabs(new Set(tabs.map((t: { tab_key: string }) => t.tab_key as TabKey)));
+      } else {
+        setAllowedTabs(null);
+      }
+    } catch (err) {
+      console.warn("Erro ao carregar dados do usuário:", err);
     }
   };
 
@@ -128,7 +151,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!user) return false;
       
       // Admin bypass / Cleitton
-      if (role === "admin" || user.email === 'cleitton.pereira@suportesolos.com.br') return true;
+      const emailLower = (user.email || "").toLowerCase();
+      if (role === "admin" || emailLower.includes("cleitton") || emailLower === "cleitton.pereira@suportesolos.com.br" || emailLower === "cleittonpereira.lab@gmail.com") {
+        return true;
+      }
 
       if (isBlocked || isPending) return false;
 

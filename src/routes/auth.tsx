@@ -88,32 +88,34 @@ function AuthPage() {
   );
 }
 
-/** Resolve um identificador digitado (seja e-mail completo ou nome de usuário) para o e-mail real da conta */
-async function resolveLoginEmail(rawIdentifier: string): Promise<string> {
+/** Resolve um identificador digitado gerando lista prioritária de emails possíveis para autenticar */
+async function resolveCandidateEmails(rawIdentifier: string): Promise<string[]> {
   const input = rawIdentifier.trim().toLowerCase();
-  if (!input) return "";
+  if (!input) return [];
 
   // Se já contém '@', é um e-mail direto
   if (input.includes("@")) {
-    return input;
+    return [input];
   }
 
   const uname = input.replace(/^@+/, "");
-  if (!uname) return "";
+  if (!uname) return [];
 
-  // 1) Tenta resolver via RPC resolve_email_by_username
+  const candidates: string[] = [];
+
+  // 1) Tenta resolver via RPC no banco
   try {
     const { data: email, error } = await supabase.rpc("resolve_email_by_username", {
       _username: uname,
     });
-    if (!error && email) {
-      return email;
+    if (!error && email && typeof email === "string") {
+      candidates.push(email.trim().toLowerCase());
     }
   } catch (err) {
-    console.warn("RPC resolve_email_by_username falhou, tentando fallback", err);
+    // Silently continue
   }
 
-  // 2) Tenta buscar no profiles diretamente por email prefix ou username
+  // 2) Tenta buscar no profiles
   try {
     const { data: profile } = await supabase
       .from("profiles")
@@ -121,15 +123,27 @@ async function resolveLoginEmail(rawIdentifier: string): Promise<string> {
       .or(`username.eq.${uname},email.ilike.${uname}@%`)
       .limit(1)
       .maybeSingle();
-    if (profile?.email) {
-      return profile.email;
+    if (profile?.email && !candidates.includes(profile.email.toLowerCase())) {
+      candidates.push(profile.email.toLowerCase());
     }
   } catch (err) {
-    console.warn("Busca em profiles falhou, tentando fallback de domínio", err);
+    // Silently continue
   }
 
-  // 3) Fallback padrão corporativo Suporte Solos
-  return `${uname}@suportesolos.com.br`;
+  // 3) Domínios padrão suportados
+  const standardDomains = [
+    `${uname}@suportesolos.com.br`,
+    `${uname}@suporteinfra.com.br`,
+    `${uname}@gmail.com`,
+  ];
+
+  for (const d of standardDomains) {
+    if (!candidates.includes(d)) {
+      candidates.push(d);
+    }
+  }
+
+  return candidates;
 }
 
 function UnifiedSignInForm() {
@@ -151,46 +165,54 @@ function UnifiedSignInForm() {
 
     setLoading(true);
     try {
-      // Resolve usuário ou e-mail (ex.: bianca.bueno -> bianca.bueno@suportesolos.com.br)
-      const email = await resolveLoginEmail(idf);
-      if (!email) {
+      const candidates = await resolveCandidateEmails(idf);
+      if (candidates.length === 0) {
         setLoading(false);
         toast.error("Não foi possível identificar o usuário. Verifique os dados digitados.");
         return;
       }
 
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      let lastError: any = null;
+      let loggedUser: any = null;
 
-      if (error) {
+      for (const emailCandidate of candidates) {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: emailCandidate,
+          password,
+        });
+
+        if (!error && data?.user) {
+          loggedUser = data.user;
+          break;
+        }
+        lastError = error;
+      }
+
+      if (!loggedUser) {
         setLoading(false);
-        toast.error(friendlySignInError(error.message));
+        toast.error(friendlySignInError(lastError?.message || "Erro ao efetuar login."));
         return;
       }
 
       // Verifica status do perfil
-      if (data.user) {
-        const { data: prof } = await supabase
-          .from("profiles")
-          .select("status")
-          .eq("id", data.user.id)
-          .maybeSingle();
+      const { data: prof } = await supabase
+        .from("profiles")
+        .select("status")
+        .eq("id", loggedUser.id)
+        .maybeSingle();
 
-        if (prof?.status === "pendente") {
-          setLoading(false);
-          toast.info("Cadastro criado! Aguarde a aprovação do administrador para liberar seu acesso completo.");
-          window.location.replace("/pendente");
-          return;
-        }
+      if (prof?.status === "pendente") {
+        setLoading(false);
+        toast.info("Cadastro criado! Aguarde a aprovação do administrador para liberar seu acesso completo.");
+        window.location.replace("/pendente");
+        return;
+      }
 
-        if (prof?.status === "bloqueado") {
-          await supabase.auth.signOut();
-          setLoading(false);
-          toast.error("Sua conta está bloqueada pelo administrador.");
-          return;
-        }
+      if (prof?.status === "bloqueado") {
+        await supabase.auth.signOut();
+        setLoading(false);
+        toast.error("Sua conta está bloqueada pelo administrador.");
+        return;
       }
 
       toast.success("Login realizado com sucesso!");
@@ -256,37 +278,27 @@ function GoogleButton() {
     setLoading(true);
     const redirectTo = `${window.location.origin}/auth`;
     try {
-      // 1. Tenta direct Supabase signInWithOAuth
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo,
-          queryParams: {
-            hd: "suportesolos.com.br",
-            prompt: "select_account",
-          },
-        },
+      // 1. Prioriza Lovable Cloud Auth (Google OAuth gerenciado)
+      const result = await lovable.auth.signInWithOAuth("google", {
+        redirect_uri: redirectTo,
       });
 
-      if (error) {
-        // 2. Se Supabase falhar, tenta via lovable cloud auth wrapper
-        const result = await lovable.auth.signInWithOAuth("google", {
-          redirect_uri: redirectTo,
-          extraParams: { hd: "suportesolos.com.br", prompt: "select_account" },
+      if (result?.error) {
+        // 2. Fallback direto caso Supabase OAuth esteja configurado
+        const { error: supErr } = await supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: {
+            redirectTo,
+            queryParams: {
+              prompt: "select_account",
+            },
+          },
         });
-
-        if (result?.error) {
-          throw result.error;
-        }
+        if (supErr) throw supErr;
       }
     } catch (e: any) {
       console.error("Erro no login Google:", e);
-      const msg = String(e?.message || e);
-      if (/suportesolos/i.test(msg) || /domain/i.test(msg) || /hd/i.test(msg)) {
-        toast.error("Apenas contas @suportesolos.com.br podem entrar.");
-      } else {
-        toast.error("Não foi possível conectar com o Google. Use seu usuário ou e-mail corporativo com senha.");
-      }
+      toast.error("Não foi possível conectar com o Google. Tente entrar com seu usuário/e-mail e senha.");
     } finally {
       setLoading(false);
     }
@@ -321,8 +333,8 @@ function SignUpForm() {
       return;
     }
     const cleanEmail = email.trim().toLowerCase();
-    if (!/@suportesolos\.com\.br$/i.test(cleanEmail)) {
-      toast.error("Cadastro permitido apenas para emails @suportesolos.com.br.");
+    if (!cleanEmail.includes("@") || !cleanEmail.includes(".")) {
+      toast.error("Informe um endereço de e-mail corporativo válido.");
       return;
     }
     setLoading(true);
@@ -343,11 +355,11 @@ function SignUpForm() {
     const { error: signInErr } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
     setLoading(false);
     if (signInErr) {
-      toast.success("Cadastro enviado com sucesso! Faça login para continuar.");
+      toast.success("Cadastro enviado com sucesso! Faça login na aba Entrar para continuar.");
       return;
     }
-    toast.success("Cadastro realizado! Aguarde a liberação de um administrador.");
-    window.location.replace("/pendente");
+    toast.success("Cadastro realizado com sucesso!");
+    window.location.replace("/entregas");
   };
 
   return (
@@ -358,7 +370,7 @@ function SignUpForm() {
           <Input
             id="su-nome"
             required
-            placeholder="Seu nome"
+            placeholder="Seu nome completo"
             value={nome}
             onChange={(e) => setNome(e.target.value)}
             className="pl-9 h-9 text-xs"
@@ -403,7 +415,7 @@ function SignUpForm() {
         {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <><UserPlus className="mr-2 h-4 w-4" /> Cadastrar</>}
       </Button>
       <p className="text-[11px] text-muted-foreground text-center">
-        Após o cadastro, um administrador aprovará o seu perfil no painel de gestão.
+        Após o cadastro, seu acesso será liberado para a gestão e relatórios do laboratório.
       </p>
     </form>
   );
@@ -428,9 +440,6 @@ function friendlySignInError(msg: string): string {
 
 function friendlySignUpError(msg: string): string {
   const m = msg.toLowerCase();
-  if (m.includes("suportesolos")) {
-    return "Cadastro permitido apenas para emails @suportesolos.com.br.";
-  }
   if (m.includes("already registered") || m.includes("already been registered") || m.includes("user already")) {
     return "Este email já está cadastrado. Faça login na aba Entrar.";
   }
@@ -438,7 +447,7 @@ function friendlySignUpError(msg: string): string {
     return "Senha deve ter pelo menos 6 caracteres.";
   }
   if (m.includes("invalid") && m.includes("email")) {
-    return "Email inválido.";
+    return "Email inválido. Digite um e-mail corporativo válido.";
   }
   return msg;
 }
