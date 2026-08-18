@@ -66,7 +66,8 @@ import {
   type ApprovalRow,
 } from "@/lib/approvals.functions";
 import { supabase } from "@/integrations/supabase/client";
-import { CheckCircle2, XCircle, Clock, Send } from "lucide-react";
+import { CheckCircle2,
+  MessageSquareQuote, XCircle, Clock, Send } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { PhotoUploader } from "@/features/lab/components/PhotoUploader";
 import { WorkflowFarol } from "@/features/lab/components/WorkflowFarol";
@@ -353,6 +354,7 @@ export function TriaxialCidPage() {
   const [tab, setTab] = useState(() => draft?.tab ?? "amostra");
   const reportRef = useRef<HTMLDivElement>(null);
   const [adjustOpen, setAdjustOpen] = useState(false);
+  const [obsDialogOpen, setObsDialogOpen] = useState(false);
   const [idOpen, setIdOpen] = useState(true);
   const [photoOpen, setPhotoOpen] = useState(false);
   const [capsOpen, setCapsOpen] = useState(true);
@@ -1094,6 +1096,17 @@ export function TriaxialCidPage() {
                 </Button>
               );
             })()}
+            {/* Observação da Operação (Gantt) */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setObsDialogOpen(true)}
+              className="gap-1.5 border-amber-500/50 bg-amber-500/10 text-amber-900 dark:text-amber-200 hover:bg-amber-500/20 text-xs font-semibold shadow-xs"
+            >
+              <Eye className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              Observação da Operação
+            </Button>
+
             <Dialog open={adjustOpen} onOpenChange={setAdjustOpen}>
               <DialogTrigger asChild>
                 <Button variant="secondary">
@@ -1165,13 +1178,23 @@ export function TriaxialCidPage() {
                     )}
                   </CardDescription>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setSampleEditOpen(true)}
-                  className="text-xs text-primary hover:underline font-semibold cursor-pointer flex items-center gap-1"
-                >
-                  editar amostra →
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setObsDialogOpen(true)}
+                    className="text-xs text-amber-700 dark:text-amber-400 hover:underline font-semibold cursor-pointer flex items-center gap-1 bg-amber-500/10 px-2.5 py-1 rounded-md border border-amber-500/30 shadow-2xs"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    Observação da Operação
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSampleEditOpen(true)}
+                    className="text-xs text-primary hover:underline font-semibold cursor-pointer flex items-center gap-1"
+                  >
+                    editar amostra →
+                  </button>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="pt-0">
@@ -2316,6 +2339,67 @@ export function TriaxialCidPage() {
       </div>
 
       {/* Modal Completo de Edição da Amostra */}
+            {/* Modal de Observações e Instruções Operacionais do Gantt */}
+      <Dialog open={obsDialogOpen} onOpenChange={setObsDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold text-foreground">
+              <Eye className="h-5 w-5 text-amber-600" />
+              Observações da Operação & Instruções do Gantt
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Instruções técnicas, especificações de saturação B-check, tensões confinantes e critérios do ensaio Triaxial.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 bg-muted/40 rounded-lg border border-border/60 text-xs">
+              <div>
+                <span className="text-muted-foreground block text-[10px] uppercase font-bold">OS / Obra</span>
+                <span className="font-semibold text-foreground">{sample.os || ctx?.os?.numero || "OS-MODELO"}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block text-[10px] uppercase font-bold">Amostra / Furo</span>
+                <span className="font-semibold text-foreground">{sample.reportNumber || ctx?.amostra?.reportNumber || "AM-MODELO"} · {sample.borehole || ctx?.amostra?.borehole || "SH-01"}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block text-[10px] uppercase font-bold">Técnico Bancada</span>
+                <span className="font-semibold text-foreground">{sample.operator || ctx?.ensaio?.operator || "Laboratorista Bancada"}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block text-[10px] uppercase font-bold">Equipamento</span>
+                <span className="font-semibold text-foreground">{sample.equipment || "Câmara Triaxial Automática"}</span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold flex items-center gap-1.5 text-foreground">
+                <MessageSquareQuote className="h-4 w-4 text-amber-600" />
+                Instruções Técnicas da Programação (Gantt)
+              </label>
+              <div className="p-3.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs text-foreground font-medium leading-relaxed">
+                {(ctx?.ensaio as any)?.observacoes || "Ensaio Triaxial CID: Realizar verificação do parâmetro B de Skempton (mínimo B >= 0.95). Consolidação isotrópica com registro de dissipação de poropressão antes do cisalhamento drenado."}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-muted-foreground">
+                Critérios Operacionais & Detalhes da Amostra
+              </label>
+              <div className="p-3 rounded-lg bg-muted/50 border border-border text-xs text-muted-foreground leading-relaxed">
+                {sample.description || "Solo fino indeformado. Manter velocidade de deformação axial constante controlada para garantir drenagem completa durante o ensaio."}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="flex justify-between sm:justify-end gap-2">
+            <Button variant="default" size="sm" onClick={() => setObsDialogOpen(false)}>
+              Fechar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <SampleEditDialog
         open={sampleEditOpen}
         onOpenChange={setSampleEditOpen}

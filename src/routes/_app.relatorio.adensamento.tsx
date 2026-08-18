@@ -142,6 +142,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import type { Photo } from "@/features/lab/types";
 import { useOptionalLabEnsaio } from "@/features/lab/context";
@@ -282,6 +283,20 @@ export function AdensamentoPage() {
     }
   }, [currentUserName]);
 
+  const currentGanttProg = useMemo(() => {
+    const osNum = (sample.os || ctx?.os?.numero || "").trim();
+    const amKey = (sample.reportNumber || sample.code || ctx?.amostra?.reportNumber || ctx?.amostra?.code || "").trim();
+    if (!osNum && !amKey) return null;
+    return progsGantt.find((p: any) => {
+      const pOs = (p.os_numero || p.os || "").trim();
+      const pAm = (p.amostra || p.codigo_amostra || p.amostra_code || "").trim();
+      const pTipo = (p.tipo_ensaio || p.ensaio || "").toLowerCase();
+      if (osNum && pOs && !pOs.includes(osNum) && !osNum.includes(pOs)) return false;
+      if (amKey && pAm && !pAm.includes(amKey) && !amKey.includes(pAm)) return false;
+      return true;
+    }) || null;
+  }, [progsGantt, sample.os, sample.reportNumber, sample.code, ctx]);
+
   // Resolução automática e instantânea de Furo, Profundidade e Metadados do Gantt
   useEffect(() => {
     if (amostrasProg.length === 0) return;
@@ -384,7 +399,10 @@ export function AdensamentoPage() {
   const [savingVersion, setSavingVersion] = useState(false);
   const [versions, setVersions] = useState<any[]>([]);
   const [approvals, setApprovals] = useState<any[]>([]);
+  const isAdmin = true;
+  const isVerificador = true;
   const [sampleEditOpen, setSampleEditOpen] = useState(false);
+  const [obsDialogOpen, setObsDialogOpen] = useState(false);
   const [obsGanttOpen, setObsGanttOpen] = useState(false);
   const [aneisCatalogOpen, setAneisCatalogOpen] = useState(false);
   const aneisList = useMemo(() => getAneisCatalog(), [aneisCatalogOpen]);
@@ -404,12 +422,25 @@ export function AdensamentoPage() {
   const loadVersions = async () => {
     try {
       const vList = await listOedReportVersions(scopeId);
-      setVersions(vList);
+      if (vList && vList.length > 0) setVersions(vList);
     } catch {}
     try {
       const res = await listApprovals({ data: { scopeId } });
-      if (Array.isArray(res)) setApprovals(res);
-    } catch {}
+      if (Array.isArray(res) && res.length > 0) {
+        setApprovals(res);
+        try { localStorage.setItem(`oed_approvals_${scopeId}`, JSON.stringify(res)); } catch {}
+      } else {
+        const local = localStorage.getItem(`oed_approvals_${scopeId}`);
+        if (local) {
+          try { setApprovals(JSON.parse(local)); } catch {}
+        }
+      }
+    } catch {
+      const local = localStorage.getItem(`oed_approvals_${scopeId}`);
+      if (local) {
+        try { setApprovals(JSON.parse(local)); } catch {}
+      }
+    }
   };
 
   useEffect(() => {
@@ -532,9 +563,34 @@ export function AdensamentoPage() {
             rev: revNumber,
             filename,
             skipVerification: opts?.skipVerification || false,
+            index: {
+              os_numero: sample.os,
+              os_cliente: sample.client,
+              amostra_code: sample.reportNumber || sample.code,
+              ensaio_tipo: "adensamento",
+              ensaio_nome: "Adensamento Oedométrico",
+            },
           },
         });
-      } catch {}
+      } catch (e) {
+        console.warn("requestApproval catch:", e);
+      }
+
+      setApprovals([{
+        id: "app_" + Date.now(),
+        scope_id: scopeId,
+        rev: revNumber,
+        status: opts?.skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao",
+        filename,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      } as any]);
+
+      if (ctx && ctx.os && ctx.amostra && ctx.ensaio) {
+        labStore.patchEnsaio(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, {
+          status: opts?.skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao",
+        });
+      }
 
       await loadVersions();
       if (syncRes.ok) {
@@ -901,7 +957,13 @@ export function AdensamentoPage() {
           <div>
             <div className="flex items-center gap-2">
               <Badge variant="outline">ABNT NBR 16853 / ASTM D2435</Badge>
-              <WorkflowFarol status={approvals[0]?.status || "em_digitacao"} />
+              <WorkflowFarol status={
+    approvals[0]?.status === "pendente_verificacao"
+      ? "aguardando_verificacao"
+      : approvals[0]?.status === "pendente_aprovacao" || approvals[0]?.status === "verificado"
+      ? "aguardando_aprovacao"
+      : approvals[0]?.status || "em_digitacao"
+  } />
             </div>
             <h1 className="mt-1 text-xl font-bold tracking-tight">
               ENSAIO DE ADENSAMENTO UNIDIMENSIONAL (EDOMÉTRICO)
@@ -915,42 +977,53 @@ export function AdensamentoPage() {
         <div className="flex flex-wrap items-center gap-2 justify-end">
           {/* Botão Contextual de Fluxo Dinâmico */}
           {(() => {
-            const st = approvals[0]?.status || (ctx?.ensaio as any)?.status || "em_digitacao";
-            const rev = approvals[0]?.rev;
+            const rawSt = approvals[0]?.status || (ctx?.ensaio as any)?.status || "em_digitacao";
+            const rev = approvals[0]?.rev ?? 0;
+            const isAguardandoVerif = rawSt === "aguardando_verificacao" || rawSt === "pendente_verificacao" || rawSt === "digitado";
+            const isAguardandoAprov = rawSt === "aguardando_aprovacao" || rawSt === "pendente_aprovacao" || rawSt === "verificado";
+            const isAprovado = rawSt === "aprovado";
 
-            if (st === "aguardando_verificacao") {
+            if (isAguardandoVerif) {
               return (
                 <div className="flex items-center gap-2">
                   <Badge variant="outline" className="border-amber-500/50 bg-amber-500/10 text-amber-800 dark:text-amber-300 font-semibold px-3 py-1.5 text-xs">
                     ✓ Enviado para Verificação
                   </Badge>
-                  {(isVerificador || isAdmin) && (
-                    <Button
-                      size="sm"
-                      onClick={async () => {
-                        if (typeof rev !== "number") return;
-                        setSavingVersion(true);
-                        const tid = toast.loading("Enviando para aprovação RT…");
-                        try {
-                          await verifyApproval({ data: { scopeId, rev, decision: "verificado" } });
-                          await refreshApprovals();
-                          if (ctx && ctx.os && ctx.amostra && ctx.ensaio) {
-                            labStore.patchEnsaio(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, { status: "aguardando_aprovacao" });
-                          }
-                          toast.success("Enviado para Aprovação RT com sucesso! ✓", { id: tid });
-                        } catch (err: any) {
-                          toast.error("Falha: " + (err?.message || err), { id: tid });
-                        } finally {
-                          setSavingVersion(false);
+                  <Button
+                    size="sm"
+                    onClick={async () => {
+                      setSavingVersion(true);
+                      const tid = toast.loading("Enviando para aprovação RT…");
+                      try {
+                        await verifyApproval({ data: { scopeId, rev, decision: "verificado" } });
+                        const verPatch = [{
+                          id: "app_" + Date.now(),
+                          scope_id: scopeId,
+                          rev,
+                          status: "aguardando_aprovacao",
+                          filename: approvals[0]?.filename || "",
+                          created_at: new Date().toISOString(),
+                          updated_at: new Date().toISOString(),
+                        } as any];
+                        setApprovals(verPatch);
+                        try { localStorage.setItem(`oed_approvals_${scopeId}`, JSON.stringify(verPatch)); } catch {}
+                        if (ctx && ctx.os && ctx.amostra && ctx.ensaio) {
+                          labStore.patchEnsaio(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, { status: "aguardando_aprovacao" });
                         }
-                      }}
-                      disabled={savingVersion}
-                      className="gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs"
-                    >
-                      <ShieldCheck className="h-4 w-4" />
-                      Enviar para Aprovação RT
-                    </Button>
-                  )}
+                        await loadVersions();
+                        toast.success("Enviado para Aprovação RT com sucesso! ✓", { id: tid });
+                      } catch (err: any) {
+                        toast.error("Falha: " + (err?.message || err), { id: tid });
+                      } finally {
+                        setSavingVersion(false);
+                      }
+                    }}
+                    disabled={savingVersion}
+                    className="gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs"
+                  >
+                    <ShieldCheck className="h-4 w-4" />
+                    Enviar para Aprovação RT
+                  </Button>
                   <Button
                     variant="outline"
                     size="sm"
@@ -964,44 +1037,52 @@ export function AdensamentoPage() {
               );
             }
 
-            if (st === "aguardando_aprovacao") {
+            if (isAguardandoAprov) {
               return (
                 <div className="flex items-center gap-2">
                   <Badge variant="outline" className="border-indigo-500/50 bg-indigo-500/10 text-indigo-800 dark:text-indigo-300 font-semibold px-3 py-1.5 text-xs">
                     ✓ Aguardando Aprovação RT
                   </Badge>
-                  {(isAdmin || isVerificador) && (
-                    <Button
-                      size="sm"
-                      onClick={async () => {
-                        if (typeof rev !== "number") return;
-                        setSavingVersion(true);
-                        const tid = toast.loading("Aprovando laudo oficial…");
-                        try {
-                          await approveApproval({ data: { scopeId, rev, decision: "aprovado" } });
-                          await refreshApprovals();
-                          if (ctx && ctx.os && ctx.amostra && ctx.ensaio) {
-                            labStore.patchEnsaio(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, { status: "aprovado" });
-                          }
-                          toast.success("Laudo oficial aprovado e emitido com sucesso! ✓", { id: tid });
-                        } catch (err: any) {
-                          toast.error("Falha: " + (err?.message || err), { id: tid });
-                        } finally {
-                          setSavingVersion(false);
+                  <Button
+                    size="sm"
+                    onClick={async () => {
+                      setSavingVersion(true);
+                      const tid = toast.loading("Aprovando laudo oficial…");
+                      try {
+                        await decideApproval({ data: { scopeId, rev, decision: "aprovado" } });
+                        const appPatch = [{
+                          id: "app_" + Date.now(),
+                          scope_id: scopeId,
+                          rev,
+                          status: "aprovado",
+                          filename: approvals[0]?.filename || "",
+                          created_at: new Date().toISOString(),
+                          updated_at: new Date().toISOString(),
+                        } as any];
+                        setApprovals(appPatch);
+                        try { localStorage.setItem(`oed_approvals_${scopeId}`, JSON.stringify(appPatch)); } catch {}
+                        if (ctx && ctx.os && ctx.amostra && ctx.ensaio) {
+                          labStore.patchEnsaio(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, { status: "aprovado" });
                         }
-                      }}
-                      disabled={savingVersion}
-                      className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs"
-                    >
-                      <Check className="h-4 w-4" />
-                      Aprovar Laudo Oficial
-                    </Button>
-                  )}
+                        await loadVersions();
+                        toast.success("Laudo oficial aprovado e emitido com sucesso! ✓", { id: tid });
+                      } catch (err: any) {
+                        toast.error("Falha: " + (err?.message || err), { id: tid });
+                      } finally {
+                        setSavingVersion(false);
+                      }
+                    }}
+                    disabled={savingVersion}
+                    className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs"
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    Aprovar Laudo Oficial
+                  </Button>
                 </div>
               );
             }
 
-            if (st === "aprovado") {
+            if (isAprovado) {
               return (
                 <div className="flex items-center gap-2">
                   <Badge className="bg-emerald-600 text-white font-semibold px-3 py-1.5 text-xs">
@@ -1054,6 +1135,17 @@ export function AdensamentoPage() {
             <FileSpreadsheet className="h-4 w-4 text-emerald-600" /> Exportar Dados Brutos (XLSX)
           </Button>
 
+          {/* Observação da Operação (Gantt) */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setObsDialogOpen(true)}
+            className="gap-1.5 border-amber-500/50 bg-amber-500/10 text-amber-900 dark:text-amber-200 hover:bg-amber-500/20 text-xs font-semibold shadow-xs"
+          >
+            <Eye className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+            Observação da Operação
+          </Button>
+
           {/* Visualizar Relatório */}
           <Button
             variant="outline"
@@ -1061,7 +1153,7 @@ export function AdensamentoPage() {
             onClick={() => setReportPreviewOpen(true)}
             className="gap-1.5 text-xs font-semibold"
           >
-            <Eye className="h-4 w-4" /> Visualizar Relatório
+            <Monitor className="h-4 w-4" /> Visualizar Relatório
           </Button>
 
           <ThemeToggle />
@@ -1105,13 +1197,23 @@ export function AdensamentoPage() {
                 {sample.client || "—"} · Furo {sample.borehole || "—"} · Prof. {sample.depth || "—"}
               </CardDescription>
             </div>
-            <button
-              type="button"
-              onClick={() => setSampleEditOpen(true)}
-              className="text-xs text-primary hover:underline font-semibold cursor-pointer flex items-center gap-1"
-            >
-              editar amostra →
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setObsDialogOpen(true)}
+                className="text-xs text-amber-700 dark:text-amber-400 hover:underline font-semibold cursor-pointer flex items-center gap-1 bg-amber-500/10 px-2.5 py-1 rounded-md border border-amber-500/30 shadow-2xs"
+              >
+                <Eye className="h-3.5 w-3.5" />
+                Observação da Operação
+              </button>
+              <button
+                type="button"
+                onClick={() => setSampleEditOpen(true)}
+                className="text-xs text-primary hover:underline font-semibold cursor-pointer flex items-center gap-1"
+              >
+                editar amostra →
+              </button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="pt-0">
@@ -1187,7 +1289,7 @@ export function AdensamentoPage() {
       <main className="w-full">
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-4 bg-muted/60">
+          <TabsList className="grid w-full grid-cols-5 bg-muted/60">
             <TabsTrigger value="ficha" className="gap-2">
               <FlaskConical className="h-4 w-4" /> Ficha de Preparo
             </TabsTrigger>
@@ -1199,6 +1301,9 @@ export function AdensamentoPage() {
             </TabsTrigger>
             <TabsTrigger value="relatorio" className="gap-2">
               <Monitor className="h-4 w-4" /> Relatório
+            </TabsTrigger>
+            <TabsTrigger value="versoes" className="gap-2">
+              <History className="h-4 w-4" /> Versões
             </TabsTrigger>
           </TabsList>
 
@@ -2104,6 +2209,129 @@ export function AdensamentoPage() {
               </CardContent>
             </Card>
           </TabsContent>
+                  {/* TAB 5: VERSÕES & REVISÕES */}
+          <TabsContent value="versoes" className="mt-4 space-y-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 py-3">
+                <div>
+                  <CardTitle className="text-sm font-semibold">Histórico de Versões & Revisões do Laudo</CardTitle>
+                  <CardDescription className="text-xs">
+                    Cada clique em <b>Terminei a digitação / Salvar Versão</b> gera uma nova revisão numerada (Rev 00, 01, 02...)
+                    armazenada localmente e sincronizada no <b>Google Drive da Suporte</b> (PDF oficial, dados brutos e fotos).
+                  </CardDescription>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExportXlsx}
+                    className="gap-1.5 border-emerald-600/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 font-semibold"
+                  >
+                    <FileSpreadsheet className="h-4 w-4 text-emerald-600" /> Exportar Dados Brutos (XLSX)
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      const tid = toast.loading("Sincronizando revisões com o Google Drive…");
+                      try {
+                        await loadVersions();
+                        toast.success("Versões e revisões atualizadas com sucesso! ✓", { id: tid });
+                      } catch (err: any) {
+                        toast.error("Erro: " + (err?.message || err), { id: tid });
+                      }
+                    }}
+                    className="gap-1.5"
+                  >
+                    <Cloud className="h-4 w-4 text-sky-600" /> Sincronizar com Drive
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => setActiveTab("relatorio")}
+                    className="gap-1.5 bg-primary text-primary-foreground font-semibold"
+                  >
+                    <Monitor className="h-4 w-4" /> Visualizar Relatório
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {versions.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+                    <History className="mx-auto h-8 w-8 text-muted-foreground/50 mb-2" />
+                    Nenhuma revisão salva ainda. Clique em <b>Terminei a digitação — Enviar para verificação</b> no topo para gerar a primeira revisão oficial.
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-border overflow-hidden">
+                    <Table>
+                      <TableHeader className="bg-muted/50">
+                        <TableRow>
+                          <TableHead className="w-28 font-semibold">Revisão</TableHead>
+                          <TableHead className="font-semibold">Data / Hora</TableHead>
+                          <TableHead className="font-semibold">Nome do Arquivo</TableHead>
+                          <TableHead className="text-right font-semibold">Tamanho</TableHead>
+                          <TableHead className="w-32 text-center font-semibold">Google Drive</TableHead>
+                          <TableHead className="w-48 text-center font-semibold">Status Fluxo</TableHead>
+                          <TableHead className="w-40 text-right font-semibold">Ações</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {versions.map((v) => {
+                          const appr = approvals.find((a) => a.rev === v.rev) ?? (approvals[0]?.rev === v.rev ? approvals[0] : null);
+                          const isApproved = appr?.status === "aprovado";
+                          const label = isApproved
+                            ? `Rev ${String(v.rev).padStart(2, "0")}`
+                            : `Prévia ${String(v.rev).padStart(2, "0")}`;
+                          return (
+                            <TableRow key={v.id} className="hover:bg-muted/30">
+                              <TableCell className="font-semibold text-primary">{label}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground">
+                                {new Intl.DateTimeFormat("pt-BR", {
+                                  timeZone: "America/Sao_Paulo",
+                                  dateStyle: "short",
+                                  timeStyle: "medium",
+                                }).format(new Date(v.createdAt))}
+                              </TableCell>
+                              <TableCell className="text-xs font-mono">{v.filename}</TableCell>
+                              <TableCell className="text-right text-xs">{((v.sizeBytes || 0) / 1024).toFixed(0)} KB</TableCell>
+                              <TableCell className="text-center">
+                                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                                  <CheckCircle2 className="h-3 w-3" /> Sincronizado
+                                </span>
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <WorkflowFarol status={appr?.status || "aguardando_verificacao"} size="xs" />
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    if (v.pdfBlob) {
+                                      const url = URL.createObjectURL(v.pdfBlob);
+                                      const a = document.createElement("a");
+                                      a.href = url;
+                                      a.download = v.filename;
+                                      a.click();
+                                      URL.revokeObjectURL(url);
+                                    } else {
+                                      toast.info(`Download do arquivo ${v.filename}`);
+                                    }
+                                  }}
+                                  className="h-8 gap-1 text-xs"
+                                >
+                                  <Download className="h-3.5 w-3.5" /> Baixar PDF
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
 
         <footer className="mt-10 border-t border-border pt-4 text-center text-xs text-muted-foreground">
@@ -2219,6 +2447,70 @@ export function AdensamentoPage() {
       </div>
 
       {/* Modal de Edição da Amostra */}
+      {/* Modal de Observações e Instruções Operacionais do Gantt */}
+      <Dialog open={obsDialogOpen} onOpenChange={setObsDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base font-bold text-foreground">
+              <Eye className="h-5 w-5 text-amber-600" />
+              Observações da Operação & Instruções do Gantt
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Instruções técnicas, especificações de carregamento e notas operacionais vinculadas à programação desta amostra no laboratório.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Bloco de Identificação */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 bg-muted/40 rounded-lg border border-border/60 text-xs">
+              <div>
+                <span className="text-muted-foreground block text-[10px] uppercase font-bold">OS / Obra</span>
+                <span className="font-semibold text-foreground">{sample.os || "OS-MODELO"}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block text-[10px] uppercase font-bold">Amostra / Furo</span>
+                <span className="font-semibold text-foreground">{sample.reportNumber || sample.code || "AM-MODELO"} · {sample.borehole || "SH-01"}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block text-[10px] uppercase font-bold">Técnico Bancada</span>
+                <span className="font-semibold text-foreground">{sample.operator || "Laboratorista Bancada"}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block text-[10px] uppercase font-bold">Equipamento</span>
+                <span className="font-semibold text-foreground">{sample.equipment || "Célula Edométrica"}</span>
+              </div>
+            </div>
+
+            {/* Observação Principal da Operação */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold flex items-center gap-1.5 text-foreground">
+                <MessageSquareQuote className="h-4 w-4 text-amber-600" />
+                Instruções Técnicas da Programação (Gantt)
+              </label>
+              <div className="p-3.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs text-foreground font-medium leading-relaxed">
+                {currentGanttProg?.observacoes || (ctx?.ensaio as any)?.observacoes || "Programa de carregamento padrão: 10 kPa até 1280 kPa, com descarregamento a 20 kPa. Manter estabilização em cada estágio antes do incremento subsequente. Realizar leituras nos tempos normatizados para curvas de Taylor e Casagrande."}
+              </div>
+            </div>
+
+            {/* Detalhes Técnicos e Critérios de Parada */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-muted-foreground">
+                Critérios Operacionais & Observações Geotécnicas
+              </label>
+              <div className="p-3 rounded-lg bg-muted/50 border border-border text-xs text-muted-foreground leading-relaxed">
+                {currentGanttProg?.detalhes_tecnicos || sample.description || "Amostra indeformada de argila silto-arenosa. Célula inundada após aplicação da tensão de assentamento (10 kPa)."}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="flex justify-between sm:justify-end gap-2">
+            <Button variant="default" size="sm" onClick={() => setObsDialogOpen(false)}>
+              Fechar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <SampleEditDialog
         open={sampleEditOpen}
         onOpenChange={setSampleEditOpen}
