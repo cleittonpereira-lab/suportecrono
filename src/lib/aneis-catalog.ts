@@ -1,11 +1,11 @@
 export interface AnelItem {
   id: string;
-  numero: string; // Ex: "AN-01", "AN-02", "AD-R01"
+  numero: string; // Ex: "1", "AN-01", "3", "AD-R01"
   ensaio: "cisalhamento" | "adensamento" | "ambos";
   secao: "circular" | "quadrada";
-  diametro_mm?: number; // Para circular (ex: 50.0, 60.0, 70.0, 100.0)
-  lado_mm?: number; // Para quadrada (ex: 60.0, 100.0)
-  altura_mm: number; // Ex: 20.0, 25.0
+  diametro_mm?: number; // Para circular (ex: 50.10, 61.67, 71.20)
+  lado_mm?: number; // Para quadrada (ex: 60.14, 60.26)
+  altura_mm: number; // Ex: 20.02, 19.70
   massa_g: number; // Massa do anel vazio em gramas (tara)
   area_cm2: number;
   volume_cm3: number;
@@ -13,7 +13,7 @@ export interface AnelItem {
   observacoes?: string;
 }
 
-const STORAGE_KEY = "suporte_infra_catalogo_aneis_v1";
+const STORAGE_KEY = "suporte_infra_catalogo_aneis_v2";
 
 export function calculateRingGeometry(
   secao: "circular" | "quadrada",
@@ -37,99 +37,35 @@ export function calculateRingGeometry(
   };
 }
 
-export const DEFAULT_ANEIS: AnelItem[] = [
-  {
-    id: "anel_cd_01",
-    numero: "AN-01",
-    ensaio: "cisalhamento",
-    secao: "circular",
-    diametro_mm: 60.0,
-    altura_mm: 20.0,
-    massa_g: 112.45,
-    area_cm2: 28.2743,
-    volume_cm3: 56.5487,
-    material: "Aço Inox",
-    observacoes: "Anel Padrão Cisalhamento Direto Ø60mm",
-  },
-  {
-    id: "anel_cd_02",
-    numero: "AN-02",
-    ensaio: "cisalhamento",
-    secao: "circular",
-    diametro_mm: 60.0,
-    altura_mm: 20.0,
-    massa_g: 113.10,
-    area_cm2: 28.2743,
-    volume_cm3: 56.5487,
-    material: "Aço Inox",
-    observacoes: "Anel Padrão Cisalhamento Direto Ø60mm",
-  },
-  {
-    id: "anel_cd_03",
-    numero: "AN-03",
-    ensaio: "cisalhamento",
-    secao: "circular",
-    diametro_mm: 60.0,
-    altura_mm: 20.0,
-    massa_g: 112.80,
-    area_cm2: 28.2743,
-    volume_cm3: 56.5487,
-    material: "Aço Inox",
-    observacoes: "Anel Padrão Cisalhamento Direto Ø60mm",
-  },
-  {
-    id: "anel_cd_04",
-    numero: "AN-04",
-    ensaio: "cisalhamento",
-    secao: "circular",
-    diametro_mm: 50.0,
-    altura_mm: 20.0,
-    massa_g: 94.30,
-    area_cm2: 19.6350,
-    volume_cm3: 39.2699,
-    material: "Aço Inox",
-    observacoes: "Anel Cisalhamento Direto Ø50mm",
-  },
-  {
-    id: "anel_cd_05",
-    numero: "AN-QUAD-01",
-    ensaio: "cisalhamento",
-    secao: "quadrada",
-    lado_mm: 60.0,
-    altura_mm: 20.0,
-    massa_g: 128.50,
-    area_cm2: 36.0000,
-    volume_cm3: 72.0000,
-    material: "Aço Inox",
-    observacoes: "Anel Seção Quadrada 60x60mm",
-  },
-  {
-    id: "anel_ad_01",
-    numero: "AD-R01",
-    ensaio: "adensamento",
-    secao: "circular",
-    diametro_mm: 70.0,
-    altura_mm: 20.0,
-    massa_g: 135.20,
-    area_cm2: 38.4845,
-    volume_cm3: 76.9690,
-    material: "Aço Inox",
-    observacoes: "Anel Padrão Adensamento Edométrico Ø70mm",
-  },
-  {
-    id: "anel_ad_02",
-    numero: "AD-R02",
-    ensaio: "adensamento",
-    secao: "circular",
-    diametro_mm: 50.0,
-    altura_mm: 20.0,
-    massa_g: 98.40,
-    area_cm2: 19.6350,
-    volume_cm3: 39.2699,
-    material: "Aço Inox",
-    observacoes: "Anel Adensamento Edométrico Ø50mm",
-  },
+export const USER_INITIAL_ANEIS: Omit<AnelItem, "id" | "area_cm2" | "volume_cm3">[] = [
+  { numero: "1", ensaio: "adensamento", secao: "circular", diametro_mm: 50.10, altura_mm: 20.02, massa_g: 107.31, observacoes: "Anel Adensamento Ø50mm" },
+  { numero: "3", ensaio: "adensamento", secao: "circular", diametro_mm: 71.20, altura_mm: 20.20, massa_g: 149.78, observacoes: "Anel Adensamento Ø70mm" },
+  { numero: "4", ensaio: "adensamento", secao: "circular", diametro_mm: 79.60, altura_mm: 20.12, massa_g: 193.28, observacoes: "Anel Adensamento Ø80mm" },
+  { numero: "6", ensaio: "cisalhamento", secao: "quadrada", lado_mm: 60.14, altura_mm: 19.70, massa_g: 95.43, observacoes: "Anel Quadrado 60x60mm" },
+  { numero: "8", ensaio: "cisalhamento", secao: "circular", diametro_mm: 61.67, altura_mm: 17.67, massa_g: 35.94, observacoes: "Anel Cisalhamento Ø60mm" },
+  { numero: "9", ensaio: "cisalhamento", secao: "circular", diametro_mm: 61.04, altura_mm: 17.97, massa_g: 36.56, observacoes: "Anel Cisalhamento Ø60mm" },
+  { numero: "11", ensaio: "cisalhamento", secao: "circular", diametro_mm: 61.88, altura_mm: 19.71, massa_g: 41.72, observacoes: "Anel Cisalhamento Ø60mm" },
+  { numero: "12", ensaio: "cisalhamento", secao: "circular", diametro_mm: 61.60, altura_mm: 19.64, massa_g: 43.85, observacoes: "Anel Cisalhamento Ø60mm" },
+  { numero: "13", ensaio: "cisalhamento", secao: "circular", diametro_mm: 61.39, altura_mm: 19.90, massa_g: 42.73, observacoes: "Anel Cisalhamento Ø60mm" },
+  { numero: "15", ensaio: "cisalhamento", secao: "circular", diametro_mm: 61.51, altura_mm: 19.85, massa_g: 44.21, observacoes: "Anel Cisalhamento Ø60mm" },
+  { numero: "16", ensaio: "cisalhamento", secao: "circular", diametro_mm: 61.54, altura_mm: 19.66, massa_g: 42.44, observacoes: "Anel Cisalhamento Ø60mm" },
+  { numero: "17", ensaio: "ambos", secao: "circular", diametro_mm: 50.21, altura_mm: 19.93, massa_g: 46.85, observacoes: "Anel Ø50mm (Adensamento / Cisalhamento)" },
+  { numero: "18", ensaio: "ambos", secao: "circular", diametro_mm: 50.09, altura_mm: 19.93, massa_g: 46.85, observacoes: "Anel Ø50mm (Adensamento / Cisalhamento)" },
+  { numero: "19", ensaio: "cisalhamento", secao: "quadrada", lado_mm: 60.26, altura_mm: 19.40, massa_g: 51.55, observacoes: "Anel Quadrado 60x60mm" },
+  { numero: "20", ensaio: "cisalhamento", secao: "quadrada", lado_mm: 60.20, altura_mm: 20.19, massa_g: 100.12, observacoes: "Anel Quadrado 60x60mm" },
 ];
+
+export const DEFAULT_ANEIS: AnelItem[] = USER_INITIAL_ANEIS.map((a, idx) => {
+  const dim = a.secao === "circular" ? (a.diametro_mm || 60) : (a.lado_mm || 60);
+  const geo = calculateRingGeometry(a.secao, dim, a.altura_mm);
+  return {
+    ...a,
+    id: `anel_${idx + 1}_${a.numero}`,
+    area_cm2: geo.area_cm2,
+    volume_cm3: geo.volume_cm3,
+    material: "Aço Inox",
+  };
+});
 
 export function getAneisCatalog(): AnelItem[] {
   if (typeof window === "undefined") return DEFAULT_ANEIS;
@@ -173,6 +109,24 @@ export function saveAnelToCatalog(item: Omit<AnelItem, "id" | "area_cm2" | "volu
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   }
   return updated;
+}
+
+export function saveMultipleAneisToCatalog(items: Omit<AnelItem, "id" | "area_cm2" | "volume_cm3">[], replaceAll: boolean = false): AnelItem[] {
+  const list = replaceAll ? [] : getAneisCatalog();
+  const created: AnelItem[] = items.map((item, idx) => {
+    const dim = item.secao === "circular" ? (item.diametro_mm || 60) : (item.lado_mm || 60);
+    const geo = calculateRingGeometry(item.secao, dim, item.altura_mm || 20);
+    return {
+      ...item,
+      id: `anel_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 6)}`,
+      area_cm2: geo.area_cm2,
+      volume_cm3: geo.volume_cm3,
+    };
+  });
+
+  const next = [...list, ...created];
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  return next;
 }
 
 export function deleteAnelFromCatalog(id: string): void {
