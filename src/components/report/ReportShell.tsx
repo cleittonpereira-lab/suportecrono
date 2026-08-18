@@ -200,7 +200,7 @@ export function ReportFooter({ sample }: { sample: ReportSample }) {
         <div className="col-span-4 flex flex-col justify-end text-[8.5px] text-[#141414]">
           <div className="font-medium">São Paulo, {todayPt}</div>
           <div className="text-[8px] text-[#141414]/70">
-            Contrato nº {sample.workNumber ?? "—"} · Revisão {sample.revision ?? "—"}
+            Contrato nº {sample.os || (sample as any).osNumber || "—"} · Revisão {sample.revision ?? "0"}
           </div>
           <div className="mt-[2px] space-y-[1px] text-[7.5px] leading-[1.2] text-[#141414]/80">
             <div><span className="text-[#141414]/60">Operador (Laboratorista):</span> {sample.operator ?? ""}</div>

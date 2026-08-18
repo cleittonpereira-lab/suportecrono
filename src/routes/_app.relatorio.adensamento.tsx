@@ -235,7 +235,7 @@ export function AdensamentoPage() {
   const { lookup } = useCadastroByOs();
   const cad = ctx?.os?.numero ? lookup(ctx.os.numero) : undefined;
   const { displayName, user, profile } = useAuth();
-  const currentUserName = displayName || profile?.nome || user?.email?.split("@")[0] || "Maurício Malanconi";
+  const currentUserName = displayName || profile?.nome || user?.email?.split("@")[0] || "Cleitton Pereira";
 
   const rows0Fn = useServerFn(listRows);
   const { data: amostrasProg = [] } = useQuery({
@@ -4043,7 +4043,7 @@ function ReportFooter({ sample }: { sample: SampleProps }) {
         <div className="col-span-4 flex flex-col justify-end text-[8.5px] text-[#141414]">
           <div className="font-medium">São Paulo, {todayPt}</div>
           <div className="text-[8px] text-[#141414]/70">
-            Contrato nº {sample.workNumber} · Revisão {sample.revision}
+            Contrato nº {sample.os || "—"} · Revisão {sample.revision || "0"}
           </div>
           <div className="mt-[2px] space-y-[1px] text-[7.5px] leading-[1.2] text-[#141414]/80">
             <div><span className="text-[#141414]/60">Digitado por:</span> {sample.operator}</div>

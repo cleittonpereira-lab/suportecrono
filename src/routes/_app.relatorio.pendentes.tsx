@@ -429,7 +429,7 @@ function CentralRelatoriosPage() {
       labStore.patchEnsaio(os.id, am.id, en.id, {
         nome: sigla,
         sigla: sigla,
-        operator: "Maurício Malanconi",
+        operator: amProg?.tecnico || p?.tecnico || r?.operador_nome || "Rosângela Oliveira",
       });
     }
 

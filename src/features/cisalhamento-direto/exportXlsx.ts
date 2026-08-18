@@ -251,7 +251,7 @@ function addOfficialReportFooter(
   // Coluna Esquerda: A..C (Equipe Técnica)
   ws.mergeCells(`A${rTop}:C${rTop + 4}`);
   const fLeft = ws.getCell(`A${rTop}`);
-  fLeft.value = `São Paulo, ${spDate}\nContrato nº ${sample.workNumber || "—"} · Revisão ${sample.revision || "00"}\nOperador: ${sample.operator || "—"}  |  Digitado por: ${sample.typedBy || "—"}\nVerificado por: ${sample.verifiedBy || "Engº Cleitton Pereira"}\nGerente de Lab: Tecnº Geotécnico Carlos Christian da Silva`;
+  fLeft.value = `São Paulo, ${spDate}\nContrato nº ${sample.os || "—"} · Revisão ${sample.revision || "00"}\nOperador: ${sample.operator || "—"}  |  Digitado por: ${sample.typedBy || "—"}\nVerificado por: ${sample.verifiedBy || "Engº Cleitton Pereira"}\nGerente de Lab: Tecnº Geotécnico Carlos Christian da Silva`;
   fLeft.font = { name: "Calibri", size: 9.5, color: { argb: COLOR_BLACK } };
   fLeft.alignment = { horizontal: "left", vertical: "middle", wrapText: true };
 

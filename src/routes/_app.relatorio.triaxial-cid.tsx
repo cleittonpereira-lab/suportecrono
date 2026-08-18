@@ -187,7 +187,7 @@ export function TriaxialCidPage() {
   const { lookup } = useCadastroByOs();
   const cad = ctx?.os?.numero ? lookup(ctx.os.numero) : undefined;
   const { displayName, user, profile } = useAuth();
-  const currentUserName = displayName || profile?.nome || user?.email?.split("@")[0] || "Maurício Malanconi";
+  const currentUserName = displayName || profile?.nome || user?.email?.split("@")[0] || "Cleitton Pereira";
   const navigate = useNavigate();
 
   const rows0Fn = useServerFn(listRows);
