@@ -2278,7 +2278,11 @@ export function CDPage() {
                 Instruções Técnicas da Programação (Gantt)
               </label>
               <div className="p-3.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs text-foreground font-medium leading-relaxed">
+<<<<<<< HEAD
                 {(ctx?.ensaio as any)?.observacoes || (ctx?.amostra as any)?.observacoes || sample.observations || "Nenhuma observação cadastrada na programação."}
+=======
+                {(ctx?.ensaio as any)?.observacoes || "Ensaio de Cisalhamento Direto: Tensões normais de 50, 100 e 200 kPa. Taxa de cisalhamento lenta drenada. Registrar leituras com transdutores e conferir curva tensão-deformação."}
+>>>>>>> 6197d6cf78f604dc7cdd267c3d157a3983c6b8b8
               </div>
             </div>
 
