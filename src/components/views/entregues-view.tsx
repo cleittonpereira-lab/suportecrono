@@ -31,7 +31,23 @@ const HEADERS = [
   "VOL. ESPEC.", "CAPACIDADE",
 ];
 
-function deltaBadge(delta: string) {
+function deltaBadge(delta: string, dataPostagem?: string, dataProgramada?: string) {
+  // Se ambas as datas de postagem e programada forem informadas, calcula a diferença exata em dias corridos
+  if (dataPostagem && dataProgramada) {
+    const dPost = parseBrDate(dataPostagem);
+    const dProg = parseBrDate(dataProgramada);
+    if (dPost && dProg) {
+      const utcPost = Date.UTC(dPost.getFullYear(), dPost.getMonth(), dPost.getDate());
+      const utcProg = Date.UTC(dProg.getFullYear(), dProg.getMonth(), dProg.getDate());
+      const diffDays = Math.round((utcPost - utcProg) / (1000 * 60 * 60 * 24));
+
+      if (diffDays > 5) return <Badge variant="destructive">{diffDays}d atraso</Badge>;
+      if (diffDays > 0) return <Badge className="bg-amber-500 hover:bg-amber-500 text-white border-transparent">{diffDays}d atraso</Badge>;
+      if (diffDays === 0) return <Badge className="bg-emerald-600 hover:bg-emerald-600 text-white border-transparent">No prazo</Badge>;
+      return <Badge className="bg-emerald-600 hover:bg-emerald-600 text-white border-transparent">{Math.abs(diffDays)}d adiantado</Badge>;
+    }
+  }
+
   const n = parseInt(delta, 10);
   if (isNaN(n)) return delta ? <Badge variant="outline">{delta}</Badge> : "—";
   if (n > 5) return <Badge variant="destructive">{n}d atraso</Badge>;
@@ -292,7 +308,7 @@ export function EntreguesView({
               ) : (
                 filtered.map((row, idx) => (
                   <TableRow key={idx} onClick={() => setDetails(row)} className="cursor-pointer hover:bg-muted/40">
-                    <TableCell className="whitespace-nowrap">{deltaBadge(row.delta)}</TableCell>
+                    <TableCell className="whitespace-nowrap">{deltaBadge(row.delta, row.dataPostagem, row.dataProgramada)}</TableCell>
                     <TableCell className="whitespace-nowrap text-sm text-muted-foreground">{row.dataPostagem || "—"}</TableCell>
                     <TableCell className="font-medium text-sm min-w-[200px]">{row.tomador}</TableCell>
                     <TableCell className="whitespace-nowrap text-sm font-mono">
@@ -328,7 +344,7 @@ export function EntreguesView({
                 <Badge variant="outline" className="font-mono text-[10px]">OS {details.os || "—"}</Badge>
                 {details.os && <SondButton os={details.os} variant="button" />}
                 <SetorBadges setor={details.setor} size="xs" />
-                {deltaBadge(details.delta)}
+                {deltaBadge(details.delta, details.dataPostagem, details.dataProgramada)}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Data postagem" value={details.dataPostagem} />
