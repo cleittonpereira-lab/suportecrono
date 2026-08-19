@@ -35,9 +35,19 @@ export function loadOedDraft(scopeId: string): any | null {
   }
 }
 
-export async function fetchRemoteOedDraft(scopeId: string): Promise<any | null> {
+export async function fetchRemoteOedDraft(
+  scopeId: string,
+  opts?: { osNum?: string; amCode?: string; ensaioTipo?: string },
+): Promise<any | null> {
   try {
-    const res = await loadSharedDraft({ data: { scopeId } });
+    const res = await loadSharedDraft({
+      data: {
+        scopeId,
+        osNum: opts?.osNum,
+        amCode: opts?.amCode,
+        ensaioTipo: opts?.ensaioTipo || "adensamento",
+      },
+    });
     if (res?.success && res.payload) {
       try {
         localStorage.setItem(`${DRAFT_PREFIX}${scopeId}`, JSON.stringify(res.payload));

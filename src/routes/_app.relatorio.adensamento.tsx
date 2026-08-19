@@ -400,6 +400,7 @@ export function AdensamentoPage() {
   const [cvAdjust, setCvAdjust] = useState<Record<number, CvLineAdjust>>({});
   const [importOpen, setImportOpen] = useState(false);
   const [reportPreviewOpen, setReportPreviewOpen] = useState(false);
+  const [remoteLoaded, setRemoteLoaded] = useState(false);
   const [savingVersion, setSavingVersion] = useState(false);
   const [versions, setVersions] = useState<any[]>([]);
   const [approvals, setApprovals] = useState<any[]>([]);
@@ -409,17 +410,32 @@ export function AdensamentoPage() {
   const [aneisCatalogOpen, setAneisCatalogOpen] = useState(false);
   const aneisList = useMemo(() => getAneisCatalog(), [aneisCatalogOpen]);
 
-  // Carrega rascunho salvo
+  // Carrega rascunho salvo (local + nuvem)
   useEffect(() => {
     const draft = loadOedDraft(scopeId);
     if (draft?.sample) setSample((prev) => ({ ...prev, ...draft.sample }));
     if (draft?.stages) setStages(draft.stages);
+
+    fetchRemoteOedDraft(scopeId, {
+      osNum: ctx?.os?.numero,
+      amCode: ctx?.amostra?.reportNumber || ctx?.amostra?.code,
+      ensaioTipo: "adensamento",
+    }).then((remote) => {
+      if (remote) {
+        if (remote.sample) setSample((prev) => ({ ...prev, ...remote.sample }));
+        if (remote.stages && remote.stages.length > 0) setStages(remote.stages);
+      }
+      setRemoteLoaded(true);
+    }).catch(() => {
+      setRemoteLoaded(true);
+    });
   }, [scopeId]);
 
   // Salva rascunho automaticamente
   useEffect(() => {
+    if (!remoteLoaded) return;
     saveOedDraft(scopeId, { sample, stages });
-  }, [scopeId, sample, stages]);
+  }, [remoteLoaded, scopeId, sample, stages]);
 
   const loadVersions = async () => {
     try {

@@ -16,6 +16,23 @@ export function getCanonicalScopeId(osNum?: string | null, amCode?: string | nul
   return `os/${cleanOs || "os"}/amostra/${cleanAm || "amostra"}/ensaio/${cleanEn || "ensaio"}`;
 }
 
+export function hasMeaningfulData(payload: any): boolean {
+  if (!payload) return false;
+  if (Array.isArray(payload.photos) && payload.photos.length > 0) return true;
+  if (Array.isArray(payload.specimens) && payload.specimens.length > 0) {
+    for (const sp of payload.specimens) {
+      if (sp.wetMass > 0 || sp.wetMassCPAnel > 0 || sp.normalStressTarget > 0 || sp.sigma3Target > 0) return true;
+      if (Array.isArray(sp.shearData) && sp.shearData.some((r: any) => r.shearForceKgf > 0 || r.horizDispMm > 0)) return true;
+      if (Array.isArray(sp.shear) && sp.shear.some((r: any) => r.loadCellKgf > 0 || r.dispMm > 0)) return true;
+      if (Array.isArray(sp.capsules) && sp.capsules.some((c: any) => c.numero || c.tara > 0 || c.wet > 0)) return true;
+      if (Array.isArray(sp.initialCapsules) && sp.initialCapsules.some((c: any) => c.numero || c.tara > 0 || c.wet > 0)) return true;
+      if (Array.isArray(sp.finalCapsules) && sp.finalCapsules.some((c: any) => c.numero || c.tara > 0 || c.wet > 0)) return true;
+    }
+  }
+  if (Array.isArray(payload.stages) && payload.stages.some((st: any) => st.sigma > 0 || st.finalDial > 0)) return true;
+  return false;
+}
+
 export const saveSharedDraft = createServerFn({ method: "POST" })
   .validator((d: { scopeId: string; payload: any }) => d)
   .handler(async ({ data }) => {
@@ -34,6 +51,24 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
       const ensaioTipo = sample.tipo || sample.tipo_ensaio || "cisalhamento-direto";
 
       const canonicalId = getCanonicalScopeId(osNumero, amostraCode, ensaioTipo);
+      const incomingHasData = hasMeaningfulData(payload);
+
+      // Proteção contra sobrescrita por estado vazio inicial
+      if (!incomingHasData && (osNumero || scopeId)) {
+        try {
+          const queryIds = Array.from(new Set([scopeId, canonicalId].filter(Boolean) as string[]));
+          const { data: existingRows } = await supabaseAdmin
+            .from("lab_index")
+            .select("extra")
+            .in("scope_id", queryIds)
+            .limit(1);
+
+          if (existingRows && existingRows.length > 0 && hasMeaningfulData(existingRows[0].extra)) {
+            console.log("[saveSharedDraft] Sobrescrita bloqueada: o rascunho existente no banco possui dados preenchidos e o payload de envio está vazio.");
+            return { success: true, preserved: true };
+          }
+        } catch {}
+      }
 
       // 1. Grava no lab_index sob o scopeId da rota E o canonicalId determinístico
       try {
@@ -61,7 +96,6 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
         let pTargetId: string | null = null;
         let pTargetStatus: string = "em_digitacao";
 
-        // Tenta por ID direto
         const { data: pById } = await supabaseAdmin
           .from("lab_pendencias_digitacao")
           .select("id, status")
@@ -72,7 +106,6 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
           pTargetId = pById[0].id;
           pTargetStatus = pById[0].status === "pendente" ? "em_digitacao" : pById[0].status;
         } else if (osNumero && amostraCode) {
-          // Tenta buscar por OS e Amostra
           const { data: rows } = await supabaseAdmin
             .from("lab_pendencias_digitacao")
             .select("id, status, ensaio, tipo_ensaio")

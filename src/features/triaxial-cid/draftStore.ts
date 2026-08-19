@@ -57,9 +57,19 @@ export function saveDraft(scopeId: string, draft: Partial<TriaxialDraft>): void 
   saveTimers.set(scopeId, timer);
 }
 
-export async function fetchRemoteTriaxialDraft(scopeId: string): Promise<Partial<TriaxialDraft> | null> {
+export async function fetchRemoteTriaxialDraft(
+  scopeId: string,
+  opts?: { osNum?: string; amCode?: string; ensaioTipo?: string },
+): Promise<Partial<TriaxialDraft> | null> {
   try {
-    const res = await loadSharedDraft({ data: { scopeId } });
+    const res = await loadSharedDraft({
+      data: {
+        scopeId,
+        osNum: opts?.osNum,
+        amCode: opts?.amCode,
+        ensaioTipo: opts?.ensaioTipo || "triaxial-cid",
+      },
+    });
     if (res?.success && res.payload) {
       try {
         window.localStorage.setItem(KEY(scopeId), JSON.stringify(res.payload));

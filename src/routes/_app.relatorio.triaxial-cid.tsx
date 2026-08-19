@@ -564,6 +564,7 @@ export function TriaxialCidPage() {
   }>(null);
   const [decideComment, setDecideComment] = useState("");
   const [decideBusy, setDecideBusy] = useState(false);
+  const [remoteLoaded, setRemoteLoaded] = useState(false);
   const [previewVersion, setPreviewVersion] = useState<{ url: string; filename: string; rev: number } | null>(null);
 
   const openPreviewVersion = (v: ReportVersion) => {
@@ -634,22 +635,35 @@ export function TriaxialCidPage() {
     refreshVersions();
     refreshDriveStatus();
     refreshApprovals();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    fetchRemoteTriaxialDraft(scopeId, {
+      osNum: ctx?.os?.numero,
+      amCode: ctx?.amostra?.reportNumber || ctx?.amostra?.code,
+      ensaioTipo: "triaxial-cid",
+    }).then((remote) => {
+      if (remote) {
+        if (remote.sample) setSample((s) => ({ ...s, ...remote.sample }));
+        if (remote.specimens && remote.specimens.length > 0) setSpecimens(remote.specimens);
+        if (remote.selectedCpId) setSelectedCpId(remote.selectedCpId);
+        if (remote.tab) setTab(remote.tab);
+        if (remote.adjust) setAdjust((a: any) => ({ ...a, ...remote.adjust }));
+        if (remote.axisCfg) setAxisCfg((cfg) => ({ ...cfg, ...remote.axisCfg }));
+      }
+      setRemoteLoaded(true);
+    }).catch(() => {
+      setRemoteLoaded(true);
+    });
   }, [scopeId]);
 
-  // Auto-persistência do rascunho: salva no localStorage com debounce sempre que o usuário
-  // altera qualquer dado editável. Assim, ao voltar à lista de OS e reabrir o ensaio,
-  // os valores digitados (ex.: Gs) permanecem exatamente como foram deixados.
+  // Auto-persistência do rascunho (após carregar da nuvem)
   useEffect(() => {
+    if (!remoteLoaded) return;
     const h = window.setTimeout(() => {
       const payload = { sample, specimens, selectedCpId, tab, adjust, axisCfg };
       saveDraft(scopeId, payload);
-      // Espelha no Ensaio (labStore) — que dispara autosave para o Google Drive,
-      // tornando o rascunho acessível de qualquer dispositivo/URL.
       ctx?.onPayloadChange(payload);
-    }, 300);
+    }, 400);
     return () => window.clearTimeout(h);
-  }, [scopeId, sample, specimens, selectedCpId, tab, adjust, axisCfg, ctx]);
+  }, [remoteLoaded, scopeId, sample, specimens, selectedCpId, tab, adjust, axisCfg, ctx]);
 
   /**
    * Renderiza o PDF do relatório e devolve como Blob (para salvar como versão).

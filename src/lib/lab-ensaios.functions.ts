@@ -94,7 +94,6 @@ export type LabEnsaioSnapshot = {
  * de OS/Amostras ainda não foi hidratado no navegador.
  */
 export const getLabEnsaioSnapshot = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
   .inputValidator((v: unknown) => SnapshotInput.parse(v))
   .handler(async ({ data }): Promise<LabEnsaioSnapshot | null> => {
     const ids = parseScope(data.scopeId);

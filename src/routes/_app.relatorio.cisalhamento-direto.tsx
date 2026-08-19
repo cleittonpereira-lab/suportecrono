@@ -399,6 +399,7 @@ export function CDPage() {
   }>(null);
   const [decideComment, setDecideComment] = useState("");
   const [decideBusy, setDecideBusy] = useState(false);
+  const [remoteLoaded, setRemoteLoaded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -464,18 +465,22 @@ export function CDPage() {
           labStore.setEnsaioPhotos(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, remote.photos as any);
         }
       }
+      setRemoteLoaded(true);
+    }).catch(() => {
+      setRemoteLoaded(true);
     });
   }, [scopeId]);
 
   useEffect(() => {
+    if (!remoteLoaded) return;
     const h = window.setTimeout(() => {
       const draftPhotos = ctx?.photos ?? (draft as any)?.photos ?? [];
       const draftData = { sample, specimens, selectedCpId, tab, adjust, axisCfg, photos: draftPhotos };
       saveDraft(scopeId, draftData);
       if (ctx?.ensaio) ctx.onPayloadChange(draftData);
-    }, 300);
+    }, 400);
     return () => window.clearTimeout(h);
-  }, [scopeId, sample, specimens, selectedCpId, tab, adjust, axisCfg, ctx, ctx?.photos]);
+  }, [remoteLoaded, scopeId, sample, specimens, selectedCpId, tab, adjust, axisCfg, ctx, ctx?.photos]);
 
   const sortedSpecimens = useMemo(
     () => [...specimens].sort((a, b) => (a.normalStressTarget ?? 0) - (b.normalStressTarget ?? 0)),
