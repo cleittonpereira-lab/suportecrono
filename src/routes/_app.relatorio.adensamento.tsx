@@ -133,7 +133,7 @@ import { OedImportDialog } from "@/features/oedometer/components/OedImportDialog
 import { exportOedometerXlsx } from "@/features/oedometer/exportXlsx";
 import { syncOedometerRevisionToDrive } from "@/features/oedometer/driveSync";
 import { saveOedReportVersion, listOedReportVersions } from "@/features/oedometer/report-versions";
-import { saveOedDraft, loadOedDraft } from "@/features/oedometer/draftStore";
+import { saveOedDraft, loadOedDraft, fetchRemoteOedDraft } from "@/features/oedometer/draftStore";
 import { requestApproval, verifyApproval, decideApproval, listApprovals } from "@/lib/approvals.functions";
 import { WorkflowFarol } from "@/features/lab/components/WorkflowFarol";
 import { PickerWithCreate } from "@/features/cisalhamento-direto/PickerWithCreate";

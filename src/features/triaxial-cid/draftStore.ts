@@ -1,9 +1,10 @@
 /**
- * Persistência local (localStorage) do rascunho de trabalho do ensaio Triaxial CID.
+ * Persistência unificada (localStorage + Supabase em nuvem) do rascunho de trabalho do ensaio Triaxial CID.
  * Guarda o estado editável (sample, specimens, adjust, axisCfg, aba, CP selecionado)
- * por escopo (`ensaio.id` ou "local") para que edições sobrevivam à navegação.
+ * por escopo (`ensaio.id` ou "local") sincronizando em tempo real entre todas as máquinas.
  */
 import type { TriaxialSample, TriaxialSpecimen } from "./types";
+import { saveSharedDraft, loadSharedDraft } from "@/lib/draft.functions";
 
 const KEY = (scopeId: string) => `triaxial-cid:draft:${scopeId}`;
 
@@ -23,6 +24,8 @@ export type TriaxialDraft = {
   savedAt: string;
 };
 
+const saveTimers = new Map<string, any>();
+
 export function loadDraft(scopeId: string): Partial<TriaxialDraft> | null {
   if (typeof window === "undefined") return null;
   try {
@@ -36,19 +39,42 @@ export function loadDraft(scopeId: string): Partial<TriaxialDraft> | null {
 
 export function saveDraft(scopeId: string, draft: Partial<TriaxialDraft>): void {
   if (typeof window === "undefined") return;
+  const payload = { ...draft, savedAt: new Date().toISOString() };
   try {
-    const payload = { ...draft, savedAt: new Date().toISOString() };
     window.localStorage.setItem(KEY(scopeId), JSON.stringify(payload));
-  } catch {
-    // Ignora erros (quota / modo privado).
+  } catch {}
+
+  // Sincroniza em nuvem no Supabase
+  if (saveTimers.has(scopeId)) {
+    clearTimeout(saveTimers.get(scopeId));
   }
+  const timer = setTimeout(() => {
+    saveTimers.delete(scopeId);
+    saveSharedDraft({ data: { scopeId, payload } }).catch((err) => {
+      console.warn("[Triaxial saveSharedDraft] Falha na sincronização em nuvem:", err);
+    });
+  }, 400);
+  saveTimers.set(scopeId, timer);
+}
+
+export async function fetchRemoteTriaxialDraft(scopeId: string): Promise<Partial<TriaxialDraft> | null> {
+  try {
+    const res = await loadSharedDraft({ data: { scopeId } });
+    if (res?.success && res.payload) {
+      try {
+        window.localStorage.setItem(KEY(scopeId), JSON.stringify(res.payload));
+      } catch {}
+      return res.payload as Partial<TriaxialDraft>;
+    }
+  } catch (err) {
+    console.warn("[Triaxial fetchRemoteDraft] Falha ao carregar rascunho remoto:", err);
+  }
+  return null;
 }
 
 export function clearDraft(scopeId: string): void {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.removeItem(KEY(scopeId));
-  } catch {
-    // noop
-  }
+  } catch {}
 }

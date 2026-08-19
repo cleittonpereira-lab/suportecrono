@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useNavigate } from "@tanstack/react-router";
 import { detectMethodology, methodologyRoute, type SupportedMethodology } from "@/features/mesp-natural/calc";
-import { labStore } from "@/features/lab/store";
+import { labStore, useLabState } from "@/features/lab/store";
 import { ENSAIO_LABEL, type EnsaioTipo } from "@/features/lab/types";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -137,6 +137,27 @@ const SLA_LABEL: Record<SlaStatus, string> = {
   atrasado: "Atrasado",
 };
 
+
+function normOs(val: string | null | undefined): string {
+  if (!val) return "";
+  return String(val).trim().replace(/^OS[-\s]*/i, "").toLowerCase();
+}
+
+function normAmostra(val: string | null | undefined): string {
+  if (!val) return "";
+  return String(val).trim().toLowerCase();
+}
+
+function normMethod(val: string | null | undefined): string {
+  if (!val) return "";
+  const s = String(val).toLowerCase();
+  if (s.includes("cisalhamento") || s.includes("cd")) return "cisalhamento-direto";
+  if (s.includes("adensamento") || s.includes("oed") || s.includes("adens")) return "adensamento";
+  if (s.includes("triaxial") || s.includes("tri")) return "triaxial-cid";
+  if (s.includes("m.esp") || s.includes("mesp") || s.includes("massa")) return "mesp-a";
+  return s;
+}
+
 function CentralRelatoriosPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -171,11 +192,67 @@ function CentralRelatoriosPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<PendenciaDigitacao | null>(null);
 
   // Queries
+  const labState = useLabState();
+
   const { data: rows = [], isLoading, refetch } = useQuery({
     queryKey: ["lab-pendencias"],
     queryFn: () => listFn(),
-    refetchInterval: 30_000,
+    refetchInterval: 15_000,
   });
+
+  // Lista unificada de pendências (Supabase + Rascunhos ativos em labState)
+  const allPendencias = useMemo(() => {
+    const map = new Map<string, PendenciaDigitacao>();
+
+    for (const r of rows) {
+      const key = `${normOs(r.os)}::${normAmostra(r.amostra || "")}::${normMethod(r.ensaio)}`;
+      map.set(key, r);
+      map.set(r.id, r);
+    }
+
+    if (labState?.os) {
+      for (const o of labState.os) {
+        for (const a of o.amostras) {
+          for (const e of a.ensaios) {
+            const hasData = e.payload && Object.keys(e.payload).length > 0;
+            const isEmProgresso = e.status === "em_digitacao" || e.status === "digitado" || e.status === "verificacao" || e.status === "aprovado" || hasData;
+            if (!isEmProgresso) continue;
+
+            const key = `${normOs(o.numero)}::${normAmostra(a.reportNumber || a.code || "")}::${normMethod(e.sigla || e.nome || e.tipo)}`;
+            if (!map.has(key)) {
+              let st: PendenciaDigitacao["status"] = "em_digitacao";
+              if (e.status === "digitado" || e.status === "verificacao") st = "digitado";
+              if (e.status === "aprovado" || e.status === "concluido") st = "aprovado";
+
+              const item: PendenciaDigitacao = {
+                id: e.id,
+                os: o.numero,
+                amostra: a.reportNumber || a.code || null,
+                ensaio: e.sigla || e.nome || ENSAIO_LABEL[e.tipo] || e.tipo,
+                tipo_ensaio: e.tipo,
+                equipamento: null,
+                data_conclusao: new Date().toISOString(),
+                status: st,
+                origem: "avulso",
+                operador_user_id: null,
+                operador_nome: e.operator || o.operator || null,
+                observacao: null,
+                payload: e.payload as any,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              };
+              map.set(key, item);
+              map.set(e.id, item);
+            }
+          }
+        }
+      }
+    }
+
+    return Array.from(new Set(map.values())).sort(
+      (a, b) => new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime()
+    );
+  }, [rows, labState]);
 
   const { data: progs = [] } = useQuery({
     queryKey: ["prox-ensaios-progs"],
@@ -248,8 +325,8 @@ function CentralRelatoriosPage() {
   // Filtro de busca global
   const filteredRows = useMemo(() => {
     const q = busca.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter(
+    if (!q) return allPendencias;
+    return allPendencias.filter(
       (r) =>
         r.os.toLowerCase().includes(q) ||
         (r.amostra ?? "").toLowerCase().includes(q) ||
@@ -258,7 +335,7 @@ function CentralRelatoriosPage() {
         (r.operador_nome ?? "").toLowerCase().includes(q) ||
         (r.digitador_nome ?? "").toLowerCase().includes(q),
     );
-  }, [rows, busca]);
+  }, [allPendencias, busca]);
 
   const filteredGantt = useMemo(() => {
     const q = busca.trim().toLowerCase();
@@ -281,13 +358,13 @@ function CentralRelatoriosPage() {
       ganttConcluidos: ganttQueue.filter((g) => g.stage === "concluido").length,
       ganttExecucao: ganttQueue.filter((g) => g.stage === "execucao").length,
       ganttPlanejado: ganttQueue.filter((g) => g.stage === "planejado").length,
-      em_digitacao: rows.filter((r) => r.status === "em_digitacao" || r.status === "pendente").length,
-      verificacao: rows.filter((r) => r.status === "digitado").length,
-      aprovacao: rows.filter((r) => r.status === "verificado").length,
-      concluidos: rows.filter((r) => r.status === "aprovado" || r.status === "concluido_externo").length,
+      em_digitacao: allPendencias.filter((r) => r.status === "em_digitacao" || r.status === "pendente").length,
+      verificacao: allPendencias.filter((r) => r.status === "digitado").length,
+      aprovacao: allPendencias.filter((r) => r.status === "verificado").length,
+      concluidos: allPendencias.filter((r) => r.status === "aprovado" || r.status === "concluido_externo").length,
     };
     return c;
-  }, [ganttQueue, rows]);
+  }, [ganttQueue, allPendencias]);
 
   // Mutações
   const setStatusMutation = useMutation({

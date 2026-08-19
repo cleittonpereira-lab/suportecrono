@@ -84,7 +84,7 @@ import type {
   CDAxisCfg,
 } from "@/features/cisalhamento-direto/types";
 import { SEED_CD_SAMPLE, makeEmptyCDSpecimen } from "@/features/cisalhamento-direto/seed";
-import { loadDraft, saveDraft } from "@/features/cisalhamento-direto/draftStore";
+import { loadDraft, saveDraft, fetchRemoteDraft } from "@/features/cisalhamento-direto/draftStore";
 import { processSpecimen, fitEnvelope } from "@/features/cisalhamento-direto/domain/calc";
 import { cn } from "@/lib/utils";
 import { EnsaioListByType } from "@/features/lab/components/EnsaioListByType";
@@ -448,6 +448,16 @@ export function CDPage() {
     refreshVersions();
     refreshDriveStatus();
     refreshApprovals();
+    fetchRemoteDraft(scopeId).then((remote) => {
+      if (remote) {
+        if (remote.sample) setSample((s) => ({ ...s, ...remote.sample }));
+        if (remote.specimens && remote.specimens.length > 0) setSpecimens(remote.specimens);
+        if (remote.selectedCpId) setSelectedCpId(remote.selectedCpId);
+        if (remote.tab) setTab(remote.tab);
+        if (remote.adjust) setAdjust((a: any) => ({ ...a, ...remote.adjust }));
+        if (remote.axisCfg) setAxisCfg((cfg) => ({ ...cfg, ...remote.axisCfg }));
+      }
+    });
   }, [scopeId]);
 
   useEffect(() => {

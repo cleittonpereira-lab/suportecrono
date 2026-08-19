@@ -81,7 +81,7 @@ import type {
   SpecimenResults,
 } from "@/features/triaxial-cid/types";
 import { SEED_SAMPLE, EMPTY_SPECIMENS } from "@/features/triaxial-cid/seed";
-import { loadDraft, saveDraft } from "@/features/triaxial-cid/draftStore";
+import { loadDraft, saveDraft, fetchRemoteTriaxialDraft } from "@/features/triaxial-cid/draftStore";
 import {
   fitEnvelope,
   mohrCirclePoints,

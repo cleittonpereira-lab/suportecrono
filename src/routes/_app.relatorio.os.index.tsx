@@ -879,7 +879,7 @@ function CentralOsPage() {
       }
       totalEnsaios += gTotal;
       ensaiosAprovados += gAprov;
-      ensaiosEmDigitacao += g.ensaios.filter((e) => e.status === "em_digitacao" || e.status === "verificacao").length;
+      ensaiosEmDigitacao += g.ensaios.filter((e) => e.status === "em_digitacao" || e.status === "verificacao" || e.pendenciaId).length;
       ensaiosFilaGantt += g.ensaios.filter((e) => e.status === "programado" || e.status === "execucao").length;
     }
 
