@@ -1,15 +1,18 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { FolderKanban, Beaker, FlaskConical, ShieldCheck, Stamp, ArrowRight, Pencil } from "lucide-react";
+import { FolderKanban, Beaker, FlaskConical, ShieldCheck, Stamp, ArrowRight, Pencil, Sparkles } from "lucide-react";
 import { useLabState } from "@/features/lab/store";
-import { ENSAIO_LABEL } from "@/features/lab/types";
+import { ENSAIO_LABEL, type EnsaioTipo } from "@/features/lab/types";
 import { EnsaioTag } from "@/features/lab/components/EnsaioTag";
 import { Button } from "@/components/ui/button";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useServerFn } from "@tanstack/react-start";
+import { useQuery } from "@tanstack/react-query";
 import { listEmissoes } from "@/lib/emissoes.functions";
+import { listPendenciasDigitacao } from "@/lib/lab-pendencias.functions";
+import { detectMethodology } from "@/features/mesp-natural/calc";
 
 export const Route = createFileRoute("/_app/relatorio/")({
   ssr: false,
@@ -29,8 +32,16 @@ export const Route = createFileRoute("/_app/relatorio/")({
 function EnsaiosDashboard() {
   const { os } = useLabState();
   const listFn = useServerFn(listEmissoes);
+  const listPendsFn = useServerFn(listPendenciasDigitacao);
+
   const [queueCounts, setQueueCounts] = useState<{ verif: number; aprov: number } | null>(null);
   const [canSeeQueues, setCanSeeQueues] = useState(false);
+
+  const { data: pendencias = [] } = useQuery({
+    queryKey: ["lab-pendencias-home"],
+    queryFn: () => listPendsFn(),
+    refetchInterval: 15_000,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -52,20 +63,75 @@ function EnsaiosDashboard() {
           listFn({ data: { workflowStatuses: ["aguardando_aprovacao"] } }),
         ]);
         if (!cancelled) setQueueCounts({ verif: v.length, aprov: a.length });
-      } catch {
-        /* silencia */
-      }
+      } catch {}
     })();
     return () => {
       cancelled = true;
     };
   }, [listFn]);
 
-  const nAmostras = os.reduce((a, o) => a + o.amostras.length, 0);
-  const nEnsaios = os.reduce((a, o) => a + o.amostras.reduce((b, x) => b + x.ensaios.length, 0), 0);
-  const rascunhos = os.flatMap((o) =>
-    o.amostras.flatMap((a) => a.ensaios.filter((e) => e.status !== "concluido").map((e) => ({ os: o, a, e }))),
-  );
+  // Consolidacao de OSs
+  const uniqueOsSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const o of os) if (o.numero) set.add(o.numero.trim());
+    for (const p of pendencias) if (p.os) set.add(p.os.trim());
+    return set;
+  }, [os, pendencias]);
+
+  const nAmostras = useMemo(() => {
+    const fromOs = os.reduce((a, o) => a + o.amostras.length, 0);
+    const fromPends = pendencias.filter((p) => p.amostra).length;
+    return Math.max(fromOs, fromPends);
+  }, [os, pendencias]);
+
+  const nEnsaios = useMemo(() => {
+    const fromOs = os.reduce((a, o) => a + o.amostras.reduce((b, x) => b + x.ensaios.length, 0), 0);
+    const fromPends = pendencias.length;
+    return Math.max(fromOs, fromPends);
+  }, [os, pendencias]);
+
+  const rascunhos = useMemo(() => {
+    const list: Array<{ id: string; osNum: string; amCode: string; tipo: EnsaioTipo; status: string; url?: string }> = [];
+    
+    // 1. Do labStore
+    for (const o of os) {
+      for (const a of o.amostras) {
+        for (const e of a.ensaios) {
+          if (e.status !== "concluido" && e.status !== "aprovado") {
+            list.push({
+              id: e.id,
+              osNum: o.numero,
+              amCode: a.reportNumber || a.code || "AM",
+              tipo: e.tipo,
+              status: e.status,
+              url: `/relatorio/os/${o.id}/amostra/${a.id}/ensaio/${e.id}`,
+            });
+          }
+        }
+      }
+    }
+
+    // 2. Das pendencias na nuvem
+    for (const p of pendencias) {
+      if (p.status === "em_digitacao" || p.status === "pendente") {
+        const metodo = (detectMethodology(p.ensaio, p.tipo_ensaio) || "cisalhamento-direto") as EnsaioTipo;
+        const exists = list.some((l) => l.osNum === p.os && l.amCode === p.amostra && l.tipo === metodo);
+        if (!exists) {
+          list.push({
+            id: p.id,
+            osNum: p.os,
+            amCode: p.amostra || "AM-01",
+            tipo: metodo,
+            status: p.status,
+            url: `/relatorio/pendentes`,
+          });
+        }
+      }
+    }
+
+    return list;
+  }, [os, pendencias]);
+
   return (
     <div className="w-full px-4 sm:px-6 md:px-8 py-8">
       {/* Header */}
@@ -97,7 +163,7 @@ function EnsaiosDashboard() {
 
       {/* KPIs */}
       <div className="mb-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi label="Ordens de Serviço" value={os.length} icon={FolderKanban} to="/relatorio/os" />
+        <Kpi label="Ordens de Serviço" value={uniqueOsSet.size} icon={FolderKanban} to="/relatorio/os" />
         <Kpi label="Amostras" value={nAmostras} icon={Beaker} to="/relatorio/os" />
         <Kpi label="Ensaios" value={nEnsaios} icon={FlaskConical} to="/relatorio/os" />
         <Kpi label="Em andamento" value={rascunhos.length} icon={Pencil} accent to="/relatorio/pendentes" />
@@ -121,13 +187,13 @@ function EnsaiosDashboard() {
         </div>
       )}
 
-      {/* Ensaios em digitação (locais) */}
+      {/* Ensaios em digitação */}
       <section className="mb-8">
         <div className="mb-3 flex items-end justify-between">
           <div>
             <h2 className="font-display text-lg font-semibold tracking-tight">Meus ensaios em andamento</h2>
             <p className="text-xs text-muted-foreground">
-              Rascunhos ainda não enviados para verificação.
+              Rascunhos ainda não enviados para verificação (sincronizados na nuvem).
             </p>
           </div>
           <Button asChild size="sm" variant="outline">
@@ -139,30 +205,29 @@ function EnsaiosDashboard() {
         {rascunhos.length === 0 ? (
           <Card>
             <CardContent className="py-10 text-center text-sm text-muted-foreground">
-              Nenhum ensaio em digitação — abra uma OS para começar.
+              Nenhum ensaio em digitação — acesse a Central ou abra uma OS para começar.
             </CardContent>
           </Card>
         ) : (
           <div className="grid gap-2 md:grid-cols-2">
-            {rascunhos.slice(0, 6).map(({ os: o, a, e }) => (
+            {rascunhos.slice(0, 6).map((item) => (
               <Link
-                key={e.id}
-                to="/relatorio/os/$osId/amostra/$amostraId/ensaio/$ensaioId"
-                params={{ osId: o.id, amostraId: a.id, ensaioId: e.id }}
+                key={item.id}
+                to={item.url as any}
                 search={{}}
               >
                 <Card className="transition hover:border-primary/60 hover:shadow-sm">
                   <CardContent className="flex items-center justify-between py-3 text-xs">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <EnsaioTag tipo={e.tipo} />
-                        <span className="truncate font-medium">{ENSAIO_LABEL[e.tipo]}</span>
+                        <EnsaioTag tipo={item.tipo} />
+                        <span className="truncate font-medium">{ENSAIO_LABEL[item.tipo] || item.tipo}</span>
                       </div>
                       <div className="mt-0.5 truncate text-muted-foreground">
-                        {o.numero} · <Beaker className="inline h-3 w-3" /> {a.reportNumber || "AM"}
+                        {item.osNum} · <Beaker className="inline h-3 w-3" /> {item.amCode}
                       </div>
                     </div>
-                    <Badge variant="outline" className="text-[9px] uppercase tracking-wide">{e.status}</Badge>
+                    <Badge variant="outline" className="text-[9px] uppercase tracking-wide">{item.status}</Badge>
                   </CardContent>
                 </Card>
               </Link>
