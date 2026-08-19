@@ -2,13 +2,15 @@ import React from "react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChevronDown, ChevronRight, Plus, Trash2, Camera, Beaker } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, Trash2, Camera, Beaker, CircleDot, Lock, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import type { CDSpecimen, CDSample, CDSpecimenResults, MoistureCapsule } from "../types";
 import { AvgMeasureDialog } from "./AvgMeasureDialog";
 import { PhotoUploader } from "@/features/lab/components/PhotoUploader";
+import { getAneisCatalog, type AnelItem } from "@/lib/aneis-catalog";
+import { AneisManagerDialog } from "@/components/AneisManagerDialog";
 
 const fmt = (n: number | null | undefined, d = 2) =>
   n == null || !isFinite(n) ? "—" : n.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -64,59 +66,15 @@ function PtNumInput({
   );
 }
 
-function MiniNum({
-  value,
-  onChange,
-  step = 0.01,
-}: {
-  value: number;
-  onChange: (v: number) => void;
-  step?: number;
-}) {
+function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <PtNumInput
-      value={value}
-      onChange={onChange}
-      className="h-7 px-1 text-right text-xs font-mono"
-    />
-  );
-}
-
-function NumField({
-  label,
-  value,
-  onChange,
-  step = 1,
-}: {
-  label: string;
-  value: number;
-  onChange: (v: number) => void;
-  step?: number;
-}) {
-  return (
-    <div>
-      <Label className="text-[11px] text-muted-foreground">{label}</Label>
-      <PtNumInput
-        value={value}
-        onChange={onChange}
-        className="h-8 text-xs text-right font-mono"
-      />
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded border bg-background p-2">
+    <div className="rounded border bg-background p-2 transition-all">
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className="text-sm font-semibold text-foreground">{value}</div>
+      {sub && <div className="text-[10px] text-muted-foreground">{sub}</div>}
     </div>
   );
 }
-
-import { getAneisCatalog, type AnelItem } from "@/lib/aneis-catalog";
-import { AneisManagerDialog } from "@/components/AneisManagerDialog";
-import { CircleDot } from "lucide-react";
 
 export function CDMoldagemFicha({
   cp,
@@ -162,17 +120,22 @@ export function CDMoldagemFicha({
 
   while (caps.length < 3) caps.push({ tara: 0, wet: 0, dry: 0 });
 
-  const updateCap = (i: number, patch: Partial<MoistureCapsule>) => {
-    const next = caps.map((c, ci) => (ci === i ? { ...c, ...patch } : c));
-    onCp({ capsules: next });
-  };
-
   const wCap = (c: { tara: number; wet: number; dry: number }) => {
     const ms = c.dry - c.tara;
     return ms > 0 ? ((c.wet - c.dry) / ms) * 100 : NaN;
   };
 
-  // Etapa Final: Cápsulas de umidade + massa final
+  const updateCap = (i: number, patch: Partial<MoistureCapsule>) => {
+    const next = caps.map((c, ci) => (ci === i ? { ...c, ...patch } : c));
+    const valid = next.map(wCap).filter((v) => isFinite(v));
+    const avg = valid.length > 0 ? valid.reduce((a, b) => a + b, 0) / valid.length : undefined;
+    onCp({
+      capsules: next,
+      ...(avg != null ? { w0Pct: Number(avg.toFixed(3)) } : {}),
+    });
+  };
+
+  // Etapa Final: Cápsulas de umidade pós-ensaio
   const finalCaps = cp.finalCapsules ?? [
     { tara: 0, wet: 0, dry: 0 },
     { tara: 0, wet: 0, dry: 0 },
@@ -185,7 +148,10 @@ export function CDMoldagemFicha({
     const next = finalCaps.map((c, ci) => (ci === i ? { ...c, ...patch } : c));
     const valid = next.map(wCap).filter((v) => isFinite(v));
     const avg = valid.length > 0 ? valid.reduce((a, b) => a + b, 0) / valid.length : undefined;
-    onCp({ finalCapsules: next, ...(avg != null ? { wFinalPct: Number(avg.toFixed(3)) } : {}) });
+    onCp({
+      finalCapsules: next,
+      ...(avg != null ? { wFinalPct: Number(avg.toFixed(3)) } : {}),
+    });
   };
 
   const wFinalFromCaps = (() => {
@@ -201,15 +167,13 @@ export function CDMoldagemFicha({
     isFinite(wFinalEff) && eFinalApprox > 0 && sample.Gs > 0
       ? Math.min(100, ((wFinalEff / 100) * sample.Gs) / eFinalApprox * 100)
       : NaN;
-  const gammaNatFinal = res.volume0 > 0 && mFinal > 0 ? (mFinal / res.volume0) * 9.807 : NaN;
-  const gammaDryFinal =
-    res.volume0 > 0 && isFinite(dryMassFinal) && dryMassFinal > 0 ? (dryMassFinal / res.volume0) * 9.807 : NaN;
-  const deltaW = isFinite(wFinalEff) ? wFinalEff - res.moisture0Pct : NaN;
-  const deltaM = mFinal > 0 ? mFinal - res.wetMass : NaN;
+
+  // Anel selecionado atualmente
+  const selectedAnel = aneisList.find((a) => a.numero === cp.ringNumber);
 
   return (
     <div className="space-y-4">
-      {/* 1. CONTAINER RECOLHÍVEL: DETERMINAÇÃO DA UMIDADE (INICIAL E FINAL) */}
+      {/* 1. CONTAINER: DETERMINAÇÃO DA UMIDADE (INICIAL E FINAL) */}
       <Card className="border-primary/30 shadow-sm overflow-hidden">
         <CardHeader
           className="cursor-pointer select-none pb-2 pt-3 px-4 hover:bg-muted/40 transition-colors border-b border-border/40"
@@ -338,7 +302,7 @@ export function CDMoldagemFicha({
 
               <div className="mt-3 pt-2 border-t border-border/40 grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <Label className="text-[11px] text-muted-foreground">Massa CP + Anel (g)</Label>
+                  <Label className="text-[11px] text-muted-foreground">Massa Solo Úmido + Anel (g)</Label>
                   <PtNumInput
                     value={cp.wetMassCPAnel ?? (cp.ringMass && cp.wetMass ? cp.wetMass + cp.ringMass : undefined)}
                     onChange={(v) => {
@@ -351,17 +315,13 @@ export function CDMoldagemFicha({
                   />
                 </div>
                 <div>
-                  <Label className="text-[11px] text-muted-foreground">Tara do Anel (g)</Label>
-                  <PtNumInput
-                    value={cp.ringMass}
-                    onChange={(v) => {
-                      const total = cp.wetMassCPAnel || 0;
-                      const solo = total > v ? total - v : cp.wetMass;
-                      onCp({ ringMass: v, wetMass: solo });
-                    }}
-                    placeholder="Ex: 113,10"
-                    className="h-8 text-xs text-right font-mono font-medium"
-                  />
+                  <Label className="text-[11px] text-muted-foreground flex items-center justify-between">
+                    <span>Massa do Solo Úmido M_solo (g)</span>
+                    <Badge variant="outline" className="text-[10px] font-mono">Calculada</Badge>
+                  </Label>
+                  <div className="h-8 rounded border bg-muted/30 px-2.5 flex items-center justify-end font-mono text-xs font-bold text-foreground">
+                    {fmt(res.wetMass, 2)} g
+                  </div>
                 </div>
               </div>
             </div>
@@ -457,6 +417,7 @@ export function CDMoldagemFicha({
                   </tr>
                 </tbody>
               </table>
+
               <div className="mt-3 pt-2 border-t border-border/40 grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div>
                   <Label className="text-[11px] text-muted-foreground">Massa final CP m_f (g)</Label>
@@ -472,7 +433,7 @@ export function CDMoldagemFicha({
         )}
       </Card>
 
-      {/* 2. GEOMETRIA E PROGRAMA DE TENSÕES */}
+      {/* 2. GEOMETRIA E SELEÇÃO DE ANEL (MODO VISUALIZAÇÃO/LEITURA) */}
       <div className="rounded-md border border-border bg-card">
         <button
           type="button"
@@ -481,19 +442,20 @@ export function CDMoldagemFicha({
         >
           <span className="flex items-center gap-2">
             {geomOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            GEOMETRIA E PROGRAMA — {cp.displayId ?? cp.id}
+            GEOMETRIA E ANEL DE MOLDAGEM — {cp.displayId ?? cp.id}
           </span>
-          <span className="text-[11px] font-normal text-muted-foreground">
-            D₀={fmt(res.D0, 2)} mm · H₀={fmt(res.H0, 2)} mm · σn={fmt(cp.normalStressTarget, 0)} kPa
+          <span className="text-[11px] font-normal text-muted-foreground font-mono">
+            Anel: {cp.ringNumber || "—"} · D₀={fmt(res.D0, 2)} mm · H₀={fmt(res.H0, 2)} mm · σn={fmt(cp.normalStressTarget, 0)} kPa
           </span>
         </button>
+
         {geomOpen && (
-          <div className="p-3 space-y-3">
-            {/* Seletor de Anel Cadastrado */}
-            <div className="rounded border bg-muted/20 p-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1.5 font-semibold text-xs text-primary">
-                  <CircleDot className="h-4 w-4" /> Anel de Moldagem:
+          <div className="p-3.5 space-y-3">
+            {/* Bloco de Seleção de Anel */}
+            <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-1.5 font-bold text-xs text-primary">
+                  <CircleDot className="h-4 w-4" /> Selecionar Anel:
                 </div>
                 <Select
                   value={cp.ringNumber || ""}
@@ -501,6 +463,10 @@ export function CDMoldagemFicha({
                     const anel = aneisList.find((a) => a.numero === anelNum);
                     if (anel) {
                       const dim = anel.secao === "circular" ? (anel.diametro_mm || 60) : (anel.lado_mm || 60);
+                      const tara = anel.massa_g;
+                      const total = cp.wetMassCPAnel || 0;
+                      const solo = total > tara ? total - tara : cp.wetMass;
+
                       onCp({
                         ringNumber: anel.numero,
                         ringMass: anel.massa_g,
@@ -508,17 +474,18 @@ export function CDMoldagemFicha({
                         D0measurements: [dim, dim, dim],
                         height0Mm: anel.altura_mm,
                         H0measurements: [anel.altura_mm, anel.altura_mm, anel.altura_mm],
+                        wetMass: solo,
                       });
                     }
                   }}
                 >
-                  <SelectTrigger className="h-7 text-xs w-64 font-mono font-medium">
+                  <SelectTrigger className="h-8 text-xs w-72 font-mono font-medium bg-background">
                     <SelectValue placeholder="Escolha um anel cadastrado…" />
                   </SelectTrigger>
                   <SelectContent>
                     {aneisList.map((a) => (
-                      <SelectItem key={a.id} value={a.numero} className="text-xs">
-                        {a.numero} — {a.secao === "circular" ? `Ø ${a.diametro_mm}mm` : `${a.lado_mm}x${a.lado_mm}mm`} (H={a.altura_mm}mm · {a.massa_g}g)
+                      <SelectItem key={a.id} value={a.numero} className="text-xs font-mono">
+                        <b>{a.numero}</b> — {a.secao === "circular" ? `Ø ${a.diametro_mm}mm` : `${a.lado_mm}x${a.lado_mm}mm`} (H={a.altura_mm}mm · {a.massa_g}g)
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -526,79 +493,107 @@ export function CDMoldagemFicha({
               </div>
 
               <div className="flex items-center gap-2">
-                {cp.ringMass ? (
-                  <Badge variant="outline" className="text-[11px] font-mono bg-background text-emerald-700 dark:text-emerald-400">
-                    Tara: {cp.ringMass.toFixed(2)} g
-                  </Badge>
-                ) : null}
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-7 text-xs gap-1"
+                  className="h-8 text-xs gap-1.5 bg-background"
                   onClick={() => setAneisCatalogOpen(true)}
                 >
-                  <Plus className="h-3 w-3" /> Gerenciar Anéis
+                  <Plus className="h-3.5 w-3.5" /> Gerenciar Catálogo de Anéis
                 </Button>
               </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
-            <div className="flex items-end gap-1">
-              <div className="flex-1">
-                <NumField
-                  label="Diâmetro D₀ (mm)"
-                  value={res.D0}
-                  step={0.01}
-                  onChange={(v) => onCp({ diameterMm: v, D0measurements: [v, v, v] })}
+            {/* DIMENSÕES E MASSA DO ANEL EM MODO VISUALIZAÇÃO (READ-ONLY) */}
+            <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 pt-1">
+              <div className="rounded border bg-muted/20 p-2 text-xs">
+                <div className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+                  <Lock className="h-3 w-3 text-muted-foreground" /> Tara do Anel (g)
+                </div>
+                <div className="text-sm font-bold font-mono text-foreground mt-0.5">
+                  {fmt(cp.ringMass, 2)} g
+                </div>
+                <div className="text-[10px] text-muted-foreground">Calibrado</div>
+              </div>
+
+              <div className="rounded border bg-muted/20 p-2 text-xs">
+                <div className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+                  <Lock className="h-3 w-3 text-muted-foreground" /> Diâmetro D₀ (mm)
+                </div>
+                <div className="text-sm font-bold font-mono text-foreground mt-0.5">
+                  {fmt(res.D0, 2)} mm
+                </div>
+                <div className="text-[10px] text-muted-foreground">Dimensão nominal</div>
+              </div>
+
+              <div className="rounded border bg-muted/20 p-2 text-xs">
+                <div className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+                  <Lock className="h-3 w-3 text-muted-foreground" /> Altura H₀ (mm)
+                </div>
+                <div className="text-sm font-bold font-mono text-foreground mt-0.5">
+                  {fmt(res.H0, 2)} mm
+                </div>
+                <div className="text-[10px] text-muted-foreground">Altura do anel</div>
+              </div>
+
+              <div className="rounded border bg-muted/20 p-2 text-xs">
+                <div className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+                  <Layers className="h-3 w-3 text-muted-foreground" /> Área A₀ (cm²)
+                </div>
+                <div className="text-sm font-bold font-mono text-foreground mt-0.5">
+                  {fmt(res.area0, 3)} cm²
+                </div>
+                <div className="text-[10px] text-muted-foreground">Área da seção</div>
+              </div>
+
+              <div className="rounded border bg-muted/20 p-2 text-xs">
+                <div className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+                  <Layers className="h-3 w-3 text-muted-foreground" /> Volume V₀ (cm³)
+                </div>
+                <div className="text-sm font-bold font-mono text-foreground mt-0.5">
+                  {fmt(res.volume0, 2)} cm³
+                </div>
+                <div className="text-[10px] text-muted-foreground">Volume inicial</div>
+              </div>
+
+              <div className="rounded border bg-background p-2 text-xs border-primary/40">
+                <div className="text-[10px] uppercase font-bold text-primary">σn Alvo (kPa)</div>
+                <PtNumInput
+                  value={cp.normalStressTarget}
+                  onChange={(v) => onCp({ normalStressTarget: v })}
+                  className="h-7 text-xs text-right font-mono font-bold mt-0.5"
                 />
               </div>
-              <AvgMeasureDialog
-                label="Diâmetro do CP"
-                unit="mm"
-                values={cp.D0measurements ?? [res.D0, res.D0, res.D0]}
-                onSave={(avg, ms) => onCp({ D0measurements: ms, diameterMm: avg })}
-              />
             </div>
-            <div className="flex items-end gap-1">
-              <div className="flex-1">
-                <NumField
-                  label="Altura H₀ (mm)"
-                  value={res.H0}
-                  step={0.01}
-                  onChange={(v) => onCp({ height0Mm: v, H0measurements: [v, v, v] })}
-                />
+
+            {/* Critério de Ruptura */}
+            <div className="pt-2 border-t border-border/40 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs font-semibold">Critério de ruptura</Label>
+                <Select
+                  value={cp.failureCriterion || "max_tau"}
+                  onValueChange={(v: any) => onCp({ failureCriterion: v })}
+                >
+                  <SelectTrigger className="h-8 text-xs mt-1 bg-background">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="max_tau">Máxima Tensão Cisalhante (τ_max / Pico)</SelectItem>
+                    <SelectItem value="residual">Tensão Residual (Final)</SelectItem>
+                    <SelectItem value="delta_h_10pct">Deslocamento Horizontal de 10%</SelectItem>
+                    <SelectItem value="delta_h_15pct">Deslocamento Horizontal de 15%</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              <AvgMeasureDialog
-                label="Altura do CP"
-                unit="mm"
-                values={cp.H0measurements ?? [res.H0, res.H0, res.H0]}
-                onSave={(avg, ms) => onCp({ H0measurements: ms, height0Mm: avg })}
-              />
+
+              <div>
+                <Label className="text-xs font-semibold">Condição de Ensaio</Label>
+                <div className="h-8 mt-1 rounded border bg-muted/30 px-3 flex items-center text-xs font-medium text-foreground">
+                  {sample.testCondition === "inundado" ? "Inundado (CDinun) — ASTM D3080" : "Umidade Natural (CDnat)"}
+                </div>
+              </div>
             </div>
-            <NumField
-              label="σn alvo (kPa)"
-              value={cp.normalStressTarget}
-              onChange={(v) => onCp({ normalStressTarget: v })}
-            />
-            <div>
-              <Label className="text-xs">Critério de ruptura</Label>
-              <Select
-                value={cp.failureCriterion || "max_tau"}
-                onValueChange={(v: any) => onCp({ failureCriterion: v })}
-              >
-                <SelectTrigger className="h-8 text-xs mt-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="max_tau">Máxima Tensão Cisalhante (τ_max)</SelectItem>
-                  <SelectItem value="residual">Tensão Residual (Final)</SelectItem>
-                  <SelectItem value="delta_h_10pct">Deslocamento Horizontal de 10%</SelectItem>
-                  <SelectItem value="delta_h_15pct">Deslocamento Horizontal de 15%</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
           </div>
         )}
       </div>
@@ -614,20 +609,20 @@ export function CDMoldagemFicha({
             {indicesOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
             ÍNDICES FÍSICOS CALCULADOS — {cp.displayId ?? cp.id}
           </span>
-          <span className="text-[11px] font-normal text-muted-foreground">
+          <span className="text-[11px] font-normal text-muted-foreground font-mono">
             e₀={fmt(res.voidRatio0, 3)} · Sr₀={fmt(res.saturation0Pct, 1)}% · γd={fmt(res.gammaDry, 2)} kN/m³
           </span>
         </button>
         {indicesOpen && (
           <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-4 lg:grid-cols-8">
-            <Stat label="Massa Úmida (g)" value={fmt(res.wetMass, 2)} />
-            <Stat label="Massa Seca (g)" value={fmt(res.dryMass, 2)} />
-            <Stat label="Volume (cm³)" value={fmt(res.volume0, 2)} />
-            <Stat label="Área (cm²)" value={fmt(res.area0, 3)} />
-            <Stat label="γnat (kN/m³)" value={fmt(res.gammaNat, 2)} />
-            <Stat label="γd (kN/m³)" value={fmt(res.gammaDry, 2)} />
-            <Stat label="Índice Vazios e₀" value={fmt(res.voidRatio0, 3)} />
-            <Stat label="Saturação Sr₀ (%)" value={`${fmt(res.saturation0Pct, 1)}%`} />
+            <Stat label="Massa Úmida (g)" value={fmt(res.wetMass, 2)} sub="M_solo" />
+            <Stat label="Massa Seca (g)" value={fmt(res.dryMass, 2)} sub="M_seco" />
+            <Stat label="Volume (cm³)" value={fmt(res.volume0, 2)} sub="V₀" />
+            <Stat label="Área (cm²)" value={fmt(res.area0, 3)} sub="A₀" />
+            <Stat label="γnat (kN/m³)" value={fmt(res.gammaNat, 2)} sub="Peso esp. nat" />
+            <Stat label="γd (kN/m³)" value={fmt(res.gammaDry, 2)} sub="Peso esp. seco" />
+            <Stat label="Índice Vazios e₀" value={fmt(res.voidRatio0, 3)} sub="Vazios" />
+            <Stat label="Saturação Sr₀ (%)" value={`${fmt(res.saturation0Pct, 1)}%`} sub="Saturação" />
           </div>
         )}
       </div>
@@ -643,48 +638,28 @@ export function CDMoldagemFicha({
             {photoOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
             REGISTRO FOTOGRÁFICO — {cp.displayId ?? cp.id}
           </span>
-          <span className="text-[11px] font-normal text-muted-foreground">
+          <span className="text-[11px] font-normal text-muted-foreground font-mono">
             {((ctx?.photos || []).filter((p: any) => p.specimenId === cp.id)).length} FOTO(S)
           </span>
         </button>
         {photoOpen && (
-          <div className="grid grid-cols-1 gap-4 p-3 md:grid-cols-2">
+          <div className="p-3">
             <PhotoUploader
-              title="Foto da Moldagem"
+              title={`Registro Fotográfico — ${cp.displayId ?? cp.id}`}
               kind="moldagem"
-              photos={(ctx?.photos || []).filter((p: any) => p.specimenId === cp.id)}
-              onAdd={(p: any) => ctx?.addPhoto?.({ ...p, specimenId: cp.id })}
-              onRemove={(id: string) => ctx?.removePhoto?.(id)}
-              onUpdate={(id: string, patch: any) => ctx?.updatePhoto?.(id, patch)}
-            />
-            <PhotoUploader
-              title="Foto da Ruptura"
-              kind="ruptura"
-              photos={(ctx?.photos || []).filter((p: any) => p.specimenId === cp.id)}
-              onAdd={(p: any) => ctx?.addPhoto?.({ ...p, specimenId: cp.id })}
-              onRemove={(id: string) => ctx?.removePhoto?.(id)}
-              onUpdate={(id: string, patch: any) => ctx?.updatePhoto?.(id, patch)}
+              photos={ctx?.photos ?? []}
+              onAdd={(p) => ctx?.addPhoto?.({ ...p, specimenId: cp.id })}
+              onRemove={(id) => ctx?.removePhoto?.(id)}
+              onUpdate={(id, patch) => ctx?.updatePhoto?.(id, patch)}
             />
           </div>
         )}
       </div>
 
-      {/* Modal de Gestão e Cadastro de Anéis */}
+      {/* Diálogo de Gerenciamento do Catálogo de Anéis */}
       <AneisManagerDialog
         open={aneisCatalogOpen}
         onOpenChange={setAneisCatalogOpen}
-        ensaioFiltro="cisalhamento"
-        onSelectAnel={(anel) => {
-          const dim = anel.secao === "circular" ? (anel.diametro_mm || 60) : (anel.lado_mm || 60);
-          onCp({
-            ringNumber: anel.numero,
-            ringMass: anel.massa_g,
-            diameterMm: dim,
-            D0measurements: [dim, dim, dim],
-            height0Mm: anel.altura_mm,
-            H0measurements: [anel.altura_mm, anel.altura_mm, anel.altura_mm],
-          });
-        }}
       />
     </div>
   );

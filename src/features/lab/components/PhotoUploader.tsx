@@ -17,9 +17,9 @@ interface Props {
   onUpdate: (photoId: string, patch: Partial<Photo>) => void;
 }
 
-export function PhotoUploader({ title, kind, photos, onAdd, onRemove, onUpdate }: Props) {
+export function PhotoUploader({ title, kind, photos = [], onAdd, onRemove, onUpdate }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const items = photos.filter((p) => p.kind === kind);
+  const items = (photos || []).filter((p) => p && p.kind === kind);
   const [editing, setEditing] = useState<Photo | null>(null);
   const [pendingUpload, setPendingUpload] = useState<{
     dataUrl: string;

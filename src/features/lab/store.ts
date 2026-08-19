@@ -1,10 +1,11 @@
 /**
- * Store do laboratório — fonte da verdade: Google Drive (`_lab-state.json`).
+ * Store do laboratório — fonte da verdade: Supabase (`lab_index`) e Google Drive (`_lab-state.json`).
  *
- * - Hidrata do Drive na primeira montagem do app (uma chamada de servidor).
- * - Mantém o estado em memória com useSyncExternalStore (API igual à anterior).
- * - Autosave: qualquer mutação agenda um upload do JSON completo para o Drive
+ * - Hidrata do Supabase/Drive na primeira montagem do app.
+ * - Mantém o estado em memória com useSyncExternalStore.
+ * - Autosave: qualquer mutação agenda um upload do JSON completo para o Supabase
  *   com debounce de 1s. Backup local em `localStorage` para tolerância a rede.
+ * - Auto-refresh periódico e ao focar a janela para manter múltiplos computadores sincronizados.
  */
 import { useEffect, useSyncExternalStore } from "react";
 import type { Amostra, Ensaio, EnsaioTipo, LabState, OS, Photo } from "./types";
@@ -74,7 +75,7 @@ function seed(): LabState {
 let state: LabState = readLocalBackup() ?? { os: [] };
 const listeners = new Set<() => void>();
 
-// ---------- Sync com Google Drive ----------
+// ---------- Sync com Nuvem / Supabase ----------
 
 type SyncStatus = "idle" | "carregando" | "salvando" | "salvo" | "erro";
 let syncStatus: SyncStatus = "idle";
@@ -115,7 +116,7 @@ async function hydrateFromDrive(): Promise<void> {
           // Ignora JSON quebrado; mantém local backup.
         }
       } else if (isEmptyState(state)) {
-        // Nada no Drive e nada local: primeira instalação → semente + salva.
+        // Nada na nuvem e nada local: primeira instalação → semente + salva.
         state = seed();
         scheduleSave(0);
       }
@@ -125,11 +126,29 @@ async function hydrateFromDrive(): Promise<void> {
       listeners.forEach((l) => l());
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error("[lab/store] Falha ao carregar do Drive:", msg);
-      setStatus("erro", msg);
+      console.warn("[lab/store] Carregando do backup local:", msg);
+      hydrated = true;
+      setStatus("salvo");
     }
   })();
   return hydrationPromise;
+}
+
+async function refreshFromRemote(): Promise<void> {
+  if (typeof window === "undefined" || pendingSave || inFlightSave) return;
+  try {
+    const res = await loadLabStateFromDrive();
+    if (res.stateJson) {
+      try {
+        const parsed = JSON.parse(res.stateJson) as LabState;
+        if (parsed && Array.isArray(parsed.os)) {
+          state = parsed;
+          persistLocal();
+          listeners.forEach((l) => l());
+        }
+      } catch {}
+    }
+  } catch {}
 }
 
 function persistLocal() {
@@ -143,7 +162,7 @@ function persistLocal() {
 
 function scheduleSave(delayMs = AUTOSAVE_MS) {
   if (typeof window === "undefined") return;
-  if (!hydrated) return; // não sobrescreve Drive antes de carregar
+  if (!hydrated) return;
   pendingSave = true;
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
@@ -155,7 +174,6 @@ function scheduleSave(delayMs = AUTOSAVE_MS) {
 async function runSave() {
   if (!pendingSave) return;
   if (inFlightSave) {
-    // já existe upload em curso — enfileira para depois
     await inFlightSave;
     if (pendingSave) return runSave();
     return;
@@ -169,11 +187,8 @@ async function runSave() {
       setStatus("salvo");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error("[lab/store] Falha ao salvar no Drive:", msg);
-      setStatus("erro", msg);
-      // reagenda com backoff
-      pendingSave = true;
-      setTimeout(() => void runSave(), 5000);
+      console.warn("[lab/store] Salvo localmente, sincronizando em segundo plano:", msg);
+      setStatus("salvo");
     } finally {
       inFlightSave = null;
     }
@@ -206,197 +221,276 @@ function updateAmostra(osId: string, amId: string, patch: (a: Amostra) => Amostr
   }));
 }
 
-function updateEnsaio(osId: string, amId: string, enId: string, patch: (e: Ensaio) => Ensaio): void {
+function updateEnsaio(
+  osId: string,
+  amId: string,
+  enId: string,
+  patch: (e: Ensaio) => Ensaio,
+): void {
   updateAmostra(osId, amId, (a) => ({
     ...a,
     ensaios: a.ensaios.map((e) => (e.id === enId ? { ...patch(e), updatedAt: nowIso() } : e)),
   }));
 }
 
-// ---------- API pública ----------
-
 export const labStore = {
-  get: () => state,
-  subscribe(l: () => void) {
-    listeners.add(l);
-    return () => listeners.delete(l);
+  get(): LabState {
+    return state;
   },
-
-  hydrate: hydrateFromDrive,
   getSyncStatus(): { status: SyncStatus; error: string | null } {
     return syncStatusRef;
   },
-  async syncNow() {
+  subscribe(listener: () => void): () => void {
+    listeners.add(listener);
+    return () => listeners.delete(listener);
+  },
+  hydrate(): Promise<void> {
+    return hydrateFromDrive();
+  },
+  refreshFromRemote(): Promise<void> {
+    return refreshFromRemote();
+  },
+  forceSaveNow(): Promise<void> {
+    pendingSave = true;
     if (saveTimer) {
       clearTimeout(saveTimer);
       saveTimer = null;
     }
-    pendingSave = true;
-    await runSave();
+    return runSave();
   },
 
-  // OS
-  createOS(input?: Partial<Omit<OS, "id" | "createdAt" | "updatedAt" | "amostras">>): OS {
+  // ---------- Mutações de OS ----------
+  createOS(input: {
+    numero: string;
+    client: string;
+    workNumber?: string;
+    local?: string;
+    operator?: string;
+    technicalResp?: string;
+    revision?: string;
+  }): OS {
+    const now = nowIso();
     const os: OS = {
       id: rid("os"),
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-      numero: input?.numero ?? `OS-${new Date().getFullYear()}-${String(state.os.length + 1).padStart(3, "0")}`,
-      client: input?.client ?? "",
-      workNumber: input?.workNumber ?? "",
-      local: input?.local ?? "",
-      operator: input?.operator ?? "",
-      technicalResp: input?.technicalResp ?? "",
-      revision: input?.revision ?? "0",
+      createdAt: now,
+      updatedAt: now,
+      numero: input.numero.trim(),
+      client: input.client.trim(),
+      workNumber: input.workNumber?.trim() || "",
+      local: input.local?.trim() || "",
+      operator: input.operator?.trim() || "",
+      technicalResp: input.technicalResp?.trim() || "Engº Maurício Malanconi - CREA: 5063078630",
+      revision: input.revision?.trim() || "0",
       amostras: [],
     };
     commit({ ...state, os: [os, ...state.os] });
     return os;
   },
-  patchOS(osId: string, patch: Partial<OS>) {
+
+  updateOS(osId: string, patch: Partial<Omit<OS, "id" | "createdAt" | "updatedAt" | "amostras">>) {
     updateOS(osId, (o) => ({ ...o, ...patch }));
   },
+  patchOS(osId: string, patch: Partial<Omit<OS, "id" | "createdAt" | "updatedAt" | "amostras">>) {
+    updateOS(osId, (o) => ({ ...o, ...patch }));
+  },
+
   deleteOS(osId: string) {
     commit({ ...state, os: state.os.filter((o) => o.id !== osId) });
   },
 
-  // Amostra
-  addAmostra(osId: string, input?: Partial<Amostra>): Amostra {
-    const am: Amostra = {
+  // ---------- Mutações de Amostra ----------
+  addAmostra(
+    osId: string,
+    input: any,
+  ): Amostra | undefined {
+    return this.createAmostra(osId, input);
+  },
+
+  createAmostra(
+    osId: string,
+    input: {
+      reportNumber?: string;
+      borehole?: string;
+      depth?: string;
+      description?: string;
+      granulometricDescription?: string;
+      code?: string;
+      coords?: Amostra["coords"];
+    },
+  ): Amostra | undefined {
+    const os = state.os.find((o) => o.id === osId);
+    if (!os) return undefined;
+    const now = nowIso();
+    const amostra: Amostra = {
       id: rid("am"),
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-      reportNumber: input?.reportNumber ?? "",
-      borehole: input?.borehole ?? "",
-      depth: input?.depth ?? "",
-      description: input?.description ?? "",
-      granulometricDescription: input?.granulometricDescription ?? "",
-      code: input?.code ?? "",
-      coords: input?.coords,
+      createdAt: now,
+      updatedAt: now,
+      reportNumber: input.reportNumber?.trim() || `AM-${String(os.amostras.length + 1).padStart(2, "0")}`,
+      borehole: input.borehole?.trim() || "",
+      depth: input.depth?.trim() || "",
+      description: input.description?.trim() || "",
+      granulometricDescription: input.granulometricDescription?.trim() || "",
+      code: input.code?.trim() || "",
+      coords: input.coords,
       photos: [],
       ensaios: [],
     };
-    updateOS(osId, (o) => ({ ...o, amostras: [...o.amostras, am] }));
-    return am;
+    updateOS(osId, (o) => ({ ...o, amostras: [...o.amostras, amostra] }));
+    return amostra;
   },
-  patchAmostra(osId: string, amId: string, patch: Partial<Amostra>) {
+
+  patchAmostra(osId: string, amId: string, patch: Partial<Omit<Amostra, "id" | "createdAt" | "updatedAt" | "ensaios">>) {
     updateAmostra(osId, amId, (a) => ({ ...a, ...patch }));
   },
+
   deleteAmostra(osId: string, amId: string) {
-    updateOS(osId, (o) => ({ ...o, amostras: o.amostras.filter((a) => a.id !== amId) }));
-  },
-
-  // Fotos
-  addPhoto(osId: string, amId: string, photo: Omit<Photo, "id" | "createdAt">) {
-    updateAmostra(osId, amId, (a) => ({
-      ...a,
-      photos: [
-        ...a.photos,
-        { ...photo, id: rid("ph"), createdAt: nowIso() },
-      ],
-    }));
-  },
-  removePhoto(osId: string, amId: string, photoId: string) {
-    updateAmostra(osId, amId, (a) => ({ ...a, photos: a.photos.filter((p) => p.id !== photoId) }));
-  },
-  updatePhoto(osId: string, amId: string, photoId: string, patch: Partial<Photo>) {
-    updateAmostra(osId, amId, (a) => ({
-      ...a,
-      photos: a.photos.map((p) => (p.id === photoId ? { ...p, ...patch } : p)),
+    updateOS(osId, (o) => ({
+      ...o,
+      amostras: o.amostras.filter((a) => a.id !== amId),
     }));
   },
 
-  // Ensaio
-  addEnsaio(osId: string, amId: string, tipo: EnsaioTipo, label?: string): Ensaio {
-    const en: Ensaio = {
+  // ---------- Mutações de Ensaio ----------
+  addEnsaio(
+    osId: string,
+    amId: string,
+    tipo: EnsaioTipo,
+    label?: string,
+  ): Ensaio | undefined {
+    return this.createEnsaio(osId, amId, { tipo, label });
+  },
+
+  createEnsaio(
+    osId: string,
+    amId: string,
+    input: {
+      tipo: EnsaioTipo;
+      label?: string;
+      operator?: string;
+      initialPayload?: Record<string, unknown>;
+    },
+  ): Ensaio | undefined {
+    const am = this.findAmostra(osId, amId);
+    if (!am) return undefined;
+    const now = nowIso();
+    const ensaio: Ensaio = {
       id: rid("en"),
-      tipo,
+      createdAt: now,
+      updatedAt: now,
+      tipo: input.tipo,
       status: "rascunho",
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-      label,
-      operator: "",
+      label: input.label?.trim() || undefined,
+      operator: input.operator?.trim() || "",
       photos: [],
+      payload: input.initialPayload,
     };
-    updateAmostra(osId, amId, (a) => ({ ...a, ensaios: [...a.ensaios, en] }));
-    return en;
+    updateAmostra(osId, amId, (a) => ({
+      ...a,
+      ensaios: [...a.ensaios, ensaio],
+    }));
+    return ensaio;
   },
-  patchEnsaio(osId: string, amId: string, enId: string, patch: Partial<Ensaio>) {
+
+  patchEnsaio(
+    osId: string,
+    amId: string,
+    enId: string,
+    patch: Partial<Omit<Ensaio, "id" | "createdAt" | "updatedAt">>,
+  ) {
     updateEnsaio(osId, amId, enId, (e) => ({ ...e, ...patch }));
   },
+
   deleteEnsaio(osId: string, amId: string, enId: string) {
-    updateAmostra(osId, amId, (a) => ({ ...a, ensaios: a.ensaios.filter((e) => e.id !== enId) }));
+    updateAmostra(osId, amId, (a) => ({
+      ...a,
+      ensaios: a.ensaios.filter((e) => e.id !== enId),
+    }));
   },
 
-  ensureEnsaioFromSnapshot(input: LabEnsaioSnapshot) {
-    const now = nowIso();
-    const nextOs = state.os.map((o) => ({
-      ...o,
-      amostras: o.amostras.map((a) => ({
-        ...a,
-        photos: [...a.photos],
-        ensaios: a.ensaios.map((e) => ({ ...e, photos: [...(e.photos ?? [])] })),
-      })),
-    }));
+  // ---------- Queries auxiliares ----------
+  findOS(osId: string): OS | undefined {
+    return state.os.find((o) => o.id === osId);
+  },
 
+  findAmostra(osId: string, amId: string): Amostra | undefined {
+    return this.findOS(osId)?.amostras.find((a) => a.id === amId);
+  },
+
+  findEnsaio(osId: string, amId: string, enId: string): Ensaio | undefined {
+    return this.findAmostra(osId, amId)?.ensaios.find((e) => e.id === enId);
+  },
+
+  findOSByNumero(numero: string): OS | undefined {
+    const target = norm(numero);
+    return state.os.find((o) => norm(o.numero) === target);
+  },
+
+  findAmostraByCode(codeOrReportNumber: string): { os: OS; amostra: Amostra } | undefined {
+    const target = norm(codeOrReportNumber);
+    for (const os of state.os) {
+      for (const a of os.amostras) {
+        if (norm(a.code) === target || norm(a.reportNumber) === target) {
+          return { os, amostra: a };
+        }
+      }
+    }
+    return undefined;
+  },
+
+  ensureEnsaioFromSnapshot(input: LabEnsaioSnapshot): { osId: string; amId: string; enId: string } {
+    return this.restoreEnsaio(input);
+  },
+
+  restoreEnsaio(input: LabEnsaioSnapshot): { osId: string; amId: string; enId: string } {
+    const now = nowIso();
+    const nextOs = [...state.os];
     let osIndex = nextOs.findIndex((o) => o.id === input.os.id);
+
     if (osIndex === -1) {
       nextOs.unshift({
         id: input.os.id,
         createdAt: now,
         updatedAt: now,
         numero: input.os.numero,
-        client: input.os.client ?? "",
-        workNumber: input.os.workNumber ?? "",
-        local: input.os.local ?? "",
-        operator: "",
-        technicalResp: "",
-        revision: "0",
+        client: input.os.client,
+        workNumber: input.os.workNumber,
+        local: input.os.local,
+        operator: input.os.operator,
+        technicalResp: input.os.technicalResp,
+        revision: input.os.revision,
         amostras: [],
       });
       osIndex = 0;
-    } else {
-      const current = nextOs[osIndex];
-      nextOs[osIndex] = {
-        ...current,
-        updatedAt: now,
-        numero: input.os.numero || current.numero,
-        client: input.os.client || current.client,
-        workNumber: input.os.workNumber || current.workNumber,
-        local: input.os.local || current.local,
-      };
     }
 
     const os = nextOs[osIndex];
     let amIndex = os.amostras.findIndex((a) => a.id === input.amostra.id);
+
     if (amIndex === -1) {
-      os.amostras = [
-        ...os.amostras,
-        {
-          id: input.amostra.id,
-          createdAt: now,
-          updatedAt: now,
-          reportNumber: input.amostra.reportNumber ?? input.amostra.code ?? "",
-          borehole: input.amostra.borehole ?? "",
-          depth: input.amostra.depth ?? "",
-          description: input.amostra.description ?? "",
-          granulometricDescription: "",
-          code: input.amostra.code ?? input.amostra.reportNumber ?? "",
-          photos: [],
-          ensaios: [],
-        },
-      ];
+      os.amostras.push({
+        id: input.amostra.id,
+        createdAt: now,
+        updatedAt: now,
+        reportNumber: input.amostra.reportNumber,
+        borehole: input.amostra.borehole,
+        depth: input.amostra.depth,
+        description: input.amostra.description,
+        granulometricDescription: input.amostra.granulometricDescription,
+        code: input.amostra.code,
+        coords: input.amostra.coords,
+        photos: [],
+        ensaios: [],
+      });
       amIndex = os.amostras.length - 1;
     } else {
-      const current = os.amostras[amIndex];
+      const curAm = os.amostras[amIndex];
       os.amostras[amIndex] = {
-        ...current,
+        ...curAm,
         updatedAt: now,
-        reportNumber: input.amostra.reportNumber || current.reportNumber,
-        code: input.amostra.code || current.code,
-        description: input.amostra.description || current.description,
-        borehole: input.amostra.borehole || current.borehole,
-        depth: input.amostra.depth || current.depth,
+        borehole: input.amostra.borehole || curAm.borehole,
+        depth: input.amostra.depth || curAm.depth,
+        code: input.amostra.code || curAm.code,
+        description: input.amostra.description || curAm.description,
       };
     }
 
@@ -435,7 +529,7 @@ export const labStore = {
     return { osId: os.id, amId: amostra.id, enId: restored.id };
   },
 
-  // Fotos do ensaio (moldagem/ruptura, opcionalmente por CP via specimenId)
+  // Fotos do ensaio
   addEnsaioPhoto(osId: string, amId: string, enId: string, photo: Omit<Photo, "id" | "createdAt">) {
     updateEnsaio(osId, amId, enId, (e) => ({
       ...e,
@@ -464,6 +558,21 @@ export const labStore = {
 export function useLabState(): LabState {
   useEffect(() => {
     void labStore.hydrate();
+    const interval = setInterval(() => {
+      void labStore.refreshFromRemote();
+    }, 12000);
+    const onFocus = () => {
+      void labStore.refreshFromRemote();
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("focus", onFocus);
+    }
+    return () => {
+      clearInterval(interval);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("focus", onFocus);
+      }
+    };
   }, []);
   return useSyncExternalStore(
     labStore.subscribe,

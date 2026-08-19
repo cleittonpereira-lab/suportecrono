@@ -1,3 +1,4 @@
+import { saveSharedDraft, loadSharedDraft } from "@/lib/draft.functions";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useRef, useState, useEffect } from "react";
 import { useCadastroByOs } from "@/hooks/use-cadastro-by-os";
@@ -1102,6 +1103,16 @@ export function CDPage() {
               </DialogContent>
             </Dialog>
 
+            {/* Importar / Colar Leituras (ASTM D3080) */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setImportOpen(true)}
+              className="border-primary/50 bg-primary/10 text-primary hover:bg-primary/20 font-semibold"
+            >
+              <ClipboardPaste className="mr-1.5 h-4 w-4 text-primary" /> Importar / Colar Leituras (ASTM D3080)
+            </Button>
+
             {/* Exportar Dados Brutos (XLSX) */}
             <Button
               variant="outline"
@@ -1125,7 +1136,7 @@ export function CDPage() {
             <User className="h-4 w-4 text-primary" />
             <span className="text-xs text-muted-foreground font-medium">Operador Bancada (Gantt):</span>
             <Badge variant="secondary" className="font-semibold text-xs text-foreground px-2 py-0.5">
-              {sample.operator || "Rosângela Oliveira"}
+              {sample.operator || (ctx?.ensaio?.operator) || "Rodrigo"}
             </Badge>
           </div>
           <div className="flex items-center gap-2">
@@ -1477,8 +1488,11 @@ export function CDPage() {
                     </CardDescription>
                   </div>
                   <div className="flex items-center gap-2">
+                    <Button size="sm" variant="outline" onClick={() => setImportOpen(true)} className="border-primary/50 bg-primary/10 text-primary hover:bg-primary/20 font-semibold">
+                      <ClipboardPaste className="mr-1.5 h-3.5 w-3.5" /> Importar / Colar Leituras (ASTM D3080)
+                    </Button>
                     <Button size="sm" variant="outline" onClick={handleImportXlsxFile}>
-                      <Upload className="mr-1.5 h-3.5 w-3.5" /> Importar Dados Brutos (XLSX)
+                      <Upload className="mr-1.5 h-3.5 w-3.5" /> Planilha Completa (XLSX)
                     </Button>
                     <Button size="sm" variant="outline" onClick={addCp}>
                       <Plus className="mr-1.5 h-3.5 w-3.5" /> Adicionar CP
@@ -2264,7 +2278,7 @@ export function CDPage() {
                 Instruções Técnicas da Programação (Gantt)
               </label>
               <div className="p-3.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs text-foreground font-medium leading-relaxed">
-                {(ctx?.ensaio as any)?.observacoes || "Ensaio de Cisalhamento Direto: Tensões normais de 50, 100 e 200 kPa. Taxa de cisalhamento lenta drenada. Registrar leituras com transdutores e conferir curva tensão-deformação."}
+                {(ctx?.ensaio as any)?.observacoes || (ctx?.amostra as any)?.observacoes || sample.observations || "Nenhuma observação cadastrada na programação."}
               </div>
             </div>
 
