@@ -747,7 +747,7 @@ export function CDReportPage5({
         {/* Bloco 1: Etapa de Moldagem */}
         <div className="rounded border border-[#141414]/60 bg-white p-2.5 flex flex-col shadow-sm">
           <div className="text-[9.5px] font-bold text-[#141414] uppercase mb-2 border-b border-[#141414]/15 pb-1">
-            Etapa de Moldagem / Aspecto Inicial
+            1. Antes do Ensaio — Etapa de Moldagem / Aspecto Inicial
           </div>
           <div className="grid grid-cols-3 gap-3 items-start">
             {cpsForPage.map((cp) => {
@@ -786,7 +786,7 @@ export function CDReportPage5({
         {/* Bloco 2: Após Ruptura */}
         <div className="rounded border border-[#141414]/60 bg-white p-2.5 flex flex-col shadow-sm">
           <div className="text-[9.5px] font-bold text-[#141414] uppercase mb-2 border-b border-[#141414]/15 pb-1">
-            Após Ruptura / Plano de Cisalhamento
+            2. Depois do Ensaio — Superfície de Ruptura / Plano de Cisalhamento
           </div>
           <div className="grid grid-cols-3 gap-3 items-start">
             {cpsForPage.map((cp) => {

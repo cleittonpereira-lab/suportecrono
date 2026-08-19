@@ -627,7 +627,7 @@ export function CDMoldagemFicha({
         )}
       </div>
 
-      {/* 4. REGISTRO FOTOGRÁFICO */}
+      {/* 4. REGISTRO FOTOGRÁFICO (2 FOTOS POR CP: ANTES E DEPOIS DO ENSAIO) */}
       <div className="rounded-md border border-border bg-card">
         <button
           type="button"
@@ -636,22 +636,43 @@ export function CDMoldagemFicha({
         >
           <span className="flex items-center gap-2">
             {photoOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            REGISTRO FOTOGRÁFICO — {cp.displayId ?? cp.id}
+            REGISTRO FOTOGRÁFICO (2 FOTOS POR CP: ANTES E DEPOIS DO ENSAIO) — {cp.displayId ?? cp.id}
           </span>
           <span className="text-[11px] font-normal text-muted-foreground font-mono">
             {((ctx?.photos || []).filter((p: any) => p.specimenId === cp.id)).length} FOTO(S)
           </span>
         </button>
         {photoOpen && (
-          <div className="p-3">
-            <PhotoUploader
-              title={`Registro Fotográfico — ${cp.displayId ?? cp.id}`}
-              kind="moldagem"
-              photos={ctx?.photos ?? []}
-              onAdd={(p) => ctx?.addPhoto?.({ ...p, specimenId: cp.id })}
-              onRemove={(id) => ctx?.removePhoto?.(id)}
-              onUpdate={(id, patch) => ctx?.updatePhoto?.(id, patch)}
-            />
+          <div className="p-3 grid gap-4 md:grid-cols-2">
+            {/* Foto 1: Antes do Ensaio / Moldagem */}
+            <div className="border border-border/60 rounded-md p-2.5 bg-muted/5 space-y-2">
+              <div className="text-xs font-bold text-primary flex items-center gap-1.5 border-b border-border/40 pb-1.5">
+                <Camera className="h-3.5 w-3.5" /> 1. Foto do CP Antes do Ensaio (Moldagem)
+              </div>
+              <PhotoUploader
+                title={`Antes do Ensaio / Moldagem — ${cp.displayId ?? cp.id}`}
+                kind="moldagem"
+                photos={(ctx?.photos ?? []).filter((p: any) => p.specimenId === cp.id)}
+                onAdd={(p) => ctx?.addPhoto?.({ ...p, specimenId: cp.id, kind: "moldagem" })}
+                onRemove={(id) => ctx?.removePhoto?.(id)}
+                onUpdate={(id, patch) => ctx?.updatePhoto?.(id, patch)}
+              />
+            </div>
+
+            {/* Foto 2: Depois do Ensaio / Ruptura */}
+            <div className="border border-border/60 rounded-md p-2.5 bg-muted/5 space-y-2">
+              <div className="text-xs font-bold text-primary flex items-center gap-1.5 border-b border-border/40 pb-1.5">
+                <Camera className="h-3.5 w-3.5" /> 2. Foto do CP Depois do Ensaio (Ruptura / Superfície)
+              </div>
+              <PhotoUploader
+                title={`Depois do Ensaio / Ruptura — ${cp.displayId ?? cp.id}`}
+                kind="ruptura"
+                photos={(ctx?.photos ?? []).filter((p: any) => p.specimenId === cp.id)}
+                onAdd={(p) => ctx?.addPhoto?.({ ...p, specimenId: cp.id, kind: "ruptura" })}
+                onRemove={(id) => ctx?.removePhoto?.(id)}
+                onUpdate={(id, patch) => ctx?.updatePhoto?.(id, patch)}
+              />
+            </div>
           </div>
         )}
       </div>
