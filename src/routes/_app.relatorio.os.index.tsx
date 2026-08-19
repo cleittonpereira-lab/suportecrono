@@ -357,8 +357,10 @@ function CentralOsPage() {
         if (p.ensaio && (!existing.ensaio || existing.ensaio === existing.tipo || existing.ensaio.includes("cisalhamento-direto"))) {
           existing.ensaio = p.ensaio;
         }
-        if (st === "aprovado" || st === "concluido_externo" || (st === "verificacao" && existing.status !== "aprovado")) {
-          existing.status = st;
+        if (st === "aprovado" || st === "concluido_externo" || st === "verificacao" || st === "em_digitacao") {
+          if (existing.status !== "aprovado" && existing.status !== "concluido_externo") {
+            existing.status = st;
+          }
         }
         if (p.operador_nome) existing.tecnico = p.operador_nome;
         if (p.digitador_nome) existing.digitador = p.digitador_nome;

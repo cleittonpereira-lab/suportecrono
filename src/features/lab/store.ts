@@ -551,6 +551,12 @@ export const labStore = {
       photos: (e.photos ?? []).map((p) => (p.id === photoId ? { ...p, ...patch } : p)),
     }));
   },
+  setEnsaioPhotos(osId: string, amId: string, enId: string, photos: Photo[]) {
+    updateEnsaio(osId, amId, enId, (e) => ({
+      ...e,
+      photos: photos || [],
+    }));
+  },
 };
 
 // ---------- Hooks ----------

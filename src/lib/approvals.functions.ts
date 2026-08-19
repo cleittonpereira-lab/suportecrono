@@ -100,75 +100,97 @@ async function setWorkflowStatus(
   },
 ) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const nowIso = new Date().toISOString();
+
+  // 1. Busca metadados existentes no lab_index se index nao fornecido
+  let osNum = index?.os_numero ?? null;
+  let amCode = index?.amostra_code ?? null;
+  let ensTipo = index?.ensaio_tipo ?? null;
+  let ensNome = index?.ensaio_nome ?? null;
+  let osCliente = index?.os_cliente ?? null;
+
   try {
-    if (index) {
-      await supabaseAdmin
-        .from("lab_index")
-        .upsert({
-          scope_id: scopeId,
-          os_numero: index.os_numero ?? null,
-          os_cliente: index.os_cliente ?? null,
-          amostra_code: index.amostra_code ?? null,
-          ensaio_tipo: index.ensaio_tipo ?? null,
-          ensaio_nome: index.ensaio_nome ?? null,
-          workflow_status: status,
-          updated_at: new Date().toISOString(),
-        });
-    } else {
-      await supabaseAdmin
-        .from("lab_index")
-        .update({ workflow_status: status, updated_at: new Date().toISOString() })
-        .eq("scope_id", scopeId);
+    const { data: existingIdx } = await supabaseAdmin
+      .from("lab_index")
+      .select("*")
+      .eq("scope_id", scopeId)
+      .maybeSingle();
+
+    if (existingIdx) {
+      if (!osNum) osNum = existingIdx.os_numero;
+      if (!amCode) amCode = existingIdx.amostra_code;
+      if (!ensTipo) ensTipo = existingIdx.ensaio_tipo;
+      if (!ensNome) ensNome = existingIdx.ensaio_nome;
+      if (!osCliente) osCliente = existingIdx.os_cliente;
     }
+  } catch {}
+
+  // 2. Grava/Atualiza lab_index
+  try {
+    await supabaseAdmin.from("lab_index").upsert({
+      scope_id: scopeId,
+      os_numero: osNum,
+      os_cliente: osCliente,
+      amostra_code: amCode,
+      ensaio_tipo: ensTipo,
+      ensaio_nome: ensNome,
+      workflow_status: status,
+      updated_at: nowIso,
+    });
   } catch (err) {
-    console.warn("lab_index upsert warning (safe):", err);
+    console.warn("lab_index upsert warning:", err);
   }
 
-  // Sincroniza diretamente na tabela lab_pendencias_digitacao da Central & Kanban
+  // 3. Atualiza atômico na tabela lab_pendencias_digitacao
   try {
-    const parts = scopeId.split("/");
-    const osNum = index?.os_numero || (parts[0] === "os" ? parts[1] : undefined);
-    const amCode = index?.amostra_code || (parts[2] === "amostra" ? parts[3] : undefined);
-    if (osNum) {
-      const statusMap: Record<string, string> = {
-        digitacao: "em_digitacao",
-        aguardando_verificacao: "digitado",
-        aguardando_aprovacao: "verificado",
-        aprovado: "aprovado",
-        rejeitado: "em_digitacao",
-      };
-      const pendStatus = statusMap[status] || "em_digitacao";
+    const statusMap: Record<string, string> = {
+      digitacao: "em_digitacao",
+      aguardando_verificacao: "digitado",
+      aguardando_aprovacao: "verificado",
+      aprovado: "aprovado",
+      rejeitado: "em_digitacao",
+    };
+    const pendStatus = statusMap[status] || "em_digitacao";
 
-      const query = supabaseAdmin
+    // Busca por id direto (se scopeId for UUID da pendencia) ou por (os, amostra)
+    let pTargetId: string | null = null;
+    const { data: pById } = await supabaseAdmin
+      .from("lab_pendencias_digitacao")
+      .select("id")
+      .eq("id", scopeId)
+      .maybeSingle();
+
+    if (pById?.id) {
+      pTargetId = pById.id;
+    } else if (osNum) {
+      let q = supabaseAdmin.from("lab_pendencias_digitacao").select("id").eq("os", osNum);
+      if (amCode) q = q.eq("amostra", amCode);
+      const { data: pByOs } = await q.maybeSingle();
+      if (pByOs?.id) pTargetId = pByOs.id;
+    }
+
+    if (pTargetId) {
+      await supabaseAdmin
         .from("lab_pendencias_digitacao")
-        .select("id")
-        .eq("os", osNum);
-
-      const { data: pFound } = await (amCode ? query.eq("amostra", amCode) : query).maybeSingle();
-
-      if (pFound?.id) {
-        await supabaseAdmin
-          .from("lab_pendencias_digitacao")
-          .update({
-            status: pendStatus,
-            updated_at: new Date().toISOString(),
-          } as never)
-          .eq("id", pFound.id);
-      } else {
-        await supabaseAdmin
-          .from("lab_pendencias_digitacao")
-          .insert({
-            os: osNum,
-            amostra: amCode || null,
-            ensaio: index?.ensaio_nome || "Ensaio de Laboratório",
-            tipo_ensaio: index?.ensaio_tipo || null,
-            status: pendStatus,
-            origem: "gantt",
-          } as never);
-      }
+        .update({
+          status: pendStatus,
+          updated_at: nowIso,
+        } as never)
+        .eq("id", pTargetId);
+    } else if (osNum) {
+      await supabaseAdmin.from("lab_pendencias_digitacao").insert({
+        os: osNum,
+        amostra: amCode || null,
+        ensaio: ensNome || "Ensaio de Laboratório",
+        tipo_ensaio: ensTipo || null,
+        status: pendStatus,
+        origem: "gantt",
+        created_at: nowIso,
+        updated_at: nowIso,
+      } as never);
     }
   } catch (err) {
-    console.warn("Sync to lab_pendencias_digitacao caught:", err);
+    console.warn("Sync to lab_pendencias_digitacao warning:", err);
   }
 }
 

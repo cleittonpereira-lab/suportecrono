@@ -1305,7 +1305,7 @@ export function TriaxialCidPage() {
               <User className="h-4 w-4 text-primary" />
               <span className="text-xs text-muted-foreground font-medium">Operador Bancada (Gantt):</span>
               <Badge variant="secondary" className="font-semibold text-xs text-foreground px-2 py-0.5">
-                {sample.operator || ctx?.ensaio?.operator || "Rosângela Oliveira"}
+                {sample.operator || ctx?.ensaio?.operator || "Téc. Laboratório"}
               </Badge>
             </div>
             <div className="flex items-center gap-2">

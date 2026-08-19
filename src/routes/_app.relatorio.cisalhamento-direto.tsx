@@ -456,18 +456,22 @@ export function CDPage() {
         if (remote.tab) setTab(remote.tab);
         if (remote.adjust) setAdjust((a: any) => ({ ...a, ...remote.adjust }));
         if (remote.axisCfg) setAxisCfg((cfg) => ({ ...cfg, ...remote.axisCfg }));
+        if (remote.photos && remote.photos.length > 0 && ctx?.os?.id && ctx?.amostra?.id && ctx?.ensaio?.id) {
+          labStore.setEnsaioPhotos(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, remote.photos as any);
+        }
       }
     });
   }, [scopeId]);
 
   useEffect(() => {
     const h = window.setTimeout(() => {
-      const draftData = { sample, specimens, selectedCpId, tab, adjust, axisCfg };
+      const draftPhotos = ctx?.photos ?? (draft as any)?.photos ?? [];
+      const draftData = { sample, specimens, selectedCpId, tab, adjust, axisCfg, photos: draftPhotos };
       saveDraft(scopeId, draftData);
       if (ctx?.ensaio) ctx.onPayloadChange(draftData);
     }, 300);
     return () => window.clearTimeout(h);
-  }, [scopeId, sample, specimens, selectedCpId, tab, adjust, axisCfg, ctx]);
+  }, [scopeId, sample, specimens, selectedCpId, tab, adjust, axisCfg, ctx, ctx?.photos]);
 
   const sortedSpecimens = useMemo(
     () => [...specimens].sort((a, b) => (a.normalStressTarget ?? 0) - (b.normalStressTarget ?? 0)),

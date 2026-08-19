@@ -5,6 +5,10 @@ function sanitizeKey(key: string): string {
   return key.replace(/[^a-zA-Z0-9_-]/g, "_");
 }
 
+function normStr(s?: string | null) {
+  return (s || "").trim().toLowerCase();
+}
+
 export const saveSharedDraft = createServerFn({ method: "POST" })
   .validator((d: { scopeId: string; payload: any }) => d)
   .handler(async ({ data }) => {
@@ -31,7 +35,7 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
           amostra_code: amostraCode,
           ensaio_nome: ensaioNome,
           ensaio_tipo: ensaioTipo,
-          workflow_status: "em_digitacao",
+          workflow_status: "digitacao",
           extra: payload,
           updated_at: nowIso,
         });
@@ -41,43 +45,63 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
 
       // 2. Se for uma pendência vinculada ou avulsa, atualiza o payload e status em lab_pendencias_digitacao
       try {
-        // Tenta por ID direto
-        const { data: byId } = await supabaseAdmin
+        let pTargetId: string | null = null;
+        let pTargetStatus: string = "em_digitacao";
+
+        // Tenta por ID direto (se scopeId for UUID da pendencia)
+        const { data: pById } = await supabaseAdmin
           .from("lab_pendencias_digitacao")
           .select("id, status")
           .eq("id", scopeId)
-          .maybeSingle();
+          .limit(1);
 
-        if (byId?.id) {
-          const nextStatus = byId.status === "pendente" ? "em_digitacao" : byId.status;
+        if (pById && pById.length > 0) {
+          pTargetId = pById[0].id;
+          pTargetStatus = pById[0].status === "pendente" ? "em_digitacao" : pById[0].status;
+        } else if (osNumero && amostraCode) {
+          // Tenta buscar por OS, Amostra e Tipo de Ensaio
+          const { data: rows } = await supabaseAdmin
+            .from("lab_pendencias_digitacao")
+            .select("id, status, ensaio, tipo_ensaio")
+            .eq("os", osNumero)
+            .eq("amostra", amostraCode);
+
+          if (rows && rows.length > 0) {
+            // Tenta match exato por tipo/ensaio
+            const matched = rows.find(
+              (r) =>
+                normStr(r.tipo_ensaio) === normStr(ensaioTipo) ||
+                normStr(r.ensaio) === normStr(ensaioNome) ||
+                normStr(r.ensaio).includes(normStr(ensaioTipo)),
+            ) || rows[0];
+
+            pTargetId = matched.id;
+            pTargetStatus = matched.status === "pendente" ? "em_digitacao" : matched.status;
+          }
+        }
+
+        if (pTargetId) {
           await supabaseAdmin
             .from("lab_pendencias_digitacao")
             .update({
               payload: payload as never,
-              status: nextStatus,
+              status: pTargetStatus,
               updated_at: nowIso,
             })
-            .eq("id", byId.id);
-        } else if (osNumero && amostraCode) {
-          // Tenta por OS e Amostra
-          const { data: byOsAm } = await supabaseAdmin
-            .from("lab_pendencias_digitacao")
-            .select("id, status")
-            .eq("os", osNumero)
-            .eq("amostra", amostraCode)
-            .maybeSingle();
-
-          if (byOsAm?.id) {
-            const nextStatus = byOsAm.status === "pendente" ? "em_digitacao" : byOsAm.status;
-            await supabaseAdmin
-              .from("lab_pendencias_digitacao")
-              .update({
-                payload: payload as never,
-                status: nextStatus,
-                updated_at: nowIso,
-              })
-              .eq("id", byOsAm.id);
-          }
+            .eq("id", pTargetId);
+        } else if (osNumero) {
+          // Se não encontrou pendência existente, insere nova pendência em digitação
+          await supabaseAdmin.from("lab_pendencias_digitacao").insert({
+            os: osNumero,
+            amostra: amostraCode,
+            ensaio: ensaioNome,
+            tipo_ensaio: ensaioTipo,
+            status: "em_digitacao",
+            origem: "avulso",
+            payload: payload as never,
+            created_at: nowIso,
+            updated_at: nowIso,
+          });
         }
       } catch (e) {
         console.warn("[saveSharedDraft] Aviso ao atualizar lab_pendencias_digitacao:", e);
@@ -112,17 +136,17 @@ export const loadSharedDraft = createServerFn({ method: "GET" })
 
       // 1. Tenta buscar no lab_index do Supabase
       try {
-        const { data: indexRow } = await supabaseAdmin
+        const { data: indexRows } = await supabaseAdmin
           .from("lab_index")
           .select("extra, updated_at")
           .eq("scope_id", scopeId)
-          .maybeSingle();
+          .limit(1);
 
-        if (indexRow?.extra) {
+        if (indexRows && indexRows.length > 0 && indexRows[0].extra) {
           return {
             success: true,
-            payload: indexRow.extra,
-            updatedAt: indexRow.updated_at,
+            payload: indexRows[0].extra,
+            updatedAt: indexRows[0].updated_at,
           };
         }
       } catch (e) {
@@ -131,17 +155,17 @@ export const loadSharedDraft = createServerFn({ method: "GET" })
 
       // 2. Tenta buscar em lab_pendencias_digitacao
       try {
-        const { data: pendRow } = await supabaseAdmin
+        const { data: pendRows } = await supabaseAdmin
           .from("lab_pendencias_digitacao")
           .select("payload, updated_at")
           .eq("id", scopeId)
-          .maybeSingle();
+          .limit(1);
 
-        if (pendRow?.payload) {
+        if (pendRows && pendRows.length > 0 && pendRows[0].payload) {
           return {
             success: true,
-            payload: pendRow.payload,
-            updatedAt: pendRow.updated_at,
+            payload: pendRows[0].payload,
+            updatedAt: pendRows[0].updated_at,
           };
         }
       } catch (e) {

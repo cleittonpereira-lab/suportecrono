@@ -506,7 +506,7 @@ function CentralRelatoriosPage() {
       labStore.patchEnsaio(os.id, am.id, en.id, {
         nome: sigla,
         sigla: sigla,
-        operator: amProg?.tecnico || "Rosângela Oliveira",
+        operator: amProg?.tecnico || "Téc. Laboratório",
       });
     }
 
@@ -1246,7 +1246,7 @@ function CentralRelatoriosPage() {
                         <TableCell className="font-bold text-xs">{r.os}</TableCell>
                         <TableCell className="text-xs">{r.amostra || "—"}</TableCell>
                         <TableCell className="text-xs font-medium text-primary">{r.ensaio}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{r.operador_nome || "Rosângela Oliveira"}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{r.operador_nome || "—"}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">{r.digitador_nome || "—"}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">{r.verificador_nome || "—"}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">{r.aprovador_nome || "—"}</TableCell>

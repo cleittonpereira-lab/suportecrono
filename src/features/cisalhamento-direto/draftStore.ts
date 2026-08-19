@@ -15,6 +15,7 @@ export type CDDraft = {
   tab: string;
   adjust?: any;
   axisCfg?: CDAxisCfg;
+  photos?: any[];
   savedAt: string;
 };
 
