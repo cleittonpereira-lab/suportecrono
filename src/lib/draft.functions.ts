@@ -9,6 +9,13 @@ function normStr(s?: string | null) {
   return (s || "").trim().toLowerCase();
 }
 
+export function getCanonicalScopeId(osNum?: string | null, amCode?: string | null, ensaioKind?: string | null): string {
+  const cleanOs = normStr(osNum).replace(/[^a-z0-9_-]/g, "_");
+  const cleanAm = normStr(amCode).replace(/[^a-z0-9_-]/g, "_");
+  const cleanEn = normStr(ensaioKind).replace(/[^a-z0-9_-]/g, "_");
+  return `os/${cleanOs || "os"}/amostra/${cleanAm || "amostra"}/ensaio/${cleanEn || "ensaio"}`;
+}
+
 export const saveSharedDraft = createServerFn({ method: "POST" })
   .validator((d: { scopeId: string; payload: any }) => d)
   .handler(async ({ data }) => {
@@ -26,10 +33,11 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
       const ensaioNome = sample.equipment || sample.ensaio || "Ensaio";
       const ensaioTipo = sample.tipo || sample.tipo_ensaio || "cisalhamento-direto";
 
-      // 1. Grava no lab_index (tabela central de estados)
+      const canonicalId = getCanonicalScopeId(osNumero, amostraCode, ensaioTipo);
+
+      // 1. Grava no lab_index sob o scopeId da rota E o canonicalId determinístico
       try {
-        await supabaseAdmin.from("lab_index").upsert({
-          scope_id: scopeId,
+        const rowData = {
           os_numero: osNumero,
           os_cliente: osCliente,
           amostra_code: amostraCode,
@@ -38,7 +46,12 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
           workflow_status: "digitacao",
           extra: payload,
           updated_at: nowIso,
-        });
+        };
+
+        await Promise.all([
+          supabaseAdmin.from("lab_index").upsert({ scope_id: scopeId, ...rowData }),
+          canonicalId !== scopeId ? supabaseAdmin.from("lab_index").upsert({ scope_id: canonicalId, ...rowData }) : Promise.resolve(),
+        ]);
       } catch (e) {
         console.warn("[saveSharedDraft] Aviso ao salvar lab_index:", e);
       }
@@ -48,7 +61,7 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
         let pTargetId: string | null = null;
         let pTargetStatus: string = "em_digitacao";
 
-        // Tenta por ID direto (se scopeId for UUID da pendencia)
+        // Tenta por ID direto
         const { data: pById } = await supabaseAdmin
           .from("lab_pendencias_digitacao")
           .select("id, status")
@@ -59,7 +72,7 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
           pTargetId = pById[0].id;
           pTargetStatus = pById[0].status === "pendente" ? "em_digitacao" : pById[0].status;
         } else if (osNumero && amostraCode) {
-          // Tenta buscar por OS, Amostra e Tipo de Ensaio
+          // Tenta buscar por OS e Amostra
           const { data: rows } = await supabaseAdmin
             .from("lab_pendencias_digitacao")
             .select("id, status, ensaio, tipo_ensaio")
@@ -67,7 +80,6 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
             .eq("amostra", amostraCode);
 
           if (rows && rows.length > 0) {
-            // Tenta match exato por tipo/ensaio
             const matched = rows.find(
               (r) =>
                 normStr(r.tipo_ensaio) === normStr(ensaioTipo) ||
@@ -90,7 +102,6 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
             })
             .eq("id", pTargetId);
         } else if (osNumero) {
-          // Se não encontrou pendência existente, insere nova pendência em digitação
           await supabaseAdmin.from("lab_pendencias_digitacao").insert({
             os: osNumero,
             amostra: amostraCode,
@@ -128,18 +139,21 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
   });
 
 export const loadSharedDraft = createServerFn({ method: "GET" })
-  .validator((d: { scopeId: string }) => d)
+  .validator((d: { scopeId: string; osNum?: string; amCode?: string; ensaioTipo?: string }) => d)
   .handler(async ({ data }) => {
     try {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
       const scopeId = data.scopeId;
+      const canonicalId = data.osNum && data.amCode ? getCanonicalScopeId(data.osNum, data.amCode, data.ensaioTipo) : null;
 
-      // 1. Tenta buscar no lab_index do Supabase
+      // 1. Tenta buscar no lab_index por scopeId ou por canonicalId
       try {
+        const queryIds = Array.from(new Set([scopeId, canonicalId].filter(Boolean) as string[]));
         const { data: indexRows } = await supabaseAdmin
           .from("lab_index")
-          .select("extra, updated_at")
-          .eq("scope_id", scopeId)
+          .select("extra, updated_at, os_numero, amostra_code")
+          .in("scope_id", queryIds)
+          .order("updated_at", { ascending: false })
           .limit(1);
 
         if (indexRows && indexRows.length > 0 && indexRows[0].extra) {
@@ -153,7 +167,28 @@ export const loadSharedDraft = createServerFn({ method: "GET" })
         console.warn("[loadSharedDraft] Aviso ao buscar lab_index:", e);
       }
 
-      // 2. Tenta buscar em lab_pendencias_digitacao
+      // 2. Busca por OS e Amostra no lab_index se não achou por ID direto
+      if (data.osNum && data.amCode) {
+        try {
+          const { data: byOsRows } = await supabaseAdmin
+            .from("lab_index")
+            .select("extra, updated_at")
+            .eq("os_numero", data.osNum)
+            .eq("amostra_code", data.amCode)
+            .order("updated_at", { ascending: false })
+            .limit(1);
+
+          if (byOsRows && byOsRows.length > 0 && byOsRows[0].extra) {
+            return {
+              success: true,
+              payload: byOsRows[0].extra,
+              updatedAt: byOsRows[0].updated_at,
+            };
+          }
+        } catch {}
+      }
+
+      // 3. Tenta buscar em lab_pendencias_digitacao por ID ou por (OS, Amostra)
       try {
         const { data: pendRows } = await supabaseAdmin
           .from("lab_pendencias_digitacao")
@@ -168,11 +203,29 @@ export const loadSharedDraft = createServerFn({ method: "GET" })
             updatedAt: pendRows[0].updated_at,
           };
         }
+
+        if (data.osNum && data.amCode) {
+          const { data: pendByOs } = await supabaseAdmin
+            .from("lab_pendencias_digitacao")
+            .select("payload, updated_at")
+            .eq("os", data.osNum)
+            .eq("amostra", data.amCode)
+            .order("updated_at", { ascending: false })
+            .limit(1);
+
+          if (pendByOs && pendByOs.length > 0 && pendByOs[0].payload) {
+            return {
+              success: true,
+              payload: pendByOs[0].payload,
+              updatedAt: pendByOs[0].updated_at,
+            };
+          }
+        }
       } catch (e) {
         console.warn("[loadSharedDraft] Aviso ao buscar lab_pendencias_digitacao:", e);
       }
 
-      // 3. Fallback: tenta buscar no disco local
+      // 4. Fallback: tenta buscar no disco local
       try {
         const fs = await import("node:fs");
         const path = await import("node:path");

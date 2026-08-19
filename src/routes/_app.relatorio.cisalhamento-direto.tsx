@@ -448,7 +448,11 @@ export function CDPage() {
     refreshVersions();
     refreshDriveStatus();
     refreshApprovals();
-    fetchRemoteDraft(scopeId).then((remote) => {
+    fetchRemoteDraft(scopeId, {
+      osNum: ctx?.os?.numero,
+      amCode: ctx?.amostra?.reportNumber || ctx?.amostra?.code,
+      ensaioTipo: "cisalhamento-direto",
+    }).then((remote) => {
       if (remote) {
         if (remote.sample) setSample((s) => ({ ...s, ...remote.sample }));
         if (remote.specimens && remote.specimens.length > 0) setSpecimens(remote.specimens);

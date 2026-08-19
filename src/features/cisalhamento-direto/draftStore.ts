@@ -52,9 +52,19 @@ export function saveDraft(scopeId: string, draft: Partial<CDDraft>): void {
   saveTimers.set(scopeId, timer);
 }
 
-export async function fetchRemoteDraft(scopeId: string): Promise<Partial<CDDraft> | null> {
+export async function fetchRemoteDraft(
+  scopeId: string,
+  opts?: { osNum?: string; amCode?: string; ensaioTipo?: string },
+): Promise<Partial<CDDraft> | null> {
   try {
-    const res = await loadSharedDraft({ data: { scopeId } });
+    const res = await loadSharedDraft({
+      data: {
+        scopeId,
+        osNum: opts?.osNum,
+        amCode: opts?.amCode,
+        ensaioTipo: opts?.ensaioTipo || "cisalhamento-direto",
+      },
+    });
     if (res?.success && res.payload) {
       try {
         window.localStorage.setItem(KEY(scopeId), JSON.stringify(res.payload));
