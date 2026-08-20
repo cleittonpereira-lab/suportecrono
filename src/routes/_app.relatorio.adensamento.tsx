@@ -428,7 +428,7 @@ export function AdensamentoPage() {
   const [savingVersion, setSavingVersion] = useState(false);
   const [versions, setVersions] = useState<any[]>([]);
   const [approvals, setApprovals] = useState<any[]>([]);
-  const [wfStatus, setWfStatus] = useState<string>("digitacao");
+  const [wfStatus, setWfStatus] = useState<string>("");
   const [sampleEditOpen, setSampleEditOpen] = useState(false);
   const [obsDialogOpen, setObsDialogOpen] = useState(false);
   const [obsGanttOpen, setObsGanttOpen] = useState(false);
@@ -518,6 +518,12 @@ export function AdensamentoPage() {
         try { setApprovals(JSON.parse(local)); } catch {}
       }
     }
+    try {
+      const resWf = await getWorkflowStatuses({ data: { scopeIds: [scopeId] } });
+      if (resWf?.statuses?.[scopeId]) {
+        setWfStatus(resWf.statuses[scopeId]);
+      }
+    } catch {}
   };
 
   useEffect(() => {
@@ -1101,9 +1107,10 @@ export function AdensamentoPage() {
               <WorkflowFarol status={
     (() => {
       const st = wfStatus || approvals[0]?.status || (ctx?.ensaio as any)?.status || "em_digitacao";
-      if (st === "aguardando_verificacao" || st === "pendente_verificacao" || st === "digitado") return "aguardando_verificacao";
+      if (st === "aguardando_verificacao" || st === "pendente_verificacao" || st === "digitado" || st === "em_verificacao") return "aguardando_verificacao";
       if (st === "aguardando_aprovacao" || st === "pendente_aprovacao" || st === "verificado") return "aguardando_aprovacao";
       if (st === "aprovado") return "aprovado";
+      if (st === "rejeitado" || st === "rejeitado_verificacao") return "rejeitado";
       return "em_digitacao";
     })()
   } />
