@@ -22,12 +22,13 @@ import {
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
 import {
-  createChegadaRegistro,
+  createChegadaRegistroAsync,
   getTipoAmostraOptions,
   addTipoAmostraOption,
   getRecebidoOptions,
   addRecebidoOption,
   formatDateToday,
+  useChegadaRealtimeSync,
   CHEGADA_OPTIONS_EVENT,
   type Option,
 } from "@/lib/chegada-amostras-store";
@@ -51,6 +52,9 @@ export function ChegadaAmostrasRegistroPage() {
 
   const [tipoOptions, setTipoOptions] = useState<Option[]>(() => getTipoAmostraOptions());
   const [recebidoOptions, setRecebidoOptions] = useState<Option[]>(() => getRecebidoOptions());
+
+  // Sincronização em tempo real entre múltiplos dispositivos
+  useChegadaRealtimeSync();
 
   // Form State
   const [osCliente, setOsCliente] = useState("");
@@ -112,7 +116,7 @@ export function ChegadaAmostrasRegistroPage() {
     setRegisteredSummary(null);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     // 1. Validações
@@ -135,8 +139,8 @@ export function ChegadaAmostrasRegistroPage() {
 
     setIsSubmitting(true);
     try {
-      // 2. Cria registro automático na coluna 'registro' com auditoria
-      const created = createChegadaRegistro({
+      // 2. Cria registro automático com persistência e sincronização em nuvem
+      const created = await createChegadaRegistroAsync({
         osCliente,
         dataChegada,
         tipoAmostra,

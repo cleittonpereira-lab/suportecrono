@@ -52,6 +52,7 @@ import {
   addRecebidoOption,
   formatDateToday,
   formatNow,
+  useChegadaRealtimeSync,
   CHEGADA_UPDATE_EVENT,
   CHEGADA_OPTIONS_EVENT,
   type ColumnId,
@@ -74,6 +75,9 @@ function ChegadaAmostras() {
   const [tasks, setTasks] = useState<Record<ColumnId, ChegadaTask[]>>(() => getStoredTasks());
   const [tipoAmostraOptions, setTipoAmostraOptions] = useState<Option[]>(() => getTipoAmostraOptions());
   const [recebidoOptions, setRecebidoOptions] = useState<Option[]>(() => getRecebidoOptions());
+
+  // Ativa sincronização em tempo real entre todos os aparelhos
+  useChegadaRealtimeSync(setTasks);
 
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);

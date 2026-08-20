@@ -26,6 +26,8 @@ import {
   getRecebidoOptions,
   addRecebidoOption,
   formatDateToday,
+  createChegadaRegistroAsync,
+  useChegadaRealtimeSync,
   CHEGADA_OPTIONS_EVENT,
   type Option,
 } from "@/lib/chegada-amostras-store";
@@ -52,6 +54,9 @@ export function RegistroAmostraStandalonePage() {
 
   const [tipoOptions, setTipoOptions] = useState<Option[]>(() => getTipoAmostraOptions());
   const [recebidoOptions, setRecebidoOptions] = useState<Option[]>(() => getRecebidoOptions());
+
+  // Sincronização em tempo real entre dispositivos
+  useChegadaRealtimeSync();
 
   // Form State
   const [osCliente, setOsCliente] = useState("");
@@ -99,7 +104,7 @@ export function RegistroAmostraStandalonePage() {
     setRegisteredSummary(null);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     // 1. Validações
@@ -122,8 +127,8 @@ export function RegistroAmostraStandalonePage() {
 
     setIsSubmitting(true);
     try {
-      // 2. Cria registro automático na coluna 'registro' com auditoria
-      const created = createChegadaRegistro({
+      // 2. Cria registro automático com persistência e sincronização em nuvem
+      const created = await createChegadaRegistroAsync({
         osCliente,
         dataChegada,
         tipoAmostra,

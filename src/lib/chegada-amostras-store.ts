@@ -1,5 +1,15 @@
+import { useState, useEffect, useCallback } from "react";
+import {
+  fetchSharedChegadaState,
+  saveSharedChegadaState,
+  createSharedChegadaTask,
+  addSharedChegadaOption,
+} from "./chegada-amostras.functions";
+
 export type ColumnId = "registro" | "recebimento" | "abrir-os" | "os-sistema";
+
 export type Priority = "baixa" | "media" | "alta";
+
 export type RegistroOrigem = "colaborador" | "administrador";
 
 export interface Option {
@@ -10,25 +20,31 @@ export interface Option {
 export interface ChegadaTask {
   id: string;
   osCliente: string;
-  dataChegada: string; // "DD/MM/YYYY"
+  dataChegada: string;
   recebidoPor: string[];
   tipoAmostra: string[];
   relacaoAmostras: string;
-  sup: string;
+  sup?: string;
   priority: Priority;
-  images: string[];
+  images?: string[];
   criadoPor?: string;
-  criadoEm?: string; // "DD/MM/YYYY HH:mm"
+  criadoEm?: string;
   origem?: RegistroOrigem;
   updatedAt?: string;
 }
 
-export const COLUMNS: { id: ColumnId; title: string }[] = [
-  { id: "registro", title: "Registro" },
-  { id: "recebimento", title: "Recebimento" },
-  { id: "abrir-os", title: "Abrir OS" },
-  { id: "os-sistema", title: "OS no sistema" },
+export const COLUMNS: { id: ColumnId; title: string; subtitle: string }[] = [
+  { id: "registro", title: "Registro", subtitle: "Chegada de amostras" },
+  { id: "recebimento", title: "Recebimento", subtitle: "Conferência inicial" },
+  { id: "abrir-os", title: "Abrir OS", subtitle: "Abertura no sistema" },
+  { id: "os-sistema", title: "OS no Sistema", subtitle: "Em processamento" },
 ];
+
+export const TASKS_STORAGE_KEY = "chegada_amostras_tasks";
+export const TIPO_AMOSTRA_STORAGE_KEY = "chegada_amostras_tipo_options";
+export const RECEBIDO_STORAGE_KEY = "chegada_amostras_recebido_options";
+export const CHEGADA_UPDATE_EVENT = "chegada_amostras_update";
+export const CHEGADA_OPTIONS_EVENT = "chegada_options_update";
 
 export const DEFAULT_TIPO_AMOSTRA_OPTIONS: Option[] = [
   { label: "DEF.1", value: "DEF.1" },
@@ -52,27 +68,20 @@ export const DEFAULT_RECEBIDO_OPTIONS: Option[] = [
   { label: "Thiago Araújo", value: "Thiago Araújo" },
 ];
 
-const TASKS_STORAGE_KEY = "chegada_amostras_tasks";
-const TIPO_AMOSTRA_STORAGE_KEY = "chegada_amostras_tipo_options";
-const RECEBIDO_STORAGE_KEY = "chegada_amostras_recebido_options";
-
-export const CHEGADA_UPDATE_EVENT = "chegada_amostras_update";
-export const CHEGADA_OPTIONS_EVENT = "chegada_options_update";
-
 export const INITIAL_TASKS: Record<ColumnId, ChegadaTask[]> = {
   registro: [
     {
-      id: "1",
-      osCliente: "Alfa / OS 1029",
-      dataChegada: "05/08/2026",
+      id: "demo-1",
+      osCliente: "Alfa Geotecnia / OS 1029",
+      dataChegada: "20/08/2026",
       recebidoPor: ["Rafael Hereman"],
-      tipoAmostra: ["DEF.1"],
+      tipoAmostra: ["DEF.1", "BL.30"],
       relacaoAmostras: "5 sacos de solo argiloso",
       sup: "CONTRATO-001",
       priority: "alta",
       images: [],
       criadoPor: "Administrador",
-      criadoEm: "05/08/2026 09:30",
+      criadoEm: "20/08/2026 09:30",
       origem: "administrador",
     },
   ],
@@ -100,14 +109,13 @@ export function formatDateToday(): string {
   return `${d}/${m}/${y}`;
 }
 
-// Tasks management
+// Tasks management (Local Cache)
 export function getStoredTasks(): Record<ColumnId, ChegadaTask[]> {
   if (typeof window === "undefined") return INITIAL_TASKS;
   const saved = localStorage.getItem(TASKS_STORAGE_KEY);
   if (saved) {
     try {
       const parsed = JSON.parse(saved);
-      // Ensure all columns exist
       return {
         registro: Array.isArray(parsed.registro) ? parsed.registro : [],
         recebimento: Array.isArray(parsed.recebimento) ? parsed.recebimento : [],
@@ -125,14 +133,25 @@ export function saveStoredTasks(tasks: Record<ColumnId, ChegadaTask[]>): void {
   if (typeof window === "undefined") return;
   localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(tasks));
   window.dispatchEvent(new CustomEvent(CHEGADA_UPDATE_EVENT, { detail: tasks }));
+
+  // Sincroniza em segundo plano com o banco de dados global
+  saveSharedChegadaState({
+    data: {
+      tasks,
+      tipoOptions: getTipoAmostraOptions(),
+      recebidoOptions: getRecebidoOptions(),
+    },
+  }).catch((err) => {
+    console.warn("[saveStoredTasks] Sync warning:", err);
+  });
 }
 
-export function createChegadaRegistro(
+export async function createChegadaRegistroAsync(
   data: Omit<ChegadaTask, "id" | "criadoEm"> & { id?: string; criadoEm?: string }
-): ChegadaTask {
+): Promise<ChegadaTask> {
   const current = getStoredTasks();
   const newTask: ChegadaTask = {
-    id: data.id || Math.random().toString(36).substring(2, 9),
+    id: data.id || "amostra_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7),
     osCliente: data.osCliente.trim(),
     dataChegada: data.dataChegada || formatDateToday(),
     recebidoPor: data.recebidoPor || [],
@@ -158,7 +177,80 @@ export function createChegadaRegistro(
     registro: updatedRegistro,
   };
 
-  saveStoredTasks(updatedTasks);
+  if (typeof window !== "undefined") {
+    localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(updatedTasks));
+    window.dispatchEvent(new CustomEvent(CHEGADA_UPDATE_EVENT, { detail: updatedTasks }));
+  }
+
+  // Envia para o banco central compartilhado por todos os dispositivos
+  try {
+    const res = await createSharedChegadaTask({ data });
+    if (res.fullState && typeof window !== "undefined") {
+      localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(res.fullState.tasks));
+      localStorage.setItem(TIPO_AMOSTRA_STORAGE_KEY, JSON.stringify(res.fullState.tipoOptions));
+      localStorage.setItem(RECEBIDO_STORAGE_KEY, JSON.stringify(res.fullState.recebidoOptions));
+      window.dispatchEvent(new CustomEvent(CHEGADA_UPDATE_EVENT, { detail: res.fullState.tasks }));
+      window.dispatchEvent(new CustomEvent(CHEGADA_OPTIONS_EVENT));
+    }
+  } catch (err) {
+    console.warn("[createChegadaRegistroAsync] Erro ao sincronizar com nuvem, mantido local:", err);
+  }
+
+  return newTask;
+}
+
+export function createChegadaRegistro(
+  data: Omit<ChegadaTask, "id" | "criadoEm"> & { id?: string; criadoEm?: string }
+): ChegadaTask {
+  // Chamada síncrona local + trigger assíncrono para a nuvem
+  const current = getStoredTasks();
+  const newTask: ChegadaTask = {
+    id: data.id || "amostra_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7),
+    osCliente: data.osCliente.trim(),
+    dataChegada: data.dataChegada || formatDateToday(),
+    recebidoPor: data.recebidoPor || [],
+    tipoAmostra: data.tipoAmostra || [],
+    relacaoAmostras: data.relacaoAmostras || "",
+    sup: data.sup || "",
+    priority: data.priority || "media",
+    images: data.images || [],
+    criadoPor: data.criadoPor || "Colaborador",
+    criadoEm: data.criadoEm || formatNow(),
+    origem: data.origem || "colaborador",
+    updatedAt: formatNow(),
+  };
+
+  const updatedRegistro = [newTask, ...current.registro].sort((a, b) => {
+    if (a.priority === "alta" && b.priority !== "alta") return -1;
+    if (a.priority !== "alta" && b.priority === "alta") return 1;
+    return 0;
+  });
+
+  const updatedTasks = {
+    ...current,
+    registro: updatedRegistro,
+  };
+
+  if (typeof window !== "undefined") {
+    localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(updatedTasks));
+    window.dispatchEvent(new CustomEvent(CHEGADA_UPDATE_EVENT, { detail: updatedTasks }));
+  }
+
+  // Dispara sincronização em nuvem
+  createSharedChegadaTask({ data })
+    .then((res) => {
+      if (res?.fullState && typeof window !== "undefined") {
+        localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(res.fullState.tasks));
+        localStorage.setItem(TIPO_AMOSTRA_STORAGE_KEY, JSON.stringify(res.fullState.tipoOptions));
+        localStorage.setItem(RECEBIDO_STORAGE_KEY, JSON.stringify(res.fullState.recebidoOptions));
+        window.dispatchEvent(new CustomEvent(CHEGADA_UPDATE_EVENT, { detail: res.fullState.tasks }));
+        window.dispatchEvent(new CustomEvent(CHEGADA_OPTIONS_EVENT));
+      }
+    })
+    .catch((err) => {
+      console.warn("[createChegadaRegistro] Sync cloud warning:", err);
+    });
+
   return newTask;
 }
 
@@ -189,6 +281,12 @@ export function addTipoAmostraOption(name: string): Option[] {
     localStorage.setItem(TIPO_AMOSTRA_STORAGE_KEY, JSON.stringify(updated));
     window.dispatchEvent(new CustomEvent(CHEGADA_OPTIONS_EVENT));
   }
+
+  // Envia para o banco central compartilhado
+  addSharedChegadaOption({ data: { type: "tipo", name: clean } }).catch((err) => {
+    console.warn("[addTipoAmostraOption] Cloud sync warning:", err);
+  });
+
   return updated;
 }
 
@@ -219,5 +317,58 @@ export function addRecebidoOption(name: string): Option[] {
     localStorage.setItem(RECEBIDO_STORAGE_KEY, JSON.stringify(updated));
     window.dispatchEvent(new CustomEvent(CHEGADA_OPTIONS_EVENT));
   }
+
+  // Envia para o banco central compartilhado
+  addSharedChegadaOption({ data: { type: "recebido", name: clean } }).catch((err) => {
+    console.warn("[addRecebidoOption] Cloud sync warning:", err);
+  });
+
   return updated;
+}
+
+/** Hook para sincronização automática em tempo real e background polling */
+export function useChegadaRealtimeSync(onStateUpdated?: (tasks: Record<ColumnId, ChegadaTask[]>) => void) {
+  const syncFromServer = useCallback(async () => {
+    try {
+      const serverState = await fetchSharedChegadaState();
+      if (serverState?.tasks && typeof window !== "undefined") {
+        const localTasks = getStoredTasks();
+        const serverJson = JSON.stringify(serverState.tasks);
+        const localJson = JSON.stringify(localTasks);
+
+        if (serverJson !== localJson) {
+          localStorage.setItem(TASKS_STORAGE_KEY, serverJson);
+          window.dispatchEvent(new CustomEvent(CHEGADA_UPDATE_EVENT, { detail: serverState.tasks }));
+          if (onStateUpdated) onStateUpdated(serverState.tasks);
+        }
+
+        if (Array.isArray(serverState.tipoOptions) && serverState.tipoOptions.length > 0) {
+          localStorage.setItem(TIPO_AMOSTRA_STORAGE_KEY, JSON.stringify(serverState.tipoOptions));
+        }
+        if (Array.isArray(serverState.recebidoOptions) && serverState.recebidoOptions.length > 0) {
+          localStorage.setItem(RECEBIDO_STORAGE_KEY, JSON.stringify(serverState.recebidoOptions));
+        }
+        window.dispatchEvent(new CustomEvent(CHEGADA_OPTIONS_EVENT));
+      }
+    } catch (e) {
+      // Falha silenciosa para não travar a UI
+    }
+  }, [onStateUpdated]);
+
+  useEffect(() => {
+    // 1. Sincroniza imediatamente ao montar a tela
+    syncFromServer();
+
+    // 2. Sincroniza periodicamente a cada 3.5 segundos para garantir atualização simultânea entre múltiplos aparelhos
+    const interval = setInterval(syncFromServer, 3500);
+
+    // 3. Sincroniza ao focar na janela/aba
+    const handleFocus = () => syncFromServer();
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [syncFromServer]);
 }
