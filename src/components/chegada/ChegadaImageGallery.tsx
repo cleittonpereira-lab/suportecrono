@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   Camera,
   Image as ImageIcon,
@@ -9,7 +9,10 @@ import {
   ChevronRight,
   ZoomIn,
   Download,
-  Eye,
+  FlipHorizontal,
+  Check,
+  Sparkles,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -30,8 +33,123 @@ export function ChegadaImageGallery({
   className,
 }: ChegadaImageGalleryProps) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [isLiveCameraOpen, setIsLiveCameraOpen] = useState(false);
+  const [cameraFacing, setCameraFacing] = useState<"environment" | "user">("environment");
+  const [cameraLoading, setCameraLoading] = useState(false);
+  const [cameraFlash, setCameraFlash] = useState(false);
+  const [sessionPhotosCount, setSessionPhotosCount] = useState(0);
+
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
+
+  // Stop camera stream safely
+  const stopCameraStream = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+  }, []);
+
+  // Start camera stream
+  const startCameraStream = useCallback(async (facing: "environment" | "user") => {
+    stopCameraStream();
+    setCameraLoading(true);
+
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("Câmera direta não suportada pelo navegador.");
+      }
+
+      const constraints: MediaStreamConstraints = {
+        video: {
+          facingMode: { ideal: facing },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+        audio: false,
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      streamRef.current = stream;
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+      setCameraLoading(false);
+    } catch (err: any) {
+      console.warn("Could not start live camera, falling back to native file input:", err);
+      setCameraLoading(false);
+      stopCameraStream();
+      setIsLiveCameraOpen(false);
+
+      // Fallback para input nativo com capture
+      if (cameraInputRef.current) {
+        cameraInputRef.current.click();
+      } else {
+        toast.error("Não foi possível acessar a câmera: " + (err?.message || "Permissão negada."));
+      }
+    }
+  }, [stopCameraStream]);
+
+  // Open live camera modal
+  const handleOpenLiveCamera = () => {
+    setSessionPhotosCount(0);
+    setIsLiveCameraOpen(true);
+    startCameraStream(cameraFacing);
+  };
+
+  // Close live camera modal
+  const handleCloseLiveCamera = () => {
+    stopCameraStream();
+    setIsLiveCameraOpen(false);
+    if (sessionPhotosCount > 0) {
+      toast.success(
+        `${sessionPhotosCount} ${sessionPhotosCount === 1 ? "foto capturada" : "fotos capturadas"} com sucesso!`
+      );
+    }
+  };
+
+  // Switch between front and back camera
+  const handleToggleCameraFacing = () => {
+    const next = cameraFacing === "environment" ? "user" : "environment";
+    setCameraFacing(next);
+    startCameraStream(next);
+  };
+
+  // Capture frame from live video
+  const handleCapturePhoto = () => {
+    if (!videoRef.current || !onChange) return;
+
+    const video = videoRef.current;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    // Trigger visual flash
+    setCameraFlash(true);
+    setTimeout(() => setCameraFlash(false), 200);
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const base64Image = canvas.toDataURL("image/jpeg", 0.85);
+
+    if (base64Image) {
+      onChange([...images, base64Image]);
+      setSessionPhotosCount((prev) => prev + 1);
+    }
+  };
+
+  // Clean up stream on unmount
+  useEffect(() => {
+    return () => {
+      stopCameraStream();
+    };
+  }, [stopCameraStream]);
 
   // Keyboard navigation in lightbox
   useEffect(() => {
@@ -61,7 +179,6 @@ export function ChegadaImageGallery({
     const newBase64Images: string[] = [];
 
     fileArray.forEach((file) => {
-      // Basic size / format validation
       if (!file.type.startsWith("image/")) {
         toast.error(`O arquivo "${file.name}" não é uma imagem válida.`);
         return;
@@ -87,7 +204,7 @@ export function ChegadaImageGallery({
     });
   };
 
-  const handleCameraCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleNativeCameraCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     processFiles(e.target.files);
     if (cameraInputRef.current) cameraInputRef.current.value = "";
   };
@@ -117,16 +234,16 @@ export function ChegadaImageGallery({
       {/* Botões de Ação para Celular e Desktop (Tirar Foto vs Selecionar da Galeria) */}
       {!readOnly && (
         <div className="flex flex-wrap items-center gap-2">
-          {/* Botão Tirar Foto (Câmera Mobile) */}
+          {/* Botão Câmera Direta (Abre Visor de Câmera em Tempo Real) */}
           <Button
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => cameraInputRef.current?.click()}
-            className="gap-2 text-xs font-semibold h-9 bg-background hover:bg-muted/50 border-primary/30 text-primary hover:text-primary shadow-2xs transition-all flex-1 sm:flex-initial"
+            onClick={handleOpenLiveCamera}
+            className="gap-2 text-xs font-bold h-9 bg-primary/10 hover:bg-primary/20 border-primary/40 text-primary shadow-2xs transition-all flex-1 sm:flex-initial"
           >
-            <Camera className="h-4 w-4 text-primary" />
-            <span>Tirar Foto</span>
+            <Camera className="h-4 w-4 text-primary stroke-[2.5]" />
+            <span>Tirar Foto (Câmera)</span>
           </Button>
 
           {/* Botão Selecionar da Galeria (Múltiplas Fotos) */}
@@ -148,14 +265,14 @@ export function ChegadaImageGallery({
             </Badge>
           )}
 
-          {/* Hidden File Inputs */}
+          {/* Hidden File Inputs (Nativo com capture=environment estrito e galeria) */}
           <input
             type="file"
             ref={cameraInputRef}
             className="hidden"
             accept="image/*"
             capture="environment"
-            onChange={handleCameraCapture}
+            onChange={handleNativeCameraCapture}
           />
           <input
             type="file"
@@ -170,7 +287,7 @@ export function ChegadaImageGallery({
 
       {/* Grade Padronizada de Miniaturas Compactas */}
       {images.length > 0 ? (
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2.5 p-2 bg-muted/20 rounded-lg border border-border/60">
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2.5 p-2.5 bg-muted/20 rounded-lg border border-border/60">
           {images.map((img, idx) => (
             <div
               key={idx}
@@ -213,11 +330,11 @@ export function ChegadaImageGallery({
           {/* Card para Adicionar Mais (se não for readOnly) */}
           {!readOnly && (
             <div
-              onClick={() => galleryInputRef.current?.click()}
-              className="aspect-square rounded-md border-2 border-dashed border-muted-foreground/30 hover:border-primary/60 bg-muted/30 hover:bg-primary/5 flex flex-col items-center justify-center text-muted-foreground hover:text-primary cursor-pointer transition-all gap-1 p-2 text-center"
+              onClick={handleOpenLiveCamera}
+              className="aspect-square rounded-md border-2 border-dashed border-primary/40 hover:border-primary bg-primary/5 hover:bg-primary/10 flex flex-col items-center justify-center text-primary cursor-pointer transition-all gap-1 p-2 text-center"
             >
-              <Plus className="h-5 w-5 stroke-[2.5]" />
-              <span className="text-[10px] font-semibold leading-tight">+ Adicionar</span>
+              <Camera className="h-5 w-5 stroke-[2.5]" />
+              <span className="text-[10px] font-bold leading-tight">+ Tirar Foto</span>
             </div>
           )}
         </div>
@@ -230,12 +347,107 @@ export function ChegadaImageGallery({
             <div>
               <p className="text-xs font-semibold text-foreground">Nenhuma foto anexada ainda</p>
               <p className="text-[11px] text-muted-foreground mt-0.5">
-                Use a câmera do celular ou selecione fotos da galeria para documentar a amostra.
+                Toque em <strong>"Tirar Foto"</strong> para abrir a câmera ou anexe imagens da galeria.
               </p>
             </div>
           </div>
         )
       )}
+
+      {/* Modal de Câmera ao Vivo em Tela Cheia (Visor Direto com Botão de Disparo Rápido) */}
+      <Dialog open={isLiveCameraOpen} onOpenChange={(open) => !open && handleCloseLiveCamera()}>
+        <DialogContent className="max-w-md w-[96vw] p-3 sm:p-4 bg-black text-white border-0 shadow-2xl rounded-2xl z-50 overflow-hidden">
+          <DialogTitle className="sr-only">Câmera de Amostras</DialogTitle>
+
+          <div className="relative flex flex-col items-center justify-between min-h-[420px] max-h-[85vh] bg-black rounded-xl overflow-hidden">
+            {/* Header da Câmera */}
+            <div className="w-full flex items-center justify-between p-2 z-10 bg-gradient-to-b from-black/80 to-transparent">
+              <Badge variant="outline" className="bg-black/60 text-white border-white/20 text-xs px-2.5 py-1">
+                {sessionPhotosCount > 0 ? `${sessionPhotosCount} capturadas` : "Câmera ao Vivo"}
+              </Badge>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleToggleCameraFacing}
+                  className="h-8 w-8 text-white bg-black/40 hover:bg-white/20 rounded-full"
+                  title="Inverter Câmera (Frontal / Traseira)"
+                >
+                  <FlipHorizontal className="h-4 w-4" />
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleCloseLiveCamera}
+                  className="h-8 w-8 text-white bg-black/40 hover:bg-white/20 rounded-full"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Visor do Vídeo da Câmera */}
+            <div className="relative w-full flex-1 flex items-center justify-center overflow-hidden bg-zinc-950">
+              {cameraFlash && (
+                <div className="absolute inset-0 bg-white z-20 animate-out fade-out duration-200 pointer-events-none" />
+              )}
+
+              {cameraLoading ? (
+                <div className="flex flex-col items-center gap-2 text-white/70">
+                  <RefreshCw className="h-6 w-6 animate-spin text-primary" />
+                  <span className="text-xs">Iniciando câmera...</span>
+                </div>
+              ) : (
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover select-none"
+                />
+              )}
+            </div>
+
+            {/* Barra de Controles Inferiores (Disparador de Fotos) */}
+            <div className="w-full flex items-center justify-between px-6 py-4 z-10 bg-gradient-to-t from-black/90 to-transparent">
+              <div className="w-12 text-left">
+                {sessionPhotosCount > 0 && (
+                  <div className="flex flex-col">
+                    <span className="text-[10px] text-white/60">Total</span>
+                    <span className="text-xs font-bold text-emerald-400">+{sessionPhotosCount}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Botão de Disparo Estilo Shutter */}
+              <button
+                type="button"
+                onClick={handleCapturePhoto}
+                disabled={cameraLoading}
+                className="h-16 w-16 rounded-full border-4 border-white flex items-center justify-center bg-white/20 active:scale-90 transition-transform shadow-lg focus:outline-none"
+                title="Tirar Foto"
+              >
+                <div className="h-12 w-12 rounded-full bg-white transition-colors" />
+              </button>
+
+              <div className="w-12 text-right">
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleCloseLiveCamera}
+                  className="h-8 text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/90 px-3 rounded-full"
+                >
+                  <Check className="h-3.5 w-3.5 mr-1" /> OK
+                </Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal Lightbox Ampliado para Visualização Individual e Navegação */}
       <Dialog
