@@ -732,6 +732,7 @@ export function CDPage() {
 
   const handleSaveVersion = async (opts?: { skipVerification?: boolean }) => {
     const skipVerification = opts?.skipVerification === true;
+    setWfStatus(skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao");
     setSaveBusy(true);
     const tid = toast.loading("Gerando e salvando versão PDF…");
     try {

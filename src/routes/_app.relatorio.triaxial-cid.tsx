@@ -695,6 +695,7 @@ export function TriaxialCidPage() {
 
   const handleSaveVersion = async (opts?: { skipVerification?: boolean }) => {
     const skipVerification = opts?.skipVerification === true;
+    setWfStatus(skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao");
     setSaveBusy(true);
     const toastId = toast.loading("Aguarde enquanto estamos salvando a versão…");
     try {

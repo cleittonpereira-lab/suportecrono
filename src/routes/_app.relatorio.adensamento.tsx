@@ -583,6 +583,8 @@ export function AdensamentoPage() {
 
   // Salvar Versao e Google Drive com geracao real de PDF
   const handleSaveVersion = async (opts?: { skipVerification?: boolean }) => {
+    const targetStatus = opts?.skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao";
+    setWfStatus(targetStatus);
     setSavingVersion(true);
     const tid = toast.loading("Gerando laudo PDF e sincronizando com Google Drive…");
     try {
