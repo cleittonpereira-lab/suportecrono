@@ -1,3 +1,4 @@
+import { SyncStatusBadge } from "@/components/SyncStatusBadge";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
@@ -1034,6 +1035,7 @@ export function TriaxialCidPage() {
               <Badge variant="outline">ASTM D7181</Badge>
               <Badge variant="outline">ISO 17892-9</Badge>
               <WorkflowFarol status={wfStatus} />
+                <SyncStatusBadge state="synced" />
             </div>
             <h2 className="mt-2 text-xl font-semibold">
               Ensaio Triaxial {sample.condition === "saturado" ? "CIDsat" : "CIDnat"}

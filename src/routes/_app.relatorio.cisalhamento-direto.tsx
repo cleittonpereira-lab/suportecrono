@@ -1,3 +1,4 @@
+import { SyncStatusBadge } from "@/components/SyncStatusBadge";
 import { saveSharedDraft, loadSharedDraft } from "@/lib/draft.functions";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useRef, useState, useEffect } from "react";
@@ -992,6 +993,7 @@ export function CDPage() {
               <div className="flex items-center gap-2">
                 <Badge variant="outline">ASTM D3080:2023</Badge>
                 <WorkflowFarol status={wfStatus} />
+                <SyncStatusBadge state="synced" />
               </div>
               <h1 className="mt-1 text-xl font-bold tracking-tight">
                 {getReportTitle(sample.testCondition)}

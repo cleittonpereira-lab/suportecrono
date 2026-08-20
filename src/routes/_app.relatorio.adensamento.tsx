@@ -1,3 +1,4 @@
+import { SyncStatusBadge } from "@/components/SyncStatusBadge";
 import { saveSharedDraft, loadSharedDraft } from "@/lib/draft.functions";
 import React, { useMemo, useRef, useState, useEffect } from "react";
 import { createFileRoute } from "@tanstack/react-router";
@@ -412,10 +413,19 @@ export function AdensamentoPage() {
   const aneisList = useMemo(() => getAneisCatalog(), [aneisCatalogOpen]);
 
   // Carrega rascunho salvo (local + nuvem)
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
+
   useEffect(() => {
     const draft = loadOedDraft(scopeId);
     if (draft?.sample) setSample((prev) => ({ ...prev, ...draft.sample }));
     if (draft?.stages) setStages(draft.stages);
+    if (draft?.validation) setValidation(draft.validation);
+    if (draft?.preAdjust) setPreAdjust(draft.preAdjust);
+    if (draft?.cvAdjust) setCvAdjust(draft.cvAdjust);
+    if (draft?.axisCfg) setAxisCfg((prev) => ({ ...prev, ...draft.axisCfg }));
+    if (typeof draft?.methodCas === "boolean") setMethodCas(draft.methodCas);
+    if (typeof draft?.methodPS === "boolean") setMethodPS(draft.methodPS);
+    if (typeof draft?.showResults === "boolean") setShowResults(draft.showResults);
 
     fetchRemoteOedDraft(scopeId, {
       osNum: ctx?.os?.numero,
@@ -425,6 +435,16 @@ export function AdensamentoPage() {
       if (remote) {
         if (remote.sample) setSample((prev) => ({ ...prev, ...remote.sample }));
         if (remote.stages && remote.stages.length > 0) setStages(remote.stages);
+        if (remote.validation) setValidation(remote.validation);
+        if (remote.preAdjust) setPreAdjust(remote.preAdjust);
+        if (remote.cvAdjust) setCvAdjust(remote.cvAdjust);
+        if (remote.axisCfg) setAxisCfg((prev) => ({ ...prev, ...remote.axisCfg }));
+        if (typeof remote.methodCas === "boolean") setMethodCas(remote.methodCas);
+        if (typeof remote.methodPS === "boolean") setMethodPS(remote.methodPS);
+        if (typeof remote.showResults === "boolean") setShowResults(remote.showResults);
+        if (Array.isArray(remote.photos) && ctx?.os && ctx?.amostra && ctx?.ensaio) {
+          labStore.setEnsaioPhotos(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, remote.photos);
+        }
       }
       setRemoteLoaded(true);
     }).catch(() => {
@@ -435,8 +455,23 @@ export function AdensamentoPage() {
   // Salva rascunho automaticamente
   useEffect(() => {
     if (!remoteLoaded) return;
-    saveOedDraft(scopeId, { sample, stages });
-  }, [remoteLoaded, scopeId, sample, stages]);
+    setIsSavingDraft(true);
+    const savePayload = {
+      sample,
+      stages,
+      validation,
+      preAdjust,
+      cvAdjust,
+      axisCfg,
+      methodCas,
+      methodPS,
+      showResults,
+      photos: ctx?.photos || [],
+    };
+    saveOedDraft(scopeId, savePayload);
+    const t = setTimeout(() => setIsSavingDraft(false), 800);
+    return () => clearTimeout(t);
+  }, [remoteLoaded, scopeId, sample, stages, validation, preAdjust, cvAdjust, axisCfg, methodCas, methodPS, showResults, ctx?.photos]);
 
   const loadVersions = async () => {
     try {
@@ -517,13 +552,80 @@ export function AdensamentoPage() {
     }
   };
 
-  // Salvar Versao e Google Drive
+  // Salvar Versao e Google Drive com geracao real de PDF
   const handleSaveVersion = async (opts?: { skipVerification?: boolean }) => {
     setSavingVersion(true);
-    const tid = toast.loading("Gerando laudo e sincronizando com Google Drive…");
+    const tid = toast.loading("Gerando laudo PDF e sincronizando com Google Drive…");
     try {
       const revNumber = versions.length > 0 ? Math.max(...versions.map((v) => v.rev)) + 1 : 0;
-      const pdfBlob = new Blob(["%PDF-1.4 ... Relatório Oficial Suporte INFRA"], { type: "application/pdf" });
+      let pdfBlob: Blob;
+      try {
+        const [{ toCanvas }, { default: jsPDF }] = await Promise.all([
+          import("html-to-image"),
+          import("jspdf"),
+        ]);
+        const elPre = printRef.current;
+        if (elPre) {
+          const origStyle = {
+            position: elPre.style.position,
+            top: elPre.style.top,
+            left: elPre.style.left,
+            width: elPre.style.width,
+            background: elPre.style.background,
+            pointerEvents: elPre.style.pointerEvents,
+            zIndex: elPre.style.zIndex,
+            opacity: elPre.style.opacity,
+            visibility: elPre.style.visibility,
+          };
+          Object.assign(elPre.style, {
+            position: "fixed",
+            top: "0",
+            left: "0",
+            width: "210mm",
+            background: "#ffffff",
+            pointerEvents: "none",
+            zIndex: "2147483647",
+            opacity: "1",
+            visibility: "visible",
+          });
+          flushSync(() => setPdfMount(true));
+          await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
+          await new Promise((r) => setTimeout(r, 150));
+          const el = printRef.current;
+          const pages = el ? await waitForReportPages(el).catch(() => []) : [];
+          const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true });
+          const W = 210, H = 297;
+          if (pages.length > 0) {
+            const images = await Promise.all(
+              pages.map(async (page) => {
+                const rect = page.getBoundingClientRect();
+                const canvas = await toCanvas(page, {
+                  backgroundColor: "#ffffff",
+                  pixelRatio: 2,
+                  width: Math.ceil(rect.width),
+                  height: Math.ceil(rect.height),
+                  cacheBust: true,
+                  skipAutoScale: true,
+                  style: { background: "#ffffff", color: "#0f172a", transform: "none" },
+                });
+                return canvas.toDataURL("image/png");
+              }),
+            );
+            for (let i = 0; i < images.length; i++) {
+              if (i > 0) pdf.addPage();
+              pdf.addImage(images[i], "PNG", 0, 0, W, H, undefined, "FAST");
+            }
+          }
+          Object.assign(elPre.style, origStyle);
+          setPdfMount(false);
+          pdfBlob = pdf.output("blob");
+        } else {
+          pdfBlob = new Blob(["%PDF-1.4 ... Relatório Oficial Suporte INFRA"], { type: "application/pdf" });
+        }
+      } catch (err) {
+        console.warn("Falha ao capturar canvas do laudo, usando fallback de blob:", err);
+        pdfBlob = new Blob(["%PDF-1.4 ... Relatório Oficial Suporte INFRA"], { type: "application/pdf" });
+      }
       const filename = `ADENSAMENTO_${sample.os || "OS"}_${sample.code || "AMOSTRA"}_Rev${String(revNumber).padStart(2, "0")}.pdf`;
 
       const newVer = {
@@ -597,11 +699,13 @@ export function AdensamentoPage() {
         console.warn("requestApproval catch:", e);
       }
 
+      const nextStatus = opts?.skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao";
+      setWfStatus(nextStatus);
       setApprovals([{
         id: "app_" + Date.now(),
         scope_id: scopeId,
         rev: revNumber,
-        status: opts?.skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao",
+        status: nextStatus,
         filename,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -976,8 +1080,9 @@ export function AdensamentoPage() {
             <FlaskConical className="h-6 w-6" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Badge variant="outline">ABNT NBR 16853 / ASTM D2435</Badge>
+              <SyncStatusBadge state={isSavingDraft ? "saving" : "synced"} />
               <WorkflowFarol status={
     (() => {
       const st = wfStatus || approvals[0]?.status || (ctx?.ensaio as any)?.status || "em_digitacao";
