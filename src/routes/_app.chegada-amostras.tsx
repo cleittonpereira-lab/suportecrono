@@ -15,6 +15,9 @@ import {
   Clock,
   ExternalLink,
   ShieldCheck,
+  Copy,
+  Check,
+  Smartphone,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -76,6 +79,20 @@ function ChegadaAmostras() {
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
   const [activeColumn, setActiveColumn] = useState<ColumnId | null>(null);
   const [selectedTask, setSelectedTask] = useState<ChegadaTask | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  const handleCopyMobileLink = () => {
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const directUrl = `${origin}/registro-amostra`;
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(directUrl);
+      setCopiedLink(true);
+      toast.success("Link do celular copiado com sucesso!", {
+        description: directUrl,
+      });
+      setTimeout(() => setCopiedLink(false), 3000);
+    }
+  };
 
   // Form state
   const [formData, setFormData] = useState({
@@ -281,13 +298,34 @@ function ChegadaAmostras() {
           description="Controle o fluxo de entrada de materiais, do registro inicial até o lançamento no sistema."
         />
 
-        {/* Botão de Atalho para a Tela de Registro do Colaborador */}
+        {/* Ações Rápidas: Copiar Link Celular & Novo Registro */}
         <div className="flex items-center gap-2 shrink-0">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleCopyMobileLink}
+            className="gap-1.5 text-xs h-9 shadow-2xs font-medium"
+            title="Copiar link direto para envio aos colaboradores no celular"
+          >
+            {copiedLink ? (
+              <>
+                <Check className="h-3.5 w-3.5 text-emerald-500" />
+                <span>Link Copiado!</span>
+              </>
+            ) : (
+              <>
+                <Smartphone className="h-3.5 w-3.5 text-primary" />
+                <span>Copiar Link p/ Celular</span>
+              </>
+            )}
+          </Button>
+
           <Button
             asChild
             className="gap-2 text-xs font-bold bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 h-9"
           >
-            <Link to="/chegada-amostras/registro">
+            <Link to="/registro-amostra">
               <PackagePlus className="h-4 w-4" />
               <span>+ Registro de Colaborador</span>
             </Link>

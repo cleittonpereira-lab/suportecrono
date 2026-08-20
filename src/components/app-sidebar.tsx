@@ -53,7 +53,7 @@ const sections: readonly NavSection[] = [
     label: "Logística",
     items: [
       { title: "Chegada de amostras", url: "/chegada-amostras", icon: PackageSearch },
-      { title: "Registrar chegada", url: "/chegada-amostras/registro", icon: PackagePlus },
+      { title: "Registrar chegada", url: "/registro-amostra", icon: PackagePlus },
       { title: "Entregas", url: "/entregas", icon: PackageSearch },
     ],
   },

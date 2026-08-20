@@ -13,6 +13,8 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as PendenteRouteImport } from './routes/pendente'
+import { Route as RegistroAmostraRouteImport } from './routes/registro-amostra'
+import { Route as RegistroChegadaRouteImport } from './routes/registro-chegada'
 import { Route as AppAnalisesRouteImport } from './routes/_app.analises'
 import { Route as AppAssistenteRouteImport } from './routes/_app.assistente'
 import { Route as AppCadastroRouteImport } from './routes/_app.cadastro'
@@ -78,6 +80,16 @@ const AuthRoute = AuthRouteImport.update({
 const PendenteRoute = PendenteRouteImport.update({
   id: '/pendente',
   path: '/pendente',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RegistroAmostraRoute = RegistroAmostraRouteImport.update({
+  id: '/registro-amostra',
+  path: '/registro-amostra',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RegistroChegadaRoute = RegistroChegadaRouteImport.update({
+  id: '/registro-chegada',
+  path: '/registro-chegada',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppAnalisesRoute = AppAnalisesRouteImport.update({
@@ -338,6 +350,8 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/pendente': typeof PendenteRoute
+  '/registro-amostra': typeof RegistroAmostraRoute
+  '/registro-chegada': typeof RegistroChegadaRoute
   '/analises': typeof AppAnalisesRoute
   '/assistente': typeof AppAssistenteRoute
   '/cadastro': typeof AppCadastroRoute
@@ -390,6 +404,8 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/pendente': typeof PendenteRoute
+  '/registro-amostra': typeof RegistroAmostraRoute
+  '/registro-chegada': typeof RegistroChegadaRoute
   '/analises': typeof AppAnalisesRoute
   '/assistente': typeof AppAssistenteRoute
   '/cadastro': typeof AppCadastroRoute
@@ -443,6 +459,8 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/auth': typeof AuthRoute
   '/pendente': typeof PendenteRoute
+  '/registro-amostra': typeof RegistroAmostraRoute
+  '/registro-chegada': typeof RegistroChegadaRoute
   '/_app/analises': typeof AppAnalisesRoute
   '/_app/assistente': typeof AppAssistenteRoute
   '/_app/cadastro': typeof AppCadastroRoute
@@ -497,6 +515,8 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/pendente'
+    | '/registro-amostra'
+    | '/registro-chegada'
     | '/analises'
     | '/assistente'
     | '/cadastro'
@@ -549,6 +569,8 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/pendente'
+    | '/registro-amostra'
+    | '/registro-chegada'
     | '/analises'
     | '/assistente'
     | '/cadastro'
@@ -601,6 +623,8 @@ export interface FileRouteTypes {
     | '/_app'
     | '/auth'
     | '/pendente'
+    | '/registro-amostra'
+    | '/registro-chegada'
     | '/_app/analises'
     | '/_app/assistente'
     | '/_app/cadastro'
@@ -655,6 +679,8 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   AuthRoute: typeof AuthRoute
   PendenteRoute: typeof PendenteRoute
+  RegistroAmostraRoute: typeof RegistroAmostraRoute
+  RegistroChegadaRoute: typeof RegistroChegadaRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -685,6 +711,20 @@ declare module '@tanstack/react-router' {
       path: '/pendente'
       fullPath: '/pendente'
       preLoaderRoute: typeof PendenteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/registro-amostra': {
+      id: '/registro-amostra'
+      path: '/registro-amostra'
+      fullPath: '/registro-amostra'
+      preLoaderRoute: typeof RegistroAmostraRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/registro-chegada': {
+      id: '/registro-chegada'
+      path: '/registro-chegada'
+      fullPath: '/registro-chegada'
+      preLoaderRoute: typeof RegistroChegadaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/analises': {
@@ -1153,6 +1193,8 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   AuthRoute: AuthRoute,
   PendenteRoute: PendenteRoute,
+  RegistroAmostraRoute: RegistroAmostraRoute,
+  RegistroChegadaRoute: RegistroChegadaRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
