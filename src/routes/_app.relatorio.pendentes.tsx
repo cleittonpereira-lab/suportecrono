@@ -215,13 +215,13 @@ function CentralRelatoriosPage() {
         for (const a of o.amostras) {
           for (const e of a.ensaios) {
             const hasData = e.payload && Object.keys(e.payload).length > 0;
-            const isEmProgresso = e.status === "em_digitacao" || e.status === "digitado" || e.status === "verificacao" || e.status === "aprovado" || hasData;
+            const isEmProgresso = e.status === "em_digitacao" || (e.status as string) === "digitado" || (e.status as string) === "verificacao" || e.status === "aprovado" || hasData;
             if (!isEmProgresso) continue;
 
             const key = `${normOs(o.numero)}::${normAmostra(a.reportNumber || a.code || "")}::${normMethod(e.sigla || e.nome || e.tipo)}`;
             if (!map.has(key)) {
               let st: PendenciaDigitacao["status"] = "em_digitacao";
-              if (e.status === "digitado" || e.status === "verificacao") st = "digitado";
+              if ((e.status as string) === "digitado" || (e.status as string) === "verificacao") st = "digitado";
               if (e.status === "aprovado" || e.status === "concluido") st = "aprovado";
 
               const item: PendenciaDigitacao = {
@@ -499,16 +499,22 @@ function CentralRelatoriosPage() {
       }
     }
 
+    if (!am) return;
+
     const sigla = siglaOficial || ENSAIO_LABEL[tipo as EnsaioTipo] || tipo;
     let en = am.ensaios.find((e) => e.tipo === tipo);
     if (!en) {
       en = labStore.addEnsaio(os.id, am.id, tipo as EnsaioTipo, sigla);
-      labStore.patchEnsaio(os.id, am.id, en.id, {
-        nome: sigla,
-        sigla: sigla,
-        operator: amProg?.tecnico || "Téc. Laboratório",
-      });
+      if (en) {
+        labStore.patchEnsaio(os.id, am.id, en.id, {
+          nome: sigla,
+          sigla: sigla,
+          operator: amProg?.tecnico || "Téc. Laboratório",
+        });
+      }
     }
+
+    if (!en) return;
 
     // Se temos pendência vinculada, marca como em_digitacao
     if (pendenciaId) {

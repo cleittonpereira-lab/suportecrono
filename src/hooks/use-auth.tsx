@@ -99,7 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           status: "ativo",
         };
         setProfile(newProf);
-        supabase.from("profiles").upsert(newProf).catch(() => {});
+        void supabase.from("profiles").upsert(newProf).then(() => {}, () => {});
       }
 
       const roleList = (roles ?? []).map((r: { role: Role }) => r.role);

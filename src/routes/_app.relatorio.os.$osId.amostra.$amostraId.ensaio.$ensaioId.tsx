@@ -72,22 +72,24 @@ function EnsaioEditor() {
         const state = labStore.get();
         let targetOs = state.os.find((o) => o.id === osId || (o.numero ?? "").trim() === osId.trim());
         if (!targetOs) {
-          targetOs = labStore.createOS({ numero: osId });
+          targetOs = labStore.createOS({ numero: osId, client: "Não informado" });
         }
         let targetAm = targetOs.amostras.find((a) => a.id === amostraId || (a.reportNumber ?? a.code ?? "").trim() === amostraId.trim());
         if (!targetAm) {
           targetAm = labStore.addAmostra(targetOs.id, { reportNumber: amostraId, code: amostraId });
         }
-        let targetEn = targetAm.ensaios.find((e) => e.id === ensaioId || e.tipo === ensaioId);
-        if (!targetEn) {
-          const tipoFinal: EnsaioTipo = ensaioId.includes("tri")
-            ? "triaxial-cid"
-            : ensaioId.includes("aden")
-              ? "adensamento"
-              : ensaioId.includes("mesp")
-                ? "mesp-a"
-                : "cisalhamento-direto";
-          labStore.addEnsaio(targetOs.id, targetAm.id, tipoFinal, ENSAIO_LABEL[tipoFinal] || tipoFinal);
+        if (targetAm) {
+          let targetEn = targetAm.ensaios.find((e) => e.id === ensaioId || e.tipo === ensaioId);
+          if (!targetEn) {
+            const tipoFinal: EnsaioTipo = ensaioId.includes("tri")
+              ? "triaxial-cid"
+              : ensaioId.includes("aden")
+                ? "adensamento"
+                : ensaioId.includes("mesp")
+                  ? "mesp-a"
+                  : "cisalhamento-direto";
+            labStore.addEnsaio(targetOs.id, targetAm.id, tipoFinal, ENSAIO_LABEL[tipoFinal] || tipoFinal);
+          }
         }
       })
       .catch((err: unknown) => {
@@ -130,11 +132,13 @@ function EnsaioEditor() {
                 onClick={() => {
                   const state = labStore.get();
                   let o = state.os.find((x) => x.id === osId);
-                  if (!o) o = labStore.createOS({ numero: osId });
+                  if (!o) o = labStore.createOS({ numero: osId, client: "Não informado" });
                   let a = o.amostras.find((x) => x.id === amostraId);
                   if (!a) a = labStore.addAmostra(o.id, { reportNumber: amostraId, code: amostraId });
-                  let e = a.ensaios.find((x) => x.id === ensaioId);
-                  if (!e) labStore.addEnsaio(o.id, a.id, "cisalhamento-direto", "Cisalhamento Direto");
+                  if (a) {
+                    let e = a.ensaios.find((x) => x.id === ensaioId);
+                    if (!e) labStore.addEnsaio(o.id, a.id, "cisalhamento-direto", "Cisalhamento Direto");
+                  }
                 }}
               >
                 Forçar Inicialização Imediata
@@ -162,7 +166,7 @@ function EnsaioEditor() {
         coords: amostra.coords,
         onPayloadChange: (payload) => {
           const currentStatus = ensaio.status;
-          const nextStatus = currentStatus === "pendente_digitacao" || currentStatus === "agendado" ? "em_digitacao" : currentStatus;
+          const nextStatus = (currentStatus as string) === "pendente_digitacao" || (currentStatus as string) === "agendado" ? "em_digitacao" : currentStatus;
           labStore.patchEnsaio(os.id, amostra.id, ensaio.id, { payload, status: nextStatus });
         },
         addPhoto: (p) => labStore.addEnsaioPhoto(os.id, amostra.id, ensaio.id, p),

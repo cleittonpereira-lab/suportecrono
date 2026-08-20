@@ -829,23 +829,27 @@ function CentralOsPage() {
       }
     }
 
+    if (!am) return;
+
     const siglaEnsaio = siglaOuNome || ENSAIO_LABEL[tipo] || tipo;
     let en = am.ensaios.find((e) => e.tipo === tipo);
     if (!en) {
       en = labStore.addEnsaio(os.id, am.id, tipo, siglaEnsaio);
-      labStore.patchEnsaio(os.id, am.id, en.id, {
-        operator: currentUserName,
-        nome: siglaEnsaio,
-        sigla: siglaEnsaio,
-        payload: {
-          sample: {
-            equipment: equipNome || undefined,
-            typedBy: currentUserName,
-            operator: currentUserName,
-            technicalResp: "Engº Maurício Malanconi - CREA: 5063078630",
+      if (en) {
+        labStore.patchEnsaio(os.id, am.id, en.id, {
+          operator: currentUserName,
+          nome: siglaEnsaio,
+          sigla: siglaEnsaio,
+          payload: {
+            sample: {
+              equipment: equipNome || undefined,
+              typedBy: currentUserName,
+              operator: currentUserName,
+              technicalResp: "Engº Maurício Malanconi - CREA: 5063078630",
+            },
           },
-        },
-      });
+        });
+      }
     } else {
       if (siglaOuNome && siglaOuNome !== ENSAIO_LABEL[tipo]) {
         labStore.patchEnsaio(os.id, am.id, en.id, {
@@ -854,6 +858,8 @@ function CentralOsPage() {
         });
       }
     }
+
+    if (!en) return;
 
     navigate({
       to: "/relatorio/os/$osId/amostra/$amostraId/ensaio/$ensaioId",

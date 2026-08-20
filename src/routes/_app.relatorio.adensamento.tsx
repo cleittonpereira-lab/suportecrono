@@ -135,7 +135,7 @@ import { exportOedometerXlsx } from "@/features/oedometer/exportXlsx";
 import { syncOedometerRevisionToDrive } from "@/features/oedometer/driveSync";
 import { saveOedReportVersion, listOedReportVersions } from "@/features/oedometer/report-versions";
 import { saveOedDraft, loadOedDraft, fetchRemoteOedDraft } from "@/features/oedometer/draftStore";
-import { requestApproval, verifyApproval, decideApproval, listApprovals } from "@/lib/approvals.functions";
+import { requestApproval, verifyApproval, decideApproval, listApprovals, getWorkflowStatuses } from "@/lib/approvals.functions";
 import { WorkflowFarol } from "@/features/lab/components/WorkflowFarol";
 import { PickerWithCreate } from "@/features/cisalhamento-direto/PickerWithCreate";
 import { EnsaioListByType } from "@/features/lab/components/EnsaioListByType";
