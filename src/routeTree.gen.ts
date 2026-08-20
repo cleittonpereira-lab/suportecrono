@@ -29,6 +29,7 @@ import { Route as AppPendentesRouteImport } from './routes/_app.pendentes'
 import { Route as AppPerfilRouteImport } from './routes/_app.perfil'
 import { Route as AppSaturacaoRouteImport } from './routes/_app.saturacao'
 import { Route as AppAdminUsuariosRouteImport } from './routes/_app.admin.usuarios'
+import { Route as AppChegadaAmostrasRegistroRouteImport } from './routes/_app.chegada-amostras.registro'
 import { Route as AppModelosRelatoriosIndexRouteImport } from './routes/_app.modelos-relatorios.index'
 import { Route as AppModelosRelatoriosAdensamentoRouteImport } from './routes/_app.modelos-relatorios.adensamento'
 import { Route as AppModelosRelatoriosCisalhamentoDiretoRouteImport } from './routes/_app.modelos-relatorios.cisalhamento-direto'
@@ -159,6 +160,12 @@ const AppAdminUsuariosRoute = AppAdminUsuariosRouteImport.update({
   path: '/admin/usuarios',
   getParentRoute: () => AppRoute,
 } as any)
+const AppChegadaAmostrasRegistroRoute =
+  AppChegadaAmostrasRegistroRouteImport.update({
+    id: '/registro',
+    path: '/registro',
+    getParentRoute: () => AppChegadaAmostrasRoute,
+  } as any)
 const AppModelosRelatoriosIndexRoute =
   AppModelosRelatoriosIndexRouteImport.update({
     id: '/modelos-relatorios/',
@@ -336,7 +343,7 @@ export interface FileRoutesByFullPath {
   '/cadastro': typeof AppCadastroRoute
   '/cadastro-dashboard': typeof AppCadastroDashboardRoute
   '/chamadas': typeof AppChamadasRoute
-  '/chegada-amostras': typeof AppChegadaAmostrasRoute
+  '/chegada-amostras': typeof AppChegadaAmostrasRouteWithChildren
   '/dashboard': typeof AppDashboardRoute
   '/entregas': typeof AppEntregasRoute
   '/entregues': typeof AppEntreguesRoute
@@ -347,6 +354,7 @@ export interface FileRoutesByFullPath {
   '/perfil': typeof AppPerfilRoute
   '/saturacao': typeof AppSaturacaoRoute
   '/admin/usuarios': typeof AppAdminUsuariosRoute
+  '/chegada-amostras/registro': typeof AppChegadaAmostrasRegistroRoute
   '/modelos-relatorios/adensamento': typeof AppModelosRelatoriosAdensamentoRoute
   '/modelos-relatorios/cisalhamento-direto': typeof AppModelosRelatoriosCisalhamentoDiretoRoute
   '/modelos-relatorios/mesp-a-natural': typeof AppModelosRelatoriosMespANaturalRoute
@@ -387,7 +395,7 @@ export interface FileRoutesByTo {
   '/cadastro': typeof AppCadastroRoute
   '/cadastro-dashboard': typeof AppCadastroDashboardRoute
   '/chamadas': typeof AppChamadasRoute
-  '/chegada-amostras': typeof AppChegadaAmostrasRoute
+  '/chegada-amostras': typeof AppChegadaAmostrasRouteWithChildren
   '/dashboard': typeof AppDashboardRoute
   '/entregas': typeof AppEntregasRoute
   '/entregues': typeof AppEntreguesRoute
@@ -398,6 +406,7 @@ export interface FileRoutesByTo {
   '/perfil': typeof AppPerfilRoute
   '/saturacao': typeof AppSaturacaoRoute
   '/admin/usuarios': typeof AppAdminUsuariosRoute
+  '/chegada-amostras/registro': typeof AppChegadaAmostrasRegistroRoute
   '/modelos-relatorios/adensamento': typeof AppModelosRelatoriosAdensamentoRoute
   '/modelos-relatorios/cisalhamento-direto': typeof AppModelosRelatoriosCisalhamentoDiretoRoute
   '/modelos-relatorios/mesp-a-natural': typeof AppModelosRelatoriosMespANaturalRoute
@@ -439,7 +448,7 @@ export interface FileRoutesById {
   '/_app/cadastro': typeof AppCadastroRoute
   '/_app/cadastro-dashboard': typeof AppCadastroDashboardRoute
   '/_app/chamadas': typeof AppChamadasRoute
-  '/_app/chegada-amostras': typeof AppChegadaAmostrasRoute
+  '/_app/chegada-amostras': typeof AppChegadaAmostrasRouteWithChildren
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/entregas': typeof AppEntregasRoute
   '/_app/entregues': typeof AppEntreguesRoute
@@ -450,6 +459,7 @@ export interface FileRoutesById {
   '/_app/perfil': typeof AppPerfilRoute
   '/_app/saturacao': typeof AppSaturacaoRoute
   '/_app/admin/usuarios': typeof AppAdminUsuariosRoute
+  '/_app/chegada-amostras/registro': typeof AppChegadaAmostrasRegistroRoute
   '/_app/modelos-relatorios/adensamento': typeof AppModelosRelatoriosAdensamentoRoute
   '/_app/modelos-relatorios/cisalhamento-direto': typeof AppModelosRelatoriosCisalhamentoDiretoRoute
   '/_app/modelos-relatorios/mesp-a-natural': typeof AppModelosRelatoriosMespANaturalRoute
@@ -503,6 +513,7 @@ export interface FileRouteTypes {
     | '/perfil'
     | '/saturacao'
     | '/admin/usuarios'
+    | '/chegada-amostras/registro'
     | '/modelos-relatorios/adensamento'
     | '/modelos-relatorios/cisalhamento-direto'
     | '/modelos-relatorios/mesp-a-natural'
@@ -554,6 +565,7 @@ export interface FileRouteTypes {
     | '/perfil'
     | '/saturacao'
     | '/admin/usuarios'
+    | '/chegada-amostras/registro'
     | '/modelos-relatorios/adensamento'
     | '/modelos-relatorios/cisalhamento-direto'
     | '/modelos-relatorios/mesp-a-natural'
@@ -605,6 +617,7 @@ export interface FileRouteTypes {
     | '/_app/perfil'
     | '/_app/saturacao'
     | '/_app/admin/usuarios'
+    | '/_app/chegada-amostras/registro'
     | '/_app/modelos-relatorios/adensamento'
     | '/_app/modelos-relatorios/cisalhamento-direto'
     | '/_app/modelos-relatorios/mesp-a-natural'
@@ -785,6 +798,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/usuarios'
       preLoaderRoute: typeof AppAdminUsuariosRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/_app/chegada-amostras/registro': {
+      id: '/_app/chegada-amostras/registro'
+      path: '/registro'
+      fullPath: '/chegada-amostras/registro'
+      preLoaderRoute: typeof AppChegadaAmostrasRegistroRouteImport
+      parentRoute: typeof AppChegadaAmostrasRoute
     }
     '/_app/modelos-relatorios/': {
       id: '/_app/modelos-relatorios/'
@@ -999,6 +1019,17 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AppChegadaAmostrasRouteChildren {
+  AppChegadaAmostrasRegistroRoute: typeof AppChegadaAmostrasRegistroRoute
+}
+
+const AppChegadaAmostrasRouteChildren: AppChegadaAmostrasRouteChildren = {
+  AppChegadaAmostrasRegistroRoute: AppChegadaAmostrasRegistroRoute,
+}
+
+const AppChegadaAmostrasRouteWithChildren =
+  AppChegadaAmostrasRoute._addFileChildren(AppChegadaAmostrasRouteChildren)
+
 interface AppRelatorioDigitalizacaoRouteChildren {
   AppRelatorioDigitalizacaoAdensamentoRoute: typeof AppRelatorioDigitalizacaoAdensamentoRoute
   AppRelatorioDigitalizacaoCapsulasRoute: typeof AppRelatorioDigitalizacaoCapsulasRoute
@@ -1028,7 +1059,7 @@ interface AppRouteChildren {
   AppCadastroRoute: typeof AppCadastroRoute
   AppCadastroDashboardRoute: typeof AppCadastroDashboardRoute
   AppChamadasRoute: typeof AppChamadasRoute
-  AppChegadaAmostrasRoute: typeof AppChegadaAmostrasRoute
+  AppChegadaAmostrasRoute: typeof AppChegadaAmostrasRouteWithChildren
   AppDashboardRoute: typeof AppDashboardRoute
   AppEntregasRoute: typeof AppEntregasRoute
   AppEntreguesRoute: typeof AppEntreguesRoute
@@ -1073,7 +1104,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppCadastroRoute: AppCadastroRoute,
   AppCadastroDashboardRoute: AppCadastroDashboardRoute,
   AppChamadasRoute: AppChamadasRoute,
-  AppChegadaAmostrasRoute: AppChegadaAmostrasRoute,
+  AppChegadaAmostrasRoute: AppChegadaAmostrasRouteWithChildren,
   AppDashboardRoute: AppDashboardRoute,
   AppEntregasRoute: AppEntregasRoute,
   AppEntreguesRoute: AppEntreguesRoute,

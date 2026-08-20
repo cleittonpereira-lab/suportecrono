@@ -18,6 +18,7 @@ import {
   Beaker,
   FlaskConical,
   Layers,
+  PackagePlus,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -52,6 +53,7 @@ const sections: readonly NavSection[] = [
     label: "Logística",
     items: [
       { title: "Chegada de amostras", url: "/chegada-amostras", icon: PackageSearch },
+      { title: "Registrar chegada", url: "/chegada-amostras/registro", icon: PackagePlus },
       { title: "Entregas", url: "/entregas", icon: PackageSearch },
     ],
   },
