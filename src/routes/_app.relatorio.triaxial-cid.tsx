@@ -648,6 +648,9 @@ export function TriaxialCidPage() {
         if (remote.tab) setTab(remote.tab);
         if (remote.adjust) setAdjust((a: any) => ({ ...a, ...remote.adjust }));
         if (remote.axisCfg) setAxisCfg((cfg) => ({ ...cfg, ...remote.axisCfg }));
+        if (Array.isArray(remote.photos) && ctx?.os?.id && ctx?.amostra?.id && ctx?.ensaio?.id) {
+          labStore.setEnsaioPhotos(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, remote.photos);
+        }
       }
       setRemoteLoaded(true);
     }).catch(() => {
@@ -659,7 +662,7 @@ export function TriaxialCidPage() {
   useEffect(() => {
     if (!remoteLoaded) return;
     const h = window.setTimeout(() => {
-      const payload = { sample, specimens, selectedCpId, tab, adjust, axisCfg };
+      const payload = { sample, specimens, selectedCpId, tab, adjust, axisCfg, photos: ctx?.photos || [] };
       saveDraft(scopeId, payload);
       ctx?.onPayloadChange(payload);
     }, 400);

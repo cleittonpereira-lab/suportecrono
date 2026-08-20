@@ -399,6 +399,29 @@ export function AdensamentoPage() {
   const [validation, setValidation] = useState<ValidationState>({});
   const [preAdjust, setPreAdjust] = useState<PreconsolidationAdjust>({});
   const [cvAdjust, setCvAdjust] = useState<Record<number, CvLineAdjust>>({});
+  // ===== Ajuste de Eixos dos gráficos (declarado no topo para evitar TDZ) =====
+  type AxisCfg = {
+    eMin: number; eMax: number;
+    sigmaMin: number; sigmaMax: number;        // log, kPa
+    sigmaArithMax: number;                      // arith, kPa
+    cvMin: number; cvMax: number;              // log, cm²/s
+    caMax: number;                              // arith
+    eedoMax: number;                            // MPa
+    kvMin: number; kvMax: number;              // log, cm/s
+    eNormMin: number; eNormMax: number;        // e/e₀ (adimensional)
+  };
+  const [axisCfg, setAxisCfg] = useState<AxisCfg>({
+    eMin: 0.40, eMax: 1.60,
+    sigmaMin: 1, sigmaMax: 10000,
+    sigmaArithMax: 1000,
+    cvMin: 1e-5, cvMax: 1e-1,
+    caMax: 0.05,
+    eedoMax: 30,
+    kvMin: 1e-8, kvMax: 1e-3,
+    eNormMin: 0.25, eNormMax: 1.25,
+  });
+  const updateAxis = <K extends keyof AxisCfg>(k: K, v: number) =>
+    setAxisCfg((s) => ({ ...s, [k]: v }));
   const [importOpen, setImportOpen] = useState(false);
   const [reportPreviewOpen, setReportPreviewOpen] = useState(false);
   const [remoteLoaded, setRemoteLoaded] = useState(false);
@@ -731,29 +754,7 @@ export function AdensamentoPage() {
   };
 
 
-  // ===== Ajuste de Eixos dos gráficos (usado tanto na Análise quanto no Relatório) =====
-  type AxisCfg = {
-    eMin: number; eMax: number;
-    sigmaMin: number; sigmaMax: number;        // log, kPa
-    sigmaArithMax: number;                      // arith, kPa
-    cvMin: number; cvMax: number;              // log, cm²/s
-    caMax: number;                              // arith
-    eedoMax: number;                            // MPa
-    kvMin: number; kvMax: number;              // log, cm/s
-    eNormMin: number; eNormMax: number;        // e/e₀ (adimensional)
-  };
-  const [axisCfg, setAxisCfg] = useState<AxisCfg>({
-    eMin: 0.40, eMax: 1.60,
-    sigmaMin: 1, sigmaMax: 10000,
-    sigmaArithMax: 1000,
-    cvMin: 1e-5, cvMax: 1e-1,
-    caMax: 0.05,
-    eedoMax: 30,
-    kvMin: 1e-8, kvMax: 1e-3,
-    eNormMin: 0.25, eNormMax: 1.25,
-  });
-  const updateAxis = <K extends keyof AxisCfg>(k: K, v: number) =>
-    setAxisCfg((s) => ({ ...s, [k]: v }));
+  // updateAxis mantido via estado declarado acima
 
   const eCurve = useMemo(() => {
     if (!stages || stages.length === 0) return [];
