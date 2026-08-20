@@ -404,6 +404,7 @@ export function AdensamentoPage() {
   const [savingVersion, setSavingVersion] = useState(false);
   const [versions, setVersions] = useState<any[]>([]);
   const [approvals, setApprovals] = useState<any[]>([]);
+  const [wfStatus, setWfStatus] = useState<string>("digitacao");
   const [sampleEditOpen, setSampleEditOpen] = useState(false);
   const [obsDialogOpen, setObsDialogOpen] = useState(false);
   const [obsGanttOpen, setObsGanttOpen] = useState(false);
