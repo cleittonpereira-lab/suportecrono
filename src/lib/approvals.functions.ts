@@ -102,7 +102,6 @@ async function setWorkflowStatus(
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const nowIso = new Date().toISOString();
 
-  // 1. Busca metadados existentes no lab_index se index nao fornecido
   let osNum = index?.os_numero ?? null;
   let amCode = index?.amostra_code ?? null;
   let ensTipo = index?.ensaio_tipo ?? null;
@@ -125,7 +124,7 @@ async function setWorkflowStatus(
     }
   } catch {}
 
-  // 2. Grava/Atualiza lab_index
+  // 1. Grava/Atualiza lab_index
   try {
     await supabaseAdmin.from("lab_index").upsert({
       scope_id: scopeId,
@@ -141,7 +140,7 @@ async function setWorkflowStatus(
     console.warn("lab_index upsert warning:", err);
   }
 
-  // 3. Atualiza atômico na tabela lab_pendencias_digitacao
+  // 2. Atualiza atômico na tabela lab_pendencias_digitacao
   try {
     const statusMap: Record<string, string> = {
       digitacao: "em_digitacao",
@@ -152,31 +151,55 @@ async function setWorkflowStatus(
     };
     const pendStatus = statusMap[status] || "em_digitacao";
 
-    // Busca por id direto (se scopeId for UUID da pendencia) ou por (os, amostra)
-    let pTargetId: string | null = null;
+    let targetIds: string[] = [];
+
+    // Busca por id direto (se scopeId for UUID)
     const { data: pById } = await supabaseAdmin
       .from("lab_pendencias_digitacao")
       .select("id")
       .eq("id", scopeId)
-      .maybeSingle();
+      .limit(1);
 
-    if (pById?.id) {
-      pTargetId = pById.id;
-    } else if (osNum) {
-      let q = supabaseAdmin.from("lab_pendencias_digitacao").select("id").eq("os", osNum);
-      if (amCode) q = q.eq("amostra", amCode);
-      const { data: pByOs } = await q.maybeSingle();
-      if (pByOs?.id) pTargetId = pByOs.id;
+    if (pById && pById.length > 0) {
+      targetIds.push(pById[0].id);
     }
 
-    if (pTargetId) {
+    if (osNum && targetIds.length === 0) {
+      let q = supabaseAdmin.from("lab_pendencias_digitacao").select("id, ensaio, tipo_ensaio").eq("os", osNum);
+      if (amCode) q = q.eq("amostra", amCode);
+      const { data: pRows } = await q;
+
+      if (pRows && pRows.length > 0) {
+        // Se houver múltiplos ensaios para a mesma OS e Amostra (ex: CD4.NAT vs CD4.IN ou ADENS.19),
+        // filtra pelo ensaio_nome ou tipo_ensaio exato
+        const match = pRows.find((r) => {
+          const rName = normStr(r.ensaio);
+          const rTipo = normStr(r.tipo_ensaio);
+          const searchName = normStr(ensNome);
+          const searchTipo = normStr(ensTipo);
+          const rPrefix = rName.substring(0, 4);
+          const searchPrefix = (searchTipo || searchName).substring(0, 4);
+          return (
+            rName === searchName ||
+            rTipo === searchTipo ||
+            (searchTipo && rName.includes(searchTipo)) ||
+            (searchName && rName.includes(searchName)) ||
+            (rPrefix && searchPrefix && rPrefix === searchPrefix)
+          );
+        }) || pRows[0];
+
+        targetIds.push(match.id);
+      }
+    }
+
+    if (targetIds.length > 0) {
       await supabaseAdmin
         .from("lab_pendencias_digitacao")
         .update({
           status: pendStatus,
           updated_at: nowIso,
         } as never)
-        .eq("id", pTargetId);
+        .in("id", targetIds);
     } else if (osNum) {
       await supabaseAdmin.from("lab_pendencias_digitacao").insert({
         os: osNum,

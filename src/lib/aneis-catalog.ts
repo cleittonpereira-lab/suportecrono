@@ -134,3 +134,25 @@ export function deleteAnelFromCatalog(id: string): void {
   const next = list.filter((a) => a.id !== id);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
 }
+
+export function syncAneisToRemote(list: AnelItem[]) {
+  try {
+    import("@/lib/draft.functions").then((mod) => {
+      mod.saveSharedDraft({ data: { scopeId: "config/aneis_catalog", payload: { aneis: list } } });
+    });
+  } catch {}
+}
+
+export async function fetchRemoteAneisCatalog(): Promise<AnelItem[] | null> {
+  try {
+    const mod = await import("@/lib/draft.functions");
+    const res = await mod.loadSharedDraft({ data: { scopeId: "config/aneis_catalog" } });
+    if (res?.success && res.payload?.aneis && Array.isArray(res.payload.aneis)) {
+      if (typeof window !== "undefined") {
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(res.payload.aneis)); } catch {}
+      }
+      return res.payload.aneis as AnelItem[];
+    }
+  } catch {}
+  return null;
+}

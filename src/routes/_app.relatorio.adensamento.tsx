@@ -978,11 +978,13 @@ export function AdensamentoPage() {
             <div className="flex items-center gap-2">
               <Badge variant="outline">ABNT NBR 16853 / ASTM D2435</Badge>
               <WorkflowFarol status={
-    approvals[0]?.status === "pendente_verificacao"
-      ? "aguardando_verificacao"
-      : approvals[0]?.status === "pendente_aprovacao" || approvals[0]?.status === "verificado"
-      ? "aguardando_aprovacao"
-      : approvals[0]?.status || "em_digitacao"
+    (() => {
+      const st = wfStatus || approvals[0]?.status || (ctx?.ensaio as any)?.status || "em_digitacao";
+      if (st === "aguardando_verificacao" || st === "pendente_verificacao" || st === "digitado") return "aguardando_verificacao";
+      if (st === "aguardando_aprovacao" || st === "pendente_aprovacao" || st === "verificado") return "aguardando_aprovacao";
+      if (st === "aprovado") return "aprovado";
+      return "em_digitacao";
+    })()
   } />
             </div>
             <h1 className="mt-1 text-xl font-bold tracking-tight">

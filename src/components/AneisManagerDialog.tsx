@@ -18,6 +18,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Trash2, Edit2, CircleDot, Check, FileSpreadsheet, Upload, Layers } from "lucide-react";
 import {
   getAneisCatalog,
+  fetchRemoteAneisCatalog,
   saveAnelToCatalog,
   saveMultipleAneisToCatalog,
   deleteAnelFromCatalog,
@@ -65,6 +66,9 @@ export function AneisManagerDialog({
 
   const reload = () => {
     setAneis(getAneisCatalog());
+    fetchRemoteAneisCatalog().then((remoteList) => {
+      if (remoteList && remoteList.length > 0) setAneis(remoteList);
+    });
   };
 
   useEffect(() => {
