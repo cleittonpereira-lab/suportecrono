@@ -765,11 +765,15 @@ export function TriaxialCidPage() {
             },
           },
         });
+        const currentDraft = { sample, specimens, selectedCpId, tab, adjust, axisCfg, photos: ctx?.photos || [] };
+        saveDraft(scopeId, currentDraft);
         if (ctx && ctx.os && ctx.amostra && ctx.ensaio) {
           labStore.patchEnsaio(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, {
+            payload: currentDraft,
             status: skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao",
           });
         }
+        setWfStatus(skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao");
         await refreshApprovals();
         toast.success(
           skipVerification

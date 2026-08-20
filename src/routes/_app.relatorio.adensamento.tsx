@@ -734,8 +734,22 @@ export function AdensamentoPage() {
         updated_at: new Date().toISOString(),
       } as any]);
 
+      const savePayload = {
+        sample,
+        stages,
+        validation,
+        preAdjust,
+        cvAdjust,
+        axisCfg,
+        methodCas,
+        methodPS,
+        showResults,
+        photos: ctx?.photos || [],
+      };
+      saveOedDraft(scopeId, savePayload);
       if (ctx && ctx.os && ctx.amostra && ctx.ensaio) {
         labStore.patchEnsaio(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, {
+          payload: savePayload,
           status: opts?.skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao",
         });
       }
