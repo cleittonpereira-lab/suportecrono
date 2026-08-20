@@ -47,9 +47,15 @@ export function ChegadaMultiSelect({
   const listRef = useRef<HTMLDivElement>(null);
   const newOptionInputRef = useRef<HTMLInputElement>(null);
 
+  // Garante que o input receba foco ao abrir o modo de criação
   useEffect(() => {
-    if (isCreating && newOptionInputRef.current) {
-      newOptionInputRef.current.focus();
+    if (isCreating) {
+      const timer = setTimeout(() => {
+        if (newOptionInputRef.current) {
+          newOptionInputRef.current.focus();
+        }
+      }, 60);
+      return () => clearTimeout(timer);
     }
   }, [isCreating]);
 
@@ -96,9 +102,10 @@ export function ChegadaMultiSelect({
   }, [options, searchQuery]);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={setOpen} modal={true}>
       <PopoverTrigger asChild>
         <Button
+          type="button"
           variant="outline"
           role="combobox"
           aria-expanded={open}
@@ -135,11 +142,24 @@ export function ChegadaMultiSelect({
       </PopoverTrigger>
 
       <PopoverContent
-        className="w-[320px] sm:w-[360px] p-0 shadow-lg border rounded-lg z-50 bg-popover text-popover-foreground pointer-events-auto"
+        className="w-[320px] sm:w-[360px] p-0 shadow-lg border rounded-lg z-[100] bg-popover text-popover-foreground pointer-events-auto"
         align="start"
         sideOffset={4}
+        onOpenAutoFocus={(e) => {
+          // Permite foco interativo interno
+        }}
+        onCloseAutoFocus={(e) => {
+          e.preventDefault();
+        }}
+        onFocusOutside={(e) => {
+          // Impede o dialog pai de sequestrar o foco do Popover
+          e.preventDefault();
+        }}
+        onPointerDownOutside={(e) => {
+          // Permite fechar se clicar fora do dropdown
+        }}
         onWheel={(e) => {
-          // Allow independent scrolling without bubbling to parent modal
+          // Isola a rolagem da lista sem repassar para o modal pai
           e.stopPropagation();
         }}
       >
@@ -150,18 +170,23 @@ export function ChegadaMultiSelect({
             <Input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => e.stopPropagation()}
+              onKeyUp={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
               placeholder={searchPlaceholder}
-              className="h-8 text-xs border-0 bg-transparent focus-visible:ring-0 px-1 shadow-none"
-              autoFocus={false}
+              className="h-8 text-xs border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 px-1 bg-transparent"
             />
             {searchQuery && (
               <Button
+                type="button"
                 variant="ghost"
-                size="icon"
-                className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                size="sm"
+                className="h-6 w-6 p-0 hover:bg-muted"
                 onClick={() => setSearchQuery("")}
               >
-                <X className="h-3 w-3" />
+                <X className="h-3 w-3 text-muted-foreground" />
               </Button>
             )}
           </div>
@@ -169,11 +194,14 @@ export function ChegadaMultiSelect({
           {/* Lista de Opções com Rolagem Suave Garantida */}
           <div
             ref={listRef}
-            className="flex-1 overflow-y-auto overflow-x-hidden p-1.5 space-y-0.5 max-h-[220px] min-h-[80px] overscroll-contain select-none"
+            className="overflow-y-auto max-h-[220px] p-1 divide-y divide-border/30 custom-scrollbar"
             style={{
-              scrollbarWidth: "thin",
+              overscrollBehavior: "contain",
               WebkitOverflowScrolling: "touch",
               touchAction: "pan-y",
+            }}
+            onWheel={(e) => {
+              e.stopPropagation();
             }}
           >
             {filteredOptions.length > 0 ? (
@@ -184,14 +212,16 @@ export function ChegadaMultiSelect({
                     key={opt.value}
                     onClick={() => toggleOption(opt.value)}
                     className={cn(
-                      "flex items-center justify-between px-2.5 py-2 text-xs rounded-md cursor-pointer transition-colors hover:bg-accent hover:text-accent-foreground",
-                      isSelected && "bg-primary/10 text-primary font-medium"
+                      "flex items-center justify-between px-2.5 py-2 rounded-md text-xs cursor-pointer select-none transition-colors",
+                      isSelected
+                        ? "bg-primary/10 text-primary font-semibold"
+                        : "hover:bg-muted text-foreground"
                     )}
                   >
-                    <div className="flex items-center gap-2 flex-1 truncate">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
                       <div
                         className={cn(
-                          "flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors",
+                          "h-4 w-4 rounded border flex items-center justify-center transition-colors shrink-0",
                           isSelected
                             ? "bg-primary border-primary text-primary-foreground"
                             : "border-muted-foreground/40 bg-background"
@@ -211,39 +241,48 @@ export function ChegadaMultiSelect({
             )}
           </div>
 
-          {/* Rodapé Fixo: Criação de Nova Opção */}
+          {/* Rodapé Fixo: Criação de Nova Opção Inline */}
           {onAddOption && (
             <div className="p-2 border-t bg-muted/30 shrink-0">
               {isCreating ? (
                 <form
                   onSubmit={handleSaveNewOption}
-                  className="flex flex-col gap-2 p-1 bg-background rounded-md border shadow-xs"
+                  className="flex flex-col gap-2 p-2 bg-background rounded-md border shadow-xs"
                 >
-                  <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-1">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-0.5">
                     Cadastrar novo item
                   </div>
                   <Input
                     ref={newOptionInputRef}
                     value={newOptionName}
                     onChange={(e) => setNewOptionName(e.target.value)}
-                    placeholder={createInputPlaceholder}
-                    className="h-8 text-xs bg-background"
                     onKeyDown={(e) => {
+                      e.stopPropagation();
                       if (e.key === "Enter") {
                         e.preventDefault();
                         handleSaveNewOption();
                       } else if (e.key === "Escape") {
+                        e.preventDefault();
                         setIsCreating(false);
                       }
                     }}
+                    onKeyUp={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    placeholder={createInputPlaceholder}
+                    className="h-8 text-xs bg-background focus:ring-1 focus:ring-primary"
+                    autoComplete="off"
+                    autoFocus
                   />
-                  <div className="flex items-center justify-end gap-1.5">
+                  <div className="flex items-center justify-end gap-1.5 pt-0.5">
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
                       className="h-7 text-xs px-2"
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         setIsCreating(false);
                         setNewOptionName("");
                       }}
@@ -253,8 +292,11 @@ export function ChegadaMultiSelect({
                     <Button
                       type="button"
                       size="sm"
-                      className="h-7 text-xs px-3 font-medium bg-primary text-primary-foreground"
-                      onClick={() => handleSaveNewOption()}
+                      className="h-7 text-xs px-3 font-medium bg-primary text-primary-foreground hover:bg-primary/90"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSaveNewOption();
+                      }}
                       disabled={!newOptionName.trim()}
                     >
                       Salvar
