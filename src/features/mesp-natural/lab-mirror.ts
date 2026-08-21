@@ -36,10 +36,12 @@ export function mirrorMEspAToLabStore(
       description: ident.amostraDescricao || "",
     });
   }
+  if (!am) return { osId: os.id, amId: "", enId: "" };
   let en = am.ensaios.find((e) => e.tipo === "mesp-a");
   if (!en) {
     en = labStore.addEnsaio(os.id, am.id, "mesp-a", "M.ESP.A · " + (ident.amostraCodigo || ""));
   }
+  if (!en) return { osId: os.id, amId: am.id, enId: "" };
   labStore.patchEnsaio(os.id, am.id, en.id, { payload, status });
   return { osId: os.id, amId: am.id, enId: en.id };
 }

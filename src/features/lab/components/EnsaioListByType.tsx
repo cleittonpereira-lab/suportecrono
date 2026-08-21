@@ -273,11 +273,14 @@ export function EnsaioListByType({ tipo }: { tipo: EnsaioTipo }) {
     if (!am) {
       am = labStore.addAmostra(os.id, { reportNumber: cleanAm, code: cleanAm });
     }
+    if (!am) return;
 
     let en = am.ensaios.find((e) => e.tipo === tipo);
     if (!en) {
       en = labStore.addEnsaio(os.id, am.id, tipo, ENSAIO_LABEL[tipo]);
     }
+
+    if (!en) return;
 
     navigate({
       to: "/relatorio/os/$osId/amostra/$amostraId/ensaio/$ensaioId",

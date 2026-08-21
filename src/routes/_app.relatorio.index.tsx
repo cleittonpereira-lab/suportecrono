@@ -214,7 +214,6 @@ function EnsaiosDashboard() {
               <Link
                 key={item.id}
                 to={item.url as any}
-                search={{}}
               >
                 <Card className="transition hover:border-primary/60 hover:shadow-sm">
                   <CardContent className="flex items-center justify-between py-3 text-xs">

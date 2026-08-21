@@ -99,14 +99,25 @@ export function MultiSelect({
           <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50 ml-2" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+      <PopoverContent
+        className="w-[var(--radix-popover-trigger-width)] min-w-[240px] p-0 z-50 pointer-events-auto"
+        align="start"
+        onWheel={(e) => e.stopPropagation()}
+      >
         <Command>
           <CommandInput 
             placeholder="Procurar..." 
             value={inputValue}
             onValueChange={setInputValue}
           />
-          <CommandList className="max-h-[300px] overflow-y-auto">
+          <CommandList
+            className="max-h-[240px] overflow-y-auto overscroll-contain"
+            style={{
+              scrollbarWidth: "thin",
+              WebkitOverflowScrolling: "touch",
+              touchAction: "pan-y",
+            }}
+          >
             <CommandEmpty>
               {onCreateOption && inputValue ? (
                 <div className="p-2">

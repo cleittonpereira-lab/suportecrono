@@ -53,7 +53,9 @@ function OSDetail() {
     const am = labStore.addAmostra(os.id, form);
     setDlgOpen(false);
     toast.success("Amostra criada");
-    navigate({ to: "/relatorio/os/$osId/amostra/$amostraId", params: { osId: os.id, amostraId: am.id } });
+    if (am) {
+      navigate({ to: "/relatorio/os/$osId/amostra/$amostraId", params: { osId: os.id, amostraId: am.id } });
+    }
   };
 
   // Agrupa por (reportNumber || "" ) + "@@" + (depth || "")

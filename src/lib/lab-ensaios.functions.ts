@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import type { EnsaioStatus, EnsaioTipo } from "@/features/lab/types";
+import type { EnsaioStatus, EnsaioTipo, Coords } from "@/features/lab/types";
 
 export type SerializableJson =
   | string
@@ -70,14 +70,19 @@ export type LabEnsaioSnapshot = {
     client?: string;
     workNumber?: string;
     local?: string;
+    operator?: string;
+    technicalResp?: string;
+    revision?: string;
   };
   amostra: {
     id: string;
     reportNumber?: string;
     code?: string;
     description?: string;
+    granulometricDescription?: string;
     borehole?: string;
     depth?: string;
+    coords?: Coords;
   };
   ensaio: {
     id: string;

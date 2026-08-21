@@ -63,6 +63,7 @@ function AmostraDetail() {
 
   const criarEnsaio = () => {
     const en = labStore.addEnsaio(os.id, am.id, novoTipo);
+    if (!en) return;
     navigate({
       to: "/relatorio/os/$osId/amostra/$amostraId/ensaio/$ensaioId",
       params: { osId: os.id, amostraId: am.id, ensaioId: en.id },

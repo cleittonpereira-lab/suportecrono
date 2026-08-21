@@ -73,7 +73,7 @@ export const ALL_TABS = Object.keys(TAB_META) as TabKey[];
 export function pathToTab(pathname: string): TabKey | null {
   if (pathname === "/" || pathname === "/dashboard") return "dashboard";
   if (pathname.startsWith("/assistente")) return "assistente";
-  if (pathname.startsWith("/chegada-amostras")) return "chegada_amostras";
+  if (pathname.startsWith("/chegada-amostras") || pathname.startsWith("/registro-amostra") || pathname.startsWith("/registro-chegada")) return "chegada_amostras";
   if (pathname.startsWith("/entregas") || pathname.startsWith("/criar-entrega")) return "entregas";
   if (pathname.startsWith("/analises")) return "analises";
   if (pathname.startsWith("/saturacao")) return "saturacao";

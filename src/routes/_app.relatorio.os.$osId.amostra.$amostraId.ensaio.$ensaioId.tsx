@@ -20,15 +20,15 @@ export const Route = createFileRoute(
 )({
   head: () => ({
     meta: [
-      { title: "Editor de Ensaio — Suporte INFRA" },
+      { title: "Editor de Ensaio - Suporte INFRA" },
       {
         name: "description",
-        content: "Editor técnico para digitação, revisão e emissão de ensaios laboratoriais.",
+        content: "Editor tecnico para digitacao, revisao e emissao de ensaios laboratoriais.",
       },
-      { property: "og:title", content: "Editor de Ensaio — Suporte INFRA" },
+      { property: "og:title", content: "Editor de Ensaio - Suporte INFRA" },
       {
         property: "og:description",
-        content: "Editor técnico para digitação, revisão e emissão de ensaios laboratoriais.",
+        content: "Editor tecnico para digitacao, revisao e emissao de ensaios laboratoriais.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
@@ -52,7 +52,7 @@ function EnsaioEditor() {
   const restoreRef = useRef<string | null>(null);
   const scopeId = `os/${osId}/amostra/${amostraId}/ensaio/${ensaioId}`;
 
-  // Detecta o tipo de ensaio a partir do ensaioId (prefixo gerado em criar-ensaio)
+  // Detecta o tipo de ensaio a partir do ensaioId
   function detectTipo(): EnsaioTipo {
     const id = ensaioId.toLowerCase();
     if (id.includes("aden")) return "adensamento";
@@ -65,7 +65,7 @@ function EnsaioEditor() {
   function forceAutoHeal() {
     const s = labStore.get();
     let o = s.os.find((x) => x.id === osId);
-    if (!o) o = labStore.createOS({ numero: osId, client: "" });
+    if (!o) o = labStore.createOS({ numero: osId, client: "Nao informado" });
     let a = (o?.amostras ?? []).find((x) => x.id === amostraId);
     if (!a) a = labStore.addAmostra(o!.id, { reportNumber: amostraId, code: amostraId });
     const e = (a?.ensaios ?? []).find((x) => x.id === ensaioId);
@@ -90,7 +90,7 @@ function EnsaioEditor() {
           labStore.ensureEnsaioFromSnapshot(snapshot);
           return;
         }
-        // Snapshot nao encontrado no lab_index — executa auto-heal direto
+        // Snapshot nao encontrado no lab_index - executa auto-heal direto
         forceAutoHeal();
       })
       .catch((err: unknown) => {
@@ -173,7 +173,7 @@ function EnsaioEditor() {
         coords: amostra.coords,
         onPayloadChange: (payload) => {
           const currentStatus = ensaio.status;
-          const nextStatus = currentStatus === "pendente_digitacao" || currentStatus === "agendado" ? "em_digitacao" : currentStatus;
+          const nextStatus = (currentStatus as string) === "pendente_digitacao" || (currentStatus as string) === "agendado" ? "em_digitacao" : currentStatus;
           labStore.patchEnsaio(os.id, amostra.id, ensaio.id, { payload, status: nextStatus });
         },
         addPhoto: (p) => labStore.addEnsaioPhoto(os.id, amostra.id, ensaio.id, p),

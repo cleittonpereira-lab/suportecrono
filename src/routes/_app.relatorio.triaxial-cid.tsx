@@ -648,8 +648,8 @@ export function TriaxialCidPage() {
         if (remote.tab) setTab(remote.tab);
         if (remote.adjust) setAdjust((a: any) => ({ ...a, ...remote.adjust }));
         if (remote.axisCfg) setAxisCfg((cfg) => ({ ...cfg, ...remote.axisCfg }));
-        if (Array.isArray(remote.photos) && ctx?.os?.id && ctx?.amostra?.id && ctx?.ensaio?.id) {
-          labStore.setEnsaioPhotos(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, remote.photos);
+        if (Array.isArray((remote as any).photos) && ctx?.os?.id && ctx?.amostra?.id && ctx?.ensaio?.id) {
+          labStore.setEnsaioPhotos(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, (remote as any).photos);
         }
       }
       setRemoteLoaded(true);

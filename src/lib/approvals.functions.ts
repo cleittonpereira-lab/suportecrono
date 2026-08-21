@@ -13,6 +13,11 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 
+function normStr(str?: string | null): string {
+  if (!str) return "";
+  return str.toLowerCase().replace(/[^a-z0-9]/g, "").trim();
+}
+
 export type ApprovalStatus =
   | "pendente"
   | "digitacao"
@@ -362,10 +367,18 @@ export const requestApproval = createServerFn({ method: "POST" })
         requested_by: userId,
         requested_by_name: name,
         requested_at: new Date().toISOString(),
+        verified_by: verifiedPatch.verified_by ?? null,
+        verified_by_name: verifiedPatch.verified_by_name ?? null,
+        verified_at: verifiedPatch.verified_at ?? null,
+        verification_comment: null,
+        decided_by: null,
+        decided_by_name: null,
+        decided_at: null,
+        comment: null,
         filename: data.filename ?? null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-      } as ApprovalRow;
+      } as unknown as ApprovalRow;
     }
     if (!data.index) await setWorkflowStatus(data.scopeId, targetWorkflow);
     await insertHistory(supabase, data.scopeId, data.rev, historyAction, userId, name, historyRole);
@@ -626,4 +639,34 @@ export const listApprovalComments = createServerFn({ method: "POST" })
     const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
     return (rows ?? []) as ApprovalCommentRow[];
+  });
+
+const WorkflowStatusesInput = z.object({
+  scopeIds: z.array(z.string()).default([]),
+});
+
+export const getWorkflowStatuses = createServerFn({ method: "POST" })
+  .validator((v: unknown) => WorkflowStatusesInput.parse(v))
+  .handler(async ({ data }) => {
+    const statuses: Record<string, string> = {};
+    if (!data.scopeIds || data.scopeIds.length === 0) return { statuses };
+
+    try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { data: rows } = await supabaseAdmin
+        .from("lab_report_approvals")
+        .select("scope_id, status")
+        .in("scope_id", data.scopeIds)
+        .order("created_at", { ascending: false });
+
+      if (rows) {
+        for (const r of rows) {
+          if (!statuses[r.scope_id]) {
+            statuses[r.scope_id] = r.status;
+          }
+        }
+      }
+    } catch {}
+
+    return { statuses };
   });

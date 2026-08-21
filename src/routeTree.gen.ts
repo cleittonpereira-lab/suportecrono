@@ -13,6 +13,8 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as PendenteRouteImport } from './routes/pendente'
+import { Route as RegistroAmostraRouteImport } from './routes/registro-amostra'
+import { Route as RegistroChegadaRouteImport } from './routes/registro-chegada'
 import { Route as AppAnalisesRouteImport } from './routes/_app.analises'
 import { Route as AppAssistenteRouteImport } from './routes/_app.assistente'
 import { Route as AppCadastroRouteImport } from './routes/_app.cadastro'
@@ -29,6 +31,7 @@ import { Route as AppPendentesRouteImport } from './routes/_app.pendentes'
 import { Route as AppPerfilRouteImport } from './routes/_app.perfil'
 import { Route as AppSaturacaoRouteImport } from './routes/_app.saturacao'
 import { Route as AppAdminUsuariosRouteImport } from './routes/_app.admin.usuarios'
+import { Route as AppChegadaAmostrasRegistroRouteImport } from './routes/_app.chegada-amostras.registro'
 import { Route as AppModelosRelatoriosIndexRouteImport } from './routes/_app.modelos-relatorios.index'
 import { Route as AppModelosRelatoriosAdensamentoRouteImport } from './routes/_app.modelos-relatorios.adensamento'
 import { Route as AppModelosRelatoriosCisalhamentoDiretoRouteImport } from './routes/_app.modelos-relatorios.cisalhamento-direto'
@@ -77,6 +80,16 @@ const AuthRoute = AuthRouteImport.update({
 const PendenteRoute = PendenteRouteImport.update({
   id: '/pendente',
   path: '/pendente',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RegistroAmostraRoute = RegistroAmostraRouteImport.update({
+  id: '/registro-amostra',
+  path: '/registro-amostra',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RegistroChegadaRoute = RegistroChegadaRouteImport.update({
+  id: '/registro-chegada',
+  path: '/registro-chegada',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppAnalisesRoute = AppAnalisesRouteImport.update({
@@ -159,6 +172,12 @@ const AppAdminUsuariosRoute = AppAdminUsuariosRouteImport.update({
   path: '/admin/usuarios',
   getParentRoute: () => AppRoute,
 } as any)
+const AppChegadaAmostrasRegistroRoute =
+  AppChegadaAmostrasRegistroRouteImport.update({
+    id: '/registro',
+    path: '/registro',
+    getParentRoute: () => AppChegadaAmostrasRoute,
+  } as any)
 const AppModelosRelatoriosIndexRoute =
   AppModelosRelatoriosIndexRouteImport.update({
     id: '/modelos-relatorios/',
@@ -331,12 +350,14 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/pendente': typeof PendenteRoute
+  '/registro-amostra': typeof RegistroAmostraRoute
+  '/registro-chegada': typeof RegistroChegadaRoute
   '/analises': typeof AppAnalisesRoute
   '/assistente': typeof AppAssistenteRoute
   '/cadastro': typeof AppCadastroRoute
   '/cadastro-dashboard': typeof AppCadastroDashboardRoute
   '/chamadas': typeof AppChamadasRoute
-  '/chegada-amostras': typeof AppChegadaAmostrasRoute
+  '/chegada-amostras': typeof AppChegadaAmostrasRouteWithChildren
   '/dashboard': typeof AppDashboardRoute
   '/entregas': typeof AppEntregasRoute
   '/entregues': typeof AppEntreguesRoute
@@ -347,6 +368,7 @@ export interface FileRoutesByFullPath {
   '/perfil': typeof AppPerfilRoute
   '/saturacao': typeof AppSaturacaoRoute
   '/admin/usuarios': typeof AppAdminUsuariosRoute
+  '/chegada-amostras/registro': typeof AppChegadaAmostrasRegistroRoute
   '/modelos-relatorios/adensamento': typeof AppModelosRelatoriosAdensamentoRoute
   '/modelos-relatorios/cisalhamento-direto': typeof AppModelosRelatoriosCisalhamentoDiretoRoute
   '/modelos-relatorios/mesp-a-natural': typeof AppModelosRelatoriosMespANaturalRoute
@@ -382,12 +404,14 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/pendente': typeof PendenteRoute
+  '/registro-amostra': typeof RegistroAmostraRoute
+  '/registro-chegada': typeof RegistroChegadaRoute
   '/analises': typeof AppAnalisesRoute
   '/assistente': typeof AppAssistenteRoute
   '/cadastro': typeof AppCadastroRoute
   '/cadastro-dashboard': typeof AppCadastroDashboardRoute
   '/chamadas': typeof AppChamadasRoute
-  '/chegada-amostras': typeof AppChegadaAmostrasRoute
+  '/chegada-amostras': typeof AppChegadaAmostrasRouteWithChildren
   '/dashboard': typeof AppDashboardRoute
   '/entregas': typeof AppEntregasRoute
   '/entregues': typeof AppEntreguesRoute
@@ -398,6 +422,7 @@ export interface FileRoutesByTo {
   '/perfil': typeof AppPerfilRoute
   '/saturacao': typeof AppSaturacaoRoute
   '/admin/usuarios': typeof AppAdminUsuariosRoute
+  '/chegada-amostras/registro': typeof AppChegadaAmostrasRegistroRoute
   '/modelos-relatorios/adensamento': typeof AppModelosRelatoriosAdensamentoRoute
   '/modelos-relatorios/cisalhamento-direto': typeof AppModelosRelatoriosCisalhamentoDiretoRoute
   '/modelos-relatorios/mesp-a-natural': typeof AppModelosRelatoriosMespANaturalRoute
@@ -434,12 +459,14 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/auth': typeof AuthRoute
   '/pendente': typeof PendenteRoute
+  '/registro-amostra': typeof RegistroAmostraRoute
+  '/registro-chegada': typeof RegistroChegadaRoute
   '/_app/analises': typeof AppAnalisesRoute
   '/_app/assistente': typeof AppAssistenteRoute
   '/_app/cadastro': typeof AppCadastroRoute
   '/_app/cadastro-dashboard': typeof AppCadastroDashboardRoute
   '/_app/chamadas': typeof AppChamadasRoute
-  '/_app/chegada-amostras': typeof AppChegadaAmostrasRoute
+  '/_app/chegada-amostras': typeof AppChegadaAmostrasRouteWithChildren
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/entregas': typeof AppEntregasRoute
   '/_app/entregues': typeof AppEntreguesRoute
@@ -450,6 +477,7 @@ export interface FileRoutesById {
   '/_app/perfil': typeof AppPerfilRoute
   '/_app/saturacao': typeof AppSaturacaoRoute
   '/_app/admin/usuarios': typeof AppAdminUsuariosRoute
+  '/_app/chegada-amostras/registro': typeof AppChegadaAmostrasRegistroRoute
   '/_app/modelos-relatorios/adensamento': typeof AppModelosRelatoriosAdensamentoRoute
   '/_app/modelos-relatorios/cisalhamento-direto': typeof AppModelosRelatoriosCisalhamentoDiretoRoute
   '/_app/modelos-relatorios/mesp-a-natural': typeof AppModelosRelatoriosMespANaturalRoute
@@ -487,6 +515,8 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/pendente'
+    | '/registro-amostra'
+    | '/registro-chegada'
     | '/analises'
     | '/assistente'
     | '/cadastro'
@@ -503,6 +533,7 @@ export interface FileRouteTypes {
     | '/perfil'
     | '/saturacao'
     | '/admin/usuarios'
+    | '/chegada-amostras/registro'
     | '/modelos-relatorios/adensamento'
     | '/modelos-relatorios/cisalhamento-direto'
     | '/modelos-relatorios/mesp-a-natural'
@@ -538,6 +569,8 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/pendente'
+    | '/registro-amostra'
+    | '/registro-chegada'
     | '/analises'
     | '/assistente'
     | '/cadastro'
@@ -554,6 +587,7 @@ export interface FileRouteTypes {
     | '/perfil'
     | '/saturacao'
     | '/admin/usuarios'
+    | '/chegada-amostras/registro'
     | '/modelos-relatorios/adensamento'
     | '/modelos-relatorios/cisalhamento-direto'
     | '/modelos-relatorios/mesp-a-natural'
@@ -589,6 +623,8 @@ export interface FileRouteTypes {
     | '/_app'
     | '/auth'
     | '/pendente'
+    | '/registro-amostra'
+    | '/registro-chegada'
     | '/_app/analises'
     | '/_app/assistente'
     | '/_app/cadastro'
@@ -605,6 +641,7 @@ export interface FileRouteTypes {
     | '/_app/perfil'
     | '/_app/saturacao'
     | '/_app/admin/usuarios'
+    | '/_app/chegada-amostras/registro'
     | '/_app/modelos-relatorios/adensamento'
     | '/_app/modelos-relatorios/cisalhamento-direto'
     | '/_app/modelos-relatorios/mesp-a-natural'
@@ -642,6 +679,8 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   AuthRoute: typeof AuthRoute
   PendenteRoute: typeof PendenteRoute
+  RegistroAmostraRoute: typeof RegistroAmostraRoute
+  RegistroChegadaRoute: typeof RegistroChegadaRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -672,6 +711,20 @@ declare module '@tanstack/react-router' {
       path: '/pendente'
       fullPath: '/pendente'
       preLoaderRoute: typeof PendenteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/registro-amostra': {
+      id: '/registro-amostra'
+      path: '/registro-amostra'
+      fullPath: '/registro-amostra'
+      preLoaderRoute: typeof RegistroAmostraRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/registro-chegada': {
+      id: '/registro-chegada'
+      path: '/registro-chegada'
+      fullPath: '/registro-chegada'
+      preLoaderRoute: typeof RegistroChegadaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/analises': {
@@ -785,6 +838,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/usuarios'
       preLoaderRoute: typeof AppAdminUsuariosRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/_app/chegada-amostras/registro': {
+      id: '/_app/chegada-amostras/registro'
+      path: '/registro'
+      fullPath: '/chegada-amostras/registro'
+      preLoaderRoute: typeof AppChegadaAmostrasRegistroRouteImport
+      parentRoute: typeof AppChegadaAmostrasRoute
     }
     '/_app/modelos-relatorios/': {
       id: '/_app/modelos-relatorios/'
@@ -999,6 +1059,17 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AppChegadaAmostrasRouteChildren {
+  AppChegadaAmostrasRegistroRoute: typeof AppChegadaAmostrasRegistroRoute
+}
+
+const AppChegadaAmostrasRouteChildren: AppChegadaAmostrasRouteChildren = {
+  AppChegadaAmostrasRegistroRoute: AppChegadaAmostrasRegistroRoute,
+}
+
+const AppChegadaAmostrasRouteWithChildren =
+  AppChegadaAmostrasRoute._addFileChildren(AppChegadaAmostrasRouteChildren)
+
 interface AppRelatorioDigitalizacaoRouteChildren {
   AppRelatorioDigitalizacaoAdensamentoRoute: typeof AppRelatorioDigitalizacaoAdensamentoRoute
   AppRelatorioDigitalizacaoCapsulasRoute: typeof AppRelatorioDigitalizacaoCapsulasRoute
@@ -1028,7 +1099,7 @@ interface AppRouteChildren {
   AppCadastroRoute: typeof AppCadastroRoute
   AppCadastroDashboardRoute: typeof AppCadastroDashboardRoute
   AppChamadasRoute: typeof AppChamadasRoute
-  AppChegadaAmostrasRoute: typeof AppChegadaAmostrasRoute
+  AppChegadaAmostrasRoute: typeof AppChegadaAmostrasRouteWithChildren
   AppDashboardRoute: typeof AppDashboardRoute
   AppEntregasRoute: typeof AppEntregasRoute
   AppEntreguesRoute: typeof AppEntreguesRoute
@@ -1073,7 +1144,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppCadastroRoute: AppCadastroRoute,
   AppCadastroDashboardRoute: AppCadastroDashboardRoute,
   AppChamadasRoute: AppChamadasRoute,
-  AppChegadaAmostrasRoute: AppChegadaAmostrasRoute,
+  AppChegadaAmostrasRoute: AppChegadaAmostrasRouteWithChildren,
   AppDashboardRoute: AppDashboardRoute,
   AppEntregasRoute: AppEntregasRoute,
   AppEntreguesRoute: AppEntreguesRoute,
@@ -1122,6 +1193,8 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   AuthRoute: AuthRoute,
   PendenteRoute: PendenteRoute,
+  RegistroAmostraRoute: RegistroAmostraRoute,
+  RegistroChegadaRoute: RegistroChegadaRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
