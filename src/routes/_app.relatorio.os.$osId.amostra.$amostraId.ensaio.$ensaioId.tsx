@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+﻿import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
@@ -7,8 +7,6 @@ import { getLabEnsaioSnapshot } from "@/lib/lab-ensaios.functions";
 import type { LabEnsaioSnapshot } from "@/lib/lab-ensaios.functions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { labStore, useAmostra, useEnsaio, useLabSyncStatus, useOS } from "@/features/lab/store";
 import { ENSAIO_LABEL, type EnsaioTipo } from "@/features/lab/types";
 import { LabEnsaioProvider } from "@/features/lab/context";
@@ -54,6 +52,30 @@ function EnsaioEditor() {
   const restoreRef = useRef<string | null>(null);
   const scopeId = `os/${osId}/amostra/${amostraId}/ensaio/${ensaioId}`;
 
+  // Detecta o tipo de ensaio a partir do ensaioId (prefixo gerado em criar-ensaio)
+  function detectTipo(): EnsaioTipo {
+    const id = ensaioId.toLowerCase();
+    if (id.includes("aden")) return "adensamento";
+    if (id.includes("tri") || id.includes("cid")) return "triaxial-cid";
+    if (id.includes("mesp")) return "mesp-a";
+    return "cisalhamento-direto";
+  }
+
+  // Auto-heal: cria a estrutura minima usando os IDs da URL para nao bloquear o usuario
+  function forceAutoHeal() {
+    const s = labStore.get();
+    let o = s.os.find((x) => x.id === osId);
+    if (!o) o = labStore.createOS({ numero: osId, client: "" });
+    let a = (o?.amostras ?? []).find((x) => x.id === amostraId);
+    if (!a) a = labStore.addAmostra(o!.id, { reportNumber: amostraId, code: amostraId });
+    const e = (a?.ensaios ?? []).find((x) => x.id === ensaioId);
+    if (!e) {
+      const tipo = detectTipo();
+      labStore.addEnsaio(o!.id, a!.id, tipo, ENSAIO_LABEL[tipo] || tipo);
+    }
+  }
+
+  // Restaura a partir do snapshot no Supabase quando os/amostra/ensaio nao estao no store
   useEffect(() => {
     if (os && amostra && ensaio) return;
     if (sync.status !== "salvo" && sync.status !== "erro") return;
@@ -68,33 +90,29 @@ function EnsaioEditor() {
           labStore.ensureEnsaioFromSnapshot(snapshot);
           return;
         }
-        // Auto-heal: cria a estrutura mínima para não travar o usuário
-        const state = labStore.get();
-        let targetOs = state.os.find((o) => o.id === osId || (o.numero ?? "").trim() === osId.trim());
-        if (!targetOs) {
-          targetOs = labStore.createOS({ numero: osId });
-        }
-        let targetAm = targetOs.amostras.find((a) => a.id === amostraId || (a.reportNumber ?? a.code ?? "").trim() === amostraId.trim());
-        if (!targetAm) {
-          targetAm = labStore.addAmostra(targetOs.id, { reportNumber: amostraId, code: amostraId });
-        }
-        let targetEn = targetAm.ensaios.find((e) => e.id === ensaioId || e.tipo === ensaioId);
-        if (!targetEn) {
-          const tipoFinal: EnsaioTipo = ensaioId.includes("tri")
-            ? "triaxial-cid"
-            : ensaioId.includes("aden")
-              ? "adensamento"
-              : ensaioId.includes("mesp")
-                ? "mesp-a"
-                : "cisalhamento-direto";
-          labStore.addEnsaio(targetOs.id, targetAm.id, tipoFinal, ENSAIO_LABEL[tipoFinal] || tipoFinal);
-        }
+        // Snapshot nao encontrado no lab_index — executa auto-heal direto
+        forceAutoHeal();
       })
       .catch((err: unknown) => {
         setRestoreError(err instanceof Error ? err.message : "Falha ao recuperar o ensaio.");
+        // Mesmo com erro, tenta auto-heal para nao bloquear o usuario
+        forceAutoHeal();
       })
       .finally(() => setRestoring(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [amostra, amostraId, ensaio, ensaioId, os, osId, scopeId, snapshotFn, sync.status]);
+
+  // Timeout de seguranca: apos 8 segundos de carregamento, forca o auto-heal
+  useEffect(() => {
+    if (os && amostra && ensaio) return;
+    const timer = setTimeout(() => {
+      if (!os || !amostra || !ensaio) {
+        forceAutoHeal();
+      }
+    }, 8000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [os, amostra, ensaio]);
 
   useEffect(() => {
     if (!os || !amostra || !ensaio) return;
@@ -109,35 +127,32 @@ function EnsaioEditor() {
         ensaio: { tipo: ensaio.tipo, nome: ensaio.label ?? "" },
       },
     }).catch(() => {
-      // silencioso: não impede o editor de abrir
+      // silencioso: nao impede o editor de abrir
       registeredRef.current = null;
     });
   }, [os, amostra, ensaio, registerFn]);
 
   if (!os || !amostra || !ensaio) {
-    const waitingForHydration = sync.status === "idle" || sync.status === "carregando" || restoring;
     return (
       <div className="w-full px-6 py-8">
         <Card>
           <CardContent className="py-12 text-center text-sm text-muted-foreground space-y-3">
             <span className="inline-flex items-center gap-2 font-medium">
-              <Loader2 className="h-4 w-4 animate-spin text-primary" /> Inicializando editor do ensaio…
+              <Loader2 className="h-4 w-4 animate-spin text-primary" /> Inicializando editor do ensaio...
             </span>
+            {restoreError && (
+              <p className="text-xs text-destructive">{restoreError}</p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Se continuar carregando, clique abaixo para forcar a abertura.
+            </p>
             <div>
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => {
-                  const state = labStore.get();
-                  let o = state.os.find((x) => x.id === osId);
-                  if (!o) o = labStore.createOS({ numero: osId });
-                  let a = o.amostras.find((x) => x.id === amostraId);
-                  if (!a) a = labStore.addAmostra(o.id, { reportNumber: amostraId, code: amostraId });
-                  let e = a.ensaios.find((x) => x.id === ensaioId);
-                  if (!e) labStore.addEnsaio(o.id, a.id, "cisalhamento-direto", "Cisalhamento Direto");
-                }}
+                onClick={forceAutoHeal}
               >
-                Forçar Inicialização Imediata
+                Forcar Inicializacao Imediata
               </Button>
             </div>
           </CardContent>
@@ -146,10 +161,6 @@ function EnsaioEditor() {
     );
   }
 
-  // Componentes atuais dos editores; carregamos por tipo.
-  // Nota: TriaxialCidPage e AdensamentoPage já são componentes standalone;
-  // aqui apenas envelopamos com o provider de contexto para que possam
-  // ler identificação/coordenadas/fotos herdadas da amostra.
   const Editor = pickEditor(ensaio.tipo);
 
   return (
@@ -178,11 +189,11 @@ function EnsaioEditor() {
               Amostra
             </Link>
           </Button>
-          <span>·</span>
+          <span>.</span>
           <span>OS {os.numero}</span>
-          <span>·</span>
-          <span>Amostra {amostra.reportNumber || "—"}</span>
-          <span>·</span>
+          <span>.</span>
+          <span>Amostra {amostra.reportNumber || "-"}</span>
+          <span>.</span>
           <span className="font-medium text-foreground">{ENSAIO_LABEL[ensaio.tipo]}</span>
         </div>
       </div>
@@ -219,7 +230,7 @@ class EditorErrorBoundary extends Component<{ children: ReactNode }, { hasError:
           </p>
           <div className="flex justify-center gap-2 pt-2">
             <Button size="sm" onClick={() => window.location.reload()}>
-              Recarregar Página
+              Recarregar Pagina
             </Button>
             <Button size="sm" variant="outline" onClick={() => window.history.back()}>
               Voltar
