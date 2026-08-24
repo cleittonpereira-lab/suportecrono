@@ -104,45 +104,74 @@ export const getLabEnsaioSnapshot = createServerFn({ method: "POST" })
     const ids = parseScope(data.scopeId);
     if (!ids) return null;
 
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: idx, error } = await supabaseAdmin
-      .from("lab_index")
-      .select("scope_id, os_numero, os_cliente, amostra_code, ensaio_tipo, ensaio_nome, workflow_status, extra")
-      .eq("scope_id", data.scopeId)
-      .maybeSingle();
+    // 1. Tenta buscar no Google Drive (_lab-state.json)
+    try {
+      const { readDriveJson } = await import("@/lib/driveStorage");
+      const globalState = await readDriveJson<any>("_lab-state.json");
+      if (globalState?.os && Array.isArray(globalState.os)) {
+        const foundOs = globalState.os.find((o: any) => o.id === ids.osId);
+        if (foundOs) {
+          const foundAm = (foundOs.amostras || []).find((a: any) => a.id === ids.amostraId);
+          if (foundAm) {
+            const foundEn = (foundAm.ensaios || []).find((e: any) => e.id === ids.ensaioId);
+            if (foundEn) {
+              return {
+                os: {
+                  id: foundOs.id,
+                  numero: foundOs.numero || ids.osId,
+                  client: foundOs.client,
+                  workNumber: foundOs.workNumber,
+                  local: foundOs.local,
+                  operator: foundOs.operator,
+                  technicalResp: foundOs.technicalResp,
+                  revision: foundOs.revision,
+                },
+                amostra: {
+                  id: foundAm.id,
+                  reportNumber: foundAm.reportNumber,
+                  code: foundAm.code,
+                  description: foundAm.description,
+                  granulometricDescription: foundAm.granulometricDescription,
+                  borehole: foundAm.borehole,
+                  depth: foundAm.depth,
+                  coords: foundAm.coords,
+                },
+                ensaio: {
+                  id: foundEn.id,
+                  tipo: foundEn.tipo,
+                  label: foundEn.label,
+                  status: foundEn.status || "rascunho",
+                  payload: toSerializableJson(foundEn.payload),
+                },
+              };
+            }
+          }
+        }
+      }
+    } catch {}
 
-    if (error) throw new Error(error.message);
+    // 2. Fallback no Supabase lab_index
+    let idx: any = null;
+    let pendPayload: Record<string, unknown> = {};
+
+    try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { data: idxRow } = await supabaseAdmin
+        .from("lab_index")
+        .select("scope_id, os_numero, os_cliente, amostra_code, ensaio_tipo, ensaio_nome, workflow_status, extra")
+        .eq("scope_id", data.scopeId)
+        .maybeSingle();
+
+      idx = idxRow;
+      if (idx?.extra) {
+        pendPayload = asObject(idx.extra);
+      }
+    } catch {}
+
     if (!idx) return null;
 
     const osNumero = String(idx.os_numero ?? "").trim();
     const amostraCode = String(idx.amostra_code ?? "").trim();
-    let pendPayload: Record<string, unknown> = asObject(idx.extra);
-
-    if (osNumero) {
-      let pendQ = supabaseAdmin
-        .from("lab_pendencias_digitacao")
-        .select("payload, observacao, ensaio, tipo_ensaio, updated_at")
-        .eq("os", osNumero)
-        .order("updated_at", { ascending: false })
-        .limit(20);
-      if (amostraCode) pendQ = pendQ.eq("amostra", amostraCode);
-      const { data: pendRows } = await pendQ;
-      const tipo = String(idx.ensaio_tipo ?? "").toLowerCase();
-      const nome = String(idx.ensaio_nome ?? "").toLowerCase();
-      const matched = (pendRows ?? []).find((p: Record<string, unknown>) => {
-        const pTipo = String(p.tipo_ensaio ?? "").toLowerCase();
-        const pEnsaio = String(p.ensaio ?? "").toLowerCase();
-        return (
-          (tipo && (pTipo.includes(tipo) || pEnsaio.includes(tipo))) ||
-          (nome && (pTipo.includes(nome) || pEnsaio.includes(nome))) ||
-          tipo === "mesp-a"
-        );
-      }) as Record<string, unknown> | undefined;
-      if (matched && matched.payload) {
-        pendPayload = { ...pendPayload, ...asObject(matched.payload) };
-      }
-    }
-
     const ident = asObject(pendPayload.ident);
     const tipoRaw = idx.ensaio_tipo;
     const tipo = isEnsaioTipo(tipoRaw) ? tipoRaw : (String(tipoRaw).includes("cisalhamento") ? "cisalhamento-direto" : "triaxial-cid");

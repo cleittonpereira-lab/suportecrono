@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { ensureFolderPath, uploadBytesToDrive, findFileInFolder } from "./driveStorage";
 
 function sanitizeKey(key: string): string {
   return key.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -37,7 +38,6 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
   .validator((d: { scopeId: string; payload: any }) => d)
   .handler(async ({ data }) => {
     try {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
       const nowIso = new Date().toISOString();
       const scopeId = data.scopeId;
       const payload = data.payload;
@@ -45,7 +45,7 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
       // Extrai metadados do payload se existirem
       const sample = payload?.sample || {};
       const osNumero = sample.os || sample.os_numero || null;
-      const osCliente = sample.client || sample.cliente || null;
+      const osCliente = sample.client || sample.cliente || "Geral";
       const amostraCode = sample.code || sample.reportNumber || sample.amostra || null;
       const ensaioNome = sample.equipment || sample.ensaio || "Ensaio";
       const ensaioTipo = sample.tipo || sample.tipo_ensaio || "cisalhamento-direto";
@@ -53,120 +53,26 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
       const canonicalId = getCanonicalScopeId(osNumero, amostraCode, ensaioTipo);
       const incomingHasData = hasMeaningfulData(payload);
 
-      // Proteção contra sobrescrita por estado vazio inicial
-      if (!incomingHasData && (osNumero || scopeId)) {
+      // 1. Grava no Google Drive na pasta do ensaio se OS e Amostra existirem
+      if (osNumero && amostraCode) {
         try {
-          const queryIds = Array.from(new Set([scopeId, canonicalId].filter(Boolean) as string[]));
-          const { data: existingRows } = await supabaseAdmin
-            .from("lab_index")
-            .select("extra")
-            .in("scope_id", queryIds)
-            .limit(1);
-
-          if (existingRows && existingRows.length > 0 && hasMeaningfulData(existingRows[0].extra)) {
-            console.log("[saveSharedDraft] Sobrescrita bloqueada: o rascunho existente no banco possui dados preenchidos e o payload de envio está vazio.");
-            return { success: true, preserved: true };
-          }
-        } catch {}
-      }
-
-      // 1. Grava no lab_index sob o scopeId da rota E o canonicalId determinístico
-      let labIndexError: string | null = null;
-      try {
-        const rowData = {
-          os_numero: osNumero,
-          os_cliente: osCliente,
-          amostra_code: amostraCode,
-          ensaio_nome: ensaioNome,
-          ensaio_tipo: ensaioTipo,
-          workflow_status: "digitacao",
-          extra: payload,
-          updated_at: nowIso,
-        };
-
-        const results = await Promise.all([
-          supabaseAdmin.from("lab_index").upsert({ scope_id: scopeId, ...rowData }),
-          canonicalId !== scopeId ? supabaseAdmin.from("lab_index").upsert({ scope_id: canonicalId, ...rowData }) : Promise.resolve({ error: null }),
-        ]);
-
-        for (const res of results) {
-          if (res && (res as any).error) {
-            labIndexError = (res as any).error.message || String((res as any).error);
-            console.error("[saveSharedDraft] Erro Supabase lab_index:", (res as any).error);
-          }
-        }
-      } catch (e: any) {
-        labIndexError = e?.message || String(e);
-        console.error("[saveSharedDraft] Exceção ao salvar lab_index:", e);
-      }
-
-      // 2. Se for uma pendência vinculada ou avulsa, atualiza o payload e status em lab_pendencias_digitacao
-      try {
-        let pTargetId: string | null = null;
-        let pTargetStatus: string = "em_digitacao";
-
-        const { data: pById } = await supabaseAdmin
-          .from("lab_pendencias_digitacao")
-          .select("id, status")
-          .eq("id", scopeId)
-          .limit(1);
-
-        if (pById && pById.length > 0) {
-          pTargetId = pById[0].id;
-          pTargetStatus = pById[0].status === "pendente" ? "em_digitacao" : pById[0].status;
-        } else if (osNumero && amostraCode) {
-          const { data: rows } = await supabaseAdmin
-            .from("lab_pendencias_digitacao")
-            .select("id, status, ensaio, tipo_ensaio")
-            .eq("os", osNumero)
-            .eq("amostra", amostraCode);
-
-          if (rows && rows.length > 0) {
-            const matched = rows.find(
-              (r) =>
-                normStr(r.tipo_ensaio) === normStr(ensaioTipo) ||
-                normStr(r.ensaio) === normStr(ensaioNome) ||
-                normStr(r.ensaio).includes(normStr(ensaioTipo)),
-            ) || rows[0];
-
-            pTargetId = matched.id;
-            pTargetStatus = matched.status === "pendente" ? "em_digitacao" : matched.status;
-          }
-        }
-
-        if (pTargetId) {
-          const { error: updErr } = await supabaseAdmin
-            .from("lab_pendencias_digitacao")
-            .update({
-              payload: payload as never,
-              status: pTargetStatus,
-              updated_at: nowIso,
-            })
-            .eq("id", pTargetId);
-          if (updErr) {
-            console.error("[saveSharedDraft] Erro ao atualizar lab_pendencias_digitacao:", updErr.message);
-          }
-        } else if (osNumero) {
-          const { error: insErr } = await supabaseAdmin.from("lab_pendencias_digitacao").insert({
-            os: osNumero,
-            amostra: amostraCode,
-            ensaio: ensaioNome,
-            tipo_ensaio: ensaioTipo,
-            status: "em_digitacao",
-            origem: "avulso",
-            payload: payload as never,
-            created_at: nowIso,
-            updated_at: nowIso,
+          const osFolder = `${osNumero} - ${osCliente}`;
+          const ensFolder = ensaioNome || ensaioTipo;
+          const folderId = await ensureFolderPath([osFolder, amostraCode, ensFolder, "dados"]);
+          const bytes = new TextEncoder().encode(JSON.stringify(payload, null, 2));
+          await uploadBytesToDrive({
+            parentId: folderId,
+            name: "ensaio.json",
+            mimeType: "application/json",
+            bytes,
+            overwrite: true,
           });
-          if (insErr) {
-            console.error("[saveSharedDraft] Erro ao inserir lab_pendencias_digitacao:", insErr.message);
-          }
+        } catch (err) {
+          console.warn("[saveSharedDraft] Aviso ao gravar ensaio.json no Drive:", err);
         }
-      } catch (e) {
-        console.warn("[saveSharedDraft] Aviso ao atualizar lab_pendencias_digitacao:", e);
       }
 
-      // 3. Backup local em disco se ambiente permitir
+      // 2. Backup local em disco
       try {
         const fs = await import("node:fs");
         const path = await import("node:path");
@@ -179,13 +85,29 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
         fs.writeFileSync(filePath, JSON.stringify({ scopeId, payload, updatedAt: nowIso }, null, 2), "utf8");
       } catch {}
 
-      if (labIndexError) {
-        return { success: false, error: labIndexError };
-      }
+      // 3. Espelho no Supabase de forma não-bloqueante
+      try {
+        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        const rowData = {
+          os_numero: osNumero,
+          os_cliente: osCliente,
+          amostra_code: amostraCode,
+          ensaio_nome: ensaioNome,
+          ensaio_tipo: ensaioTipo,
+          workflow_status: "digitacao",
+          extra: payload,
+          updated_at: nowIso,
+        };
+
+        await Promise.allSettled([
+          supabaseAdmin.from("lab_index").upsert({ scope_id: scopeId, ...rowData }),
+          canonicalId !== scopeId ? supabaseAdmin.from("lab_index").upsert({ scope_id: canonicalId, ...rowData }) : Promise.resolve(),
+        ]);
+      } catch {}
 
       return { success: true };
     } catch (err) {
-      console.warn("Falha ao salvar rascunho compartilhado:", err);
+      console.warn("Falha ao salvar rascunho:", err);
       return { success: false, error: String(err) };
     }
   });

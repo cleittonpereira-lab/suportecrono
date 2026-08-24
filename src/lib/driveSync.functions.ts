@@ -55,36 +55,61 @@ async function createFolder(name: string, parentId: string): Promise<string> {
   return data.id as string;
 }
 
+const driveFolderMemCache = new Map<string, string>();
+
 async function ensureFolderPath(parts: string[]): Promise<string> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const pathKey = parts.filter(Boolean).map((p) => p.trim()).join("/");
+  if (driveFolderMemCache.has(pathKey)) {
+    return driveFolderMemCache.get(pathKey)!;
+  }
+
   let parent = DRIVE_ROOT_FOLDER_ID;
-  let pathKey = "";
+  let currentAccum = "";
+
   for (const raw of parts) {
     const name = raw.trim();
     if (!name) continue;
-    pathKey = pathKey ? `${pathKey}/${name}` : name;
+    currentAccum = currentAccum ? `${currentAccum}/${name}` : name;
 
-    const { data: cached } = await supabaseAdmin
-      .from("drive_folder_cache")
-      .select("folder_id")
-      .eq("path", pathKey)
-      .maybeSingle();
-    if (cached?.folder_id) {
-      parent = cached.folder_id;
+    if (driveFolderMemCache.has(currentAccum)) {
+      parent = driveFolderMemCache.get(currentAccum)!;
       continue;
     }
+
+    // Tenta ler do Supabase se disponível
+    try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { data: cached } = await supabaseAdmin
+        .from("drive_folder_cache")
+        .select("folder_id")
+        .eq("path", currentAccum)
+        .maybeSingle();
+      if (cached?.folder_id) {
+        driveFolderMemCache.set(currentAccum, cached.folder_id);
+        parent = cached.folder_id;
+        continue;
+      }
+    } catch {}
 
     let id = await findFolder(name, parent);
     if (!id) id = await createFolder(name, parent);
 
-    await supabaseAdmin.from("drive_folder_cache").upsert({
-      path: pathKey,
-      folder_id: id,
-      parent_id: parent,
-      updated_at: new Date().toISOString(),
-    });
+    driveFolderMemCache.set(currentAccum, id);
     parent = id;
+
+    // Grava no Supabase cache de forma assíncrona/não-bloqueante
+    try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await supabaseAdmin.from("drive_folder_cache").upsert({
+        path: currentAccum,
+        folder_id: id,
+        parent_id: parent,
+        updated_at: new Date().toISOString(),
+      });
+    } catch {}
   }
+
+  driveFolderMemCache.set(pathKey, parent);
   return parent;
 }
 
