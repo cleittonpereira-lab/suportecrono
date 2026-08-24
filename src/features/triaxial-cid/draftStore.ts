@@ -1,10 +1,11 @@
 /**
  * Persistência unificada (localStorage + Supabase em nuvem) do rascunho de trabalho do ensaio Triaxial CID.
  * Guarda o estado editável (sample, specimens, adjust, axisCfg, aba, CP selecionado)
- * por escopo (`ensaio.id` ou "local") sincronizando em tempo real entre todas as máquinas.
+ * por escopo (`ensaio.id` ou "local") sincronizando em tempo real com controle de concorrência.
  */
 import type { TriaxialSample, TriaxialSpecimen } from "./types";
 import { saveSharedDraft, loadSharedDraft } from "@/lib/draft.functions";
+import { toast } from "sonner";
 
 const KEY = (scopeId: string) => `triaxial-cid:draft:${scopeId}`;
 
@@ -25,6 +26,7 @@ export type TriaxialDraft = {
 };
 
 const saveTimers = new Map<string, any>();
+const knownRevs = new Map<string, number>();
 
 export function loadDraft(scopeId: string): Partial<TriaxialDraft> | null {
   if (typeof window === "undefined") return null;
@@ -50,9 +52,21 @@ export function saveDraft(scopeId: string, draft: Partial<TriaxialDraft>): void 
   }
   const timer = setTimeout(() => {
     saveTimers.delete(scopeId);
-    saveSharedDraft({ data: { scopeId, payload } }).catch((err) => {
-      console.warn("[Triaxial saveSharedDraft] Falha na sincronização em nuvem:", err);
-    });
+    const expectedRev = knownRevs.get(scopeId);
+    saveSharedDraft({ data: { scopeId, payload, expectedRev } })
+      .then((res) => {
+        if (res.conflict) {
+          toast.warning("Atenção: Relatório alterado em outro computador", {
+            description: "Os dados foram atualizados no servidor por outro usuário.",
+          });
+          if (res.currentRev) knownRevs.set(scopeId, res.currentRev);
+        } else if (res.success && res.rev) {
+          knownRevs.set(scopeId, res.rev);
+        }
+      })
+      .catch((err) => {
+        console.warn("[Triaxial saveSharedDraft] Falha na sincronização em nuvem:", err);
+      });
   }, 400);
   saveTimers.set(scopeId, timer);
 }
@@ -71,6 +85,9 @@ export async function fetchRemoteTriaxialDraft(
       },
     });
     if (res?.success && res.payload) {
+      if (typeof res.rev === "number") {
+        knownRevs.set(scopeId, res.rev);
+      }
       try {
         window.localStorage.setItem(KEY(scopeId), JSON.stringify(res.payload));
       } catch {}

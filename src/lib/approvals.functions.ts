@@ -1,5 +1,5 @@
 /**
- * Fluxo de aprovação em 2 etapas soberano no Google Drive:
+ * Fluxo de aprovação soberano e transacional no Supabase (PostgreSQL / RLS):
  *   Laboratorista → Verificador → Responsável Técnico (Admin)
  *
  * Estados:
@@ -12,9 +12,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
-import { readDriveJson, writeDriveJson, DRIVE_ROOT_FOLDER_ID } from "./driveStorage";
-
-const APPROVALS_FILENAME = "_approvals-index.json";
 
 function normStr(str?: string | null): string {
   if (!str) return "";
@@ -52,20 +49,6 @@ export interface ApprovalRow {
   updated_at?: string;
 }
 
-export interface ApprovalsMasterData {
-  approvals: Record<string, ApprovalRow>; // key: `${scope_id}:rev${rev}`
-  statuses: Record<string, string>; // key: scope_id -> status
-  history: ApprovalCommentRow[];
-}
-
-function displayName(claims: { email?: string; user_metadata?: { full_name?: string; name?: string } } | undefined) {
-  return (
-    (claims?.user_metadata?.full_name as string | undefined) ||
-    (claims?.user_metadata?.name as string | undefined) ||
-    (claims?.email ? claims.email.split("@")[0] : "Operador")
-  );
-}
-
 export interface ApprovalCommentRow {
   id: string;
   scope_id: string;
@@ -78,15 +61,18 @@ export interface ApprovalCommentRow {
   created_at: string;
 }
 
-async function getMasterApprovals(): Promise<ApprovalsMasterData> {
-  const data = await readDriveJson<ApprovalsMasterData>(APPROVALS_FILENAME, DRIVE_ROOT_FOLDER_ID);
-  return data || { approvals: {}, statuses: {}, history: [] };
+function displayName(claims: { email?: string; user_metadata?: { full_name?: string; name?: string } } | undefined) {
+  return (
+    (claims?.user_metadata?.full_name as string | undefined) ||
+    (claims?.user_metadata?.name as string | undefined) ||
+    (claims?.email ? claims.email.split("@")[0] : "Operador")
+  );
 }
 
-async function saveMasterApprovals(data: ApprovalsMasterData): Promise<void> {
-  await writeDriveJson(APPROVALS_FILENAME, data, DRIVE_ROOT_FOLDER_ID);
-}
-
+/**
+ * Atualiza o status do fluxo principal no `lab_index` (PostgreSQL soberano).
+ * Se falhar, propaga o erro para não permitir falso sucesso no cliente.
+ */
 async function setWorkflowStatus(
   scopeId: string,
   status: "digitacao" | "aguardando_verificacao" | "aguardando_aprovacao" | "aprovado" | "rejeitado",
@@ -98,26 +84,26 @@ async function setWorkflowStatus(
     ensaio_nome?: string | null;
   },
 ) {
-  const master = await getMasterApprovals();
-  master.statuses[scopeId] = status;
-  await saveMasterApprovals(master);
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const nowIso = new Date().toISOString();
 
-  // Espelho não-bloqueante no Supabase
-  try {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const nowIso = new Date().toISOString();
-    await supabaseAdmin.from("lab_index").upsert({
-      scope_id: scopeId,
-      os_numero: index?.os_numero || null,
-      os_cliente: index?.os_cliente || null,
-      amostra_code: index?.amostra_code || null,
-      ensaio_tipo: index?.ensaio_tipo || null,
-      ensaio_nome: index?.ensaio_nome || null,
-      workflow_status: status,
-      updated_at: nowIso,
-    });
-  } catch {}
+  const { error } = await supabaseAdmin.from("lab_index").upsert({
+    scope_id: scopeId,
+    os_numero: index?.os_numero || null,
+    os_cliente: index?.os_cliente || null,
+    amostra_code: index?.amostra_code || null,
+    ensaio_tipo: index?.ensaio_tipo || null,
+    ensaio_nome: index?.ensaio_nome || null,
+    workflow_status: status,
+    updated_at: nowIso,
+  });
+
+  if (error) {
+    throw new Error(`Falha ao atualizar status de fluxo no banco: ${error.message}`);
+  }
 }
+
+/* ─────────────────────────────── SOLICITAÇÃO ─────────────────────────────── */
 
 const RequestInput = z.object({
   scopeId: z.string().min(1),
@@ -149,14 +135,13 @@ export const requestApproval = createServerFn({ method: "POST" })
     const targetStatus = data.skipVerification ? "pendente_aprovacao" : "pendente_verificacao";
     const targetWorkflow = data.skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao";
 
-    // 1. Grava no Google Drive (Soberano)
-    const master = await getMasterApprovals();
-    const appKey = `${data.scopeId}:rev${data.rev}`;
-    const row: ApprovalRow = {
-      id: appKey,
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // 1. Grava no banco de dados Supabase com RLS e integridade referencial
+    const rowData = {
       scope_id: data.scopeId,
       rev: data.rev,
-      status: targetStatus,
+      status: targetStatus as any,
       requested_by: userId,
       requested_by_name: name,
       requested_at: nowIso,
@@ -172,36 +157,36 @@ export const requestApproval = createServerFn({ method: "POST" })
       updated_at: nowIso,
     };
 
-    master.approvals[appKey] = row;
-    master.statuses[data.scopeId] = targetWorkflow;
-    master.history.push({
-      id: `evt_${Date.now()}`,
-      scope_id: data.scopeId,
-      rev: data.rev,
-      action: data.skipVerification ? "send_approval" : "send_verification",
-      comment: null,
-      author_id: userId,
-      author_name: name,
-      author_role: data.skipVerification ? "verificador" : "digitador",
-      created_at: nowIso,
-    });
-    await saveMasterApprovals(master);
+    const { data: inserted, error: appErr } = await supabaseAdmin
+      .from("lab_report_approvals")
+      .upsert(rowData, { onConflict: "scope_id,rev" })
+      .select()
+      .single();
 
-    // 2. Espelho no Supabase (não-bloqueante)
+    if (appErr) {
+      throw new Error(`Erro ao solicitar aprovação: ${appErr.message}`);
+    }
+
+    // 2. Registra evento de histórico
     try {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      await supabaseAdmin.from("lab_report_approvals").upsert({
-        scope_id: data.scopeId,
-        rev: data.rev,
-        status: targetStatus,
-        requested_by: userId,
-        requested_by_name: name,
-        filename: data.filename ?? null,
-      });
-      await setWorkflowStatus(data.scopeId, targetWorkflow, data.index);
+      await supabaseAdmin
+        .from("lab_report_approval_comments")
+        .insert({
+          scope_id: data.scopeId,
+          rev: data.rev,
+          action: data.skipVerification ? "send_approval" : "send_verification",
+          comment: null,
+          author_id: userId,
+          author_name: name,
+          author_role: data.skipVerification ? "verificador" : "digitador",
+          created_at: nowIso,
+        });
     } catch {}
 
-    return row;
+    // 3. Atualiza workflow no índice
+    await setWorkflowStatus(data.scopeId, targetWorkflow, data.index);
+
+    return (inserted || rowData) as ApprovalRow;
   });
 
 /* ─────────────────────────────── VERIFICAÇÃO ─────────────────────────────── */
@@ -226,69 +211,51 @@ export const verifyApproval = createServerFn({ method: "POST" })
     const nextStatus = data.decision === "verificado" ? "pendente_aprovacao" : "rejeitado_verificacao";
     const nextWorkflow = data.decision === "verificado" ? "aguardando_aprovacao" : "aguardando_verificacao";
 
-    // 1. Grava no Google Drive (Soberano)
-    const master = await getMasterApprovals();
-    const appKey = `${data.scopeId}:rev${data.rev}`;
-    const existing = master.approvals[appKey] || {
-      id: appKey,
-      scope_id: data.scopeId,
-      rev: data.rev,
-      requested_by: userId,
-      requested_by_name: name,
-      requested_at: nowIso,
-      decided_by: null,
-      decided_by_name: null,
-      decided_at: null,
-      comment: null,
-      filename: null,
-    };
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    const updatedRow: ApprovalRow = {
-      ...existing,
-      status: nextStatus,
-      verified_by: userId,
-      verified_by_name: name,
-      verified_at: nowIso,
-      verification_comment: data.comment ?? null,
-      updated_at: nowIso,
-    };
+    // 1. Atualiza aprovação no Supabase
+    const { data: updated, error: updErr } = await supabaseAdmin
+      .from("lab_report_approvals")
+      .update({
+        status: nextStatus,
+        verified_by: userId,
+        verified_by_name: name,
+        verified_at: nowIso,
+        verification_comment: data.comment ?? null,
+        updated_at: nowIso,
+      })
+      .eq("scope_id", data.scopeId)
+      .eq("rev", data.rev)
+      .select()
+      .single();
 
-    master.approvals[appKey] = updatedRow;
-    master.statuses[data.scopeId] = nextWorkflow;
-    master.history.push({
-      id: `evt_${Date.now()}`,
-      scope_id: data.scopeId,
-      rev: data.rev,
-      action: data.decision === "verificado" ? "verified" : "rejected_verification",
-      comment: data.comment ?? null,
-      author_id: userId,
-      author_name: name,
-      author_role: "verificador",
-      created_at: nowIso,
-    });
-    await saveMasterApprovals(master);
+    if (updErr) {
+      throw new Error(`Erro ao registrar verificação: ${updErr.message}`);
+    }
 
-    // 2. Espelho no Supabase (não-bloqueante)
+    // 2. Registra histórico
     try {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
       await supabaseAdmin
-        .from("lab_report_approvals")
-        .update({
-          status: nextStatus,
-          verified_by: userId,
-          verified_by_name: name,
-          verified_at: nowIso,
-          verification_comment: data.comment ?? null,
-        })
-        .eq("scope_id", data.scopeId)
-        .eq("rev", data.rev);
-      await setWorkflowStatus(data.scopeId, nextWorkflow);
+        .from("lab_report_approval_comments")
+        .insert({
+          scope_id: data.scopeId,
+          rev: data.rev,
+          action: data.decision === "verificado" ? "verified" : "rejected_verification",
+          comment: data.comment ?? null,
+          author_id: userId,
+          author_name: name,
+          author_role: "verificador",
+          created_at: nowIso,
+        });
     } catch {}
 
-    return updatedRow;
+    // 3. Atualiza workflow
+    await setWorkflowStatus(data.scopeId, nextWorkflow);
+
+    return updated as ApprovalRow;
   });
 
-/* ─────────────────────────────── APROVAÇÃO ─────────────────────────────── */
+/* ─────────────────────────────── APROVAÇÃO RT ─────────────────────────────── */
 
 const DecideInput = z.object({
   scopeId: z.string().min(1),
@@ -311,25 +278,9 @@ export const decideApproval = createServerFn({ method: "POST" })
     const persistedStatus = data.decision === "aprovado" ? "aprovado" : "pendente_verificacao";
     const nextWorkflow = data.decision === "aprovado" ? "aprovado" : "aguardando_verificacao";
 
-    // 1. Grava no Google Drive (Soberano)
-    const master = await getMasterApprovals();
-    const appKey = `${data.scopeId}:rev${data.rev}`;
-    const existing = master.approvals[appKey] || {
-      id: appKey,
-      scope_id: data.scopeId,
-      rev: data.rev,
-      requested_by: userId,
-      requested_by_name: name,
-      requested_at: nowIso,
-      verified_by: userId,
-      verified_by_name: name,
-      verified_at: nowIso,
-      verification_comment: null,
-      filename: null,
-    };
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    const updatedRow: ApprovalRow = {
-      ...existing,
+    const patch: Record<string, unknown> = {
       status: persistedStatus,
       decided_by: data.decision === "aprovado" ? userId : null,
       decided_by_name: data.decision === "aprovado" ? name : null,
@@ -339,46 +290,46 @@ export const decideApproval = createServerFn({ method: "POST" })
     };
 
     if (data.decision === "rejeitado") {
-      updatedRow.verified_by = null;
-      updatedRow.verified_by_name = null;
-      updatedRow.verified_at = null;
-      updatedRow.verification_comment = null;
+      patch.verified_by = null;
+      patch.verified_by_name = null;
+      patch.verified_at = null;
+      patch.verification_comment = null;
     }
 
-    master.approvals[appKey] = updatedRow;
-    master.statuses[data.scopeId] = nextWorkflow;
-    master.history.push({
-      id: `evt_${Date.now()}`,
-      scope_id: data.scopeId,
-      rev: data.rev,
-      action: data.decision === "aprovado" ? "approved" : "rejected",
-      comment: data.comment ?? null,
-      author_id: userId,
-      author_name: name,
-      author_role: "admin",
-      created_at: nowIso,
-    });
-    await saveMasterApprovals(master);
+    const { data: updated, error: decErr } = await supabaseAdmin
+      .from("lab_report_approvals")
+      .update(patch as any)
+      .eq("scope_id", data.scopeId)
+      .eq("rev", data.rev)
+      .select()
+      .single();
 
-    // 2. Espelho no Supabase (não-bloqueante)
+    if (decErr) {
+      throw new Error(`Erro ao registrar decisão de aprovação: ${decErr.message}`);
+    }
+
+    // Registra evento de histórico
     try {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
       await supabaseAdmin
-        .from("lab_report_approvals")
-        .update({
-          status: persistedStatus,
-          decided_by: data.decision === "aprovado" ? userId : null,
-          decided_by_name: data.decision === "aprovado" ? name : null,
-          decided_at: data.decision === "aprovado" ? nowIso : null,
+        .from("lab_report_approval_comments")
+        .insert({
+          scope_id: data.scopeId,
+          rev: data.rev,
+          action: data.decision === "aprovado" ? "approved" : "rejected",
           comment: data.comment ?? null,
-        })
-        .eq("scope_id", data.scopeId)
-        .eq("rev", data.rev);
-      await setWorkflowStatus(data.scopeId, nextWorkflow);
+          author_id: userId,
+          author_name: name,
+          author_role: "admin",
+          created_at: nowIso,
+        });
     } catch {}
 
-    return updatedRow;
+    await setWorkflowStatus(data.scopeId, nextWorkflow);
+
+    return updated as ApprovalRow;
   });
+
+/* ─────────────────────────────── LISTAGEM ─────────────────────────────── */
 
 const ListInput = z.object({ scopeId: z.string().min(1) });
 
@@ -387,23 +338,21 @@ export const listApprovals = createServerFn({ method: "GET" })
   .validator((v: unknown) => ListInput.parse(v))
   .handler(async ({ data }) => {
     try {
-      const master = await getMasterApprovals();
-      const rows = Object.values(master.approvals)
-        .filter((r) => r.scope_id === data.scopeId)
-        .sort((a, b) => b.rev - a.rev);
-      if (rows.length > 0) return rows;
-    } catch {}
-
-    // Fallback secundário
-    try {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      const { data: rows } = await supabaseAdmin
+      const { data: rows, error } = await supabaseAdmin
         .from("lab_report_approvals")
         .select("*")
         .eq("scope_id", data.scopeId)
         .order("rev", { ascending: false });
+
+      if (error) {
+        console.warn("[listApprovals] Erro Supabase:", error);
+        return [];
+      }
+
       return (rows ?? []) as ApprovalRow[];
-    } catch {
+    } catch (err: any) {
+      console.warn("[listApprovals] Falha:", err);
       return [];
     }
   });
@@ -427,22 +376,27 @@ export const addApprovalComment = createServerFn({ method: "POST" })
     const name = displayName(claims);
     const nowIso = new Date().toISOString();
 
-    const master = await getMasterApprovals();
-    const commentRow: ApprovalCommentRow = {
-      id: `cmt_${Date.now()}`,
-      scope_id: data.scopeId,
-      rev: data.rev,
-      action: "comment",
-      comment: data.comment,
-      author_id: userId,
-      author_name: name,
-      author_role: "operador",
-      created_at: nowIso,
-    };
-    master.history.push(commentRow);
-    await saveMasterApprovals(master);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: inserted, error } = await supabaseAdmin
+      .from("lab_report_approval_comments")
+      .insert({
+        scope_id: data.scopeId,
+        rev: data.rev,
+        action: "comment",
+        comment: data.comment,
+        author_id: userId,
+        author_name: name,
+        author_role: "operador",
+        created_at: nowIso,
+      })
+      .select()
+      .single();
 
-    return commentRow;
+    if (error) {
+      throw new Error(`Erro ao salvar comentário: ${error.message}`);
+    }
+
+    return inserted as ApprovalCommentRow;
   });
 
 const ListCommentsInput = z.object({
@@ -455,16 +409,30 @@ export const listApprovalComments = createServerFn({ method: "GET" })
   .validator((v: unknown) => ListCommentsInput.parse(v))
   .handler(async ({ data }) => {
     try {
-      const master = await getMasterApprovals();
-      return master.history.filter((h) => {
-        if (h.scope_id !== data.scopeId) return false;
-        if (typeof data.rev === "number" && h.rev !== data.rev) return false;
-        return true;
-      });
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      let q = supabaseAdmin
+        .from("lab_report_approval_comments")
+        .select("*")
+        .eq("scope_id", data.scopeId)
+        .order("created_at", { ascending: true });
+
+      if (typeof data.rev === "number") {
+        q = q.eq("rev", data.rev);
+      }
+
+      const { data: rows, error } = await q;
+      if (error) {
+        console.warn("[listApprovalComments] Erro:", error);
+        return [];
+      }
+
+      return (rows || []) as ApprovalCommentRow[];
     } catch {
       return [];
     }
   });
+
+/* ─────────────────────────────── FARÓIS / WORKFLOW STATUSES ─────────────────────────────── */
 
 const WorkflowStatusesInput = z.object({
   scopeIds: z.array(z.string().min(1)).max(200),
@@ -476,37 +444,51 @@ export const getWorkflowStatuses = createServerFn({ method: "POST" })
     if (!data.scopeIds || data.scopeIds.length === 0) return { statuses: {} as Record<string, string> };
 
     try {
-      const master = await getMasterApprovals();
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { data: rows, error } = await supabaseAdmin
+        .from("lab_index")
+        .select("scope_id, workflow_status")
+        .in("scope_id", data.scopeIds);
+
       const out: Record<string, string> = {};
-      for (const id of data.scopeIds) {
-        if (master.statuses[id]) {
-          out[id] = master.statuses[id];
-        }
+      for (const r of rows ?? []) {
+        out[String((r as { scope_id: string }).scope_id)] = String(
+          (r as { workflow_status?: string }).workflow_status ?? "digitacao",
+        );
       }
 
-      if (Object.keys(out).length === data.scopeIds.length) {
-        return { statuses: out };
-      }
+      // Para qualquer scopeId ausente em lab_index, verifica lab_report_approvals
+      const missing = data.scopeIds.filter((id) => !out[id]);
+      if (missing.length > 0) {
+        const { data: appRows } = await supabaseAdmin
+          .from("lab_report_approvals")
+          .select("scope_id, status, rev")
+          .in("scope_id", missing)
+          .order("rev", { ascending: false });
 
-      // Se algum não foi encontrado, complementa com o Supabase se disponível
-      try {
-        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-        const { data: rows } = await supabaseAdmin
-          .from("lab_index")
-          .select("scope_id, workflow_status")
-          .in("scope_id", data.scopeIds);
-
-        for (const r of rows ?? []) {
-          const sid = String((r as { scope_id: string }).scope_id);
+        for (const ar of appRows ?? []) {
+          const sid = String(ar.scope_id);
           if (!out[sid]) {
-            out[sid] = String((r as { workflow_status?: string }).workflow_status ?? "digitacao");
+            const st = ar.status;
+            if (st === "pendente_verificacao" || st === "verificado") out[sid] = "aguardando_verificacao";
+            else if (st === "pendente_aprovacao") out[sid] = "aguardando_aprovacao";
+            else if (st === "aprovado") out[sid] = "aprovado";
+            else if (st === "rejeitado" || st === "rejeitado_verificacao") out[sid] = "rejeitado";
+            else out[sid] = "digitacao";
           }
         }
-      } catch {}
+      }
+
+      // Default para os restantes
+      for (const id of data.scopeIds) {
+        if (!out[id]) out[id] = "digitacao";
+      }
 
       return { statuses: out };
-    } catch (err) {
-      console.warn("getWorkflowStatuses warning:", err);
-      return { statuses: {} };
+    } catch (err: any) {
+      console.warn("[getWorkflowStatuses] Aviso:", err);
+      const out: Record<string, string> = {};
+      for (const id of data.scopeIds) out[id] = "digitacao";
+      return { statuses: out };
     }
   });

@@ -1,7 +1,9 @@
 import { saveSharedDraft, loadSharedDraft } from "@/lib/draft.functions";
+import { toast } from "sonner";
 
 const DRAFT_PREFIX = "suportecrono_oed_draft_";
 const saveTimers = new Map<string, any>();
+const knownRevs = new Map<string, number>();
 
 export function saveOedDraft(scopeId: string, data: any) {
   if (typeof window === "undefined" || typeof localStorage === "undefined") return;
@@ -18,9 +20,21 @@ export function saveOedDraft(scopeId: string, data: any) {
   }
   const timer = setTimeout(() => {
     saveTimers.delete(scopeId);
-    saveSharedDraft({ data: { scopeId, payload } }).catch((err) => {
-      console.warn("[OED saveSharedDraft] Falha na sincronização em nuvem:", err);
-    });
+    const expectedRev = knownRevs.get(scopeId);
+    saveSharedDraft({ data: { scopeId, payload, expectedRev } })
+      .then((res) => {
+        if (res.conflict) {
+          toast.warning("Atenção: Relatório alterado em outro computador", {
+            description: "Os dados foram atualizados no servidor por outro usuário.",
+          });
+          if (res.currentRev) knownRevs.set(scopeId, res.currentRev);
+        } else if (res.success && res.rev) {
+          knownRevs.set(scopeId, res.rev);
+        }
+      })
+      .catch((err) => {
+        console.warn("[OED saveSharedDraft] Falha na sincronização em nuvem:", err);
+      });
   }, 400);
   saveTimers.set(scopeId, timer);
 }
@@ -49,6 +63,9 @@ export async function fetchRemoteOedDraft(
       },
     });
     if (res?.success && res.payload) {
+      if (typeof res.rev === "number") {
+        knownRevs.set(scopeId, res.rev);
+      }
       try {
         localStorage.setItem(`${DRAFT_PREFIX}${scopeId}`, JSON.stringify(res.payload));
       } catch {}
@@ -59,4 +76,3 @@ export async function fetchRemoteOedDraft(
   }
   return null;
 }
-

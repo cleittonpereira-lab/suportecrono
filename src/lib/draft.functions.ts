@@ -1,10 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { ensureFolderPath, uploadBytesToDrive, findFileInFolder } from "./driveStorage";
-
-function sanitizeKey(key: string): string {
-  return key.replace(/[^a-zA-Z0-9_-]/g, "_");
-}
 
 function normStr(s?: string | null) {
   return (s || "").trim().toLowerCase();
@@ -17,98 +12,155 @@ export function getCanonicalScopeId(osNum?: string | null, amCode?: string | nul
   return `os/${cleanOs || "os"}/amostra/${cleanAm || "amostra"}/ensaio/${cleanEn || "ensaio"}`;
 }
 
-export function hasMeaningfulData(payload: any): boolean {
-  if (!payload) return false;
-  if (Array.isArray(payload.photos) && payload.photos.length > 0) return true;
-  if (Array.isArray(payload.specimens) && payload.specimens.length > 0) {
-    for (const sp of payload.specimens) {
-      if (sp.wetMass > 0 || sp.wetMassCPAnel > 0 || sp.normalStressTarget > 0 || sp.sigma3Target > 0) return true;
-      if (Array.isArray(sp.shearData) && sp.shearData.some((r: any) => r.shearForceKgf > 0 || r.horizDispMm > 0)) return true;
-      if (Array.isArray(sp.shear) && sp.shear.some((r: any) => r.loadCellKgf > 0 || r.dispMm > 0)) return true;
-      if (Array.isArray(sp.capsules) && sp.capsules.some((c: any) => c.numero || c.tara > 0 || c.wet > 0)) return true;
-      if (Array.isArray(sp.initialCapsules) && sp.initialCapsules.some((c: any) => c.numero || c.tara > 0 || c.wet > 0)) return true;
-      if (Array.isArray(sp.finalCapsules) && sp.finalCapsules.some((c: any) => c.numero || c.tara > 0 || c.wet > 0)) return true;
+/**
+ * Calcula diff raso/recursivo entre dois payloads JSON para histórico de auditoria.
+ */
+export function computeJsonDiff(
+  oldObj: Record<string, any> | null | undefined,
+  newObj: Record<string, any> | null | undefined,
+  prefix = ""
+): Record<string, { de: any; para: any }> {
+  const diffs: Record<string, { de: any; para: any }> = {};
+  const o = oldObj || {};
+  const n = newObj || {};
+
+  const allKeys = new Set([...Object.keys(o), ...Object.keys(n)]);
+
+  for (const key of allKeys) {
+    if (key === "updatedAt" || key === "timestamp") continue;
+    const path = prefix ? `${prefix}.${key}` : key;
+    const vOld = o[key];
+    const vNew = n[key];
+
+    if (vOld === vNew) continue;
+
+    // Se ambos são objetos (e não arrays/null), desce um nível
+    if (
+      vOld &&
+      vNew &&
+      typeof vOld === "object" &&
+      typeof vNew === "object" &&
+      !Array.isArray(vOld) &&
+      !Array.isArray(vNew)
+    ) {
+      const nested = computeJsonDiff(vOld, vNew, path);
+      Object.assign(diffs, nested);
+    } else {
+      const strOld = JSON.stringify(vOld);
+      const strNew = JSON.stringify(vNew);
+      if (strOld !== strNew) {
+        diffs[path] = { de: vOld ?? null, para: vNew ?? null };
+      }
     }
   }
-  if (Array.isArray(payload.stages) && payload.stages.some((st: any) => st.sigma > 0 || st.finalDial > 0)) return true;
-  return false;
+
+  return diffs;
 }
 
+const SaveDraftInput = z.object({
+  scopeId: z.string().min(1),
+  payload: z.any(),
+  expectedRev: z.number().int().optional(),
+  changedBy: z.string().optional(),
+  changedByName: z.string().optional(),
+});
+
 export const saveSharedDraft = createServerFn({ method: "POST" })
-  .validator((d: { scopeId: string; payload: any }) => d)
+  .validator((d: z.infer<typeof SaveDraftInput>) => d)
   .handler(async ({ data }) => {
     try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
       const nowIso = new Date().toISOString();
       const scopeId = data.scopeId;
       const payload = data.payload;
 
-      // Extrai metadados do payload se existirem
+      // 1. Consulta versão e payload atual no Supabase
+      const { data: existing, error: findErr } = await supabaseAdmin
+        .from("lab_index")
+        .select("scope_id, rev, extra, workflow_status")
+        .eq("scope_id", scopeId)
+        .maybeSingle();
+
+      if (findErr) {
+        console.warn("[saveSharedDraft] Erro ao buscar lab_index:", findErr);
+      }
+
+      // 2. Verificação de Concorrência Otimista (Optimistic Locking)
+      if (
+        existing &&
+        typeof data.expectedRev === "number" &&
+        typeof existing.rev === "number" &&
+        existing.rev > data.expectedRev
+      ) {
+        return {
+          success: false,
+          conflict: true,
+          currentRev: existing.rev,
+          currentPayload: existing.extra,
+          message: "Este relatório foi alterado em outro computador enquanto você digitava.",
+        };
+      }
+
+      const nextRev = (existing?.rev ?? 0) + 1;
+
+      // Extrai metadados do payload
       const sample = payload?.sample || {};
       const osNumero = sample.os || sample.os_numero || null;
       const osCliente = sample.client || sample.cliente || "Geral";
       const amostraCode = sample.code || sample.reportNumber || sample.amostra || null;
       const ensaioNome = sample.equipment || sample.ensaio || "Ensaio";
       const ensaioTipo = sample.tipo || sample.tipo_ensaio || "cisalhamento-direto";
-
       const canonicalId = getCanonicalScopeId(osNumero, amostraCode, ensaioTipo);
-      const incomingHasData = hasMeaningfulData(payload);
 
-      // 1. Grava no Google Drive na pasta do ensaio se OS e Amostra existirem
-      if (osNumero && amostraCode) {
+      // 3. Grava no Supabase (Fonte Soberana Transacional)
+      const rowData = {
+        scope_id: scopeId,
+        os_numero: osNumero,
+        os_cliente: osCliente,
+        amostra_code: amostraCode,
+        ensaio_nome: ensaioNome,
+        ensaio_tipo: ensaioTipo,
+        workflow_status: existing?.workflow_status || "digitacao",
+        extra: payload,
+        rev: nextRev,
+        updated_at: nowIso,
+      };
+
+      const { error: upsertErr } = await supabaseAdmin.from("lab_index").upsert(rowData);
+      if (upsertErr) {
+        throw new Error(`Falha ao salvar rascunho no banco: ${upsertErr.message}`);
+      }
+
+      if (canonicalId !== scopeId) {
         try {
-          const osFolder = `${osNumero} - ${osCliente}`;
-          const ensFolder = ensaioNome || ensaioTipo;
-          const folderId = await ensureFolderPath([osFolder, amostraCode, ensFolder, "dados"]);
-          const bytes = new TextEncoder().encode(JSON.stringify(payload, null, 2));
-          await uploadBytesToDrive({
-            parentId: folderId,
-            name: "ensaio.json",
-            mimeType: "application/json",
-            bytes,
-            overwrite: true,
+          await supabaseAdmin
+            .from("lab_index")
+            .upsert({ ...rowData, scope_id: canonicalId });
+        } catch {}
+      }
+
+      // 4. Grava diff de auditoria no histórico
+      const oldExtra = (existing?.extra as Record<string, any>) || {};
+      const diff = computeJsonDiff(oldExtra, payload);
+      if (Object.keys(diff).length > 0) {
+        try {
+          await supabaseAdmin.from("lab_draft_history").insert({
+            scope_id: scopeId,
+            rev: nextRev,
+            changed_by: data.changedBy || null,
+            changed_by_name: data.changedByName || "Operador",
+            changed_at: nowIso,
+            diff,
           });
-        } catch (err) {
-          console.warn("[saveSharedDraft] Aviso ao gravar ensaio.json no Drive:", err);
+        } catch (histErr) {
+          console.warn("[saveSharedDraft] Aviso ao gravar histórico de auditoria:", histErr);
         }
       }
 
-      // 2. Backup local em disco
-      try {
-        const fs = await import("node:fs");
-        const path = await import("node:path");
-        const draftDir = path.join(process.cwd(), ".data", "drafts");
-        if (!fs.existsSync(draftDir)) {
-          fs.mkdirSync(draftDir, { recursive: true });
-        }
-        const safeKey = sanitizeKey(data.scopeId);
-        const filePath = path.join(draftDir, `${safeKey}.json`);
-        fs.writeFileSync(filePath, JSON.stringify({ scopeId, payload, updatedAt: nowIso }, null, 2), "utf8");
-      } catch {}
-
-      // 3. Espelho no Supabase de forma não-bloqueante
-      try {
-        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-        const rowData = {
-          os_numero: osNumero,
-          os_cliente: osCliente,
-          amostra_code: amostraCode,
-          ensaio_nome: ensaioNome,
-          ensaio_tipo: ensaioTipo,
-          workflow_status: "digitacao",
-          extra: payload,
-          updated_at: nowIso,
-        };
-
-        await Promise.allSettled([
-          supabaseAdmin.from("lab_index").upsert({ scope_id: scopeId, ...rowData }),
-          canonicalId !== scopeId ? supabaseAdmin.from("lab_index").upsert({ scope_id: canonicalId, ...rowData }) : Promise.resolve(),
-        ]);
-      } catch {}
-
-      return { success: true };
-    } catch (err) {
-      console.warn("Falha ao salvar rascunho:", err);
-      return { success: false, error: String(err) };
+      return { success: true, rev: nextRev };
+    } catch (err: any) {
+      console.error("[saveSharedDraft] Erro fatal:", err);
+      return { success: false, error: err?.message || String(err) };
     }
   });
 
@@ -119,8 +171,46 @@ export const loadSharedDraft = createServerFn({ method: "GET" })
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
       const scopeId = data.scopeId;
       const canonicalId = data.osNum && data.amCode ? getCanonicalScopeId(data.osNum, data.amCode, data.ensaioTipo) : null;
+      const queryIds = Array.from(new Set([scopeId, canonicalId].filter(Boolean) as string[]));
 
-      // 0. Tenta buscar diretamente do Google Drive (dados/ensaio.json)
+      // 1. Busca soberana no Supabase (lab_index)
+      const { data: indexRows, error: idxErr } = await supabaseAdmin
+        .from("lab_index")
+        .select("extra, rev, updated_at, os_numero, amostra_code")
+        .in("scope_id", queryIds)
+        .order("updated_at", { ascending: false })
+        .limit(1);
+
+      if (!idxErr && indexRows && indexRows.length > 0 && indexRows[0].extra) {
+        return {
+          success: true,
+          payload: indexRows[0].extra,
+          rev: indexRows[0].rev ?? 1,
+          updatedAt: indexRows[0].updated_at,
+        };
+      }
+
+      // 2. Busca por OS e Amostra no lab_index se não achou por ID direto
+      if (data.osNum && data.amCode) {
+        const { data: byOsRows } = await supabaseAdmin
+          .from("lab_index")
+          .select("extra, rev, updated_at")
+          .eq("os_numero", data.osNum)
+          .eq("amostra_code", data.amCode)
+          .order("updated_at", { ascending: false })
+          .limit(1);
+
+        if (byOsRows && byOsRows.length > 0 && byOsRows[0].extra) {
+          return {
+            success: true,
+            payload: byOsRows[0].extra,
+            rev: byOsRows[0].rev ?? 1,
+            updatedAt: byOsRows[0].updated_at,
+          };
+        }
+      }
+
+      // 3. Fallback retroativo: se não existe no banco, busca ensaio.json no Drive e auto-importa
       if (data.osNum && data.amCode) {
         try {
           const { ensureFolderPath, readDriveJson } = await import("./driveStorage");
@@ -128,111 +218,51 @@ export const loadSharedDraft = createServerFn({ method: "GET" })
           const folderId = await ensureFolderPath([data.osNum, data.amCode, ensFolder, "dados"]);
           const parsed = await readDriveJson<any>("ensaio.json", folderId);
           if (parsed) {
+            const nowIso = new Date().toISOString();
+            await supabaseAdmin.from("lab_index").upsert({
+              scope_id: scopeId,
+              os_numero: data.osNum,
+              amostra_code: data.amCode,
+              ensaio_tipo: data.ensaioTipo || "Ensaio",
+              workflow_status: "digitacao",
+              extra: parsed,
+              rev: 1,
+              updated_at: nowIso,
+            });
+
             return {
               success: true,
               payload: parsed,
-              updatedAt: new Date().toISOString(),
+              rev: 1,
+              updatedAt: nowIso,
             };
           }
         } catch {}
       }
 
-      // 1. Tenta buscar no lab_index por scopeId ou por canonicalId
-      try {
-        const queryIds = Array.from(new Set([scopeId, canonicalId].filter(Boolean) as string[]));
-        const { data: indexRows } = await supabaseAdmin
-          .from("lab_index")
-          .select("extra, updated_at, os_numero, amostra_code")
-          .in("scope_id", queryIds)
-          .order("updated_at", { ascending: false })
-          .limit(1);
+      return { success: true, payload: null, rev: 1 };
+    } catch (err: any) {
+      console.warn("[loadSharedDraft] Falha ao ler rascunho:", err);
+      return { success: false, payload: null, rev: 1, error: err?.message || String(err) };
+    }
+  });
 
-        if (indexRows && indexRows.length > 0 && indexRows[0].extra) {
-          return {
-            success: true,
-            payload: indexRows[0].extra,
-            updatedAt: indexRows[0].updated_at,
-          };
-        }
-      } catch (e) {
-        console.warn("[loadSharedDraft] Aviso ao buscar lab_index:", e);
-      }
+export const listDraftHistory = createServerFn({ method: "GET" })
+  .validator((d: { scopeId: string }) => d)
+  .handler(async ({ data }) => {
+    try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { data: rows, error } = await supabaseAdmin
+        .from("lab_draft_history")
+        .select("id, scope_id, rev, changed_by, changed_by_name, changed_at, diff")
+        .eq("scope_id", data.scopeId)
+        .order("changed_at", { ascending: false })
+        .limit(50);
 
-      // 2. Busca por OS e Amostra no lab_index se não achou por ID direto
-      if (data.osNum && data.amCode) {
-        try {
-          const { data: byOsRows } = await supabaseAdmin
-            .from("lab_index")
-            .select("extra, updated_at")
-            .eq("os_numero", data.osNum)
-            .eq("amostra_code", data.amCode)
-            .order("updated_at", { ascending: false })
-            .limit(1);
-
-          if (byOsRows && byOsRows.length > 0 && byOsRows[0].extra) {
-            return {
-              success: true,
-              payload: byOsRows[0].extra,
-              updatedAt: byOsRows[0].updated_at,
-            };
-          }
-        } catch {}
-      }
-
-      // 3. Tenta buscar em lab_pendencias_digitacao por ID ou por (OS, Amostra)
-      try {
-        const { data: pendRows } = await supabaseAdmin
-          .from("lab_pendencias_digitacao")
-          .select("payload, updated_at")
-          .eq("id", scopeId)
-          .limit(1);
-
-        if (pendRows && pendRows.length > 0 && pendRows[0].payload) {
-          return {
-            success: true,
-            payload: pendRows[0].payload,
-            updatedAt: pendRows[0].updated_at,
-          };
-        }
-
-        if (data.osNum && data.amCode) {
-          const { data: pendByOs } = await supabaseAdmin
-            .from("lab_pendencias_digitacao")
-            .select("payload, updated_at")
-            .eq("os", data.osNum)
-            .eq("amostra", data.amCode)
-            .order("updated_at", { ascending: false })
-            .limit(1);
-
-          if (pendByOs && pendByOs.length > 0 && pendByOs[0].payload) {
-            return {
-              success: true,
-              payload: pendByOs[0].payload,
-              updatedAt: pendByOs[0].updated_at,
-            };
-          }
-        }
-      } catch (e) {
-        console.warn("[loadSharedDraft] Aviso ao buscar lab_pendencias_digitacao:", e);
-      }
-
-      // 4. Fallback: tenta buscar no disco local
-      try {
-        const fs = await import("node:fs");
-        const path = await import("node:path");
-        const draftDir = path.join(process.cwd(), ".data", "drafts");
-        const safeKey = sanitizeKey(data.scopeId);
-        const filePath = path.join(draftDir, `${safeKey}.json`);
-        if (fs.existsSync(filePath)) {
-          const raw = fs.readFileSync(filePath, "utf8");
-          const parsed = JSON.parse(raw);
-          return { success: true, payload: parsed.payload, updatedAt: parsed.updatedAt };
-        }
-      } catch {}
-
-      return { success: true, payload: null };
-    } catch (err) {
-      console.warn("Falha ao ler rascunho compartilhado:", err);
-      return { success: false, payload: null, error: String(err) };
+      if (error) throw error;
+      return { history: rows || [] };
+    } catch (err: any) {
+      console.warn("[listDraftHistory] Erro:", err);
+      return { history: [] };
     }
   });

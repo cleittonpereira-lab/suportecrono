@@ -326,6 +326,44 @@ export type Database = {
           },
         ]
       }
+      lab_draft_history: {
+        Row: {
+          changed_at: string
+          changed_by: string | null
+          changed_by_name: string | null
+          diff: Json
+          id: string
+          rev: number
+          scope_id: string
+        }
+        Insert: {
+          changed_at?: string
+          changed_by?: string | null
+          changed_by_name?: string | null
+          diff: Json
+          id?: string
+          rev: number
+          scope_id: string
+        }
+        Update: {
+          changed_at?: string
+          changed_by?: string | null
+          changed_by_name?: string | null
+          diff?: Json
+          id?: string
+          rev?: number
+          scope_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lab_draft_history_scope_id_fkey"
+            columns: ["scope_id"]
+            isOneToOne: false
+            referencedRelation: "lab_index"
+            referencedColumns: ["scope_id"]
+          },
+        ]
+      }
       lab_index: {
         Row: {
           amostra_code: string | null
@@ -334,6 +372,7 @@ export type Database = {
           extra: Json | null
           os_cliente: string | null
           os_numero: string | null
+          rev: number | null
           scope_id: string
           updated_at: string
           workflow_status: string
@@ -345,6 +384,7 @@ export type Database = {
           extra?: Json | null
           os_cliente?: string | null
           os_numero?: string | null
+          rev?: number | null
           scope_id: string
           updated_at?: string
           workflow_status?: string
@@ -356,6 +396,7 @@ export type Database = {
           extra?: Json | null
           os_cliente?: string | null
           os_numero?: string | null
+          rev?: number | null
           scope_id?: string
           updated_at?: string
           workflow_status?: string

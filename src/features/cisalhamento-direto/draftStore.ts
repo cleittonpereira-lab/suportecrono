@@ -1,10 +1,11 @@
 /**
  * Persistência unificada (localStorage + Supabase em nuvem) do rascunho de trabalho do ensaio Cisalhamento Direto (CD).
  * Guarda o estado editável (sample, specimens, tab, selectedCpId, adjust, axisCfg)
- * por escopo (`ensaio.id` ou "local") sincronizando em tempo real entre todas as máquinas.
+ * por escopo (`ensaio.id` ou "local") sincronizando em tempo real com controle de concorrência.
  */
 import type { CDSample, CDSpecimen, CDAxisCfg } from "./types";
 import { saveSharedDraft, loadSharedDraft } from "@/lib/draft.functions";
+import { toast } from "sonner";
 
 const KEY = (scopeId: string) => `cisalhamento-direto:draft:${scopeId}`;
 
@@ -20,6 +21,7 @@ export type CDDraft = {
 };
 
 const saveTimers = new Map<string, any>();
+const knownRevs = new Map<string, number>();
 
 export function loadDraft(scopeId: string): Partial<CDDraft> | null {
   if (typeof window === "undefined") return null;
@@ -45,9 +47,21 @@ export function saveDraft(scopeId: string, draft: Partial<CDDraft>): void {
   }
   const timer = setTimeout(() => {
     saveTimers.delete(scopeId);
-    saveSharedDraft({ data: { scopeId, payload } }).catch((err) => {
-      console.warn("[CD saveSharedDraft] Falha na sincronização em nuvem:", err);
-    });
+    const expectedRev = knownRevs.get(scopeId);
+    saveSharedDraft({ data: { scopeId, payload, expectedRev } })
+      .then((res) => {
+        if (res.conflict) {
+          toast.warning("Atenção: Relatório alterado em outro computador", {
+            description: "Os dados foram atualizados no servidor por outro usuário.",
+          });
+          if (res.currentRev) knownRevs.set(scopeId, res.currentRev);
+        } else if (res.success && res.rev) {
+          knownRevs.set(scopeId, res.rev);
+        }
+      })
+      .catch((err) => {
+        console.warn("[CD saveSharedDraft] Falha na sincronização:", err);
+      });
   }, 400);
   saveTimers.set(scopeId, timer);
 }
@@ -66,6 +80,9 @@ export async function fetchRemoteDraft(
       },
     });
     if (res?.success && res.payload) {
+      if (typeof res.rev === "number") {
+        knownRevs.set(scopeId, res.rev);
+      }
       try {
         window.localStorage.setItem(KEY(scopeId), JSON.stringify(res.payload));
       } catch {}
@@ -83,4 +100,3 @@ export function clearDraft(scopeId: string): void {
     window.localStorage.removeItem(KEY(scopeId));
   } catch {}
 }
-
