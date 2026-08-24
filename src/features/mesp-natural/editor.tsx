@@ -32,6 +32,7 @@ import {
   type ApprovalRow,
 } from "@/lib/approvals.functions";
 import { getRevisionPdfBase64 } from "@/lib/driveSync.functions";
+import { buildScopeId } from "@/lib/scope";
 import { mespIndexMetadata, syncMEspARevision } from "@/features/mesp-natural/drive-sync";
 import { MEspAReport, renderMEspAPdfBlob } from "@/features/mesp-natural/report";
 import { useCadastroByOs } from "@/hooks/use-cadastro-by-os";
@@ -167,7 +168,7 @@ export function MEspAEnsaioEditor() {
   );
 
   const scopeId = ctx
-    ? `os/${ctx.os.id}/amostra/${ctx.amostra.id}/ensaio/${ctx.ensaio.id}`
+    ? buildScopeId(ctx.os.id, ctx.amostra.id, ctx.ensaio.id)
     : "";
 
   const { user, role } = useAuth();

@@ -1,5 +1,6 @@
 import { SyncStatusBadge } from "@/components/SyncStatusBadge";
 import { saveSharedDraft, loadSharedDraft } from "@/lib/draft.functions";
+import { buildScopeId } from "@/lib/scope";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useRef, useState, useEffect } from "react";
 import { useCadastroByOs } from "@/hooks/use-cadastro-by-os";
@@ -196,7 +197,7 @@ export function CDPage() {
 
   const scopeId =
     ctx && ctx.os && ctx.amostra && ctx.ensaio
-      ? `os/${ctx.os.id}/amostra/${ctx.amostra.id}/ensaio/${ctx.ensaio.id}`
+      ? buildScopeId(ctx.os.id, ctx.amostra.id, ctx.ensaio.id)
       : (ctx?.ensaio?.id ?? "local");
 
   const draftRef = useRef<ReturnType<typeof loadDraft>>(null);

@@ -136,6 +136,7 @@ import { syncOedometerRevisionToDrive } from "@/features/oedometer/driveSync";
 import { saveOedReportVersion, listOedReportVersions } from "@/features/oedometer/report-versions";
 import { saveOedDraft, loadOedDraft, fetchRemoteOedDraft } from "@/features/oedometer/draftStore";
 import { requestApproval, verifyApproval, decideApproval, listApprovals, getWorkflowStatuses } from "@/lib/approvals.functions";
+import { buildScopeId } from "@/lib/scope";
 import { WorkflowFarol } from "@/features/lab/components/WorkflowFarol";
 import { PickerWithCreate } from "@/features/cisalhamento-direto/PickerWithCreate";
 import { EnsaioListByType } from "@/features/lab/components/EnsaioListByType";
@@ -381,7 +382,10 @@ export function AdensamentoPage() {
     }
   }, [amostrasProg, progsGantt, equipsGantt, cad, ctx]);
 
-  const scopeId = ctx?.ensaio?.id || `os/${sample.os || "OS"}/amostra/${sample.code || "AMOSTRA"}/ensaio/adensamento`;
+  const scopeId =
+    ctx && ctx.os && ctx.amostra && ctx.ensaio
+      ? buildScopeId(ctx.os.id, ctx.amostra.id, ctx.ensaio.id)
+      : `os/${sample.os || "OS"}/amostra/${sample.code || "AMOSTRA"}/ensaio/adensamento`;
   const phys = useMemo(() => physicalIndices(sample), [sample]);
   const [stages, setStages] = useState<Stage[]>(() => {
     const payloadStages = (ctx?.ensaio?.payload as any)?.stages;

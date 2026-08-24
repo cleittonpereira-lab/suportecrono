@@ -15,6 +15,7 @@ import { ENSAIO_LABEL, ENSAIO_DISPONIVEL, type EnsaioTipo } from "@/features/lab
 import { EnsaioTag } from "@/features/lab/components/EnsaioTag";
 import { WorkflowFarol } from "@/features/lab/components/WorkflowFarol";
 import { getWorkflowStatuses } from "@/lib/driveSync.functions";
+import { buildScopeId } from "@/lib/scope";
 
 export const Route = createFileRoute("/_app/relatorio/os/$osId/amostra/$amostraId/")({
   component: AmostraDetail,
@@ -34,7 +35,7 @@ function AmostraDetail() {
       setWorkflowMap({});
       return;
     }
-    const ids = am.ensaios.map((e) => e.id);
+    const ids = am.ensaios.map((e) => buildScopeId(osId, amostraId, e.id));
     let cancelled = false;
     getWorkflowStatuses({ data: { scopeIds: ids } })
       .then((res) => { if (!cancelled) setWorkflowMap(res.statuses ?? {}); })
@@ -174,7 +175,7 @@ function AmostraDetail() {
                        <FlaskConical className="h-4 w-4 text-muted-foreground" />
                        <EnsaioTag tipo={e.tipo} />
                        <span className="text-sm font-medium">{ENSAIO_LABEL[e.tipo]}</span>
-                       <WorkflowFarol status={workflowMap[e.id] ?? "digitacao"} size="xs" />
+                       <WorkflowFarol status={workflowMap[buildScopeId(osId, amostraId, e.id)] ?? "digitacao"} size="xs" />
                     </div>
                     {e.label && <div className="mt-0.5 text-xs text-muted-foreground">{e.label}</div>}
                   </Link>

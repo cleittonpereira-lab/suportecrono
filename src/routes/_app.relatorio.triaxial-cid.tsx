@@ -59,6 +59,7 @@ import { PickerWithCreate } from "@/features/triaxial-cid/PickerWithCreate";
 import { useAuth } from "@/hooks/use-auth";
 import { syncRevision, fetchDriveStatus } from "@/features/triaxial-cid/driveSync";
 import { getWorkflowStatuses } from "@/lib/driveSync.functions";
+import { buildScopeId } from "@/lib/scope";
 import {
   listApprovals,
   requestApproval,
@@ -213,7 +214,7 @@ export function TriaxialCidPage() {
 
   const scopeId =
     ctx && ctx.os && ctx.amostra && ctx.ensaio
-      ? `os/${ctx.os.id}/amostra/${ctx.amostra.id}/ensaio/${ctx.ensaio.id}`
+      ? buildScopeId(ctx.os.id, ctx.amostra.id, ctx.ensaio.id)
       : (ctx?.ensaio?.id ?? "local");
   // Rascunho persistido em localStorage (por escopo), carregado uma única vez no mount.
   const draftRef = useRef<ReturnType<typeof loadDraft>>(null);
