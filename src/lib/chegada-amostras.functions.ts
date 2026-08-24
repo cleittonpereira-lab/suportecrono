@@ -65,6 +65,8 @@ export interface SharedChegadaState {
   updatedAt: string;
 }
 
+const CHEGADA_DRIVE_FILENAME = "_chegada-amostras.json";
+
 // Persistência local no servidor em .data/chegada_amostras.json
 function getLocalChegadaFile(): string {
   const dir = path.join(process.cwd(), ".data");
@@ -122,12 +124,35 @@ export function writeLocalChegadaState(state: SharedChegadaState): void {
   } catch (e) {
     console.warn("[writeLocalChegadaState] Erro:", e);
   }
+
+  // Grava de forma assíncrona no Google Drive
+  try {
+    import("@/lib/driveStorage").then(({ writeDriveJson, DRIVE_ROOT_FOLDER_ID }) => {
+      writeDriveJson(CHEGADA_DRIVE_FILENAME, state, DRIVE_ROOT_FOLDER_ID).catch(() => {});
+    });
+  } catch {}
 }
 
 /** Handler puro de busca de estado */
 export async function handleFetchSharedChegadaState(): Promise<SharedChegadaState> {
   const localState = readLocalChegadaState();
 
+  // 1. Tenta buscar no Google Drive Soberano
+  try {
+    const { readDriveJson, DRIVE_ROOT_FOLDER_ID } = await import("@/lib/driveStorage");
+    const driveState = await readDriveJson<SharedChegadaState>(CHEGADA_DRIVE_FILENAME, DRIVE_ROOT_FOLDER_ID);
+    if (driveState?.tasks && typeof driveState.tasks === "object") {
+      const driveUpdatedAt = driveState.updatedAt ? new Date(driveState.updatedAt).getTime() : 0;
+      const localUpdatedAt = localState.updatedAt ? new Date(localState.updatedAt).getTime() : 0;
+
+      if (driveUpdatedAt >= localUpdatedAt || Object.keys(localState.tasks).length === 0) {
+        writeLocalChegadaState(driveState);
+        return driveState;
+      }
+    }
+  } catch {}
+
+  // 2. Fallback no Supabase
   try {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data, error } = await supabaseAdmin

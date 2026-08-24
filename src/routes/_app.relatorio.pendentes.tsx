@@ -200,14 +200,24 @@ function CentralRelatoriosPage() {
     refetchInterval: 15_000,
   });
 
-  // Lista unificada de pendências (Supabase + Rascunhos ativos em labState)
+  function mapWorkflowStatus(status?: string | null): PendenciaDigitacao["status"] {
+    if (!status) return "em_digitacao";
+    const s = status.toLowerCase().trim();
+    if (s === "aprovado" || s === "concluido") return "aprovado";
+    if (s === "verificado" || s === "aguardando_aprovacao" || s === "pendente_aprovacao") return "verificado";
+    if (s === "digitado" || s === "aguardando_verificacao" || s === "pendente_verificacao" || s === "verificacao") return "digitado";
+    if (s === "concluido_externo") return "concluido_externo";
+    return "em_digitacao";
+  }
+
+  // Lista unificada de pendências (Supabase + Estado soberano labState)
   const allPendencias = useMemo(() => {
     const map = new Map<string, PendenciaDigitacao>();
 
     for (const r of rows) {
-      const key = `${normOs(r.os)}::${normAmostra(r.amostra || "")}::${normMethod(r.ensaio)}`;
-      map.set(key, r);
-      map.set(r.id, r);
+      const key = `${normOs(r.os)}::${normAmostra(r.amostra || "")}::${normMethod(r.ensaio || r.tipo_ensaio)}`;
+      map.set(key, { ...r, status: mapWorkflowStatus(r.status) });
+      map.set(r.id, { ...r, status: mapWorkflowStatus(r.status) });
     }
 
     if (labState?.os) {
@@ -215,15 +225,19 @@ function CentralRelatoriosPage() {
         for (const a of o.amostras) {
           for (const e of a.ensaios) {
             const hasData = e.payload && Object.keys(e.payload).length > 0;
-            const isEmProgresso = e.status === "em_digitacao" || (e.status as string) === "digitado" || (e.status as string) === "verificacao" || e.status === "aprovado" || hasData;
+            const targetStatus = mapWorkflowStatus(e.status);
+            const isEmProgresso = targetStatus !== "em_digitacao" || hasData || e.status === "em_digitacao" || e.status === "processando";
             if (!isEmProgresso) continue;
 
             const key = `${normOs(o.numero)}::${normAmostra(a.reportNumber || a.code || "")}::${normMethod(e.sigla || e.nome || e.tipo)}`;
-            if (!map.has(key)) {
-              let st: PendenciaDigitacao["status"] = "em_digitacao";
-              if ((e.status as string) === "digitado" || (e.status as string) === "verificacao") st = "digitado";
-              if (e.status === "aprovado" || e.status === "concluido") st = "aprovado";
+            const existing = map.get(key) || map.get(e.id);
 
+            if (existing) {
+              // Atualiza com o status mais recente do labState
+              existing.status = targetStatus;
+              if (e.payload) existing.payload = e.payload as any;
+              if (e.operator || o.operator) existing.operador_nome = e.operator || o.operator || existing.operador_nome;
+            } else {
               const item: PendenciaDigitacao = {
                 id: e.id,
                 os: o.numero,
@@ -232,7 +246,7 @@ function CentralRelatoriosPage() {
                 tipo_ensaio: e.tipo,
                 equipamento: null,
                 data_conclusao: new Date().toISOString(),
-                status: st,
+                status: targetStatus,
                 origem: "avulso",
                 operador_user_id: null,
                 operador_nome: e.operator || o.operator || null,
@@ -770,9 +784,23 @@ function CentralRelatoriosPage() {
                   filteredGantt.map((item) => {
                     const cad = cadastro.lookup(item.os);
                     const tomadorObra = [cad?.tomador, cad?.obra].filter(Boolean).join(" · ");
-                    const pendExistente = rows.find(
-                      (r) => r.os === item.os && (r.amostra === item.amostra || r.amostra === item.furo),
-                    );
+                    const itemOsNorm = normOs(item.os);
+                    const itemAmNorm = normAmostra(item.amostra);
+                    const itemFuroNorm = normAmostra(item.furo);
+                    const itemMethNorm = normMethod(item.ensaio || item.tipoEnsaioNome);
+
+                    const pendExistente =
+                      allPendencias.find(
+                        (r) =>
+                          normOs(r.os) === itemOsNorm &&
+                          (normAmostra(r.amostra) === itemAmNorm || normAmostra(r.amostra) === itemFuroNorm) &&
+                          (normMethod(r.ensaio) === itemMethNorm || normMethod(r.tipo_ensaio) === itemMethNorm),
+                      ) ||
+                      allPendencias.find(
+                        (r) =>
+                          normOs(r.os) === itemOsNorm &&
+                          (normAmostra(r.amostra) === itemAmNorm || normAmostra(r.amostra) === itemFuroNorm),
+                      );
 
                     return (
                       <TableRow key={item.id} className="hover:bg-muted/30">

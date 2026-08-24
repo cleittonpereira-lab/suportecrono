@@ -1029,7 +1029,7 @@ function ChegadaAmostras() {
               <span>Excluir</span>
             </Button>
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 variant="outline"
@@ -1043,9 +1043,59 @@ function ChegadaAmostras() {
                 type="button"
                 size="sm"
                 onClick={(e) => selectedTask && openEditDialog(selectedTask, e)}
-                className="text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90"
+                className="text-xs font-semibold"
+                variant="secondary"
               >
                 Editar
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={async () => {
+                  if (!selectedTask) return;
+                  try {
+                    const { labStore } = await import("@/features/lab/store");
+                    const parts = selectedTask.osCliente.split("/");
+                    const client = parts[0]?.trim() || selectedTask.osCliente;
+                    const num = parts[1]?.trim().replace(/^OS[-\s]*/i, "") || selectedTask.osCliente;
+
+                    const newOs = labStore.createOS({
+                      numero: num,
+                      client,
+                      workNumber: selectedTask.sup || "",
+                      operator: selectedTask.recebidoPor.join(", "),
+                      revision: "00",
+                    });
+
+                    labStore.createAmostra(newOs.id, {
+                      code: "AM-01",
+                      description: selectedTask.relacaoAmostras,
+                      reportNumber: "01",
+                    });
+
+                    // Move o card para a coluna "os-sistema" se existir
+                    const targetCol = columns.find((c) => c.id === "os-sistema" || c.title.toLowerCase().includes("sistema"))?.id || "os-sistema";
+                    const newTasks = { ...tasks };
+                    for (const k in newTasks) {
+                      newTasks[k] = newTasks[k].filter((t) => t.id !== selectedTask.id);
+                    }
+                    if (!newTasks[targetCol]) newTasks[targetCol] = [];
+                    newTasks[targetCol].unshift(selectedTask);
+                    setTasks(newTasks);
+                    saveStoredTasks(newTasks, columns);
+
+                    setIsDetailsDialogOpen(false);
+                    toast.success(`OS ${num} criada com sucesso no sistema do laboratório!`, {
+                      description: "Acesse a aba 'Ordens de serviço' para visualizar.",
+                    });
+                  } catch (err: any) {
+                    toast.error("Erro ao criar OS: " + err?.message);
+                  }
+                }}
+                className="text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 gap-1.5"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                <span>Lançar OS no Sistema</span>
               </Button>
             </div>
           </DialogFooter>

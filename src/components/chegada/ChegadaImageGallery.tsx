@@ -171,37 +171,70 @@ export function ChegadaImageGallery({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [lightboxIndex, images.length]);
 
-  const processFiles = (files: FileList | null) => {
+  const compressImage = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          const maxDim = 1280;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            resolve(e.target?.result as string);
+            return;
+          }
+          ctx.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL("image/jpeg", 0.75));
+        };
+        img.onerror = () => resolve(e.target?.result as string);
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const processFiles = async (files: FileList | null) => {
     if (!files || files.length === 0 || !onChange) return;
 
     const fileArray = Array.from(files);
-    let loadedCount = 0;
-    const newBase64Images: string[] = [];
-
-    fileArray.forEach((file) => {
-      if (!file.type.startsWith("image/")) {
-        toast.error(`O arquivo "${file.name}" não é uma imagem válida.`);
-        return;
+    const validFiles = fileArray.filter((f) => {
+      if (!f.type.startsWith("image/")) {
+        toast.error(`O arquivo "${f.name}" não é uma imagem válida.`);
+        return false;
       }
-
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const result = reader.result as string;
-        if (result) {
-          newBase64Images.push(result);
-        }
-        loadedCount++;
-        if (loadedCount === fileArray.length) {
-          onChange([...images, ...newBase64Images]);
-          toast.success(
-            `${newBase64Images.length} ${
-              newBase64Images.length === 1 ? "foto adicionada" : "fotos adicionadas"
-            } com sucesso!`
-          );
-        }
-      };
-      reader.readAsDataURL(file);
+      return true;
     });
+
+    if (validFiles.length === 0) return;
+
+    try {
+      const compressed = await Promise.all(validFiles.map(compressImage));
+      onChange([...images, ...compressed]);
+      toast.success(
+        `${compressed.length} ${
+          compressed.length === 1 ? "foto adicionada e otimizada" : "fotos adicionadas e otimizadas"
+        } com sucesso!`
+      );
+    } catch {
+      toast.error("Erro ao processar imagens.");
+    }
   };
 
   const handleNativeCameraCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
