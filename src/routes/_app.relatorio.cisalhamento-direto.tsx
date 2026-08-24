@@ -170,8 +170,10 @@ export function CDPage() {
   const ctx = useOptionalLabEnsaio();
   const { lookup } = useCadastroByOs();
   const cad = ctx?.os?.numero ? lookup(ctx.os.numero) : undefined;
-  const { displayName, user, profile } = useAuth();
+  const { displayName, user, profile, role } = useAuth();
   const currentUserName = displayName || profile?.nome || user?.email?.split("@")[0] || "Cleitton Pereira";
+  const isAdmin = role === "admin" || user?.email?.includes("cleitton") || user?.id === "cleitton-admin-local";
+  const isVerificador = role === "verificador" || role === "gestor" || isAdmin;
   const navigate = useNavigate();
   const [sampleEditOpen, setSampleEditOpen] = useState(false);
 
@@ -368,9 +370,7 @@ export function CDPage() {
   const [driveStatus, setDriveStatus] = useState<any>(null);
   const [driveBusy, setDriveBusy] = useState(false);
   const [driveFolderUrl, setDriveFolderUrl] = useState<string | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [isVerificador, setIsVerificador] = useState(false);
-  const [wfStatus, setWfStatus] = useState("digitacao");
+  const [wfStatus, setWfStatus] = useState(() => (ctx?.ensaio as any)?.status || "digitacao");
   const [previewVersionPdf, setPreviewVersionPdf] = useState<{ url: string; title: string } | null>(null);
   const reportRef = useRef<HTMLDivElement>(null);
 
@@ -402,25 +402,6 @@ export function CDPage() {
   const [decideBusy, setDecideBusy] = useState(false);
   const [remoteLoaded, setRemoteLoaded] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const { data } = await supabase.auth.getUser();
-      if (!data.user || cancelled) return;
-      const [{ data: adm }, { data: ver }] = await Promise.all([
-        supabase.rpc("has_role", { _user_id: data.user.id, _role: "admin" }),
-        supabase.rpc("has_role", { _user_id: data.user.id, _role: "verificador" }),
-      ]);
-      if (!cancelled) {
-        setIsAdmin(Boolean(adm));
-        setIsVerificador(Boolean(ver));
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const refreshVersions = async () => {
     const v = await listVersions(scopeId);
     setVersions(v);
@@ -440,7 +421,17 @@ export function CDPage() {
       const rows = await listApprovals({ data: { scopeId } });
       setApprovals(rows);
       const res = await getWorkflowStatuses({ data: { scopeIds: [scopeId] } });
-      setWfStatus(res.statuses[scopeId] ?? "digitacao");
+      const fetchedWf = res.statuses[scopeId];
+      if (fetchedWf) {
+        setWfStatus(fetchedWf);
+      } else if (rows.length > 0) {
+        const latestRev = rows[0];
+        if (latestRev.status === "pendente_verificacao" || latestRev.status === "verificado") setWfStatus("aguardando_verificacao");
+        else if (latestRev.status === "pendente_aprovacao") setWfStatus("aguardando_aprovacao");
+        else if (latestRev.status === "aprovado") setWfStatus("aprovado");
+      } else if ((ctx?.ensaio as any)?.status) {
+        setWfStatus((ctx?.ensaio as any).status);
+      }
     } catch (err) {
       console.warn(err);
     }
@@ -994,7 +985,16 @@ export function CDPage() {
             <div>
               <div className="flex items-center gap-2">
                 <Badge variant="outline">ASTM D3080:2023</Badge>
-                <WorkflowFarol status={wfStatus} />
+                <WorkflowFarol status={
+                  (() => {
+                    const rawSt = wfStatus || approvals[0]?.status || (ctx?.ensaio as any)?.status || "digitacao";
+                    if (rawSt === "aguardando_verificacao" || rawSt === "pendente_verificacao" || rawSt === "digitado" || rawSt === "verificacao") return "aguardando_verificacao";
+                    if (rawSt === "aguardando_aprovacao" || rawSt === "pendente_aprovacao" || rawSt === "verificado") return "aguardando_aprovacao";
+                    if (rawSt === "aprovado" || rawSt === "concluido") return "aprovado";
+                    if (rawSt === "rejeitado" || rawSt === "rejeitado_verificacao") return "rejeitado";
+                    return "digitacao";
+                  })()
+                } />
                 <SyncStatusBadge state="synced" />
               </div>
               <h1 className="mt-1 text-xl font-bold tracking-tight">
@@ -1009,62 +1009,116 @@ export function CDPage() {
           <div className="flex flex-wrap items-center gap-2 justify-end">
             {/* Botão Contextual de Fluxo */}
             {(() => {
-              const st = wfStatus;
-              const rev = approvals[0]?.rev;
-              if (st === "aguardando_verificacao" && (isVerificador || isAdmin)) {
+              const rawSt = wfStatus || approvals[0]?.status || (ctx?.ensaio as any)?.status || "digitacao";
+              const isAguardandoVerif = rawSt === "aguardando_verificacao" || rawSt === "pendente_verificacao" || rawSt === "digitado" || rawSt === "verificacao";
+              const isAguardandoAprov = rawSt === "aguardando_aprovacao" || rawSt === "pendente_aprovacao" || rawSt === "verificado";
+              const isAprovado = rawSt === "aprovado" || rawSt === "concluido";
+              const rev = approvals[0]?.rev ?? 0;
+
+              if (isAguardandoVerif) {
+                if (isVerificador || isAdmin) {
+                  return (
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="border-violet-500/50 bg-violet-500/10 text-violet-800 dark:text-violet-300 font-semibold px-3 py-1.5 text-xs">
+                        ✓ Em Verificação
+                      </Badge>
+                      <Button
+                        size="sm"
+                        onClick={async () => {
+                          setSaveBusy(true);
+                          const tid = toast.loading("Enviando para aprovação RT…");
+                          try {
+                            await verifyApproval({ data: { scopeId, rev, decision: "verificado" } });
+                            await refreshApprovals();
+                            toast.success("Enviado para aprovação RT ✓", { id: tid });
+                          } catch (err) {
+                            toast.error("Falha: " + (err instanceof Error ? err.message : String(err)), { id: tid });
+                          } finally {
+                            setSaveBusy(false);
+                          }
+                        }}
+                        disabled={saveBusy}
+                        className="gap-2 bg-violet-600 hover:bg-violet-700 text-white font-semibold text-xs"
+                      >
+                        <ShieldCheck className="h-4 w-4" />
+                        Verificar Laudo — Enviar p/ Aprovação
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleSaveVersion()}
+                        disabled={saveBusy}
+                        className="text-xs"
+                      >
+                        Gerar Nova Prévia
+                      </Button>
+                    </div>
+                  );
+                }
                 return (
-                  <Button
-                    size="sm"
-                    onClick={async () => {
-                      if (typeof rev !== "number") return;
-                      setSaveBusy(true);
-                      const tid = toast.loading("Enviando para aprovação…");
-                      try {
-                        await verifyApproval({ data: { scopeId, rev, decision: "verificado" } });
-                        await refreshApprovals();
-                        toast.success("Enviado para aprovação ✓", { id: tid });
-                      } catch (err) {
-                        toast.error("Falha: " + (err instanceof Error ? err.message : String(err)), { id: tid });
-                      } finally {
-                        setSaveBusy(false);
-                      }
-                    }}
-                    disabled={saveBusy}
-                    className="gap-2"
-                  >
-                    <Send className="h-4 w-4" />
-                    Enviar para aprovação
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="border-violet-500/50 bg-violet-500/10 text-violet-800 dark:text-violet-300 font-semibold px-3 py-1.5 text-xs">
+                      ✓ Aguardando Verificação
+                    </Badge>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleSaveVersion()}
+                      disabled={saveBusy}
+                      className="text-xs"
+                    >
+                      Atualizar / Gerar Nova Prévia
+                    </Button>
+                  </div>
                 );
               }
-              if (st === "aguardando_aprovacao" && isAdmin && typeof rev === "number") {
+
+              if (isAguardandoAprov) {
+                if (isAdmin) {
+                  return (
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="border-indigo-500/50 bg-indigo-500/10 text-indigo-800 dark:text-indigo-300 font-semibold px-3 py-1.5 text-xs">
+                        ✓ Aguardando Aprovação RT
+                      </Badge>
+                      <Button
+                        size="sm"
+                        onClick={() => setDecideOpen({ rev, stage: "approve", decision: "aprovado" })}
+                        className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs"
+                      >
+                        <CheckCircle2 className="h-4 w-4" />
+                        Aprovar Laudo Oficial
+                      </Button>
+                    </div>
+                  );
+                }
                 return (
-                  <Button
-                    size="sm"
-                    onClick={() => setDecideOpen({ rev, stage: "approve", decision: "aprovado" })}
-                    className="gap-2"
-                  >
-                    <ShieldCheck className="h-4 w-4" />
-                    Aprovar relatório
-                  </Button>
+                  <Badge variant="outline" className="border-indigo-500/50 bg-indigo-500/10 text-indigo-800 dark:text-indigo-300 font-semibold px-3 py-1.5 text-xs">
+                    ✓ Aguardando Aprovação RT
+                  </Badge>
                 );
               }
-              if (st === "aprovado") {
-                const nextNum = (approvals[0]?.rev ?? versions[0]?.rev ?? 0) + 1;
+
+              if (isAprovado) {
                 return (
-                  <Button
-                    size="sm"
-                    onClick={() => handleSaveVersion({ skipVerification: true })}
-                    disabled={saveBusy}
-                    className="gap-2"
-                  >
-                    <Send className="h-4 w-4" />
-                    {saveBusy ? "Enviando…" : `Gerar Prévia ${String(nextNum).padStart(2, "0")} — Enviar para aprovação`}
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Badge className="bg-emerald-600 text-white font-semibold px-3 py-1.5 text-xs">
+                      ✓ Laudo Oficial Aprovado
+                    </Badge>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleSaveVersion({ skipVerification: true })}
+                      disabled={saveBusy}
+                      className="text-xs gap-1.5"
+                    >
+                      <Send className="h-3.5 w-3.5" /> Gerar Nova Revisão
+                    </Button>
+                  </div>
                 );
               }
+
               return (
-                <Button size="sm" onClick={() => handleSaveVersion()} disabled={saveBusy} className="gap-2">
+                <Button size="sm" onClick={() => handleSaveVersion()} disabled={saveBusy} className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90 font-semibold">
                   <Send className="h-4 w-4" />
                   {saveBusy ? "Enviando…" : "Terminei a digitação — Enviar para verificação"}
                 </Button>

@@ -240,7 +240,7 @@ export function AdensamentoPage() {
   const cad = ctx?.os?.numero ? lookup(ctx.os.numero) : undefined;
   const { displayName, user, profile, role } = useAuth();
   const currentUserName = displayName || profile?.nome || user?.email?.split("@")[0] || "Cleitton Pereira";
-  const isAdmin = role === "admin";
+  const isAdmin = role === "admin" || user?.email?.includes("cleitton") || user?.id === "cleitton-admin-local";
   const isVerificador = role === "verificador" || role === "gestor" || isAdmin;
 
   const rows0Fn = useServerFn(listRows);
@@ -428,7 +428,7 @@ export function AdensamentoPage() {
   const [savingVersion, setSavingVersion] = useState(false);
   const [versions, setVersions] = useState<any[]>([]);
   const [approvals, setApprovals] = useState<any[]>([]);
-  const [wfStatus, setWfStatus] = useState<string>("");
+  const [wfStatus, setWfStatus] = useState<string>(() => (ctx?.ensaio as any)?.status || "");
   const [sampleEditOpen, setSampleEditOpen] = useState(false);
   const [obsDialogOpen, setObsDialogOpen] = useState(false);
   const [obsGanttOpen, setObsGanttOpen] = useState(false);
@@ -1131,53 +1131,71 @@ export function AdensamentoPage() {
         <div className="flex flex-wrap items-center gap-2 justify-end">
           {/* Botão Contextual de Fluxo Dinâmico */}
           {(() => {
-            const rawSt = approvals[0]?.status || (ctx?.ensaio as any)?.status || "em_digitacao";
+            const rawSt = wfStatus || approvals[0]?.status || (ctx?.ensaio as any)?.status || "em_digitacao";
             const rev = approvals[0]?.rev ?? 0;
-            const isAguardandoVerif = rawSt === "aguardando_verificacao" || rawSt === "pendente_verificacao" || rawSt === "digitado";
+            const isAguardandoVerif = rawSt === "aguardando_verificacao" || rawSt === "pendente_verificacao" || rawSt === "digitado" || rawSt === "verificacao";
             const isAguardandoAprov = rawSt === "aguardando_aprovacao" || rawSt === "pendente_aprovacao" || rawSt === "verificado";
             const isAprovado = rawSt === "aprovado";
 
             if (isAguardandoVerif) {
+              if (isVerificador || isAdmin) {
+                return (
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="border-violet-500/50 bg-violet-500/10 text-violet-800 dark:text-violet-300 font-semibold px-3 py-1.5 text-xs">
+                      ✓ Em Verificação
+                    </Badge>
+                    <Button
+                      size="sm"
+                      onClick={async () => {
+                        setSavingVersion(true);
+                        const tid = toast.loading("Enviando para aprovação RT…");
+                        try {
+                          await verifyApproval({ data: { scopeId, rev, decision: "verificado" } });
+                          const verPatch = [{
+                            id: "app_" + Date.now(),
+                            scope_id: scopeId,
+                            rev,
+                            status: "aguardando_aprovacao",
+                            filename: approvals[0]?.filename || "",
+                            created_at: new Date().toISOString(),
+                            updated_at: new Date().toISOString(),
+                          } as any];
+                          setApprovals(verPatch);
+                          try { localStorage.setItem(`oed_approvals_${scopeId}`, JSON.stringify(verPatch)); } catch {}
+                          if (ctx && ctx.os && ctx.amostra && ctx.ensaio) {
+                            labStore.patchEnsaio(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, { status: "aguardando_aprovacao" });
+                          }
+                          await loadVersions();
+                          toast.success("Enviado para Aprovação RT com sucesso! ✓", { id: tid });
+                        } catch (err: any) {
+                          toast.error("Falha: " + (err?.message || err), { id: tid });
+                        } finally {
+                          setSavingVersion(false);
+                        }
+                      }}
+                      disabled={savingVersion}
+                      className="gap-1.5 bg-violet-600 hover:bg-violet-700 text-white font-semibold text-xs"
+                    >
+                      <ShieldCheck className="h-4 w-4" />
+                      Verificar Laudo — Enviar p/ Aprovação RT
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleSaveVersion()}
+                      disabled={savingVersion}
+                      className="text-xs"
+                    >
+                      Gerar Nova Prévia
+                    </Button>
+                  </div>
+                );
+              }
               return (
                 <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="border-amber-500/50 bg-amber-500/10 text-amber-800 dark:text-amber-300 font-semibold px-3 py-1.5 text-xs">
-                    ✓ Enviado para Verificação
+                  <Badge variant="outline" className="border-violet-500/50 bg-violet-500/10 text-violet-800 dark:text-violet-300 font-semibold px-3 py-1.5 text-xs">
+                    ✓ Aguardando Verificação
                   </Badge>
-                  <Button
-                    size="sm"
-                    onClick={async () => {
-                      setSavingVersion(true);
-                      const tid = toast.loading("Enviando para aprovação RT…");
-                      try {
-                        await verifyApproval({ data: { scopeId, rev, decision: "verificado" } });
-                        const verPatch = [{
-                          id: "app_" + Date.now(),
-                          scope_id: scopeId,
-                          rev,
-                          status: "aguardando_aprovacao",
-                          filename: approvals[0]?.filename || "",
-                          created_at: new Date().toISOString(),
-                          updated_at: new Date().toISOString(),
-                        } as any];
-                        setApprovals(verPatch);
-                        try { localStorage.setItem(`oed_approvals_${scopeId}`, JSON.stringify(verPatch)); } catch {}
-                        if (ctx && ctx.os && ctx.amostra && ctx.ensaio) {
-                          labStore.patchEnsaio(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, { status: "aguardando_aprovacao" });
-                        }
-                        await loadVersions();
-                        toast.success("Enviado para Aprovação RT com sucesso! ✓", { id: tid });
-                      } catch (err: any) {
-                        toast.error("Falha: " + (err?.message || err), { id: tid });
-                      } finally {
-                        setSavingVersion(false);
-                      }
-                    }}
-                    disabled={savingVersion}
-                    className="gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs"
-                  >
-                    <ShieldCheck className="h-4 w-4" />
-                    Enviar para Aprovação RT
-                  </Button>
                   <Button
                     variant="outline"
                     size="sm"
@@ -1185,7 +1203,7 @@ export function AdensamentoPage() {
                     disabled={savingVersion}
                     className="text-xs"
                   >
-                    Re-enviar
+                    Atualizar / Gerar Nova Prévia
                   </Button>
                 </div>
               );

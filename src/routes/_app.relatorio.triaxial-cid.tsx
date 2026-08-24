@@ -188,8 +188,10 @@ export function TriaxialCidPage() {
   const ctx = useOptionalLabEnsaio();
   const { lookup } = useCadastroByOs();
   const cad = ctx?.os?.numero ? lookup(ctx.os.numero) : undefined;
-  const { displayName, user, profile } = useAuth();
+  const { displayName, user, profile, role } = useAuth();
   const currentUserName = displayName || profile?.nome || user?.email?.split("@")[0] || "Cleitton Pereira";
+  const isAdmin = role === "admin" || user?.email?.includes("cleitton") || user?.id === "cleitton-admin-local";
+  const isVerificador = role === "verificador" || role === "gestor" || isAdmin;
   const navigate = useNavigate();
 
   const rows0Fn = useServerFn(listRows);
@@ -555,9 +557,7 @@ export function TriaxialCidPage() {
   const [driveBusy, setDriveBusy] = useState(false);
   const [driveFolderUrl, setDriveFolderUrl] = useState<string | null>(null);
   const [approvals, setApprovals] = useState<ApprovalRow[]>([]);
-  const [wfStatus, setWfStatus] = useState<string>("digitacao");
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [isVerificador, setIsVerificador] = useState(false);
+  const [wfStatus, setWfStatus] = useState<string>(() => (ctx?.ensaio as any)?.status || "digitacao");
   const [decideOpen, setDecideOpen] = useState<null | {
     rev: number;
     stage: "verify" | "approve";
@@ -604,33 +604,22 @@ export function TriaxialCidPage() {
     try {
       const rows = await listApprovals({ data: { scopeId } });
       setApprovals(rows);
+      const res = await getWorkflowStatuses({ data: { scopeIds: [scopeId] } });
+      const fetchedWf = res.statuses[scopeId];
+      if (fetchedWf) {
+        setWfStatus(fetchedWf);
+      } else if (rows.length > 0) {
+        const latestRev = rows[0];
+        if (latestRev.status === "pendente_verificacao" || latestRev.status === "verificado") setWfStatus("aguardando_verificacao");
+        else if (latestRev.status === "pendente_aprovacao") setWfStatus("aguardando_aprovacao");
+        else if (latestRev.status === "aprovado") setWfStatus("aprovado");
+      } else if ((ctx?.ensaio as any)?.status) {
+        setWfStatus((ctx?.ensaio as any).status);
+      }
     } catch (err) {
       console.warn("approvals", err);
     }
-    try {
-      const res = await getWorkflowStatuses({ data: { scopeIds: [scopeId] } });
-      setWfStatus(res.statuses[scopeId] ?? "digitacao");
-    } catch (err) {
-      console.warn("workflow status", err);
-    }
   };
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const { data } = await supabase.auth.getUser();
-      if (!data.user || cancelled) return;
-      const [{ data: adm }, { data: ver }] = await Promise.all([
-        supabase.rpc("has_role", { _user_id: data.user.id, _role: "admin" }),
-        supabase.rpc("has_role", { _user_id: data.user.id, _role: "verificador" }),
-      ]);
-      if (!cancelled) {
-        setIsAdmin(Boolean(adm));
-        setIsVerificador(Boolean(ver));
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
 
   useEffect(() => {
     refreshVersions();
@@ -1042,7 +1031,16 @@ export function TriaxialCidPage() {
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Badge variant="outline">ASTM D7181</Badge>
               <Badge variant="outline">ISO 17892-9</Badge>
-              <WorkflowFarol status={wfStatus} />
+              <WorkflowFarol status={
+                (() => {
+                  const rawSt = wfStatus || approvals[0]?.status || (ctx?.ensaio as any)?.status || "digitacao";
+                  if (rawSt === "aguardando_verificacao" || rawSt === "pendente_verificacao" || rawSt === "digitado" || rawSt === "verificacao") return "aguardando_verificacao";
+                  if (rawSt === "aguardando_aprovacao" || rawSt === "pendente_aprovacao" || rawSt === "verificado") return "aguardando_aprovacao";
+                  if (rawSt === "aprovado" || rawSt === "concluido") return "aprovado";
+                  if (rawSt === "rejeitado" || rawSt === "rejeitado_verificacao") return "rejeitado";
+                  return "digitacao";
+                })()
+              } />
                 <SyncStatusBadge state="synced" />
             </div>
             <h2 className="mt-2 text-xl font-semibold">
@@ -1058,65 +1056,118 @@ export function TriaxialCidPage() {
           <div className="flex flex-wrap items-center gap-2 justify-end">
             {/* Ação contextual do fluxo — visível no topo, sem precisar abrir o relatório */}
             {(() => {
-              const st = wfStatus;
-              const rev = approvals[0]?.rev;
-              // Aguardando verificação → botão "Enviar para aprovação" (verificador/admin)
-              if (st === "aguardando_verificacao" && (isVerificador || isAdmin)) {
+              const rawSt = wfStatus || approvals[0]?.status || (ctx?.ensaio as any)?.status || "digitacao";
+              const isAguardandoVerif = rawSt === "aguardando_verificacao" || rawSt === "pendente_verificacao" || rawSt === "digitado" || rawSt === "verificacao";
+              const isAguardandoAprov = rawSt === "aguardando_aprovacao" || rawSt === "pendente_aprovacao" || rawSt === "verificado";
+              const isAprovado = rawSt === "aprovado" || rawSt === "concluido";
+              const rev = approvals[0]?.rev ?? 0;
+
+              if (isAguardandoVerif) {
+                if (isVerificador || isAdmin) {
+                  return (
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="border-violet-500/50 bg-violet-500/10 text-violet-800 dark:text-violet-300 font-semibold px-3 py-1.5 text-xs">
+                        ✓ Em Verificação
+                      </Badge>
+                      <Button
+                        size="sm"
+                        onClick={async () => {
+                          setSaveBusy(true);
+                          const tid = toast.loading("Enviando para aprovação RT…");
+                          try {
+                            await verifyApproval({ data: { scopeId, rev, decision: "verificado" } });
+                            await refreshApprovals();
+                            toast.success("Enviado para aprovação RT ✓", { id: tid });
+                          } catch (err) {
+                            toast.error("Falha: " + (err instanceof Error ? err.message : String(err)), { id: tid });
+                          } finally {
+                            setSaveBusy(false);
+                          }
+                        }}
+                        disabled={saveBusy}
+                        className="gap-2 bg-violet-600 hover:bg-violet-700 text-white font-semibold text-xs"
+                      >
+                        <ShieldCheck className="h-4 w-4" />
+                        Verificar Laudo — Enviar p/ Aprovação
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleSaveVersion()}
+                        disabled={saveBusy}
+                        className="text-xs"
+                      >
+                        Gerar Nova Prévia
+                      </Button>
+                    </div>
+                  );
+                }
                 return (
-                  <Button
-                    onClick={async () => {
-                      if (typeof rev !== "number") return;
-                      setSaveBusy(true);
-                      const tid = toast.loading("Enviando para aprovação…");
-                      try {
-                        await verifyApproval({ data: { scopeId, rev, decision: "verificado" } });
-                        await refreshApprovals();
-                        toast.success("Enviado para aprovação ✓", { id: tid });
-                      } catch (err) {
-                        toast.error("Falha: " + (err instanceof Error ? err.message : String(err)), { id: tid });
-                      } finally {
-                        setSaveBusy(false);
-                      }
-                    }}
-                    disabled={saveBusy}
-                    className="gap-2"
-                  >
-                    <Send className="h-4 w-4" />
-                    Enviar para aprovação
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="border-violet-500/50 bg-violet-500/10 text-violet-800 dark:text-violet-300 font-semibold px-3 py-1.5 text-xs">
+                      ✓ Aguardando Verificação
+                    </Badge>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleSaveVersion()}
+                      disabled={saveBusy}
+                      className="text-xs"
+                    >
+                      Atualizar / Gerar Nova Prévia
+                    </Button>
+                  </div>
                 );
               }
-              // Aguardando aprovação → botão "Aprovar relatório" (admin)
-              if (st === "aguardando_aprovacao" && isAdmin && typeof rev === "number") {
+
+              if (isAguardandoAprov) {
+                if (isAdmin) {
+                  return (
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="border-indigo-500/50 bg-indigo-500/10 text-indigo-800 dark:text-indigo-300 font-semibold px-3 py-1.5 text-xs">
+                        ✓ Aguardando Aprovação RT
+                      </Badge>
+                      <Button
+                        size="sm"
+                        onClick={() => setDecideOpen({ rev, stage: "approve", decision: "aprovado" })}
+                        className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs"
+                      >
+                        <CheckCircle2 className="h-4 w-4" />
+                        Aprovar Laudo Oficial
+                      </Button>
+                    </div>
+                  );
+                }
                 return (
-                  <Button
-                    onClick={() => setDecideOpen({ rev, stage: "approve", decision: "aprovado" })}
-                    className="gap-2"
-                  >
-                    <ShieldCheck className="h-4 w-4" />
-                    Aprovar relatório
-                  </Button>
+                  <Badge variant="outline" className="border-indigo-500/50 bg-indigo-500/10 text-indigo-800 dark:text-indigo-300 font-semibold px-3 py-1.5 text-xs">
+                    ✓ Aguardando Aprovação RT
+                  </Badge>
                 );
               }
-              // Aprovado → próxima ação gera nova revisão (reabre ciclo)
-              if (st === "aprovado") {
-                const nextNum = (approvals[0]?.rev ?? versions[0]?.rev ?? 0) + 1;
+
+              if (isAprovado) {
                 return (
-                  <Button onClick={() => handleSaveVersion({ skipVerification: true })} disabled={saveBusy} className="gap-2">
-                    <Send className="h-4 w-4" />
-                    {saveBusy
-                      ? "Enviando…"
-                      : `Gerar Prévia ${String(nextNum).padStart(2, "0")} — Enviar para aprovação`}
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Badge className="bg-emerald-600 text-white font-semibold px-3 py-1.5 text-xs">
+                      ✓ Laudo Oficial Aprovado
+                    </Badge>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleSaveVersion({ skipVerification: true })}
+                      disabled={saveBusy}
+                      className="text-xs gap-1.5"
+                    >
+                      <Send className="h-3.5 w-3.5" /> Gerar Nova Revisão
+                    </Button>
+                  </div>
                 );
               }
-              // Em digitação / rejeitado → "Terminei a digitação"
+
               return (
-                <Button onClick={() => handleSaveVersion()} disabled={saveBusy} className="gap-2">
+                <Button size="sm" onClick={() => handleSaveVersion()} disabled={saveBusy} className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90 font-semibold">
                   <Send className="h-4 w-4" />
-                  {saveBusy
-                    ? "Enviando…"
-                    : "Terminei a digitação — Enviar para verificação"}
+                  {saveBusy ? "Enviando…" : "Terminei a digitação — Enviar para verificação"}
                 </Button>
               );
             })()}
