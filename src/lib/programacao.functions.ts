@@ -84,28 +84,32 @@ function objectToRow(header: string[], obj: Record<string, unknown>): string[] {
 
 const encodeRange = (r: string) => encodeURIComponent(r);
 
+import { isGoogleAuthConfigured } from "./google-auth.server";
+
 async function getAllValues(sheet: string): Promise<Record<string, string>[]> {
   const e = env();
   // 1. Tentar ler da API do Google se houver credenciais
-  try {
-    const j = await api(`/values/${encodeRange(sheet)}`);
-    const values = (j.values ?? []) as string[][];
-    if (values.length > 0 && values[0].includes("id")) {
-      return rowsToObjects(values);
-    }
-  } catch {
-    // 2. Tentar leitura direta via CSV público da planilha de Programação
+  if (isGoogleAuthConfigured() || (e.LOVABLE_API_KEY && e.GOOGLE_SHEETS_API_KEY)) {
     try {
-      const res = await fetchDirectGoogleSheet(e.PROGRAMACAO_SHEET_ID, sheet);
-      if (res.values && res.values.length > 0 && res.values[0].includes("id")) {
-        return rowsToObjects(res.values);
+      const j = await api(`/values/${encodeRange(sheet)}`);
+      const values = (j.values ?? []) as string[][];
+      if (values.length > 0 && values[0].includes("id")) {
+        return rowsToObjects(values);
       }
     } catch {
-      // Fallback
+      // 2. Tentar leitura direta via CSV público da planilha de Programação
+      try {
+        const res = await fetchDirectGoogleSheet(e.PROGRAMACAO_SHEET_ID, sheet);
+        if (res.values && res.values.length > 0 && res.values[0].includes("id")) {
+          return rowsToObjects(res.values);
+        }
+      } catch {
+        // Fallback
+      }
     }
   }
 
-  // 3. Usar o armazenamento local persistente (JSON)
+  // 3. Usar o armazenamento local persistente (JSON) - instantâneo
   const store = readStore();
   const key = sheet as keyof ProgramacaoData;
   return store[key] || [];
@@ -126,24 +130,27 @@ export const insertRow = createServerFn({ method: "POST" })
     const now = new Date().toISOString();
     const enriched = { ...data.row, id, created_at: now, updated_at: now } as Record<string, string>;
 
-    // 1. Tentar gravar na API remota do Google se disponível
-    try {
-      const header = Object.keys(enriched);
-      const values = [objectToRow(header, enriched)];
-      await api(
-        `/values/${encodeRange(data.sheet)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
-        { method: "POST", body: JSON.stringify({ values }) },
-      );
-    } catch {
-      // API remota não disponível, tudo bem
-    }
-
-    // 2. Gravar no armazenamento local persistente
+    // 1. Gravar no armazenamento local persistente imediatamente
     const store = readStore();
     const key = data.sheet as keyof ProgramacaoData;
     if (!store[key]) store[key] = [];
     store[key].push(enriched);
     writeStore(store);
+
+    // 2. Tentar sincronizar na API remota do Google em background se disponível
+    const e = env();
+    if (isGoogleAuthConfigured() || (e.LOVABLE_API_KEY && e.GOOGLE_SHEETS_API_KEY)) {
+      try {
+        const header = Object.keys(enriched);
+        const values = [objectToRow(header, enriched)];
+        api(
+          `/values/${encodeRange(data.sheet)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+          { method: "POST", body: JSON.stringify({ values }) },
+        ).catch(() => {});
+      } catch {
+        // API remota não disponível, tudo bem
+      }
+    }
 
     return { id };
   });
@@ -151,29 +158,7 @@ export const insertRow = createServerFn({ method: "POST" })
 export const updateRow = createServerFn({ method: "POST" })
   .inputValidator((d: { sheet: string; id: string; patch: Record<string, unknown> }) => d)
   .handler(async ({ data }) => {
-    // 1. Tentar atualizar via Google API se disponível
-    try {
-      const all = await getAllValues(data.sheet);
-      if (all.length > 0) {
-        const header = Object.keys(all[0]);
-        const idCol = header.indexOf("id");
-        if (idCol !== -1) {
-          const rowIdx = all.findIndex((r) => r.id === data.id);
-          if (rowIdx !== -1) {
-            const merged = { ...all[rowIdx], ...data.patch, updated_at: new Date().toISOString() };
-            const rowValues = objectToRow(header, merged);
-            await api(
-              `/values/${encodeRange(`${data.sheet}!A${rowIdx + 2}`)}?valueInputOption=RAW`,
-              { method: "PUT", body: JSON.stringify({ values: [rowValues] }) },
-            );
-          }
-        }
-      }
-    } catch {
-      // API remota indisponível
-    }
-
-    // 2. Gravar no armazenamento local
+    // 1. Gravar no armazenamento local imediatamente
     const store = readStore();
     const key = data.sheet as keyof ProgramacaoData;
     if (store[key]) {
@@ -184,50 +169,78 @@ export const updateRow = createServerFn({ method: "POST" })
       }
     }
 
+    // 2. Tentar atualizar via Google API se disponível
+    const e = env();
+    if (isGoogleAuthConfigured() || (e.LOVABLE_API_KEY && e.GOOGLE_SHEETS_API_KEY)) {
+      try {
+        const all = await getAllValues(data.sheet);
+        if (all.length > 0) {
+          const header = Object.keys(all[0]);
+          const idCol = header.indexOf("id");
+          if (idCol !== -1) {
+            const rowIdx = all.findIndex((r) => r.id === data.id);
+            if (rowIdx !== -1) {
+              const merged = { ...all[rowIdx], ...data.patch, updated_at: new Date().toISOString() };
+              const rowValues = objectToRow(header, merged);
+              api(
+                `/values/${encodeRange(`${data.sheet}!A${rowIdx + 2}`)}?valueInputOption=RAW`,
+                { method: "PUT", body: JSON.stringify({ values: [rowValues] }) },
+              ).catch(() => {});
+            }
+          }
+        }
+      } catch {
+        // API remota indisponível
+      }
+    }
+
     return { ok: true };
   });
 
 export const deleteRow = createServerFn({ method: "POST" })
   .inputValidator((d: { sheet: string; id: string }) => d)
   .handler(async ({ data }) => {
-    // 1. Tentar deletar na API remota do Google se disponível
-    try {
-      const j = await api(`?fields=sheets(properties(sheetId,title))`);
-      const found = (j.sheets ?? []).find((s: any) => s.properties?.title === data.sheet);
-      if (found) {
-        const gid = found.properties.sheetId as number;
-        const all = await getAllValues(data.sheet);
-        const rowIdx = all.findIndex((r) => r.id === data.id);
-        if (rowIdx !== -1) {
-          await api(":batchUpdate", {
-            method: "POST",
-            body: JSON.stringify({
-              requests: [
-                {
-                  deleteDimension: {
-                    range: {
-                      sheetId: gid,
-                      dimension: "ROWS",
-                      startIndex: rowIdx + 1,
-                      endIndex: rowIdx + 2,
-                    },
-                  },
-                },
-              ],
-            }),
-          });
-        }
-      }
-    } catch {
-      // API remota não disponível
-    }
-
-    // 2. Deletar no armazenamento local
+    // 1. Deletar no armazenamento local imediatamente
     const store = readStore();
     const key = data.sheet as keyof ProgramacaoData;
     if (store[key]) {
       store[key] = store[key].filter((r) => r.id !== data.id);
       writeStore(store);
+    }
+
+    // 2. Tentar deletar na API remota do Google se disponível
+    const e = env();
+    if (isGoogleAuthConfigured() || (e.LOVABLE_API_KEY && e.GOOGLE_SHEETS_API_KEY)) {
+      try {
+        const j = await api(`?fields=sheets(properties(sheetId,title))`);
+        const found = (j.sheets ?? []).find((s: any) => s.properties?.title === data.sheet);
+        if (found) {
+          const gid = found.properties.sheetId as number;
+          const all = await getAllValues(data.sheet);
+          const rowIdx = all.findIndex((r) => r.id === data.id);
+          if (rowIdx !== -1) {
+            api(":batchUpdate", {
+              method: "POST",
+              body: JSON.stringify({
+                requests: [
+                  {
+                    deleteDimension: {
+                      range: {
+                        sheetId: gid,
+                        dimension: "ROWS",
+                        startIndex: rowIdx + 1,
+                        endIndex: rowIdx + 2,
+                      },
+                    },
+                  },
+                ],
+              }),
+            }).catch(() => {});
+          }
+        }
+      } catch {
+        // API remota não disponível
+      }
     }
 
     return { ok: true };

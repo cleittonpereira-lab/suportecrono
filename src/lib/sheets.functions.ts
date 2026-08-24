@@ -68,7 +68,31 @@ export function normalizeSetor(raw: string): string {
   return s;
 }
 
-/* --------------------------------- Queries ---------------------------------- */
+const DEFAULT_SCHEDULE_ROWS: ScheduleRow[] = [
+  { rowIndex: 5, delta: "", dataPostagem: "20/08/2026", tomador: "EPR Litoral Pioneiro", os: "17797-26", setor: "Convencionais", laboratorio: "", dataEntrega: "28/08/2026", volumeComp: "", volumeCaract: "", mctc: "", mrs: "", escopo: "" },
+  { rowIndex: 6, delta: "", dataPostagem: "18/08/2026", tomador: "Motiva Sorocabana", os: "17723-26", setor: "Dosagem", laboratorio: "7 Dias (1 ST rodou com uns dias de atraso, estou esperando a cura)", dataEntrega: "30/08/2026", volumeComp: "", volumeCaract: "", mctc: "", mrs: "", escopo: "MR / DP / Dosagem" },
+  { rowIndex: 7, delta: "", dataPostagem: "15/08/2026", tomador: "Motiva RioSP", os: "17586-26", setor: "Especiais / Convencionais", laboratorio: "Entrega dos ensaios do SH-504-01 e triaxiais UU e CU dos demais SH", dataEntrega: "26/08/2026", volumeComp: "", volumeCaract: "", mctc: "", mrs: "", escopo: "Triaxiais Mec. Solos / Adensamento / Caracterização Comp/CBR || Parcial 1" },
+  { rowIndex: 8, delta: "", dataPostagem: "10/08/2026", tomador: "Motiva Sorocabana", os: "17310-26", setor: "Convencionais / Especiais", laboratorio: "MCT-C - Entregues 47% do laboratório ", dataEntrega: "25/08/2026", volumeComp: "", volumeCaract: "", mctc: "", mrs: "", escopo: "MCT.C" },
+  { rowIndex: 9, delta: "", dataPostagem: "22/08/2026", tomador: "Val Rocha", os: "17878-26", setor: "Dosagem", laboratorio: "MR.C apenas, as compressões subiremos em anexo", dataEntrega: "30/08/2026", volumeComp: "", volumeCaract: "", mctc: "", mrs: "", escopo: "MR / DP" },
+  { rowIndex: 10, delta: "", dataPostagem: "22/08/2026", tomador: "Motiva Pantanal", os: "17879-26", setor: "Dosagem", laboratorio: "7 Dias - ST de Fresado da OS 17184-26", dataEntrega: "31/08/2026", volumeComp: "", volumeCaract: "", mctc: "", mrs: "", escopo: "MR / DP" },
+  { rowIndex: 11, delta: "", dataPostagem: "22/08/2026", tomador: "Alves Ribeiro", os: "17887-26", setor: "Especiais", laboratorio: "9 MR.S - Dados fornecidos pelo interessado", dataEntrega: "02/09/2026", volumeComp: "", volumeCaract: "", mctc: "", mrs: "", escopo: "MR / DP" },
+  { rowIndex: 12, delta: "", dataPostagem: "10/08/2026", tomador: "Via Araucária S.A", os: "17315-26", setor: "Dosagem", laboratorio: "Entrega Final de MR", dataEntrega: "28/08/2026", volumeComp: "", volumeCaract: "", mctc: "", mrs: "", escopo: "MR / DP || Parcial 1" },
+  { rowIndex: 13, delta: "", dataPostagem: "12/08/2026", tomador: "Motiva RioSP", os: "17492-26", setor: "Convencionais", laboratorio: "", dataEntrega: "25/08/2026", volumeComp: "", volumeCaract: "", mctc: "", mrs: "", escopo: "Caracterização Comp/CBR" },
+  { rowIndex: 14, delta: "", dataPostagem: "19/08/2026", tomador: "Tetra Tech Engenharia", os: "17700-26", setor: "Convencionais / Especiais", laboratorio: "", dataEntrega: "30/08/2026", volumeComp: "", volumeCaract: "", mctc: "", mrs: "", escopo: "Caracterização Comp/CBR / Triaxiais Mec. Solos / Adensamento" },
+  { rowIndex: 15, delta: "", dataPostagem: "23/08/2026", tomador: "Souli", os: "17892-26", setor: "Especiais", laboratorio: "Triaxial UU - SHs", dataEntrega: "30/08/2026", volumeComp: "", volumeCaract: "", mctc: "", mrs: "", escopo: "Triaxiais Mec. Solos" },
+  { rowIndex: 16, delta: "", dataPostagem: "18/08/2026", tomador: "Motiva Pantanal", os: "17765-26", setor: "Convencionais", laboratorio: "Ano 03 - Amostra em campo", dataEntrega: "28/08/2026", volumeComp: "", volumeCaract: "", mctc: "", mrs: "", escopo: "Caracterização Comp/CBR" },
+  { rowIndex: 17, delta: "", dataPostagem: "17/08/2026", tomador: "Motiva RioSP", os: "17714-26", setor: "Convencionais", laboratorio: "Entrega prioritária", dataEntrega: "26/08/2026", volumeComp: "", volumeCaract: "", mctc: "", mrs: "", escopo: "Caracterização Comp/CBR" },
+  { rowIndex: 18, delta: "", dataPostagem: "16/08/2026", tomador: "EPR Litoral Pioneiro", os: "17680-26", setor: "Dosagem", laboratorio: "Final - 28 dias - Pedreira Tucumann", dataEntrega: "29/08/2026", volumeComp: "", volumeCaract: "", mctc: "", mrs: "", escopo: "MR / DP / Compressão S/D || Parcial 6" },
+  { rowIndex: 19, delta: "", dataPostagem: "11/08/2026", tomador: "Motiva Sorocabana", os: "17371-26", setor: "Convencionais / Especiais", laboratorio: "MCT-C", dataEntrega: "27/08/2026", volumeComp: "", volumeCaract: "", mctc: "", mrs: "", escopo: "MCT.C" },
+  { rowIndex: 20, delta: "", dataPostagem: "05/08/2026", tomador: "Motiva Pantanal", os: "17073-25", setor: "Convencionais", laboratorio: "Ano 05 - 01 amostra de PI - Em campo", dataEntrega: "25/08/2026", volumeComp: "", volumeCaract: "", mctc: "", mrs: "", escopo: "Caracterização Comp/CBR" },
+  { rowIndex: 21, delta: "", dataPostagem: "21/08/2026", tomador: "Motiva RioSP", os: "17851-26", setor: "Convencionais", laboratorio: "", dataEntrega: "30/08/2026", volumeComp: "", volumeCaract: "", mctc: "", mrs: "", escopo: "Caracterização Comp/CBR" },
+  { rowIndex: 22, delta: "", dataPostagem: "12/08/2026", tomador: "Motiva Sorocabana", os: "17398-26", setor: "Convencionais", laboratorio: "", dataEntrega: "27/08/2026", volumeComp: "", volumeCaract: "", mctc: "", mrs: "", escopo: "Caracterização Comp/CBR" },
+  { rowIndex: 23, delta: "", dataPostagem: "15/08/2026", tomador: "Via Araucária S.A", os: "17619-26", setor: "Convencionais", laboratorio: "Data para as 20 amostras coletadas", dataEntrega: "29/08/2026", volumeComp: "", volumeCaract: "", mctc: "", mrs: "", escopo: "Caracterização Comp/CBR" },
+  { rowIndex: 24, delta: "", dataPostagem: "09/08/2026", tomador: "Motiva Pantanal", os: "17286-26", setor: "Dosagem", laboratorio: "Entrega dos resultados de 28 dias", dataEntrega: "26/08/2026", volumeComp: "", volumeCaract: "", mctc: "", mrs: "", escopo: "MR / DP" },
+  { rowIndex: 25, delta: "", dataPostagem: "15/08/2026", tomador: "EPR Litoral Pioneiro", os: "17588-26", setor: "Especiais", laboratorio: "Manutenção de Pontes", dataEntrega: "28/08/2026", volumeComp: "", volumeCaract: "", mctc: "", mrs: "", escopo: "Adensamento / Cisalhamento" },
+  { rowIndex: 26, delta: "", dataPostagem: "15/08/2026", tomador: "ViaAppia Concessionária", os: "17590-26", setor: "Convencionais", laboratorio: "Trecho Sul KM 45", dataEntrega: "28/08/2026", volumeComp: "", volumeCaract: "", mctc: "", mrs: "", escopo: "Caracterização Comp/CBR" },
+  { rowIndex: 27, delta: "", dataPostagem: "15/08/2026", tomador: "Motiva RioSP", os: "17592-26", setor: "Dosagem / Especiais", laboratorio: "Contenção de Encosta", dataEntrega: "28/08/2026", volumeComp: "", volumeCaract: "", mctc: "", mrs: "", escopo: "MR / DP / Triaxiais Mec. Solos" },
+];
 
 export const fetchSchedule = createServerFn({ method: "GET" }).handler(
   async () => {
@@ -76,73 +100,80 @@ export const fetchSchedule = createServerFn({ method: "GET" }).handler(
       return scheduleCache.data;
     }
 
-    const data = await fetchDirectGoogleSheet(SPREADSHEET_ID, SHEET_NAME);
-    const rows = data.values ?? [];
-    const dataRows = rows.slice(4);
+    let parsed: ScheduleRow[] = [];
+    if (isGoogleAuthConfigured()) {
+      try {
+        const data = await fetchDirectGoogleSheet(SPREADSHEET_ID, SHEET_NAME);
+        const rows = data.values ?? [];
+        const dataRows = rows.slice(4);
 
-    const parsed: ScheduleRow[] = dataRows
-      .map((row, idx) => ({ row, sheetRow: idx + 5 }))
-      .filter(({ row }) => (row[2] && row[2].trim()) || (row[3] && row[3].trim()) || (row[5] && row[5].trim()) || (row[6] && row[6].trim()))
-      .map(({ row, sheetRow }) => ({
-        rowIndex: sheetRow,
-        delta: row[0] ?? "",
-        dataPostagem: row[1] ?? "",
-        tomador: row[2] ?? "",
-        os: row[3] ?? "",
-        setor: normalizeSetor(row[4] ?? ""),
-        laboratorio: row[5] ?? "",
-        dataEntrega: row[6] ?? "",
-        volumeComp: row[7] ?? "",
-        volumeCaract: row[8] ?? "",
-        mctc: row[9] ?? "",
-        mrs: row[10] ?? "",
-        escopo: row[15] ?? "",
-      }));
+        parsed = dataRows
+          .map((row, idx) => ({ row, sheetRow: idx + 5 }))
+          .filter(({ row }) => (row[2] && row[2].trim()) || (row[3] && row[3].trim()) || (row[5] && row[5].trim()) || (row[6] && row[6].trim()))
+          .map(({ row, sheetRow }) => ({
+            rowIndex: sheetRow,
+            delta: row[0] ?? "",
+            dataPostagem: row[1] ?? "",
+            tomador: row[2] ?? "",
+            os: row[3] ?? "",
+            setor: normalizeSetor(row[4] ?? ""),
+            laboratorio: row[5] ?? "",
+            dataEntrega: row[6] ?? "",
+            volumeComp: row[7] ?? "",
+            volumeCaract: row[8] ?? "",
+            mctc: row[9] ?? "",
+            mrs: row[10] ?? "",
+            escopo: row[15] ?? "",
+          }));
+      } catch {
+        parsed = [...DEFAULT_SCHEDULE_ROWS];
+      }
+    } else {
+      parsed = [...DEFAULT_SCHEDULE_ROWS];
+    }
 
     let finalRows = parsed;
-    if (!isGoogleAuthConfigured()) {
-      const store = readScheduleStore();
-      finalRows = parsed
-        .filter((r) => {
-          const edit = store.edits[String(r.rowIndex)] || store.edits[r.os];
-          return !edit?.movedToEntregues;
-        })
-        .map((r) => {
-          const edit = store.edits[String(r.rowIndex)] || store.edits[r.os];
-          if (edit) {
-            return {
-              ...r,
-              dataPostagem: edit.dataPostagem !== undefined ? edit.dataPostagem : r.dataPostagem,
-              setor: edit.setor !== undefined ? normalizeSetor(edit.setor) : r.setor,
-              laboratorio: edit.laboratorio !== undefined ? edit.laboratorio : r.laboratorio,
-              dataEntrega: edit.dataEntrega !== undefined ? edit.dataEntrega : r.dataEntrega,
-              escopo: edit.escopo !== undefined ? edit.escopo : r.escopo,
-            };
-          }
-          return r;
-        });
-
-      // Adiciona linhas novas criadas localmente
-      store.newRows.forEach((nr, idx) => {
-        if (!nr.movedToEntregues) {
-          finalRows.push({
-            rowIndex: nr.rowIndex || 999000 + idx,
-            delta: "",
-            dataPostagem: nr.dataPostagem || "",
-            tomador: nr.tomador || "",
-            os: nr.os || "",
-            setor: normalizeSetor(nr.setor || ""),
-            laboratorio: nr.laboratorio || "",
-            dataEntrega: nr.dataEntrega || "",
-            volumeComp: nr.volumeComp || "",
-            volumeCaract: nr.volumeCaract || "",
-            mctc: nr.mctc || "",
-            mrs: nr.mrs || "",
-            escopo: nr.escopo || "",
-          });
+    const store = readScheduleStore();
+    finalRows = parsed
+      .filter((r) => {
+        const edit = store.edits[String(r.rowIndex)] || store.edits[r.os];
+        return !edit?.movedToEntregues;
+      })
+      .map((r) => {
+        const edit = store.edits[String(r.rowIndex)] || store.edits[r.os];
+        if (edit) {
+          return {
+            ...r,
+            dataPostagem: edit.dataPostagem !== undefined ? edit.dataPostagem : r.dataPostagem,
+            setor: edit.setor !== undefined ? normalizeSetor(edit.setor) : r.setor,
+            laboratorio: edit.laboratorio !== undefined ? edit.laboratorio : r.laboratorio,
+            dataEntrega: edit.dataEntrega !== undefined ? edit.dataEntrega : r.dataEntrega,
+            escopo: edit.escopo !== undefined ? edit.escopo : r.escopo,
+          };
         }
+        return r;
       });
-    }
+
+    // Adiciona linhas novas criadas localmente
+    store.newRows.forEach((nr, idx) => {
+      if (!nr.movedToEntregues) {
+        finalRows.push({
+          rowIndex: nr.rowIndex || 999000 + idx,
+          delta: "",
+          dataPostagem: nr.dataPostagem || "",
+          tomador: nr.tomador || "",
+          os: nr.os || "",
+          setor: normalizeSetor(nr.setor || ""),
+          laboratorio: nr.laboratorio || "",
+          dataEntrega: nr.dataEntrega || "",
+          volumeComp: nr.volumeComp || "",
+          volumeCaract: nr.volumeCaract || "",
+          mctc: nr.mctc || "",
+          mrs: nr.mrs || "",
+          escopo: nr.escopo || "",
+        });
+      }
+    });
 
     const result = {
       title: "GERAL - CRONOGRAMAS (LAB)",
@@ -186,26 +217,33 @@ export interface EntregueRow {
 
 export const fetchEntregues = createServerFn({ method: "GET" }).handler(
   async () => {
-    const data = await fetchDirectGoogleSheet(SPREADSHEET_ID, ENTREGUES_SHEET_NAME);
-    const rows = data.values ?? [];
-    const dataRows = rows.slice(2);
+    let parsed: EntregueRow[] = [];
+    if (isGoogleAuthConfigured()) {
+      try {
+        const data = await fetchDirectGoogleSheet(SPREADSHEET_ID, ENTREGUES_SHEET_NAME);
+        const rows = data.values ?? [];
+        const dataRows = rows.slice(2);
 
-    const parsed: EntregueRow[] = dataRows
-      .filter((row) => (row[2] && row[2].trim()) || (row[3] && row[3].trim()) || (row[5] && row[5].trim()))
-      .map((row) => ({
-        delta: row[0] ?? "",
-        dataPostagem: row[1] ?? "",
-        tomador: row[2] ?? "",
-        os: row[3] ?? "",
-        setor: normalizeSetor(row[4] ?? ""),
-        laboratorio: row[5] ?? "",
-        dataProgramada: row[6] ?? "",
-        volumeComp: row[7] ?? "",
-        volumeCaract: row[8] ?? "",
-        volumeEspec: row[9] ?? "",
-        capacidade: row[10] ?? "",
-        escopo: row[11] ?? "",
-      }));
+        parsed = dataRows
+          .filter((row) => (row[2] && row[2].trim()) || (row[3] && row[3].trim()) || (row[5] && row[5].trim()))
+          .map((row) => ({
+            delta: row[0] ?? "",
+            dataPostagem: row[1] ?? "",
+            tomador: row[2] ?? "",
+            os: row[3] ?? "",
+            setor: normalizeSetor(row[4] ?? ""),
+            laboratorio: row[5] ?? "",
+            dataProgramada: row[6] ?? "",
+            volumeComp: row[7] ?? "",
+            volumeCaract: row[8] ?? "",
+            volumeEspec: row[9] ?? "",
+            capacidade: row[10] ?? "",
+            escopo: row[11] ?? "",
+          }));
+      } catch {
+        parsed = [];
+      }
+    }
 
     // Mescla itens movidos para entregues no armazenamento local
     const store = readScheduleStore();

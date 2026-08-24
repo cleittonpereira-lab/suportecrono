@@ -313,7 +313,8 @@ export function BulkProgramarDialog({
   const grupos = useMemo(() => {
     const map = new Map<string, Ensaio[]>();
     for (const e of filtrados) {
-      const os = amostraById.get(e.amostra_id)?.os_numero || "—";
+      const a = amostraById.get(e.amostra_id);
+      const os = a?.os_numero || (e as any).os_numero || (e as any).os || "Geral";
       const arr = map.get(os) ?? [];
       arr.push(e);
       map.set(os, arr);
@@ -960,10 +961,10 @@ export function BulkProgramarDialog({
                                       style={t?.cor_gantt ? { borderColor: t.cor_gantt } : undefined}
                                     >
                                       {t?.cor_gantt && <span className="h-2 w-2 rounded-sm mr-1" style={{ background: t.cor_gantt }} />}
-                                      {t?.nome ?? "—"}
+                                      {t?.nome || (e as any).tipo_nome || "Ensaio"}
                                     </span>
                                     <span className="text-muted-foreground">·</span>
-                                    <span>{a?.codigo_amostra || "sem código"}</span>
+                                    <span className="font-medium">{a?.codigo_amostra || (a as any)?.identificacao || (e as any).amostra_nome || "Amostra"}</span>
                                     {e.prazo && (
                                       <span className="ml-auto text-[11px] text-muted-foreground">
                                         prazo do ensaio: {fmtBr(e.prazo)}
@@ -1009,7 +1010,7 @@ export function BulkProgramarDialog({
                                 style={t?.cor_gantt ? { borderColor: t.cor_gantt } : undefined}
                               >
                                 {t?.cor_gantt && <span className="h-2 w-2 rounded-sm" style={{ background: t.cor_gantt }} />}
-                                {t?.nome ?? "—"}
+                                {t?.nome || (ens[0] as any)?.tipo_nome || "Ensaio"}
                               </span>
                               <Badge variant="secondary" className="text-[10px]">{ens.length} amostra(s)</Badge>
                               <span className="text-xs text-muted-foreground">
@@ -1027,7 +1028,8 @@ export function BulkProgramarDialog({
                             <div className="pl-10 pr-3 pb-2 space-y-1">
                               {ens.map((e) => {
                                 const a = amostraById.get(e.amostra_id);
-                                const dl = a?.os_numero ? osDeadlines.get(a.os_numero) : null;
+                                const osNum = a?.os_numero || (e as any).os_numero || "Geral";
+                                const dl = osNum !== "Geral" ? osDeadlines.get(osNum) : null;
                                 return (
                                   <label
                                     key={e.id}
@@ -1044,9 +1046,9 @@ export function BulkProgramarDialog({
                                         });
                                       }}
                                     />
-                                    <span className="font-medium text-xs">OS {a?.os_numero ?? "—"}</span>
+                                    <span className="font-medium text-xs">OS {osNum}</span>
                                     <span className="text-muted-foreground">·</span>
-                                    <span>{a?.codigo_amostra || "sem código"}</span>
+                                    <span>{a?.codigo_amostra || (a as any)?.identificacao || (e as any).amostra_nome || "Amostra"}</span>
                                     {dl && (
                                       <span className="ml-auto text-[11px] text-muted-foreground">
                                         prazo: {fmtBr(dl)}

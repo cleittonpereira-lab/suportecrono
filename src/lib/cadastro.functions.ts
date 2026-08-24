@@ -188,10 +188,15 @@ function generateFallbackCadastro(): CadastroRow[] {
   return rows;
 }
 
+import { isGoogleAuthConfigured } from "./google-auth.server";
+
 export const fetchCadastroOs = createServerFn({ method: "GET" }).handler(
   async () => {
     const lovableKey = process.env.LOVABLE_API_KEY ?? "";
     const sheetsKey = process.env.GOOGLE_SHEETS_API_KEY ?? "";
+    if (!isGoogleAuthConfigured() && (!lovableKey || !sheetsKey)) {
+      return { rows: generateFallbackCadastro() };
+    }
     const all = await Promise.all(
       MESES.map((m) => fetchSheet(m, lovableKey, sheetsKey)),
     );

@@ -32,6 +32,7 @@ interface ParsedRow {
   base: string;
   amostra_coletada: string;
   tag: string; // um único tag de ensaio
+  os?: string;
 }
 
 function normTag(s: string) {
@@ -57,31 +58,73 @@ function parseFile(file: File): Promise<ParsedRow[]> {
             for (const k of keys) {
               for (const key of Object.keys(r)) {
                 if (key.trim().toLowerCase() === k.toLowerCase()) {
-                  return String(r[key] ?? "").trim();
+                  const val = String(r[key] ?? "").trim();
+                  if (val) return val;
                 }
               }
             }
             return "";
           };
-          const identificacao = get(["Identificação", "Identificacao"]);
-          const codigo = get(["Código Amostra", "Codigo Amostra", "Código", "Codigo"]);
-          const tipo = get(["Tipo"]);
-          const topo = get(["Topo (m)", "Topo"]);
-          const base = get(["Base (m)", "Base"]);
-          const coletada = get(["Amostra coletada", "Amostra Coletada"]);
-          const ensaios = get(["Ensaios laboratório", "Ensaios laboratorio", "Ensaios Laboratorio", "Ensaios"]);
-          if (!ensaios) return;
-          const tags = ensaios.split(/\s+/).map(normTag).filter(Boolean);
-          tags.forEach((tag, ti) => {
+
+          const identificacao = get([
+            "Identificação", "Identificacao", "Identificação da Amostra", "Identificacao da Amostra",
+            "Descrição", "Descricao", "Ponto", "Sondagem", "Furo", "Furo / Sondagem", "Origem", "Local", "Descrição da Amostra"
+          ]);
+          let codigo = get([
+            "Código Amostra", "Codigo Amostra", "Código da Amostra", "Codigo da Amostra",
+            "Código", "Codigo", "Amostra", "Amostra Code", "Amostra Nº", "Nº Amostra", "Numero Amostra",
+            "Code", "Sample", "ID", "Rótulo", "Rotulo", "Etiqueta"
+          ]);
+          if (!codigo && identificacao) {
+            codigo = identificacao;
+          }
+          if (!codigo) {
+            codigo = `Amostra ${idx + 1}`;
+          }
+
+          const tipo = get(["Tipo", "Tipo Amostra", "Tipo de Amostra", "Material"]) || "ST";
+          const topo = get(["Topo (m)", "Topo", "Profundidade Inicial", "Prof. Inicial", "De (m)", "De"]);
+          const base = get(["Base (m)", "Base", "Profundidade Final", "Prof. Final", "Até (m)", "Ate (m)", "Até", "Ate"]);
+          const coletada = get(["Amostra coletada", "Amostra Coletada", "Coleta", "Data Coleta", "Data da Coleta"]);
+          const osInSheet = get(["OS", "O.S.", "Número OS", "Numero OS", "Nº OS", "Ordem de Serviço", "Ordem de Servico", "OS_Numero"]);
+
+          const ensaios = get([
+            "Ensaios laboratório", "Ensaios laboratorio", "Ensaios Laboratorio", "Ensaios", "Ensaio",
+            "Tipo de Ensaio", "Tipos de Ensaio", "Escopo", "Método", "Metodo", "Ensaio Solicitado",
+            "Ensaios Solicitados", "Serviço", "Servico", "Sigla"
+          ]);
+
+          const detectedTags: string[] = [];
+          if (ensaios) {
+            detectedTags.push(...ensaios.split(/[\s,;+/|]+/).map(normTag).filter(Boolean));
+          } else {
+            const KNOWN_FLAGS = ["CD", "CISALHAMENTO", "ADENSAMENTO", "EDOMETRO", "TRIAXIAL", "UU", "CU", "CBR", "CARACTERIZACAO", "MESP", "MR", "DP", "MCT", "PERMEABILIDADE", "COMPRESSAO"];
+            for (const [colName, colVal] of Object.entries(r)) {
+              const cleanCol = colName.trim().toUpperCase();
+              const valStr = String(colVal ?? "").trim().toUpperCase();
+              if (valStr === "X" || valStr === "SIM" || valStr === "1" || valStr === "OK" || valStr === "TRUE") {
+                if (KNOWN_FLAGS.some((f) => cleanCol.includes(f))) {
+                  detectedTags.push(normTag(cleanCol));
+                }
+              }
+            }
+          }
+
+          if (detectedTags.length === 0) {
+            detectedTags.push("ENSAIO");
+          }
+
+          detectedTags.forEach((tag, ti) => {
             rows.push({
               key: `${idx}-${ti}`,
-              identificacao,
+              identificacao: identificacao || codigo,
               codigo_amostra: codigo,
               tipo,
               topo,
               base,
               amostra_coletada: coletada,
               tag,
+              os: osInSheet,
             });
           });
         });
@@ -252,8 +295,35 @@ export function ImportEnsaiosDialog({
       const amostraKeyToId = new Map<string, string>();
 
       const ensureTipo = async (tag: string): Promise<string> => {
-        const found = tipoByNome.get(tag);
+        const cleanTag = tag.trim().toUpperCase();
+        // 1. Procura por nome exato ou código
+        let found = tipos.find(
+          (t) =>
+            t.nome.trim().toUpperCase() === cleanTag ||
+            (t as any).codigo?.trim().toUpperCase() === cleanTag,
+        );
+        // 2. Procura por aliases comuns (CD -> Cisalhamento, AD -> Adensamento, TR -> Triaxial, etc.)
+        if (!found) {
+          if (cleanTag.includes("CD") || cleanTag.includes("CISALHA")) {
+            found = tipos.find((t) => t.nome.toLowerCase().includes("cisalha"));
+          } else if (cleanTag.includes("ADENS") || cleanTag.includes("EDOM") || cleanTag.includes("OED")) {
+            found = tipos.find((t) => t.nome.toLowerCase().includes("adens"));
+          } else if (cleanTag.includes("TRIAX") || cleanTag.includes("UU") || cleanTag.includes("CU")) {
+            found = tipos.find((t) => t.nome.toLowerCase().includes("triax"));
+          } else if (cleanTag.includes("CARACT") || cleanTag.includes("CBR")) {
+            found = tipos.find((t) => t.nome.toLowerCase().includes("caract") || t.nome.toLowerCase().includes("cbr"));
+          } else if (cleanTag.includes("MR") || cleanTag.includes("DP")) {
+            found = tipos.find((t) => t.nome.toLowerCase().includes("resili") || t.nome.toLowerCase().includes("mr"));
+          } else if (cleanTag.includes("MCT")) {
+            found = tipos.find((t) => t.nome.toLowerCase().includes("mct"));
+          } else if (cleanTag.includes("PERM")) {
+            found = tipos.find((t) => t.nome.toLowerCase().includes("perm"));
+          } else if (cleanTag.includes("COMP")) {
+            found = tipos.find((t) => t.nome.toLowerCase().includes("comp"));
+          }
+        }
         if (found) return found.id;
+
         const res: any = await insertRow({
           data: {
             sheet: SHEET_TIPOS,
@@ -265,15 +335,15 @@ export function ImportEnsaiosDialog({
             },
           },
         });
-        tipoByNome.set(tag, { id: res.id, nome: tag });
         return res.id;
       };
 
       let count = 0;
       for (const r of chosen) {
+        const targetOs = osNumero || r.os || "Geral";
         const normId = (r.identificacao || "").trim().toUpperCase().replace(/\s+/g, " ");
         const normCod = (r.codigo_amostra || "").trim().toUpperCase().replace(/\s+/g, " ");
-        const key = `${normId}||${normCod}`;
+        const key = `${targetOs}||${normId}||${normCod}`;
         let amostraId = amostraKeyToId.get(key);
         if (!amostraId) {
           const desc = [
@@ -286,16 +356,16 @@ export function ImportEnsaiosDialog({
             data: {
               sheet: SHEET_AMOSTRAS,
               row: {
-                os_numero: osNumero,
-                codigo_amostra: r.codigo_amostra,
-                descricao: desc,
-                tomador,
-                obra,
+                os_numero: targetOs,
+                codigo_amostra: r.codigo_amostra || r.identificacao || `Amostra ${count + 1}`,
+                descricao: desc || r.codigo_amostra || "",
+                tomador: tomador || "",
+                obra: obra || "",
                 prioridade: "media",
-                tipo: r.tipo,
-                topo_m: r.topo,
-                base_m: r.base,
-                amostra_coletada: r.amostra_coletada,
+                tipo: r.tipo || "ST",
+                topo_m: r.topo || "",
+                base_m: r.base || "",
+                amostra_coletada: r.amostra_coletada || "",
               },
             },
           });
@@ -324,6 +394,7 @@ export function ImportEnsaiosDialog({
       qc.invalidateQueries({ queryKey: ["ensaios"] });
       qc.invalidateQueries({ queryKey: ["tipos_ensaio"] });
       qc.invalidateQueries({ queryKey: ["tipos_ensaio_min"] });
+      qc.invalidateQueries({ queryKey: ["programacoes"] });
       onOpenChange(false);
     },
     onError: (e: any) => toast.error(e?.message ?? "Erro ao importar"),

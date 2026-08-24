@@ -194,9 +194,9 @@ const STATUS_COLOR: Record<Ensaio["status"], string> = {
 function parseAmostra(r: Record<string, string>): Amostra {
   return {
     id: r.id,
-    os_numero: r.os_numero ?? "",
-    codigo_amostra: r.codigo_amostra || null,
-    descricao: r.descricao || null,
+    os_numero: r.os_numero || r.os || r.OS || r.osNumero || "",
+    codigo_amostra: r.codigo_amostra || r.codigo || r.code || r.amostra || r.identificacao || null,
+    descricao: r.descricao || r.identificacao || null,
     tipo: r.tipo || null,
     tomador: r.tomador || null,
     obra: r.obra || null,
@@ -208,8 +208,8 @@ function parseAmostra(r: Record<string, string>): Amostra {
 function parseEnsaio(r: Record<string, string>): Ensaio {
   return {
     id: r.id,
-    amostra_id: r.amostra_id ?? "",
-    tipo_ensaio_id: r.tipo_ensaio_id ?? "",
+    amostra_id: r.amostra_id || r.amostraId || r.amostra || "",
+    tipo_ensaio_id: r.tipo_ensaio_id || r.tipoEnsaioId || r.tipo_id || r.tipo || "",
     status: (r.status || "pendente") as Ensaio["status"],
     prioridade: (r.prioridade || "media") as Ensaio["prioridade"],
     prazo: r.prazo || null,

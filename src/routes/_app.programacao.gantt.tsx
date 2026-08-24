@@ -122,11 +122,11 @@ function GanttPage() {
     queryFn: async () =>
       (await listRows({ data: { sheet: SHEET_AMOSTRAS } })).map((r) => ({
         id: r.id,
-        os_numero: r.os_numero ?? "",
-        codigo_amostra: r.codigo_amostra || null,
+        os_numero: r.os_numero || r.os || r.OS || r.osNumero || "",
+        codigo_amostra: r.codigo_amostra || r.codigo || r.code || r.amostra || r.identificacao || null,
         tipo: r.tipo || null,
         // "descricao" na aba Amostras guarda "identificação — Coleta: ..."
-        identificacao: (r.descricao || "").split(" — ")[0] || r.identificacao || null,
+        identificacao: (r.descricao || "").split(" — ")[0] || r.identificacao || r.codigo_amostra || null,
         topo_m: r.topo_m || null,
         base_m: r.base_m || null,
       })) as Amostra[],
@@ -136,8 +136,8 @@ function GanttPage() {
     queryFn: async () =>
       (await listRows({ data: { sheet: SHEET_ENSAIOS } })).map((r) => ({
         id: r.id,
-        amostra_id: r.amostra_id ?? "",
-        tipo_ensaio_id: r.tipo_ensaio_id ?? "",
+        amostra_id: r.amostra_id || r.amostraId || r.amostra || "",
+        tipo_ensaio_id: r.tipo_ensaio_id || r.tipoEnsaioId || r.tipo_id || r.tipo || "",
         status: r.status || "pendente",
         prazo: r.prazo || null,
         observacoes: r.observacoes || null,
