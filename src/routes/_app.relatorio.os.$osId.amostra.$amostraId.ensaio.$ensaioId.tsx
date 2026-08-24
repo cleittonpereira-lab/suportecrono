@@ -210,7 +210,7 @@ function EnsaioEditor() {
           <span className="font-medium text-foreground">{ENSAIO_LABEL[ensaio.tipo]}</span>
         </div>
       </div>
-      <EditorErrorBoundary>
+      <EditorErrorBoundary key={ensaio.id}>
         <Editor />
       </EditorErrorBoundary>
     </LabEnsaioProvider>
