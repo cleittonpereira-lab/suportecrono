@@ -710,25 +710,21 @@ export function AdensamentoPage() {
         revNumber,
       });
 
-      try {
-        await requestApproval({
-          data: {
-            scopeId,
-            rev: revNumber,
-            filename,
-            skipVerification: opts?.skipVerification || false,
-            index: {
-              os_numero: sample.os,
-              os_cliente: sample.client,
-              amostra_code: sample.reportNumber || sample.code,
-              ensaio_tipo: "adensamento",
-              ensaio_nome: "Adensamento Oedométrico",
-            },
+      await requestApproval({
+        data: {
+          scopeId,
+          rev: revNumber,
+          filename,
+          skipVerification: opts?.skipVerification || false,
+          index: {
+            os_numero: sample.os,
+            os_cliente: sample.client,
+            amostra_code: sample.reportNumber || sample.code,
+            ensaio_tipo: "adensamento",
+            ensaio_nome: "Adensamento Oedométrico",
           },
-        });
-      } catch (e) {
-        console.warn("requestApproval catch:", e);
-      }
+        },
+      });
 
       const nextStatus = opts?.skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao";
       setWfStatus(nextStatus);
@@ -764,12 +760,18 @@ export function AdensamentoPage() {
 
       await loadVersions();
       if (syncRes.ok) {
-        toast.success("Versão salva e sincronizada com sucesso no Google Drive!", { id: tid });
+        toast.success(
+          opts?.skipVerification
+            ? `Versão Rev ${String(revNumber).padStart(2, "0")} salva e enviada para aprovação!`
+            : `Versão Rev ${String(revNumber).padStart(2, "0")} salva e enviada para verificação!`,
+          { id: tid },
+        );
       } else {
-        toast.warning(`Versão salva localmente (${syncRes.error || "Drive pendente"})`, { id: tid });
+        toast.warning(`Versão salva (${syncRes.error || "Drive pendente"})`, { id: tid });
       }
     } catch (e: any) {
-      toast.error(`Erro ao salvar versão: ${e?.message || e}`, { id: tid });
+      console.error("Erro ao salvar versão / solicitar aprovação:", e);
+      toast.error(`Falha ao salvar versão / enviar para verificação: ${e?.message || e}`, { id: tid });
     } finally {
       setSavingVersion(false);
     }

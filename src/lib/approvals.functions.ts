@@ -357,28 +357,8 @@ export const requestApproval = createServerFn({ method: "POST" })
       .select()
       .single();
     if (error) {
-      console.warn("lab_report_approvals insert warning (RLS safe):", error.message);
-      if (!data.index) await setWorkflowStatus(data.scopeId, targetWorkflow);
-      return {
-        id: "app_" + Date.now(),
-        scope_id: data.scopeId,
-        rev: data.rev,
-        status: targetStatus,
-        requested_by: userId,
-        requested_by_name: name,
-        requested_at: new Date().toISOString(),
-        verified_by: verifiedPatch.verified_by ?? null,
-        verified_by_name: verifiedPatch.verified_by_name ?? null,
-        verified_at: verifiedPatch.verified_at ?? null,
-        verification_comment: null,
-        decided_by: null,
-        decided_by_name: null,
-        decided_at: null,
-        comment: null,
-        filename: data.filename ?? null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      } as unknown as ApprovalRow;
+      console.error("Erro ao registrar lab_report_approvals:", error.message);
+      throw new Error(`Falha ao registrar pedido de aprovação: ${error.message}`);
     }
     if (!data.index) await setWorkflowStatus(data.scopeId, targetWorkflow);
     await insertHistory(supabase, data.scopeId, data.rev, historyAction, userId, name, historyRole);
@@ -435,6 +415,12 @@ export const verifyApproval = createServerFn({ method: "POST" })
       .eq("rev", data.rev)
       .select()
       .maybeSingle();
+
+    if (error) {
+      console.error("Erro ao atualizar lab_report_approvals (verificação):", error.message);
+      throw new Error(`Falha ao registrar verificação: ${error.message}`);
+    }
+
     await setWorkflowStatus(
       data.scopeId,
       data.decision === "verificado" ? "aguardando_aprovacao" : "aguardando_verificacao",
@@ -532,6 +518,12 @@ export const decideApproval = createServerFn({ method: "POST" })
       .eq("rev", data.rev)
       .select()
       .maybeSingle();
+
+    if (error) {
+      console.error("Erro ao atualizar lab_report_approvals (aprovação):", error.message);
+      throw new Error(`Falha ao registrar aprovação: ${error.message}`);
+    }
+
     await setWorkflowStatus(
       data.scopeId,
       data.decision === "aprovado" ? "aprovado" : "aguardando_verificacao",
@@ -625,7 +617,7 @@ const ListCommentsInput = z.object({
   rev: z.number().int().nonnegative().optional(),
 });
 
-export const listApprovalComments = createServerFn({ method: "POST" })
+export const listApprovalComments = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((v: unknown) => ListCommentsInput.parse(v))
   .handler(async ({ data, context }) => {
@@ -642,31 +634,32 @@ export const listApprovalComments = createServerFn({ method: "POST" })
   });
 
 const WorkflowStatusesInput = z.object({
-  scopeIds: z.array(z.string()).default([]),
+  scopeIds: z.array(z.string().min(1)).max(200),
 });
 
 export const getWorkflowStatuses = createServerFn({ method: "POST" })
-  .validator((v: unknown) => WorkflowStatusesInput.parse(v))
+  .inputValidator((v: unknown) => WorkflowStatusesInput.parse(v))
   .handler(async ({ data }) => {
-    const statuses: Record<string, string> = {};
-    if (!data.scopeIds || data.scopeIds.length === 0) return { statuses };
+    if (!data.scopeIds || data.scopeIds.length === 0) return { statuses: {} as Record<string, string> };
 
     try {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      const { data: rows } = await supabaseAdmin
-        .from("lab_report_approvals")
-        .select("scope_id, status")
-        .in("scope_id", data.scopeIds)
-        .order("created_at", { ascending: false });
+      const { data: rows, error } = await supabaseAdmin
+        .from("lab_index")
+        .select("scope_id, workflow_status")
+        .in("scope_id", data.scopeIds);
 
-      if (rows) {
-        for (const r of rows) {
-          if (!statuses[r.scope_id]) {
-            statuses[r.scope_id] = r.status;
-          }
-        }
+      if (error) throw new Error(error.message);
+
+      const out: Record<string, string> = {};
+      for (const r of rows ?? []) {
+        out[String((r as { scope_id: string }).scope_id)] = String(
+          (r as { workflow_status?: string }).workflow_status ?? "digitacao",
+        );
       }
-    } catch {}
-
-    return { statuses };
+      return { statuses: out };
+    } catch (err) {
+      console.warn("getWorkflowStatuses warning:", err);
+      return { statuses: {} };
+    }
   });

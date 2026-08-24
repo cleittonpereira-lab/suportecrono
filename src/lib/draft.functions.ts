@@ -71,6 +71,7 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
       }
 
       // 1. Grava no lab_index sob o scopeId da rota E o canonicalId determinístico
+      let labIndexError: string | null = null;
       try {
         const rowData = {
           os_numero: osNumero,
@@ -83,12 +84,20 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
           updated_at: nowIso,
         };
 
-        await Promise.all([
+        const results = await Promise.all([
           supabaseAdmin.from("lab_index").upsert({ scope_id: scopeId, ...rowData }),
-          canonicalId !== scopeId ? supabaseAdmin.from("lab_index").upsert({ scope_id: canonicalId, ...rowData }) : Promise.resolve(),
+          canonicalId !== scopeId ? supabaseAdmin.from("lab_index").upsert({ scope_id: canonicalId, ...rowData }) : Promise.resolve({ error: null }),
         ]);
-      } catch (e) {
-        console.warn("[saveSharedDraft] Aviso ao salvar lab_index:", e);
+
+        for (const res of results) {
+          if (res && (res as any).error) {
+            labIndexError = (res as any).error.message || String((res as any).error);
+            console.error("[saveSharedDraft] Erro Supabase lab_index:", (res as any).error);
+          }
+        }
+      } catch (e: any) {
+        labIndexError = e?.message || String(e);
+        console.error("[saveSharedDraft] Exceção ao salvar lab_index:", e);
       }
 
       // 2. Se for uma pendência vinculada ou avulsa, atualiza o payload e status em lab_pendencias_digitacao
@@ -126,7 +135,7 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
         }
 
         if (pTargetId) {
-          await supabaseAdmin
+          const { error: updErr } = await supabaseAdmin
             .from("lab_pendencias_digitacao")
             .update({
               payload: payload as never,
@@ -134,8 +143,11 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
               updated_at: nowIso,
             })
             .eq("id", pTargetId);
+          if (updErr) {
+            console.error("[saveSharedDraft] Erro ao atualizar lab_pendencias_digitacao:", updErr.message);
+          }
         } else if (osNumero) {
-          await supabaseAdmin.from("lab_pendencias_digitacao").insert({
+          const { error: insErr } = await supabaseAdmin.from("lab_pendencias_digitacao").insert({
             os: osNumero,
             amostra: amostraCode,
             ensaio: ensaioNome,
@@ -146,6 +158,9 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
             created_at: nowIso,
             updated_at: nowIso,
           });
+          if (insErr) {
+            console.error("[saveSharedDraft] Erro ao inserir lab_pendencias_digitacao:", insErr.message);
+          }
         }
       } catch (e) {
         console.warn("[saveSharedDraft] Aviso ao atualizar lab_pendencias_digitacao:", e);
@@ -163,6 +178,10 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
         const filePath = path.join(draftDir, `${safeKey}.json`);
         fs.writeFileSync(filePath, JSON.stringify({ scopeId, payload, updatedAt: nowIso }, null, 2), "utf8");
       } catch {}
+
+      if (labIndexError) {
+        return { success: false, error: labIndexError };
+      }
 
       return { success: true };
     } catch (err) {

@@ -781,44 +781,41 @@ export function CDPage() {
         console.warn("Drive sync standby:", err);
       }
 
-      try {
-        await requestApproval({
-          data: {
-            scopeId,
-            rev: saved.rev,
-            filename,
-            skipVerification,
-            index: {
-              os_numero: sample.os,
-              os_cliente: sample.client,
-              amostra_code: sample.reportNumber || sample.code,
-              ensaio_tipo: "cisalhamento-direto",
-              ensaio_nome: "Cisalhamento Direto",
-            },
+      await requestApproval({
+        data: {
+          scopeId,
+          rev: saved.rev,
+          filename,
+          skipVerification,
+          index: {
+            os_numero: sample.os,
+            os_cliente: sample.client,
+            amostra_code: sample.reportNumber || sample.code,
+            ensaio_tipo: "cisalhamento-direto",
+            ensaio_nome: "Cisalhamento Direto",
           },
+        },
+      });
+      const currentDraft = { sample, specimens, selectedCpId, tab, adjust, axisCfg, photos: ctx?.photos || [] };
+      saveDraft(scopeId, currentDraft);
+      if (ctx && ctx.os && ctx.amostra && ctx.ensaio) {
+        labStore.patchEnsaio(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, {
+          payload: currentDraft,
+          status: skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao",
         });
-        const currentDraft = { sample, specimens, selectedCpId, tab, adjust, axisCfg, photos: ctx?.photos || [] };
-        saveDraft(scopeId, currentDraft);
-        if (ctx && ctx.os && ctx.amostra && ctx.ensaio) {
-          labStore.patchEnsaio(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, {
-            payload: currentDraft,
-            status: skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao",
-          });
-        }
-        setWfStatus(skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao");
-        await refreshApprovals();
-      } catch (err) {
-        console.warn("Approval request standby:", err);
       }
+      setWfStatus(skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao");
+      await refreshApprovals();
 
       toast.success(
         skipVerification
           ? `Versão Rev ${String(saved.rev).padStart(2, "0")} gerada e enviada para aprovação!`
-          : `Versão Rev ${String(saved.rev).padStart(2, "0")} gerada e salva com sucesso!`,
+          : `Versão Rev ${String(saved.rev).padStart(2, "0")} gerada e enviada para verificação!`,
         { id: tid },
       );
     } catch (err) {
-      toast.error("Erro ao salvar versão: " + (err instanceof Error ? err.message : String(err)), { id: tid });
+      console.error("Erro ao salvar versão / enviar para aprovação:", err);
+      toast.error("Erro ao salvar versão / solicitar verificação: " + (err instanceof Error ? err.message : String(err)), { id: tid });
     } finally {
       setSaveBusy(false);
     }

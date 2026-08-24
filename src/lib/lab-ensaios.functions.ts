@@ -107,7 +107,7 @@ export const getLabEnsaioSnapshot = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: idx, error } = await supabaseAdmin
       .from("lab_index")
-      .select("scope_id, os_numero, os_cliente, amostra_code, ensaio_tipo, ensaio_nome, workflow_status")
+      .select("scope_id, os_numero, os_cliente, amostra_code, ensaio_tipo, ensaio_nome, workflow_status, extra")
       .eq("scope_id", data.scopeId)
       .maybeSingle();
 
@@ -116,7 +116,8 @@ export const getLabEnsaioSnapshot = createServerFn({ method: "POST" })
 
     const osNumero = String(idx.os_numero ?? "").trim();
     const amostraCode = String(idx.amostra_code ?? "").trim();
-    let pendPayload: Record<string, unknown> = {};
+    let pendPayload: Record<string, unknown> = asObject(idx.extra);
+
     if (osNumero) {
       let pendQ = supabaseAdmin
         .from("lab_pendencias_digitacao")
@@ -137,7 +138,9 @@ export const getLabEnsaioSnapshot = createServerFn({ method: "POST" })
           tipo === "mesp-a"
         );
       }) as Record<string, unknown> | undefined;
-      pendPayload = asObject(matched?.payload);
+      if (matched && matched.payload) {
+        pendPayload = { ...pendPayload, ...asObject(matched.payload) };
+      }
     }
 
     const ident = asObject(pendPayload.ident);

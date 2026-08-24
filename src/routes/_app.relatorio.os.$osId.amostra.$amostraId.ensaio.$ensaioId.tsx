@@ -1,4 +1,4 @@
-﻿import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
@@ -83,33 +83,46 @@ function EnsaioEditor() {
     restoreRef.current = scopeId;
     setRestoring(true);
     setRestoreError(null);
+
+    let cancelled = false;
+
     void snapshotFn({ data: { scopeId } })
       .then((value) => {
+        if (cancelled) return;
         const snapshot = value as LabEnsaioSnapshot | null;
         if (snapshot) {
           labStore.ensureEnsaioFromSnapshot(snapshot);
           return;
         }
-        // Snapshot nao encontrado no lab_index - executa auto-heal direto
+        // Snapshot nao encontrado no lab_index - executa auto-heal
         forceAutoHeal();
       })
       .catch((err: unknown) => {
+        if (cancelled) return;
+        console.warn("[EnsaioEditor] Falha ao obter snapshot:", err);
         setRestoreError(err instanceof Error ? err.message : "Falha ao recuperar o ensaio.");
-        // Mesmo com erro, tenta auto-heal para nao bloquear o usuario
         forceAutoHeal();
       })
-      .finally(() => setRestoring(false));
+      .finally(() => {
+        if (!cancelled) setRestoring(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [amostra, amostraId, ensaio, ensaioId, os, osId, scopeId, snapshotFn, sync.status]);
 
-  // Timeout de seguranca: apos 8 segundos de carregamento, forca o auto-heal
+  // Timeout de seguranca: apenas se a chamada de rede travar completamente (15s)
   useEffect(() => {
     if (os && amostra && ensaio) return;
     const timer = setTimeout(() => {
       if (!os || !amostra || !ensaio) {
+        console.warn("[EnsaioEditor] Timeout de carregamento atingido, acionando inicialização segura.");
+        setRestoring(false);
         forceAutoHeal();
       }
-    }, 8000);
+    }, 15000);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [os, amostra, ensaio]);
