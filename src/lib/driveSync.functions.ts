@@ -569,18 +569,40 @@ const WorkflowStatusesInput = z.object({
 export const getWorkflowStatuses = createServerFn({ method: "POST" })
   .inputValidator((v: unknown) => WorkflowStatusesInput.parse(v))
   .handler(async ({ data }) => {
-    if (data.scopeIds.length === 0) return { statuses: {} as Record<string, string> };
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: rows, error } = await supabaseAdmin
-      .from("lab_index")
-      .select("scope_id, workflow_status")
-      .in("scope_id", data.scopeIds);
-    if (error) throw new Error(error.message);
-    const out: Record<string, string> = {};
-    for (const r of rows ?? []) {
-      out[String((r as { scope_id: string }).scope_id)] = String(
-        (r as { workflow_status?: string }).workflow_status ?? "digitacao",
-      );
+    if (!data.scopeIds || data.scopeIds.length === 0) return { statuses: {} as Record<string, string> };
+    try {
+      const { readDriveJson } = await import("./driveStorage");
+      const master = await readDriveJson<{ statuses: Record<string, string> }>("_approvals-index.json", DRIVE_ROOT_FOLDER_ID);
+      const out: Record<string, string> = {};
+      if (master?.statuses) {
+        for (const id of data.scopeIds) {
+          if (master.statuses[id]) {
+            out[id] = master.statuses[id];
+          }
+        }
+      }
+
+      if (Object.keys(out).length === data.scopeIds.length) {
+        return { statuses: out };
+      }
+
+      // Complementa com Supabase se necessário
+      try {
+        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+        const { data: rows } = await supabaseAdmin
+          .from("lab_index")
+          .select("scope_id, workflow_status")
+          .in("scope_id", data.scopeIds);
+        for (const r of rows ?? []) {
+          const sid = String((r as { scope_id: string }).scope_id);
+          if (!out[sid]) {
+            out[sid] = String((r as { workflow_status?: string }).workflow_status ?? "digitacao");
+          }
+        }
+      } catch {}
+
+      return { statuses: out };
+    } catch {
+      return { statuses: {} };
     }
-    return { statuses: out };
   });

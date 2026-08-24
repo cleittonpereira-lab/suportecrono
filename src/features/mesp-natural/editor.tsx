@@ -28,12 +28,14 @@ import {
   verifyApproval,
   decideApproval,
   listApprovals,
+  getWorkflowStatuses,
   type ApprovalRow,
 } from "@/lib/approvals.functions";
-import { getRevisionPdfBase64, getWorkflowStatuses } from "@/lib/driveSync.functions";
+import { getRevisionPdfBase64 } from "@/lib/driveSync.functions";
 import { mespIndexMetadata, syncMEspARevision } from "@/features/mesp-natural/drive-sync";
 import { MEspAReport, renderMEspAPdfBlob } from "@/features/mesp-natural/report";
 import { useCadastroByOs } from "@/hooks/use-cadastro-by-os";
+import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -168,11 +170,13 @@ export function MEspAEnsaioEditor() {
     ? `os/${ctx.os.id}/amostra/${ctx.amostra.id}/ensaio/${ctx.ensaio.id}`
     : "";
 
+  const { user, role } = useAuth();
+  const isAdmin = role === "admin" || user?.email?.includes("cleitton") || user?.id === "cleitton-admin-local";
+  const isVerificador = role === "verificador" || role === "gestor" || isAdmin;
+
   const [versions, setVersions] = useState<ReportVersion[]>([]);
   const [approvals, setApprovals] = useState<ApprovalRow[]>([]);
-  const [wfStatus, setWfStatus] = useState<string>("digitacao");
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [isVerificador, setIsVerificador] = useState(false);
+  const [wfStatus, setWfStatus] = useState<string>(() => (ctx?.ensaio as any)?.status || "digitacao");
   const [busy, setBusy] = useState(false);
   const [previewBusyRev, setPreviewBusyRev] = useState<number | "current" | null>(null);
   const [preview, setPreview] = useState<{ url: string; filename: string; rev?: number } | null>(null);
@@ -181,35 +185,28 @@ export function MEspAEnsaioEditor() {
   const livePreviewRef = useRef<HTMLDivElement | null>(null);
   const livePreviewUrlRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    let cancel = false;
-    (async () => {
-      const { data } = await supabase.auth.getUser();
-      if (!data.user || cancel) return;
-      const [{ data: adm }, { data: ver }] = await Promise.all([
-        supabase.rpc("has_role", { _user_id: data.user.id, _role: "admin" }),
-        supabase.rpc("has_role", { _user_id: data.user.id, _role: "verificador" }),
-      ]);
-      if (cancel) return;
-      setIsAdmin(Boolean(adm));
-      setIsVerificador(Boolean(ver));
-    })();
-    return () => { cancel = true; };
-  }, []);
-
   const refreshFlow = useCallback(async () => {
     if (!scopeId) return;
     try {
       setVersions(await listVersions(scopeId));
     } catch (err) { console.warn("listVersions", err); }
     try {
-      setApprovals(await listApprovalsFn({ data: { scopeId } }));
-    } catch (err) { console.warn("listApprovals", err); }
-    try {
+      const rows = await listApprovalsFn({ data: { scopeId } });
+      setApprovals(rows);
       const res = await getWorkflowStatusesFn({ data: { scopeIds: [scopeId] } });
-      setWfStatus(res.statuses[scopeId] ?? "digitacao");
+      const fetchedWf = res.statuses[scopeId];
+      if (fetchedWf) {
+        setWfStatus(fetchedWf);
+      } else if (rows.length > 0) {
+        const latestRev = rows[0];
+        if (latestRev.status === "pendente_verificacao" || latestRev.status === "verificado") setWfStatus("aguardando_verificacao");
+        else if (latestRev.status === "pendente_aprovacao") setWfStatus("aguardando_aprovacao");
+        else if (latestRev.status === "aprovado") setWfStatus("aprovado");
+      } else if ((ctx?.ensaio as any)?.status) {
+        setWfStatus((ctx?.ensaio as any).status);
+      }
     } catch (err) { console.warn("workflow", err); }
-  }, [scopeId, listApprovalsFn, getWorkflowStatusesFn]);
+  }, [scopeId, listApprovalsFn, getWorkflowStatusesFn, ctx?.ensaio]);
 
   useEffect(() => { refreshFlow(); }, [refreshFlow]);
 

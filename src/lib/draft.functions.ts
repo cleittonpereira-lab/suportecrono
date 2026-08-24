@@ -120,6 +120,23 @@ export const loadSharedDraft = createServerFn({ method: "GET" })
       const scopeId = data.scopeId;
       const canonicalId = data.osNum && data.amCode ? getCanonicalScopeId(data.osNum, data.amCode, data.ensaioTipo) : null;
 
+      // 0. Tenta buscar diretamente do Google Drive (dados/ensaio.json)
+      if (data.osNum && data.amCode) {
+        try {
+          const { ensureFolderPath, readDriveJson } = await import("./driveStorage");
+          const ensFolder = data.ensaioTipo || "Ensaio";
+          const folderId = await ensureFolderPath([data.osNum, data.amCode, ensFolder, "dados"]);
+          const parsed = await readDriveJson<any>("ensaio.json", folderId);
+          if (parsed) {
+            return {
+              success: true,
+              payload: parsed,
+              updatedAt: new Date().toISOString(),
+            };
+          }
+        } catch {}
+      }
+
       // 1. Tenta buscar no lab_index por scopeId ou por canonicalId
       try {
         const queryIds = Array.from(new Set([scopeId, canonicalId].filter(Boolean) as string[]));
