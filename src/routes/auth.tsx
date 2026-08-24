@@ -101,43 +101,31 @@ async function resolveCandidateEmails(rawIdentifier: string): Promise<string[]> 
   const uname = input.replace(/^@+/, "");
   if (!uname) return [];
 
-  const candidates: string[] = [];
-
-  // 1) Tenta resolver via RPC no banco
-  try {
-    const { data: email, error } = await supabase.rpc("resolve_email_by_username", {
-      _username: uname,
-    });
-    if (!error && email && typeof email === "string") {
-      candidates.push(email.trim().toLowerCase());
-    }
-  } catch {}
-
-  // 2) Tenta buscar no profiles
-  try {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("email")
-      .or(`username.eq.${uname},email.ilike.${uname}@%`)
-      .limit(1)
-      .maybeSingle();
-    if (profile?.email && !candidates.includes(profile.email.toLowerCase())) {
-      candidates.push(profile.email.toLowerCase());
-    }
-  } catch {}
-
-  // 3) Domínios padrão suportados
-  const standardDomains = [
+  // 1) Prioriza os domínios corporativos padrões diretamente (rápido, sem esperar banco)
+  const candidates: string[] = [
     `${uname}@suportesolos.com.br`,
     `${uname}@suporteinfra.com.br`,
     `${uname}@gmail.com`,
   ];
 
-  for (const d of standardDomains) {
-    if (!candidates.includes(d)) {
-      candidates.push(d);
+  // 2) Tenta buscar no profiles/RPC em paralelo com timeout de 1.5s
+  try {
+    const fetchProfileEmail = async () => {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("email")
+        .or(`username.eq.${uname},email.ilike.${uname}@%`)
+        .limit(1)
+        .maybeSingle();
+      return profile?.email ? profile.email.toLowerCase() : null;
+    };
+
+    const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500));
+    const resolvedEmail = await Promise.race([fetchProfileEmail(), timeout]);
+    if (resolvedEmail && !candidates.includes(resolvedEmail)) {
+      candidates.unshift(resolvedEmail);
     }
-  }
+  } catch {}
 
   return candidates;
 }
@@ -169,52 +157,59 @@ function UnifiedSignInForm() {
       // Autenticação oficial via Supabase Auth
       for (const emailCandidate of candidates) {
         try {
-          const { data, error } = await supabase.auth.signInWithPassword({
+          const authPromise = supabase.auth.signInWithPassword({
             email: emailCandidate,
             password,
           });
+          const timeoutPromise = new Promise<any>((_, reject) =>
+            setTimeout(() => reject(new Error("Tempo limite excedido na conexão.")), 8000),
+          );
+          const { data, error } = await Promise.race([authPromise, timeoutPromise]);
           if (!error && data?.user) {
             loggedUser = data.user;
             break;
           }
-          lastError = error;
+          if (error) {
+            lastError = error;
+          }
         } catch (err) {
           lastError = err;
         }
       }
 
       if (!loggedUser) {
-        setLoading(false);
         toast.error(friendlySignInError(lastError?.message || "Senha incorreta ou usuário não encontrado."), { id: tid });
         return;
       }
 
       // Verifica status do perfil
-      const { data: prof } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", loggedUser.id)
-        .maybeSingle();
+      try {
+        const { data: prof } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", loggedUser.id)
+          .maybeSingle();
 
-      if (prof?.status === "pendente") {
-        setLoading(false);
-        toast.info("Cadastro criado! Aguarde a aprovação do administrador.", { id: tid });
-        window.location.replace("/pendente");
-        return;
-      }
+        if (prof?.status === "pendente") {
+          toast.info("Cadastro criado! Aguarde a aprovação do administrador.", { id: tid });
+          window.location.replace("/pendente");
+          return;
+        }
 
-      if (prof?.status === "bloqueado") {
-        await supabase.auth.signOut();
-        setLoading(false);
-        toast.error("Sua conta está bloqueada pelo administrador.", { id: tid });
-        return;
-      }
+        if (prof?.status === "bloqueado") {
+          await supabase.auth.signOut();
+          toast.error("Sua conta está bloqueada pelo administrador.", { id: tid });
+          return;
+        }
+      } catch {}
 
       toast.success("Login realizado com sucesso! ✓", { id: tid });
       window.location.replace("/entregas");
     } catch (err: any) {
-      setLoading(false);
+      console.error("Erro durante autenticação:", err);
       toast.error(friendlySignInError(err?.message || "Erro ao efetuar login."), { id: tid });
+    } finally {
+      setLoading(false);
     }
   };
 

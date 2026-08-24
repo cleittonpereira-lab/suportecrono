@@ -72,12 +72,12 @@ function createSupabaseAdminClient() {
   const SUPABASE_URL =
     process.env.SUPABASE_URL ||
     process.env.VITE_SUPABASE_URL ||
-    "https://dummy.supabase.co";
+    "https://owcjhvbvcmnhqmmgbijz.supabase.co";
   const SUPABASE_SERVICE_ROLE_KEY =
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.SUPABASE_PUBLISHABLE_KEY ||
     process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-    "dummy";
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im93Y2podmJ2Y21uaHFtbWdiaWp6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI5NDEzMDIsImV4cCI6MjA5ODUxNzMwMn0._boAkAfOR5q7KIRViVg6GTqBf5B0_ecCYROpKRe1S94";
 
   return createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     global: {
