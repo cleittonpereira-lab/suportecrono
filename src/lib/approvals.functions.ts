@@ -101,6 +101,31 @@ async function setWorkflowStatus(
   if (error) {
     throw new Error(`Falha ao atualizar status de fluxo no banco: ${error.message}`);
   }
+
+  // Espelha (melhor esforço) na Central de Relatórios: lab_pendencias_digitacao
+  // usa seu próprio pipeline de status (pendente/em_digitacao/digitado/
+  // verificado/aprovado/concluido_externo), historicamente desacoplado deste.
+  // Isso não é a fonte de verdade — se não encontrar uma pendência
+  // correspondente (ex: relatório avulso), não falha a operação principal.
+  if (index?.os_numero && index?.ensaio_nome) {
+    try {
+      const pendenciaStatus =
+        status === "aprovado" ? "aprovado" :
+        status === "aguardando_aprovacao" ? "verificado" :
+        status === "aguardando_verificacao" ? "digitado" :
+        "em_digitacao"; // "digitacao" ou "rejeitado" voltam para digitação
+
+      let q = supabaseAdmin
+        .from("lab_pendencias_digitacao")
+        .update({ status: pendenciaStatus, updated_at: nowIso })
+        .eq("os", index.os_numero)
+        .eq("ensaio", index.ensaio_nome);
+      q = index.amostra_code ? q.eq("amostra", index.amostra_code) : q.is("amostra", null);
+      await q;
+    } catch {
+      // silencioso: espelho best-effort, não é a fonte de verdade
+    }
+  }
 }
 
 /* ─────────────────────────────── SOLICITAÇÃO ─────────────────────────────── */

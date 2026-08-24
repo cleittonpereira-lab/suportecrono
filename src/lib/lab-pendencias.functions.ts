@@ -189,6 +189,36 @@ export const atualizarStatusPendencia = createServerFn({ method: "POST" })
       throw new Error(`Erro ao atualizar pendência no banco: ${updErr.message}`);
     }
 
+    // Espelha (melhor esforço) no pipeline de workflow dos editores de
+    // relatório (lab_index.workflow_status), que é lido pelos editores e
+    // pela tela da Amostra. Não é a fonte de verdade deste lado — se não
+    // achar um registro correspondente, não falha a atualização da Central.
+    if (existing?.os && existing?.ensaio && data.status !== "concluido_externo") {
+      try {
+        const workflowStatus =
+          data.status === "aprovado" ? "aprovado" :
+          data.status === "verificado" ? "aguardando_aprovacao" :
+          data.status === "digitado" ? "aguardando_verificacao" :
+          "digitacao"; // "pendente" ou "em_digitacao"
+
+        let sel = supabaseAdmin
+          .from("lab_index")
+          .select("scope_id")
+          .eq("os_numero", existing.os)
+          .eq("ensaio_nome", existing.ensaio);
+        sel = existing.amostra ? sel.eq("amostra_code", existing.amostra) : sel.is("amostra_code", null);
+        const { data: matches } = await sel;
+        if (matches && matches.length === 1) {
+          await supabaseAdmin
+            .from("lab_index")
+            .update({ workflow_status: workflowStatus, updated_at: now })
+            .eq("scope_id", matches[0].scope_id);
+        }
+      } catch {
+        // silencioso: espelho best-effort, não é a fonte de verdade
+      }
+    }
+
     return { ok: true };
   });
 
