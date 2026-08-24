@@ -435,7 +435,7 @@ function CentralRelatoriosPage() {
             ? "adensamento"
             : "triaxial-cid";
 
-    abrirPorTipo(tipo, r.os, r.amostra ?? "", undefined, undefined, r.id);
+    abrirPorTipo(tipo, r.os, r.amostra ?? "", undefined, undefined, r.id, r.ensaio);
   }
 
   function abrirPorTipo(
@@ -516,7 +516,16 @@ function CentralRelatoriosPage() {
     if (!am) return;
 
     const sigla = siglaOficial || ENSAIO_LABEL[tipo as EnsaioTipo] || tipo;
-    let en = am.ensaios.find((e) => e.tipo === tipo);
+    // Uma amostra pode ter mais de um ensaio do MESMO tipo (ex: dois
+    // Cisalhamento Direto — "CD4.IN" e "CD4.NAT"). Match por tipo sozinho
+    // colapsaria os dois no mesmo registro; por isso também exige que a
+    // sigla/nome bata quando temos uma sigla específica desta pendência.
+    let en = am.ensaios.find(
+      (e) => e.tipo === tipo && (e.sigla === sigla || e.nome === sigla || e.label === sigla),
+    );
+    if (!en && !siglaOficial) {
+      en = am.ensaios.find((e) => e.tipo === tipo);
+    }
     if (!en) {
       en = labStore.addEnsaio(os.id, am.id, tipo as EnsaioTipo, sigla);
       if (en) {

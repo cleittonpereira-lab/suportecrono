@@ -248,7 +248,7 @@ export function EnsaioListByType({ tipo }: { tipo: EnsaioTipo }) {
   }, [laudosItems, busca]);
 
   // Abre editor com dados limpos e vinculados
-  function abrirEnsaio(osNum: string, amCode: string, pendenciaId?: string) {
+  function abrirEnsaio(osNum: string, amCode: string, pendenciaId?: string, siglaOficial?: string) {
     if (tipo === "mesp-a") {
       navigate({ to: "/relatorio/mesp-a", search: { pendencia: pendenciaId } });
       return;
@@ -275,9 +275,19 @@ export function EnsaioListByType({ tipo }: { tipo: EnsaioTipo }) {
     }
     if (!am) return;
 
-    let en = am.ensaios.find((e) => e.tipo === tipo);
+    const sigla = siglaOficial || ENSAIO_LABEL[tipo];
+    // Uma amostra pode ter mais de um ensaio do MESMO tipo (ex: dois
+    // Cisalhamento Direto — "CD4.IN" e "CD4.NAT"). Match por tipo sozinho
+    // colapsaria os dois no mesmo registro; por isso também exige que a
+    // sigla/nome bata quando temos uma sigla específica desta pendência.
+    let en = am.ensaios.find(
+      (e) => e.tipo === tipo && (e.sigla === sigla || e.nome === sigla || e.label === sigla),
+    );
+    if (!en && !siglaOficial) {
+      en = am.ensaios.find((e) => e.tipo === tipo);
+    }
     if (!en) {
-      en = labStore.addEnsaio(os.id, am.id, tipo, ENSAIO_LABEL[tipo]);
+      en = labStore.addEnsaio(os.id, am.id, tipo, sigla);
     }
 
     if (!en) return;
@@ -556,7 +566,7 @@ export function EnsaioListByType({ tipo }: { tipo: EnsaioTipo }) {
                           size="sm"
                           variant="outline"
                           className="h-7 text-xs"
-                          onClick={() => abrirEnsaio(r.os, r.amostra ?? "", r.id)}
+                          onClick={() => abrirEnsaio(r.os, r.amostra ?? "", r.id, r.ensaio)}
                         >
                           Abrir Laudo
                         </Button>
