@@ -1,8 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import type { ChegadaTask, ChegadaColumn, Option } from "./chegada-amostras-store";
-import fs from "node:fs";
-import path from "node:path";
+import { readDriveJson, writeDriveJson, DRIVE_ROOT_FOLDER_ID } from "@/lib/driveStorage";
 
 export const DEFAULT_COLUMNS: ChegadaColumn[] = [
   { id: "registro", title: "Registro", subtitle: "Chegada de amostras", isSystem: true },
@@ -65,45 +64,31 @@ export interface SharedChegadaState {
 
 const CHEGADA_DRIVE_FILENAME = "_chegada-amostras.json";
 
-// Persistência local no servidor em .data/chegada_amostras.json
-function getLocalChegadaFile(): string {
-  const dir = path.join(process.cwd(), ".data");
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  return path.join(dir, "chegada_amostras.json");
-}
-
-export function readLocalChegadaState(): SharedChegadaState {
+/** Lê o estado compartilhado direto do Drive (fonte de verdade), com fallback para os padrões na primeira execução. */
+export async function readLocalChegadaState(): Promise<SharedChegadaState> {
   try {
-    const file = getLocalChegadaFile();
-    if (fs.existsSync(file)) {
-      const raw = fs.readFileSync(file, "utf8");
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === "object") {
-        const columns = Array.isArray(parsed.columns) && parsed.columns.length > 0 ? parsed.columns : DEFAULT_COLUMNS;
-        const tasks: Record<string, ChegadaTask[]> = {};
-        columns.forEach((col: ChegadaColumn) => {
-          tasks[col.id] = Array.isArray(parsed.tasks?.[col.id]) ? parsed.tasks[col.id] : [];
-        });
-        if (parsed.tasks && typeof parsed.tasks === "object") {
-          Object.keys(parsed.tasks).forEach((k) => {
-            if (!tasks[k] && Array.isArray(parsed.tasks[k])) {
-              tasks[k] = parsed.tasks[k];
-            }
-          });
+    const parsed = await readDriveJson<SharedChegadaState>(CHEGADA_DRIVE_FILENAME, DRIVE_ROOT_FOLDER_ID);
+    if (parsed && typeof parsed === "object" && parsed.tasks) {
+      const columns = Array.isArray(parsed.columns) && parsed.columns.length > 0 ? parsed.columns : DEFAULT_COLUMNS;
+      const tasks: Record<string, ChegadaTask[]> = {};
+      columns.forEach((col: ChegadaColumn) => {
+        tasks[col.id] = Array.isArray(parsed.tasks?.[col.id]) ? parsed.tasks[col.id] : [];
+      });
+      Object.keys(parsed.tasks).forEach((k) => {
+        if (!tasks[k] && Array.isArray(parsed.tasks[k])) {
+          tasks[k] = parsed.tasks[k];
         }
-        return {
-          columns,
-          tasks,
-          tipoOptions: Array.isArray(parsed.tipoOptions) && parsed.tipoOptions.length > 0 ? parsed.tipoOptions : DEFAULT_TIPO_OPTIONS,
-          recebidoOptions: Array.isArray(parsed.recebidoOptions) && parsed.recebidoOptions.length > 0 ? parsed.recebidoOptions : DEFAULT_RECEBIDO_OPTIONS,
-          updatedAt: parsed.updatedAt || new Date().toISOString(),
-        };
-      }
+      });
+      return {
+        columns,
+        tasks,
+        tipoOptions: Array.isArray(parsed.tipoOptions) && parsed.tipoOptions.length > 0 ? parsed.tipoOptions : DEFAULT_TIPO_OPTIONS,
+        recebidoOptions: Array.isArray(parsed.recebidoOptions) && parsed.recebidoOptions.length > 0 ? parsed.recebidoOptions : DEFAULT_RECEBIDO_OPTIONS,
+        updatedAt: parsed.updatedAt || new Date().toISOString(),
+      };
     }
   } catch (e) {
-    console.warn("[readLocalChegadaState] Erro:", e);
+    console.warn("[readLocalChegadaState] Erro ao ler do Drive:", e);
   }
 
   return {
@@ -111,46 +96,18 @@ export function readLocalChegadaState(): SharedChegadaState {
     tasks: DEFAULT_INITIAL_TASKS,
     tipoOptions: DEFAULT_TIPO_OPTIONS,
     recebidoOptions: DEFAULT_RECEBIDO_OPTIONS,
-    updatedAt: new Date().toISOString(),
+    updatedAt: new Date(0).toISOString(),
   };
 }
 
-export function writeLocalChegadaState(state: SharedChegadaState): void {
-  try {
-    const file = getLocalChegadaFile();
-    fs.writeFileSync(file, JSON.stringify(state, null, 2), "utf8");
-  } catch (e) {
-    console.warn("[writeLocalChegadaState] Erro:", e);
-  }
-
-  // Grava de forma assíncrona no Google Drive
-  try {
-    import("@/lib/driveStorage").then(({ writeDriveJson, DRIVE_ROOT_FOLDER_ID }) => {
-      writeDriveJson(CHEGADA_DRIVE_FILENAME, state, DRIVE_ROOT_FOLDER_ID).catch(() => {});
-    });
-  } catch {}
+/** Grava o estado compartilhado no Drive, aguardando a escrita terminar antes de responder. */
+export async function writeLocalChegadaState(state: SharedChegadaState): Promise<void> {
+  await writeDriveJson(CHEGADA_DRIVE_FILENAME, state, DRIVE_ROOT_FOLDER_ID);
 }
 
 /** Handler puro de busca de estado */
 export async function handleFetchSharedChegadaState(): Promise<SharedChegadaState> {
-  const localState = readLocalChegadaState();
-
-  // 1. Tenta buscar no Google Drive Soberano
-  try {
-    const { readDriveJson, DRIVE_ROOT_FOLDER_ID } = await import("@/lib/driveStorage");
-    const driveState = await readDriveJson<SharedChegadaState>(CHEGADA_DRIVE_FILENAME, DRIVE_ROOT_FOLDER_ID);
-    if (driveState?.tasks && typeof driveState.tasks === "object") {
-      const driveUpdatedAt = driveState.updatedAt ? new Date(driveState.updatedAt).getTime() : 0;
-      const localUpdatedAt = localState.updatedAt ? new Date(localState.updatedAt).getTime() : 0;
-
-      if (driveUpdatedAt >= localUpdatedAt || Object.keys(localState.tasks).length === 0) {
-        writeLocalChegadaState(driveState);
-        return driveState;
-      }
-    }
-  } catch {}
-
-  return localState;
+  return readLocalChegadaState();
 }
 
 /** Handler puro de criação de amostra */
@@ -182,7 +139,7 @@ export async function handleCreateSharedChegadaTask(
     updatedAt: timeStr,
   };
 
-  const currentState = readLocalChegadaState();
+  const currentState = await readLocalChegadaState();
   const columns = currentState.columns || DEFAULT_COLUMNS;
   const currentTasks: Record<string, ChegadaTask[]> = { ...currentState.tasks };
 
@@ -224,7 +181,7 @@ export async function handleCreateSharedChegadaTask(
     updatedAt: nowIso,
   };
 
-  writeLocalChegadaState(fullState);
+  await writeLocalChegadaState(fullState);
 
   return {
     success: true,
@@ -241,7 +198,7 @@ export async function handleSaveSharedChegadaState(data: {
   recebidoOptions?: Option[];
 }): Promise<{ success: boolean; updatedAt: string }> {
   const nowIso = new Date().toISOString();
-  const currentState = readLocalChegadaState();
+  const currentState = await readLocalChegadaState();
 
   const columns = data.columns || currentState.columns || DEFAULT_COLUMNS;
   const tasks = data.tasks || currentState.tasks;
@@ -256,7 +213,7 @@ export async function handleSaveSharedChegadaState(data: {
     updatedAt: nowIso,
   };
 
-  writeLocalChegadaState(newState);
+  await writeLocalChegadaState(newState);
 
   return { success: true, updatedAt: nowIso };
 }
@@ -269,7 +226,7 @@ export async function handleAddSharedChegadaOption(data: {
   const clean = data.name.trim();
   if (!clean) return { success: false, options: [] };
 
-  const currentState = readLocalChegadaState();
+  const currentState = await readLocalChegadaState();
   let updatedOptions: Option[] = [];
 
   if (data.type === "tipo") {
@@ -291,7 +248,7 @@ export async function handleAddSharedChegadaOption(data: {
   }
 
   currentState.updatedAt = new Date().toISOString();
-  writeLocalChegadaState(currentState);
+  await writeLocalChegadaState(currentState);
 
   return { success: true, options: updatedOptions };
 }
