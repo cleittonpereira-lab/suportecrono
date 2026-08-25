@@ -70,6 +70,38 @@ export type ApprovalEvent = {
   createdAt: string;
 };
 
+export type ReportApprovalRow = {
+  id: string;
+  scope_id: string;
+  rev: number;
+  status: string;
+  requested_by: string;
+  requested_by_name: string | null;
+  requested_at: string;
+  verified_by: string | null;
+  verified_by_name: string | null;
+  verified_at: string | null;
+  verification_comment: string | null;
+  decided_by: string | null;
+  decided_by_name: string | null;
+  decided_at: string | null;
+  comment: string | null;
+  filename: string | null;
+  updated_at?: string;
+};
+
+export type ReportApprovalCommentRow = {
+  id: string;
+  scope_id: string;
+  rev: number;
+  action: string;
+  comment: string | null;
+  author_id: string;
+  author_name: string | null;
+  author_role: string | null;
+  created_at: string;
+};
+
 export type DraftHistoryEntry = {
   changedAt: string;
   changedBy?: string | null;
@@ -98,6 +130,8 @@ export type EnsaioFile = {
   workflowStatus?: string;
   approvals?: ApprovalEvent[];
   draftHistory?: DraftHistoryEntry[];
+  reportApprovals?: ReportApprovalRow[];
+  approvalComments?: ReportApprovalCommentRow[];
 };
 
 const FOLDER_OS = ["lab-os"];
