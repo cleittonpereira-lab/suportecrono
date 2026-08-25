@@ -403,6 +403,157 @@ export type Database = {
         }
         Relationships: []
       }
+      lab_os: {
+        Row: {
+          id: string
+          numero: string
+          client: string | null
+          work_number: string | null
+          local: string | null
+          operator: string | null
+          technical_resp: string | null
+          revision: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id: string
+          numero: string
+          client?: string | null
+          work_number?: string | null
+          local?: string | null
+          operator?: string | null
+          technical_resp?: string | null
+          revision?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          numero?: string
+          client?: string | null
+          work_number?: string | null
+          local?: string | null
+          operator?: string | null
+          technical_resp?: string | null
+          revision?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      lab_amostras: {
+        Row: {
+          id: string
+          os_id: string
+          report_number: string | null
+          borehole: string | null
+          depth: string | null
+          description: string | null
+          granulometric_description: string | null
+          code: string | null
+          sample_type: string | null
+          material_type: string | null
+          coords: Json | null
+          photos: Json
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id: string
+          os_id: string
+          report_number?: string | null
+          borehole?: string | null
+          depth?: string | null
+          description?: string | null
+          granulometric_description?: string | null
+          code?: string | null
+          sample_type?: string | null
+          material_type?: string | null
+          coords?: Json | null
+          photos?: Json
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          os_id?: string
+          report_number?: string | null
+          borehole?: string | null
+          depth?: string | null
+          description?: string | null
+          granulometric_description?: string | null
+          code?: string | null
+          sample_type?: string | null
+          material_type?: string | null
+          coords?: Json | null
+          photos?: Json
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lab_amostras_os_id_fkey"
+            columns: ["os_id"]
+            isOneToOne: false
+            referencedRelation: "lab_os"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lab_ensaios: {
+        Row: {
+          id: string
+          amostra_id: string
+          tipo: string
+          status: string | null
+          label: string | null
+          nome: string | null
+          sigla: string | null
+          operator: string | null
+          photos: Json
+          payload: Json | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id: string
+          amostra_id: string
+          tipo: string
+          status?: string | null
+          label?: string | null
+          nome?: string | null
+          sigla?: string | null
+          operator?: string | null
+          photos?: Json
+          payload?: Json | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          amostra_id?: string
+          tipo?: string
+          status?: string | null
+          label?: string | null
+          nome?: string | null
+          sigla?: string | null
+          operator?: string | null
+          photos?: Json
+          payload?: Json | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lab_ensaios_amostra_id_fkey"
+            columns: ["amostra_id"]
+            isOneToOne: false
+            referencedRelation: "lab_amostras"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lab_pendencias_digitacao: {
         Row: {
           amostra: string | null

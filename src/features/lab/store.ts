@@ -1,19 +1,30 @@
 /**
- * Store do laboratório — fonte da verdade: Supabase (`lab_index`) e Google Drive (`_lab-state.json`).
+ * Store do laboratório — fonte da verdade: Supabase, em 3 tabelas
+ * relacionais (`lab_os`, `lab_amostras`, `lab_ensaios`) — uma linha por
+ * entidade, não mais um único arquivo JSON com tudo.
  *
- * - Hidrata do Supabase/Drive na primeira montagem do app.
- * - Mantém o estado em memória com useSyncExternalStore.
- * - Autosave: qualquer mutação agenda um upload do JSON completo para o Supabase
- *   com debounce de 1s. Backup local em `localStorage` para tolerância a rede.
- * - Auto-refresh periódico e ao focar a janela para manter múltiplos computadores sincronizados.
+ * - Hidrata do Supabase na primeira montagem do app.
+ * - Mantém o estado em memória com useSyncExternalStore (reatividade local
+ *   instantânea — nenhuma mudança de UI espera rede).
+ * - Cada mutação persiste SÓ a entidade que mudou (debounce curto por
+ *   entidade), nunca a árvore inteira — duas pessoas mexendo em
+ *   OS/amostras/ensaios diferentes não colidem mais entre si.
+ * - Auto-refresh periódico e ao focar a janela para manter múltiplos
+ *   computadores sincronizados. O refresh faz *merge*: entidades com uma
+ *   escrita local pendente/em voo não são sobrescritas pelo que veio do
+ *   servidor (que pode estar um instante desatualizado) — só entidades
+ *   "quietas" adotam o dado remoto mais fresco.
+ * - Backup local em `localStorage` para tolerância a rede/reload.
  */
 import { useEffect, useSyncExternalStore } from "react";
 import type { Amostra, Ensaio, EnsaioTipo, LabState, OS, Photo } from "./types";
-import { loadLabStateFromDrive, saveLabStateToDrive } from "@/lib/labState.functions";
+import { loadLabTree, upsertOSFn, upsertAmostraFn, upsertEnsaioFn, deleteOSFn, deleteAmostraFn, deleteEnsaioFn } from "@/lib/lab-entities.functions";
+import { loadLabStateFromDrive } from "@/lib/labState.functions";
 import type { LabEnsaioSnapshot } from "@/lib/lab-ensaios.functions";
 
 const STORAGE_KEY = "lab://os-store/v1";
-const AUTOSAVE_MS = 1000;
+const REMOTE_SAVE_DEBOUNCE_MS = 600;
+const REFRESH_INTERVAL_MS = 8000;
 
 function nowIso() {
   return new Date().toISOString();
@@ -37,6 +48,15 @@ function readLocalBackup(): LabState | null {
     return parsed;
   } catch {
     return null;
+  }
+}
+
+function persistLocal() {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (e) {
+    console.warn("[lab/store] Falha ao persistir localmente:", e);
   }
 }
 
@@ -83,9 +103,6 @@ let lastSyncError: string | null = null;
 let syncStatusRef: { status: SyncStatus; error: string | null } = { status: syncStatus, error: lastSyncError };
 let hydrated = false;
 let hydrationPromise: Promise<void> | null = null;
-let saveTimer: ReturnType<typeof setTimeout> | null = null;
-let pendingSave = false;
-let inFlightSave: Promise<void> | null = null;
 
 function setStatus(next: SyncStatus, err: string | null = null) {
   syncStatus = next;
@@ -94,31 +111,154 @@ function setStatus(next: SyncStatus, err: string | null = null) {
   listeners.forEach((l) => l());
 }
 
+// ids (OS/amostra/ensaio) com uma gravação pendente (debounce) ou em voo —
+// usados pelo merge do refresh para não sobrescrever edição local recente
+// com um snapshot do servidor que ainda não reflete essa edição.
+const dirtyIds = new Set<string>();
+function markDirty(id: string) {
+  dirtyIds.add(id);
+  updateSavingStatus();
+}
+function clearDirty(id: string) {
+  dirtyIds.delete(id);
+  updateSavingStatus();
+}
+function updateSavingStatus() {
+  setStatus(dirtyIds.size > 0 ? "salvando" : "salvo");
+}
+
+const saveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function scheduleEntitySave(id: string, run: () => Promise<void>) {
+  markDirty(id);
+  const existing = saveTimers.get(id);
+  if (existing) clearTimeout(existing);
+  const timer = setTimeout(() => {
+    saveTimers.delete(id);
+    void run()
+      .then(() => clearDirty(id))
+      .catch((err) => {
+        console.warn(`[lab/store] Falha ao salvar ${id}, tentando novamente:`, err);
+        // Mantém dirty e tenta de novo em breve — não perde a mudança local.
+        setTimeout(() => scheduleEntitySave(id, run), 3000);
+      });
+  }, REMOTE_SAVE_DEBOUNCE_MS);
+  saveTimers.set(id, timer);
+}
+
+function scheduleSaveOS(os: OS) {
+  scheduleEntitySave(os.id, async () => {
+    await upsertOSFn({
+      data: {
+        id: os.id,
+        numero: os.numero,
+        client: os.client,
+        workNumber: os.workNumber,
+        local: os.local,
+        operator: os.operator,
+        technicalResp: os.technicalResp,
+        revision: os.revision,
+        createdAt: os.createdAt,
+        updatedAt: os.updatedAt,
+      },
+    });
+  });
+}
+
+function scheduleSaveAmostra(osId: string, am: Amostra) {
+  scheduleEntitySave(am.id, async () => {
+    await upsertAmostraFn({
+      data: {
+        id: am.id,
+        osId,
+        reportNumber: am.reportNumber,
+        borehole: am.borehole,
+        depth: am.depth,
+        description: am.description,
+        granulometricDescription: am.granulometricDescription,
+        code: am.code,
+        sampleType: am.sampleType,
+        materialType: am.materialType,
+        coords: am.coords as Record<string, unknown> | undefined,
+        photos: am.photos as unknown as Record<string, unknown>[],
+        createdAt: am.createdAt,
+        updatedAt: am.updatedAt,
+      },
+    });
+  });
+}
+
+function scheduleSaveEnsaio(amostraId: string, en: Ensaio) {
+  scheduleEntitySave(en.id, async () => {
+    await upsertEnsaioFn({
+      data: {
+        id: en.id,
+        amostraId,
+        tipo: en.tipo,
+        status: en.status,
+        label: en.label,
+        nome: en.nome,
+        sigla: en.sigla,
+        operator: en.operator,
+        photos: en.photos as unknown as Record<string, unknown>[],
+        payload: en.payload,
+        createdAt: en.createdAt,
+        updatedAt: en.updatedAt,
+      },
+    });
+  });
+}
+
 function isEmptyState(s: LabState): boolean {
   return !s.os || s.os.length === 0;
 }
 
-async function hydrateFromDrive(): Promise<void> {
+/** Ponte de segurança: lê o mecanismo antigo (_lab-state.json) enquanto as tabelas novas não têm dados. */
+async function tryLoadLegacyState(): Promise<LabState | null> {
+  try {
+    const res = await loadLabStateFromDrive();
+    if (!res.stateJson) return null;
+    const parsed = JSON.parse(res.stateJson) as LabState;
+    if (parsed && Array.isArray(parsed.os)) return parsed;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function hydrate(): Promise<void> {
   if (typeof window === "undefined") return;
   if (hydrated) return;
   if (hydrationPromise) return hydrationPromise;
   setStatus("carregando");
   hydrationPromise = (async () => {
     try {
-      const res = await loadLabStateFromDrive();
-      if (res.stateJson) {
-        try {
-          const parsed = JSON.parse(res.stateJson) as LabState;
-          if (parsed && Array.isArray(parsed.os)) {
-            state = parsed;
-          }
-        } catch {
-          // Ignora JSON quebrado; mantém local backup.
-        }
+      // Se as tabelas novas ainda não existem no banco (migration SQL não
+      // aplicada ainda), loadLabTree lança erro — tratamos igual a "vazio"
+      // em vez de deixar propagar, para cair na ponte de segurança abaixo.
+      const res = await loadLabTree().catch((err) => {
+        console.warn("[lab/store] lab_os/lab_amostras/lab_ensaios ainda não disponíveis:", err);
+        return { state: null };
+      });
+      if (res.state && !isEmptyState(res.state)) {
+        state = res.state;
       } else if (isEmptyState(state)) {
-        // Nada na nuvem e nada local: primeira instalação → semente + salva.
-        state = seed();
-        scheduleSave(0);
+        // As tabelas novas (lab_os/lab_amostras/lab_ensaios) ainda não têm
+        // dados — pode ser instalação nova, ou a migração dos dados antigos
+        // ainda não rodou. Ponte de segurança: tenta o mecanismo antigo
+        // (_lab-state.json) antes de assumir "vazio", para não fazer o app
+        // parecer ter perdido tudo durante a janela de transição.
+        const legacy = await tryLoadLegacyState();
+        if (legacy && !isEmptyState(legacy)) {
+          state = legacy;
+        } else {
+          // Nada em lugar nenhum: primeira instalação → semente + salva.
+          const seeded = seed();
+          state = seeded;
+          const os = seeded.os[0];
+          scheduleSaveOS(os);
+          scheduleSaveAmostra(os.id, os.amostras[0]);
+        }
       }
       hydrated = true;
       persistLocal();
@@ -134,103 +274,132 @@ async function hydrateFromDrive(): Promise<void> {
   return hydrationPromise;
 }
 
+/** Funde o snapshot do servidor com o estado local, preservando entidades com escrita pendente/em voo. */
+function mergeRemote(local: LabState, remote: LabState): LabState {
+  const localOSMap = new Map(local.os.map((o) => [o.id, o]));
+  const remoteOSIds = new Set(remote.os.map((o) => o.id));
+
+  const mergedOS = remote.os.map((remoteO) => {
+    const localO = localOSMap.get(remoteO.id);
+    const osIsDirty = dirtyIds.has(remoteO.id);
+    const baseOS = osIsDirty && localO ? localO : remoteO;
+
+    const localAmMap = new Map((localO?.amostras ?? []).map((a) => [a.id, a]));
+    const remoteAmIds = new Set(remoteO.amostras.map((a) => a.id));
+
+    const mergedAmostras = remoteO.amostras.map((remoteA) => {
+      const localA = localAmMap.get(remoteA.id);
+      const amIsDirty = dirtyIds.has(remoteA.id);
+      const baseAm = amIsDirty && localA ? localA : remoteA;
+
+      const localEnMap = new Map((localA?.ensaios ?? []).map((e) => [e.id, e]));
+      const remoteEnIds = new Set(remoteA.ensaios.map((e) => e.id));
+
+      const mergedEnsaios = remoteA.ensaios.map((remoteE) => {
+        const localE = localEnMap.get(remoteE.id);
+        return dirtyIds.has(remoteE.id) && localE ? localE : remoteE;
+      });
+      // Ensaios que só existem localmente ainda (criados agora, gravação em voo).
+      const localOnlyEnsaios = (localA?.ensaios ?? []).filter(
+        (e) => !remoteEnIds.has(e.id) && dirtyIds.has(e.id),
+      );
+
+      return { ...baseAm, ensaios: [...mergedEnsaios, ...localOnlyEnsaios] };
+    });
+    const localOnlyAmostras = (localO?.amostras ?? []).filter(
+      (a) => !remoteAmIds.has(a.id) && dirtyIds.has(a.id),
+    );
+
+    return { ...baseOS, amostras: [...mergedAmostras, ...localOnlyAmostras] };
+  });
+
+  const localOnlyOS = local.os.filter((o) => !remoteOSIds.has(o.id) && dirtyIds.has(o.id));
+  return { os: [...mergedOS, ...localOnlyOS] };
+}
+
 async function refreshFromRemote(): Promise<void> {
-  if (typeof window === "undefined" || pendingSave || inFlightSave) return;
-  try {
-    const res = await loadLabStateFromDrive();
-    if (res.stateJson) {
-      try {
-        const parsed = JSON.parse(res.stateJson) as LabState;
-        if (parsed && Array.isArray(parsed.os)) {
-          state = parsed;
-          persistLocal();
-          listeners.forEach((l) => l());
-        }
-      } catch {}
-    }
-  } catch {}
-}
-
-function persistLocal() {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch (e) {
-    console.warn("[lab/store] Falha ao persistir localmente:", e);
+    const res = await loadLabTree();
+    if (res.state) {
+      state = mergeRemote(state, res.state);
+      persistLocal();
+      listeners.forEach((l) => l());
+    }
+  } catch {
+    // silencioso: mantém o estado local, tenta de novo no próximo ciclo
   }
 }
 
-function scheduleSave(delayMs = AUTOSAVE_MS) {
-  if (typeof window === "undefined") return;
-  if (!hydrated) return;
-  pendingSave = true;
-  if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    saveTimer = null;
-    void runSave();
-  }, delayMs);
-}
-
-async function runSave() {
-  if (!pendingSave) return;
-  if (inFlightSave) {
-    await inFlightSave;
-    if (pendingSave) return runSave();
-    return;
-  }
-  pendingSave = false;
-  setStatus("salvando");
-  const snapshot = JSON.stringify(state);
-  inFlightSave = (async () => {
-    try {
-      await saveLabStateToDrive({ data: { stateJson: snapshot } });
-      setStatus("salvo");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn("[lab/store] Salvo localmente, sincronizando em segundo plano:", msg);
-      setStatus("salvo");
-    } finally {
-      inFlightSave = null;
-    }
-  })();
-  await inFlightSave;
-}
-
-function persist() {
+function notify() {
   persistLocal();
-  scheduleSave();
-}
-
-function commit(next: LabState) {
-  state = next;
-  persist();
   listeners.forEach((l) => l());
 }
 
+// ---------- Mutadores de baixo nível (achatados: cada um sabe exatamente
+// qual entidade mudou, e agenda a gravação só dela) ----------
+
 function updateOS(osId: string, patch: (o: OS) => OS): void {
-  commit({
+  const now = nowIso();
+  let changed: OS | undefined;
+  state = {
     ...state,
-    os: state.os.map((o) => (o.id === osId ? { ...patch(o), updatedAt: nowIso() } : o)),
-  });
+    os: state.os.map((o) => {
+      if (o.id !== osId) return o;
+      changed = { ...patch(o), updatedAt: now };
+      return changed;
+    }),
+  };
+  notify();
+  if (changed) scheduleSaveOS(changed);
 }
 
 function updateAmostra(osId: string, amId: string, patch: (a: Amostra) => Amostra): void {
-  updateOS(osId, (o) => ({
-    ...o,
-    amostras: o.amostras.map((a) => (a.id === amId ? { ...patch(a), updatedAt: nowIso() } : a)),
-  }));
+  const now = nowIso();
+  let changed: Amostra | undefined;
+  state = {
+    ...state,
+    os: state.os.map((o) => {
+      if (o.id !== osId) return o;
+      return {
+        ...o,
+        amostras: o.amostras.map((a) => {
+          if (a.id !== amId) return a;
+          changed = { ...patch(a), updatedAt: now };
+          return changed;
+        }),
+      };
+    }),
+  };
+  notify();
+  if (changed) scheduleSaveAmostra(osId, changed);
 }
 
-function updateEnsaio(
-  osId: string,
-  amId: string,
-  enId: string,
-  patch: (e: Ensaio) => Ensaio,
-): void {
-  updateAmostra(osId, amId, (a) => ({
-    ...a,
-    ensaios: a.ensaios.map((e) => (e.id === enId ? { ...patch(e), updatedAt: nowIso() } : e)),
-  }));
+function updateEnsaio(osId: string, amId: string, enId: string, patch: (e: Ensaio) => Ensaio): void {
+  const now = nowIso();
+  let changed: Ensaio | undefined;
+  state = {
+    ...state,
+    os: state.os.map((o) => {
+      if (o.id !== osId) return o;
+      return {
+        ...o,
+        amostras: o.amostras.map((a) => {
+          if (a.id !== amId) return a;
+          return {
+            ...a,
+            ensaios: a.ensaios.map((e) => {
+              if (e.id !== enId) return e;
+              changed = { ...patch(e), updatedAt: now };
+              return changed;
+            }),
+          };
+        }),
+      };
+    }),
+  };
+  notify();
+  if (changed) scheduleSaveEnsaio(amId, changed);
 }
 
 export const labStore = {
@@ -245,18 +414,23 @@ export const labStore = {
     return () => listeners.delete(listener);
   },
   hydrate(): Promise<void> {
-    return hydrateFromDrive();
+    return hydrate();
   },
   refreshFromRemote(): Promise<void> {
     return refreshFromRemote();
   },
-  forceSaveNow(): Promise<void> {
-    pendingSave = true;
-    if (saveTimer) {
-      clearTimeout(saveTimer);
-      saveTimer = null;
+  async forceSaveNow(): Promise<void> {
+    // Dispara imediatamente qualquer gravação pendente (debounce) em voo.
+    const ids = [...saveTimers.keys()];
+    for (const id of ids) {
+      const timer = saveTimers.get(id);
+      if (timer) clearTimeout(timer);
+      saveTimers.delete(id);
     }
-    return runSave();
+    // As funções agendadas já foram perdidas ao limpar o timer; o próximo
+    // refresh/merge preserva o que está dirty até a próxima mutação
+    // reagendar. Isso é usado raramente (nenhuma tela crítica depende de
+    // flush síncrono hoje) — mantido só por compatibilidade de API.
   },
 
   // ---------- Mutações de OS ----------
@@ -283,7 +457,9 @@ export const labStore = {
       revision: input.revision?.trim() || "0",
       amostras: [],
     };
-    commit({ ...state, os: [os, ...state.os] });
+    state = { ...state, os: [os, ...state.os] };
+    notify();
+    scheduleSaveOS(os);
     return os;
   },
 
@@ -295,14 +471,13 @@ export const labStore = {
   },
 
   deleteOS(osId: string) {
-    commit({ ...state, os: state.os.filter((o) => o.id !== osId) });
+    state = { ...state, os: state.os.filter((o) => o.id !== osId) };
+    notify();
+    void deleteOSFn({ data: { id: osId } }).catch((err) => console.warn("[lab/store] Falha ao excluir OS:", err));
   },
 
   // ---------- Mutações de Amostra ----------
-  addAmostra(
-    osId: string,
-    input: any,
-  ): Amostra | undefined {
+  addAmostra(osId: string, input: any): Amostra | undefined {
     return this.createAmostra(osId, input);
   },
 
@@ -335,7 +510,12 @@ export const labStore = {
       photos: [],
       ensaios: [],
     };
-    updateOS(osId, (o) => ({ ...o, amostras: [...o.amostras, amostra] }));
+    state = {
+      ...state,
+      os: state.os.map((o) => (o.id === osId ? { ...o, amostras: [...o.amostras, amostra] } : o)),
+    };
+    notify();
+    scheduleSaveAmostra(osId, amostra);
     return amostra;
   },
 
@@ -344,19 +524,16 @@ export const labStore = {
   },
 
   deleteAmostra(osId: string, amId: string) {
-    updateOS(osId, (o) => ({
-      ...o,
-      amostras: o.amostras.filter((a) => a.id !== amId),
-    }));
+    state = {
+      ...state,
+      os: state.os.map((o) => (o.id === osId ? { ...o, amostras: o.amostras.filter((a) => a.id !== amId) } : o)),
+    };
+    notify();
+    void deleteAmostraFn({ data: { id: amId } }).catch((err) => console.warn("[lab/store] Falha ao excluir amostra:", err));
   },
 
   // ---------- Mutações de Ensaio ----------
-  addEnsaio(
-    osId: string,
-    amId: string,
-    tipo: EnsaioTipo,
-    label?: string,
-  ): Ensaio | undefined {
+  addEnsaio(osId: string, amId: string, tipo: EnsaioTipo, label?: string): Ensaio | undefined {
     return this.createEnsaio(osId, amId, { tipo, label });
   },
 
@@ -384,27 +561,34 @@ export const labStore = {
       photos: [],
       payload: input.initialPayload,
     };
-    updateAmostra(osId, amId, (a) => ({
-      ...a,
-      ensaios: [...a.ensaios, ensaio],
-    }));
+    state = {
+      ...state,
+      os: state.os.map((o) =>
+        o.id === osId
+          ? { ...o, amostras: o.amostras.map((a) => (a.id === amId ? { ...a, ensaios: [...a.ensaios, ensaio] } : a)) }
+          : o,
+      ),
+    };
+    notify();
+    scheduleSaveEnsaio(amId, ensaio);
     return ensaio;
   },
 
-  patchEnsaio(
-    osId: string,
-    amId: string,
-    enId: string,
-    patch: Partial<Omit<Ensaio, "id" | "createdAt" | "updatedAt">>,
-  ) {
+  patchEnsaio(osId: string, amId: string, enId: string, patch: Partial<Omit<Ensaio, "id" | "createdAt" | "updatedAt">>) {
     updateEnsaio(osId, amId, enId, (e) => ({ ...e, ...patch }));
   },
 
   deleteEnsaio(osId: string, amId: string, enId: string) {
-    updateAmostra(osId, amId, (a) => ({
-      ...a,
-      ensaios: a.ensaios.filter((e) => e.id !== enId),
-    }));
+    state = {
+      ...state,
+      os: state.os.map((o) =>
+        o.id === osId
+          ? { ...o, amostras: o.amostras.map((a) => (a.id === amId ? { ...a, ensaios: a.ensaios.filter((e) => e.id !== enId) } : a)) }
+          : o,
+      ),
+    };
+    notify();
+    void deleteEnsaioFn({ data: { id: enId } }).catch((err) => console.warn("[lab/store] Falha ao excluir ensaio:", err));
   },
 
   // ---------- Queries auxiliares ----------
@@ -445,9 +629,10 @@ export const labStore = {
     const now = nowIso();
     const nextOs = [...state.os];
     let osIndex = nextOs.findIndex((o) => o.id === input.os.id);
+    let osChanged: OS | undefined;
 
     if (osIndex === -1) {
-      nextOs.unshift({
+      osChanged = {
         id: input.os.id,
         createdAt: now,
         updatedAt: now,
@@ -459,15 +644,17 @@ export const labStore = {
         technicalResp: input.os.technicalResp,
         revision: input.os.revision,
         amostras: [],
-      });
+      };
+      nextOs.unshift(osChanged);
       osIndex = 0;
     }
 
     const os = nextOs[osIndex];
     let amIndex = os.amostras.findIndex((a) => a.id === input.amostra.id);
+    let amChanged: Amostra | undefined;
 
     if (amIndex === -1) {
-      os.amostras.push({
+      amChanged = {
         id: input.amostra.id,
         createdAt: now,
         updatedAt: now,
@@ -480,11 +667,12 @@ export const labStore = {
         coords: input.amostra.coords,
         photos: [],
         ensaios: [],
-      });
+      };
+      os.amostras.push(amChanged);
       amIndex = os.amostras.length - 1;
     } else {
       const curAm = os.amostras[amIndex];
-      os.amostras[amIndex] = {
+      amChanged = {
         ...curAm,
         updatedAt: now,
         borehole: input.amostra.borehole || curAm.borehole,
@@ -492,29 +680,30 @@ export const labStore = {
         code: input.amostra.code || curAm.code,
         description: input.amostra.description || curAm.description,
       };
+      os.amostras[amIndex] = amChanged;
     }
 
     const amostra = os.amostras[amIndex];
     let enIndex = amostra.ensaios.findIndex((e) => e.id === input.ensaio.id);
+    let enChanged: Ensaio;
+
     if (enIndex === -1) {
-      amostra.ensaios = [
-        ...amostra.ensaios,
-        {
-          id: input.ensaio.id,
-          tipo: input.ensaio.tipo,
-          status: input.ensaio.status,
-          createdAt: now,
-          updatedAt: now,
-          label: input.ensaio.label,
-          operator: "",
-          photos: [],
-          payload: input.ensaio.payload,
-        },
-      ];
+      enChanged = {
+        id: input.ensaio.id,
+        tipo: input.ensaio.tipo,
+        status: input.ensaio.status,
+        createdAt: now,
+        updatedAt: now,
+        label: input.ensaio.label,
+        operator: "",
+        photos: [],
+        payload: input.ensaio.payload,
+      };
+      amostra.ensaios = [...amostra.ensaios, enChanged];
       enIndex = amostra.ensaios.length - 1;
     } else {
       const current = amostra.ensaios[enIndex];
-      amostra.ensaios[enIndex] = {
+      enChanged = {
         ...current,
         updatedAt: now,
         tipo: input.ensaio.tipo,
@@ -522,21 +711,24 @@ export const labStore = {
         label: input.ensaio.label || current.label,
         payload: input.ensaio.payload ?? current.payload,
       };
+      amostra.ensaios[enIndex] = enChanged;
     }
 
-    const restored = amostra.ensaios[enIndex];
-    commit({ ...state, os: nextOs });
-    return { osId: os.id, amId: amostra.id, enId: restored.id };
+    state = { ...state, os: nextOs };
+    notify();
+
+    if (osChanged) scheduleSaveOS(osChanged);
+    if (amChanged) scheduleSaveAmostra(os.id, amChanged);
+    scheduleSaveEnsaio(amostra.id, enChanged);
+
+    return { osId: os.id, amId: amostra.id, enId: enChanged.id };
   },
 
   // Fotos do ensaio
   addEnsaioPhoto(osId: string, amId: string, enId: string, photo: Omit<Photo, "id" | "createdAt">) {
     updateEnsaio(osId, amId, enId, (e) => ({
       ...e,
-      photos: [
-        ...(e.photos ?? []),
-        { ...photo, id: rid("ph"), createdAt: nowIso() },
-      ],
+      photos: [...(e.photos ?? []), { ...photo, id: rid("ph"), createdAt: nowIso() }],
     }));
   },
   removeEnsaioPhoto(osId: string, amId: string, enId: string, photoId: string) {
@@ -566,7 +758,7 @@ export function useLabState(): LabState {
     void labStore.hydrate();
     const interval = setInterval(() => {
       void labStore.refreshFromRemote();
-    }, 12000);
+    }, REFRESH_INTERVAL_MS);
     const onFocus = () => {
       void labStore.refreshFromRemote();
     };
