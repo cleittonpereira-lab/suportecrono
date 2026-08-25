@@ -529,7 +529,7 @@ export const labStore = {
       os: state.os.map((o) => (o.id === osId ? { ...o, amostras: o.amostras.filter((a) => a.id !== amId) } : o)),
     };
     notify();
-    void deleteAmostraFn({ data: { id: amId } }).catch((err) => console.warn("[lab/store] Falha ao excluir amostra:", err));
+    void deleteAmostraFn({ data: { id: amId, osId } }).catch((err) => console.warn("[lab/store] Falha ao excluir amostra:", err));
   },
 
   // ---------- Mutações de Ensaio ----------
@@ -588,7 +588,7 @@ export const labStore = {
       ),
     };
     notify();
-    void deleteEnsaioFn({ data: { id: enId } }).catch((err) => console.warn("[lab/store] Falha ao excluir ensaio:", err));
+    void deleteEnsaioFn({ data: { id: enId, amostraId: amId } }).catch((err) => console.warn("[lab/store] Falha ao excluir ensaio:", err));
   },
 
   // ---------- Queries auxiliares ----------

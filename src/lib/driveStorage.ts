@@ -172,6 +172,42 @@ export async function uploadBytesToDrive(opts: {
   return result.id;
 }
 
+/** Lista todos os arquivos (não-pasta) dentro de uma pasta do Drive, com paginação. */
+export async function listFilesInFolder(parentId: string): Promise<{ id: string; name: string }[]> {
+  if (!hasDriveCredentials()) return [];
+  const out: { id: string; name: string }[] = [];
+  let pageToken: string | undefined;
+  try {
+    do {
+      const q = `'${parentId}' in parents and trashed = false and mimeType != '${FOLDER_MIME}'`;
+      const params = new URLSearchParams({
+        q,
+        fields: "nextPageToken,files(id,name)",
+        pageSize: "1000",
+      });
+      if (pageToken) params.set("pageToken", pageToken);
+      const res = await fetch(`${DRIVE_V3}/files?${params.toString()}`, { method: "GET", headers: driveHeaders() });
+      if (!res.ok) break;
+      const data = (await res.json()) as { files?: { id: string; name: string }[]; nextPageToken?: string };
+      out.push(...(data.files ?? []));
+      pageToken = data.nextPageToken;
+    } while (pageToken);
+  } catch (err) {
+    console.warn("[DriveStorage] Erro ao listar pasta:", err);
+  }
+  return out;
+}
+
+/** Apaga um arquivo do Drive pelo seu fileId. */
+export async function deleteDriveFile(fileId: string): Promise<void> {
+  if (!hasDriveCredentials()) return;
+  try {
+    await fetch(`${DRIVE_V3}/files/${fileId}`, { method: "DELETE", headers: driveHeaders() });
+  } catch (err) {
+    console.warn("[DriveStorage] Erro ao apagar arquivo:", err);
+  }
+}
+
 /** Lê um arquivo JSON do Google Drive com fallback em cache */
 export async function readDriveJson<T>(filename: string, parentId: string = DRIVE_ROOT_FOLDER_ID): Promise<T | null> {
   const cacheKey = `${parentId}:${filename}`;

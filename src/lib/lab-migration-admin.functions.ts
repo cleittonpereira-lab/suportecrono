@@ -11,6 +11,31 @@ import { z } from "zod";
 
 const Input = z.object({ secret: z.string() });
 
+export const testDriveRoundTrip = createServerFn({ method: "GET" })
+  .validator((v: unknown) => Input.parse(v))
+  .handler(async ({ data }) => {
+    if (data.secret !== "suportecrono-migrate-2026-lab-tables") {
+      throw new Error("unauthorized");
+    }
+    const { hasDriveCredentials, ensureFolderPath, writeDriveJson, readDriveJson } = await import("@/lib/driveStorage");
+    const steps: string[] = [];
+    steps.push(`hasDriveCredentials(): ${hasDriveCredentials()}`);
+    try {
+      const folderId = await ensureFolderPath(["_diagnostico"]);
+      steps.push(`ensureFolderPath OK: folderId=${folderId}`);
+      const testValue = { ping: Date.now() };
+      const w = await writeDriveJson("_ping.json", testValue, folderId);
+      steps.push(`writeDriveJson OK: ${JSON.stringify(w)}`);
+      const r = await readDriveJson<typeof testValue>("_ping.json", folderId);
+      steps.push(`readDriveJson: ${JSON.stringify(r)}`);
+      const roundTripOk = r?.ping === testValue.ping;
+      steps.push(`Round-trip bateu: ${roundTripOk}`);
+    } catch (err) {
+      steps.push(`ERRO: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return { steps };
+  });
+
 export const runLabStateMigration = createServerFn({ method: "GET" })
   .validator((v: unknown) => Input.parse(v))
   .handler(async ({ data }) => {

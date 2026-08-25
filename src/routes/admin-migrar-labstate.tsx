@@ -3,7 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { runLabStateMigration } from "@/lib/lab-migration-admin.functions";
+import { runLabStateMigration, testDriveRoundTrip } from "@/lib/lab-migration-admin.functions";
 
 export const Route = createFileRoute("/admin-migrar-labstate")({
   component: AdminMigrarLabState,
@@ -11,9 +11,12 @@ export const Route = createFileRoute("/admin-migrar-labstate")({
 
 function AdminMigrarLabState() {
   const migrateFn = useServerFn(runLabStateMigration);
+  const testDriveFn = useServerFn(testDriveRoundTrip);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<Awaited<ReturnType<typeof runLabStateMigration>> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [driveTest, setDriveTest] = useState<string[] | null>(null);
+  const [driveTesting, setDriveTesting] = useState(false);
 
   async function run() {
     setRunning(true);
@@ -29,6 +32,19 @@ function AdminMigrarLabState() {
     }
   }
 
+  async function runDriveTest() {
+    setDriveTesting(true);
+    setDriveTest(null);
+    try {
+      const res = await testDriveFn({ data: { secret: "suportecrono-migrate-2026-lab-tables" } });
+      setDriveTest(res.steps);
+    } catch (err) {
+      setDriveTest([`ERRO: ${err instanceof Error ? err.message : String(err)}`]);
+    } finally {
+      setDriveTesting(false);
+    }
+  }
+
   return (
     <div className="max-w-xl mx-auto my-16 px-4">
       <Card>
@@ -40,9 +56,21 @@ function AdminMigrarLabState() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Button onClick={run} disabled={running}>
-            {running ? "Migrando..." : "Rodar migração"}
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={runDriveTest} disabled={driveTesting} variant="outline">
+              {driveTesting ? "Testando..." : "Testar Drive (ler/escrever)"}
+            </Button>
+            <Button onClick={run} disabled={running}>
+              {running ? "Migrando..." : "Rodar migração"}
+            </Button>
+          </div>
+          {driveTest && (
+            <ul className="text-xs space-y-1 bg-muted/30 rounded p-3">
+              {driveTest.map((s, i) => (
+                <li key={i}>{s}</li>
+              ))}
+            </ul>
+          )}
           {error && <p className="text-sm text-destructive">Erro: {error}</p>}
           {result && (
             <div className="text-sm space-y-2">

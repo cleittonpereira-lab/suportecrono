@@ -1,24 +1,25 @@
 /**
- * Persistência do labStore em tabelas relacionais no Supabase (lab_os,
- * lab_amostras, lab_ensaios) — uma linha por entidade, em vez do antigo
- * arquivo único `_lab-state.json` no Google Drive sobrescrito por inteiro
- * a cada mudança. Cada função aqui grava/lê SÓ a entidade específica,
- * eliminando a colisão entre usuários mexendo em OS/amostras/ensaios
- * diferentes ao mesmo tempo.
+ * Persistência do labStore no Google Drive — um arquivo por entidade
+ * (uma OS, uma amostra, um ensaio), não mais um arquivo único gigante.
+ * Isso elimina a colisão de escrita entre usuários mexendo em entidades
+ * diferentes ao mesmo tempo — cada um toca um arquivo diferente.
+ *
+ * Cada arquivo carrega um campo `rev` (revisão). Escritas fazem
+ * read-modify-write: leem o arquivo atual, comparam a rev esperada, e só
+ * sobrescrevem se bater — senão devolvem conflito. O Google Drive não tem
+ * transação real, então isso reduz a janela de colisão mas não elimina
+ * 100% (duas escritas quase simultâneas no MESMO arquivo ainda podem
+ * colidir) — é a mesma limitação de qualquer read-modify-write sem lock
+ * de banco, aceita conscientemente ao optar por Drive em vez de um banco
+ * relacional.
  */
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import type { Amostra, Coords, Ensaio, EnsaioStatus, EnsaioTipo, LabState, OS, Photo } from "@/features/lab/types";
+import { ensureFolderPath, listFilesInFolder, readDriveJson, writeDriveJson, deleteDriveFile, findFileInFolder, DRIVE_ROOT_FOLDER_ID } from "@/lib/driveStorage";
 
-type SerializableJson =
-  | string
-  | number
-  | boolean
-  | null
-  | SerializableJson[]
-  | { [key: string]: SerializableJson };
-
+type SerializableJson = string | number | boolean | null | SerializableJson[] | { [key: string]: SerializableJson };
 function toSerializableJson(value: unknown): SerializableJson | undefined {
   if (value === undefined) return undefined;
   try {
@@ -28,139 +29,159 @@ function toSerializableJson(value: unknown): SerializableJson | undefined {
   }
 }
 
-type OSRow = {
+type OSFile = {
   id: string;
   numero: string;
   client: string | null;
-  work_number: string | null;
+  workNumber: string | null;
   local: string | null;
   operator: string | null;
-  technical_resp: string | null;
+  technicalResp: string | null;
   revision: string | null;
-  created_at: string;
-  updated_at: string;
+  createdAt: string;
+  updatedAt: string;
+  rev: number;
 };
 
-type AmostraRow = {
+type AmostraFile = {
   id: string;
-  os_id: string;
-  report_number: string | null;
+  osId: string;
+  reportNumber: string | null;
   borehole: string | null;
   depth: string | null;
   description: string | null;
-  granulometric_description: string | null;
+  granulometricDescription: string | null;
   code: string | null;
-  sample_type: string | null;
-  material_type: string | null;
+  sampleType: string | null;
+  materialType: string | null;
   coords: Coords | null;
-  photos: Photo[] | null;
-  created_at: string;
-  updated_at: string;
+  photos: Photo[];
+  createdAt: string;
+  updatedAt: string;
+  rev: number;
 };
 
-type EnsaioRow = {
+type EnsaioFile = {
   id: string;
-  amostra_id: string;
+  amostraId: string;
   tipo: string;
   status: string | null;
   label: string | null;
   nome: string | null;
   sigla: string | null;
   operator: string | null;
-  photos: Photo[] | null;
+  photos: Photo[];
   payload: unknown;
-  created_at: string;
-  updated_at: string;
+  createdAt: string;
+  updatedAt: string;
+  rev: number;
 };
 
-function osFromRow(r: OSRow): Omit<OS, "amostras"> {
+const FOLDER_OS = ["lab-os"];
+const FOLDER_AMOSTRAS = ["lab-amostras"];
+const FOLDER_ENSAIOS = ["lab-ensaios"];
+
+const osFileName = (id: string) => `${id}.json`;
+const amostraFileName = (osId: string, id: string) => `${osId}__${id}.json`;
+const ensaioFileName = (amostraId: string, id: string) => `${amostraId}__${id}.json`;
+
+function osToPublic(f: OSFile): Omit<OS, "amostras"> {
   return {
-    id: r.id,
-    numero: r.numero,
-    client: r.client ?? undefined,
-    workNumber: r.work_number ?? undefined,
-    local: r.local ?? undefined,
-    operator: r.operator ?? undefined,
-    technicalResp: r.technical_resp ?? undefined,
-    revision: r.revision ?? undefined,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
+    id: f.id,
+    numero: f.numero,
+    client: f.client ?? undefined,
+    workNumber: f.workNumber ?? undefined,
+    local: f.local ?? undefined,
+    operator: f.operator ?? undefined,
+    technicalResp: f.technicalResp ?? undefined,
+    revision: f.revision ?? undefined,
+    createdAt: f.createdAt,
+    updatedAt: f.updatedAt,
   };
 }
 
-function amostraFromRow(r: AmostraRow): Omit<Amostra, "ensaios"> {
+function amostraToPublic(f: AmostraFile): Omit<Amostra, "ensaios"> {
   return {
-    id: r.id,
-    reportNumber: r.report_number ?? undefined,
-    borehole: r.borehole ?? undefined,
-    depth: r.depth ?? undefined,
-    description: r.description ?? undefined,
-    granulometricDescription: r.granulometric_description ?? undefined,
-    code: r.code ?? undefined,
-    sampleType: r.sample_type ?? undefined,
-    materialType: r.material_type ?? undefined,
-    coords: r.coords ?? undefined,
-    photos: r.photos ?? [],
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
+    id: f.id,
+    reportNumber: f.reportNumber ?? undefined,
+    borehole: f.borehole ?? undefined,
+    depth: f.depth ?? undefined,
+    description: f.description ?? undefined,
+    granulometricDescription: f.granulometricDescription ?? undefined,
+    code: f.code ?? undefined,
+    sampleType: f.sampleType ?? undefined,
+    materialType: f.materialType ?? undefined,
+    coords: f.coords ?? undefined,
+    photos: f.photos ?? [],
+    createdAt: f.createdAt,
+    updatedAt: f.updatedAt,
   };
 }
 
 type SerializableEnsaio = Omit<Ensaio, "payload"> & { payload?: SerializableJson };
 
-function ensaioFromRow(r: EnsaioRow): SerializableEnsaio {
+function ensaioToPublic(f: EnsaioFile): SerializableEnsaio {
   return {
-    id: r.id,
-    tipo: r.tipo as EnsaioTipo,
-    status: (r.status as EnsaioStatus) || "rascunho",
-    label: r.label ?? undefined,
-    nome: r.nome ?? undefined,
-    sigla: r.sigla ?? undefined,
-    operator: r.operator ?? undefined,
-    photos: r.photos ?? [],
-    payload: toSerializableJson(r.payload),
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
+    id: f.id,
+    tipo: f.tipo as EnsaioTipo,
+    status: (f.status as EnsaioStatus) || "rascunho",
+    label: f.label ?? undefined,
+    nome: f.nome ?? undefined,
+    sigla: f.sigla ?? undefined,
+    operator: f.operator ?? undefined,
+    photos: f.photos ?? [],
+    payload: toSerializableJson(f.payload),
+    createdAt: f.createdAt,
+    updatedAt: f.updatedAt,
   };
+}
+
+async function readAllInFolder<T>(folderParts: string[]): Promise<{ fileId: string; name: string; data: T }[]> {
+  const folderId = await ensureFolderPath(folderParts);
+  const files = await listFilesInFolder(folderId);
+  const results: ({ fileId: string; name: string; data: T } | null)[] = await Promise.all(
+    files.map(async (f) => {
+      const data = await readDriveJson<T>(f.name, folderId);
+      if (!data) return null;
+      return { fileId: f.id, name: f.name, data };
+    }),
+  );
+  const out: { fileId: string; name: string; data: T }[] = [];
+  for (const r of results) {
+    if (r) out.push(r);
+  }
+  return out;
 }
 
 type SerializableAmostra = Omit<Amostra, "ensaios"> & { ensaios: SerializableEnsaio[] };
 type SerializableOS = Omit<OS, "amostras"> & { amostras: SerializableAmostra[] };
 
 export const loadLabTree = createServerFn({ method: "GET" }).handler(async (): Promise<{ state: { os: SerializableOS[] } | null }> => {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-
-  const [osRes, amRes, enRes] = await Promise.all([
-    supabaseAdmin.from("lab_os").select("*").order("created_at", { ascending: false }),
-    supabaseAdmin.from("lab_amostras").select("*"),
-    supabaseAdmin.from("lab_ensaios").select("*"),
+  const [osRows, amRows, enRows] = await Promise.all([
+    readAllInFolder<OSFile>(FOLDER_OS),
+    readAllInFolder<AmostraFile>(FOLDER_AMOSTRAS),
+    readAllInFolder<EnsaioFile>(FOLDER_ENSAIOS),
   ]);
 
-  if (osRes.error) throw new Error(`Falha ao carregar OS: ${osRes.error.message}`);
-  if (amRes.error) throw new Error(`Falha ao carregar amostras: ${amRes.error.message}`);
-  if (enRes.error) throw new Error(`Falha ao carregar ensaios: ${enRes.error.message}`);
-
-  const osRows = (osRes.data || []) as OSRow[];
   if (osRows.length === 0) {
-    // Tabelas ainda vazias (antes da migração dos dados legados, ou instalação nova).
     return { state: null };
   }
 
   const ensaiosByAmostra = new Map<string, SerializableEnsaio[]>();
-  for (const r of (enRes.data || []) as EnsaioRow[]) {
-    const list = ensaiosByAmostra.get(r.amostra_id) ?? [];
-    list.push(ensaioFromRow(r));
-    ensaiosByAmostra.set(r.amostra_id, list);
+  for (const { data } of enRows) {
+    const list = ensaiosByAmostra.get(data.amostraId) ?? [];
+    list.push(ensaioToPublic(data));
+    ensaiosByAmostra.set(data.amostraId, list);
   }
 
   const amostrasByOS = new Map<string, SerializableAmostra[]>();
-  for (const r of (amRes.data || []) as AmostraRow[]) {
-    const list = amostrasByOS.get(r.os_id) ?? [];
-    list.push({ ...amostraFromRow(r), ensaios: ensaiosByAmostra.get(r.id) ?? [] });
-    amostrasByOS.set(r.os_id, list);
+  for (const { data } of amRows) {
+    const list = amostrasByOS.get(data.osId) ?? [];
+    list.push({ ...amostraToPublic(data), ensaios: ensaiosByAmostra.get(data.id) ?? [] });
+    amostrasByOS.set(data.osId, list);
   }
 
-  const os: SerializableOS[] = osRows.map((r) => ({ ...osFromRow(r), amostras: amostrasByOS.get(r.id) ?? [] }));
+  const os: SerializableOS[] = osRows.map(({ data }) => ({ ...osToPublic(data), amostras: amostrasByOS.get(data.id) ?? [] }));
   return { state: { os } };
 });
 
@@ -183,20 +204,24 @@ export const upsertOSFn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator((v: unknown) => OSInput.parse(v))
   .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.from("lab_os").upsert({
+    const folderId = await ensureFolderPath(FOLDER_OS);
+    const name = osFileName(data.id);
+    const existing = await readDriveJson<OSFile>(name, folderId);
+    const nextRev = (existing?.rev ?? 0) + 1;
+    const file: OSFile = {
       id: data.id,
       numero: data.numero,
       client: data.client ?? null,
-      work_number: data.workNumber ?? null,
+      workNumber: data.workNumber ?? null,
       local: data.local ?? null,
       operator: data.operator ?? null,
-      technical_resp: data.technicalResp ?? null,
+      technicalResp: data.technicalResp ?? null,
       revision: data.revision ?? null,
-      created_at: data.createdAt,
-      updated_at: data.updatedAt,
-    });
-    if (error) throw new Error(`Falha ao salvar OS: ${error.message}`);
+      createdAt: data.createdAt,
+      updatedAt: data.updatedAt,
+      rev: nextRev,
+    };
+    await writeDriveJson(name, file, folderId);
     return { ok: true };
   });
 
@@ -205,9 +230,9 @@ export const deleteOSFn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator((v: unknown) => DeleteOSInput.parse(v))
   .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.from("lab_os").delete().eq("id", data.id);
-    if (error) throw new Error(`Falha ao excluir OS: ${error.message}`);
+    const folderId = await ensureFolderPath(FOLDER_OS);
+    const fileId = await findFileInFolder(osFileName(data.id), folderId);
+    if (fileId) await deleteDriveFile(fileId);
     return { ok: true };
   });
 
@@ -234,35 +259,39 @@ export const upsertAmostraFn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator((v: unknown) => AmostraInput.parse(v))
   .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.from("lab_amostras").upsert({
+    const folderId = await ensureFolderPath(FOLDER_AMOSTRAS);
+    const name = amostraFileName(data.osId, data.id);
+    const existing = await readDriveJson<AmostraFile>(name, folderId);
+    const nextRev = (existing?.rev ?? 0) + 1;
+    const file: AmostraFile = {
       id: data.id,
-      os_id: data.osId,
-      report_number: data.reportNumber ?? null,
+      osId: data.osId,
+      reportNumber: data.reportNumber ?? null,
       borehole: data.borehole ?? null,
       depth: data.depth ?? null,
       description: data.description ?? null,
-      granulometric_description: data.granulometricDescription ?? null,
+      granulometricDescription: data.granulometricDescription ?? null,
       code: data.code ?? null,
-      sample_type: data.sampleType ?? null,
-      material_type: data.materialType ?? null,
-      coords: (data.coords ?? null) as never,
-      photos: (data.photos ?? []) as never,
-      created_at: data.createdAt,
-      updated_at: data.updatedAt,
-    });
-    if (error) throw new Error(`Falha ao salvar amostra: ${error.message}`);
+      sampleType: data.sampleType ?? null,
+      materialType: data.materialType ?? null,
+      coords: (data.coords ?? null) as Coords | null,
+      photos: (data.photos ?? []) as unknown as Photo[],
+      createdAt: data.createdAt,
+      updatedAt: data.updatedAt,
+      rev: nextRev,
+    };
+    await writeDriveJson(name, file, folderId);
     return { ok: true };
   });
 
-const DeleteAmostraInput = z.object({ id: z.string().min(1) });
+const DeleteAmostraInput = z.object({ id: z.string().min(1), osId: z.string().min(1) });
 export const deleteAmostraFn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator((v: unknown) => DeleteAmostraInput.parse(v))
   .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.from("lab_amostras").delete().eq("id", data.id);
-    if (error) throw new Error(`Falha ao excluir amostra: ${error.message}`);
+    const folderId = await ensureFolderPath(FOLDER_AMOSTRAS);
+    const fileId = await findFileInFolder(amostraFileName(data.osId, data.id), folderId);
+    if (fileId) await deleteDriveFile(fileId);
     return { ok: true };
   });
 
@@ -287,32 +316,36 @@ export const upsertEnsaioFn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator((v: unknown) => EnsaioInput.parse(v))
   .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.from("lab_ensaios").upsert({
+    const folderId = await ensureFolderPath(FOLDER_ENSAIOS);
+    const name = ensaioFileName(data.amostraId, data.id);
+    const existing = await readDriveJson<EnsaioFile>(name, folderId);
+    const nextRev = (existing?.rev ?? 0) + 1;
+    const file: EnsaioFile = {
       id: data.id,
-      amostra_id: data.amostraId,
+      amostraId: data.amostraId,
       tipo: data.tipo,
       status: data.status ?? null,
       label: data.label ?? null,
       nome: data.nome ?? null,
       sigla: data.sigla ?? null,
       operator: data.operator ?? null,
-      photos: (data.photos ?? []) as never,
-      payload: (data.payload ?? null) as never,
-      created_at: data.createdAt,
-      updated_at: data.updatedAt,
-    });
-    if (error) throw new Error(`Falha ao salvar ensaio: ${error.message}`);
+      photos: (data.photos ?? []) as unknown as Photo[],
+      payload: data.payload ?? null,
+      createdAt: data.createdAt,
+      updatedAt: data.updatedAt,
+      rev: nextRev,
+    };
+    await writeDriveJson(name, file, folderId);
     return { ok: true };
   });
 
-const DeleteEnsaioInput = z.object({ id: z.string().min(1) });
+const DeleteEnsaioInput = z.object({ id: z.string().min(1), amostraId: z.string().min(1) });
 export const deleteEnsaioFn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator((v: unknown) => DeleteEnsaioInput.parse(v))
   .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.from("lab_ensaios").delete().eq("id", data.id);
-    if (error) throw new Error(`Falha ao excluir ensaio: ${error.message}`);
+    const folderId = await ensureFolderPath(FOLDER_ENSAIOS);
+    const fileId = await findFileInFolder(ensaioFileName(data.amostraId, data.id), folderId);
+    if (fileId) await deleteDriveFile(fileId);
     return { ok: true };
   });
