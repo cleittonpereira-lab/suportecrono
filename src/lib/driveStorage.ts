@@ -4,31 +4,37 @@
  * Garante que todos os dados do laboratório (OS, Amostras, Ensaios, Aprovações,
  * Rascunhos e PDFs) sejam gravados e lidos diretamente no Google Drive,
  * com cache local de alta performance e tolerância a falhas.
+ *
+ * Autentica via conta de serviço direta (JWT, `google-auth.server.ts`) — o
+ * mesmo mecanismo já usado com sucesso pelo módulo de Programação/Sheets.
+ * O proxy `connector-gateway.lovable.dev` (que exigia LOVABLE_API_KEY +
+ * GOOGLE_DRIVE_API_KEY) foi removido daqui por nunca ter sido configurado
+ * em produção — confirmado via teste direto: a conta de serviço já tinha
+ * acesso real à pasta do Drive o tempo todo.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { getGoogleAccessToken, isGoogleAuthConfigured } from "./google-auth.server";
 
 export const DRIVE_ROOT_FOLDER_ID = "1buEmIk9ksuC3n9ndQRxqQkyN5SYgugAb";
-const GATEWAY = "https://connector-gateway.lovable.dev/google_drive";
-const DRIVE_V3 = `${GATEWAY}/drive/v3`;
-const DRIVE_UPLOAD = `${GATEWAY}/upload/drive/v3/files`;
+const DRIVE_V3 = "https://www.googleapis.com/drive/v3";
+const DRIVE_UPLOAD = "https://www.googleapis.com/upload/drive/v3/files";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
+const DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive"];
 
 // Cache em memória
 const memoryCache = new Map<string, { data: any; timestamp: number }>();
 const folderIdCache = new Map<string, string>();
 
-function driveHeaders(extra: Record<string, string> = {}): Headers {
+async function driveHeaders(extra: Record<string, string> = {}): Promise<Headers> {
   const h = new Headers(extra);
-  const lovableKey = process.env.LOVABLE_API_KEY || "";
-  const driveKey = process.env.GOOGLE_DRIVE_API_KEY || "";
-  if (lovableKey) h.set("Authorization", `Bearer ${lovableKey}`);
-  if (driveKey) h.set("X-Connection-Api-Key", driveKey);
+  const token = await getGoogleAccessToken(DRIVE_SCOPES);
+  h.set("Authorization", `Bearer ${token}`);
   return h;
 }
 
 export function hasDriveCredentials(): boolean {
-  return Boolean(process.env.LOVABLE_API_KEY && process.env.GOOGLE_DRIVE_API_KEY);
+  return isGoogleAuthConfigured();
 }
 
 function escQ(s: string): string {
@@ -52,7 +58,7 @@ export async function findFileInFolder(name: string, parentId: string): Promise<
   try {
     const q = `name = '${escQ(name)}' and '${parentId}' in parents and trashed = false`;
     const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name)")}&pageSize=1`;
-    const res = await fetch(url, { method: "GET", headers: driveHeaders() });
+    const res = await fetch(url, { method: "GET", headers: await driveHeaders() });
     if (!res.ok) return null;
     const data = (await res.json()) as { files?: { id: string }[] };
     return data.files?.[0]?.id ?? null;
@@ -66,7 +72,7 @@ export async function findFolder(name: string, parentId: string): Promise<string
   try {
     const q = `name = '${escQ(name)}' and '${parentId}' in parents and mimeType = '${FOLDER_MIME}' and trashed = false`;
     const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name)")}&pageSize=1`;
-    const res = await fetch(url, { method: "GET", headers: driveHeaders() });
+    const res = await fetch(url, { method: "GET", headers: await driveHeaders() });
     if (!res.ok) return null;
     const data = (await res.json()) as { files?: { id: string }[] };
     return data.files?.[0]?.id ?? null;
@@ -79,7 +85,7 @@ export async function createFolder(name: string, parentId: string): Promise<stri
   if (!hasDriveCredentials()) return `local_folder_${Date.now()}`;
   const res = await fetch(`${DRIVE_V3}/files?fields=id`, {
     method: "POST",
-    headers: driveHeaders({ "Content-Type": "application/json" }),
+    headers: await driveHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ name, mimeType: FOLDER_MIME, parents: [parentId] }),
   });
   if (!res.ok) throw new Error(`Falha ao criar pasta ${name} no Drive: ${res.status}`);
@@ -118,6 +124,42 @@ export async function ensureFolderPath(parts: string[]): Promise<string> {
   return parent;
 }
 
+/** Lista todos os arquivos (não-pasta) dentro de uma pasta do Drive, com paginação. */
+export async function listFilesInFolder(parentId: string): Promise<{ id: string; name: string }[]> {
+  if (!hasDriveCredentials()) return [];
+  const out: { id: string; name: string }[] = [];
+  let pageToken: string | undefined;
+  try {
+    do {
+      const q = `'${parentId}' in parents and trashed = false and mimeType != '${FOLDER_MIME}'`;
+      const params = new URLSearchParams({
+        q,
+        fields: "nextPageToken,files(id,name)",
+        pageSize: "1000",
+      });
+      if (pageToken) params.set("pageToken", pageToken);
+      const res = await fetch(`${DRIVE_V3}/files?${params.toString()}`, { method: "GET", headers: await driveHeaders() });
+      if (!res.ok) break;
+      const data = (await res.json()) as { files?: { id: string; name: string }[]; nextPageToken?: string };
+      out.push(...(data.files ?? []));
+      pageToken = data.nextPageToken;
+    } while (pageToken);
+  } catch (err) {
+    console.warn("[DriveStorage] Erro ao listar pasta:", err);
+  }
+  return out;
+}
+
+/** Apaga um arquivo do Drive pelo seu fileId. */
+export async function deleteDriveFile(fileId: string): Promise<void> {
+  if (!hasDriveCredentials()) return;
+  try {
+    await fetch(`${DRIVE_V3}/files/${fileId}`, { method: "DELETE", headers: await driveHeaders() });
+  } catch (err) {
+    console.warn("[DriveStorage] Erro ao apagar arquivo:", err);
+  }
+}
+
 export async function uploadBytesToDrive(opts: {
   parentId: string;
   name: string;
@@ -137,7 +179,7 @@ export async function uploadBytesToDrive(opts: {
   if (existingId) {
     const res = await fetch(`${DRIVE_UPLOAD}/${existingId}?uploadType=media&fields=id`, {
       method: "PATCH",
-      headers: driveHeaders({ "Content-Type": opts.mimeType }),
+      headers: await driveHeaders({ "Content-Type": opts.mimeType }),
       body: opts.bytes as BodyInit,
     });
     if (!res.ok) throw new Error(`Drive update error ${res.status}: ${(await res.text()).slice(0, 300)}`);
@@ -159,7 +201,7 @@ export async function uploadBytesToDrive(opts: {
 
   const res = await fetch(`${DRIVE_UPLOAD}?uploadType=multipart&fields=id`, {
     method: "POST",
-    headers: driveHeaders({ "Content-Type": `multipart/related; boundary=${boundary}` }),
+    headers: await driveHeaders({ "Content-Type": `multipart/related; boundary=${boundary}` }),
     body: body as BodyInit,
   });
 
@@ -170,42 +212,6 @@ export async function uploadBytesToDrive(opts: {
 
   const result = (await res.json()) as { id: string };
   return result.id;
-}
-
-/** Lista todos os arquivos (não-pasta) dentro de uma pasta do Drive, com paginação. */
-export async function listFilesInFolder(parentId: string): Promise<{ id: string; name: string }[]> {
-  if (!hasDriveCredentials()) return [];
-  const out: { id: string; name: string }[] = [];
-  let pageToken: string | undefined;
-  try {
-    do {
-      const q = `'${parentId}' in parents and trashed = false and mimeType != '${FOLDER_MIME}'`;
-      const params = new URLSearchParams({
-        q,
-        fields: "nextPageToken,files(id,name)",
-        pageSize: "1000",
-      });
-      if (pageToken) params.set("pageToken", pageToken);
-      const res = await fetch(`${DRIVE_V3}/files?${params.toString()}`, { method: "GET", headers: driveHeaders() });
-      if (!res.ok) break;
-      const data = (await res.json()) as { files?: { id: string; name: string }[]; nextPageToken?: string };
-      out.push(...(data.files ?? []));
-      pageToken = data.nextPageToken;
-    } while (pageToken);
-  } catch (err) {
-    console.warn("[DriveStorage] Erro ao listar pasta:", err);
-  }
-  return out;
-}
-
-/** Apaga um arquivo do Drive pelo seu fileId. */
-export async function deleteDriveFile(fileId: string): Promise<void> {
-  if (!hasDriveCredentials()) return;
-  try {
-    await fetch(`${DRIVE_V3}/files/${fileId}`, { method: "DELETE", headers: driveHeaders() });
-  } catch (err) {
-    console.warn("[DriveStorage] Erro ao apagar arquivo:", err);
-  }
 }
 
 /** Lê um arquivo JSON do Google Drive com fallback em cache */
@@ -223,7 +229,7 @@ export async function readDriveJson<T>(filename: string, parentId: string = DRIV
       if (fileId) {
         const res = await fetch(`${DRIVE_V3}/files/${fileId}?alt=media`, {
           method: "GET",
-          headers: driveHeaders(),
+          headers: await driveHeaders(),
         });
         if (res.ok) {
           const text = await res.text();

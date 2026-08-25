@@ -12,19 +12,20 @@
  */
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { getGoogleAccessToken, isGoogleAuthConfigured } from "./google-auth.server";
 
-const GATEWAY = "https://connector-gateway.lovable.dev/google_drive";
-const DRIVE_V3 = `${GATEWAY}/drive/v3`;
-const DRIVE_UPLOAD = `${GATEWAY}/upload/drive/v3/files`;
+const DRIVE_V3 = "https://www.googleapis.com/drive/v3";
+const DRIVE_UPLOAD = "https://www.googleapis.com/upload/drive/v3/files";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
+const DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive"];
 
 /** ID da pasta raiz oficial de relatórios da Suporte no Google Drive */
 export const DRIVE_ROOT_FOLDER_ID = "1buEmIk9ksuC3n9ndQRxqQkyN5SYgugAb";
 
-function driveHeaders(extra: Record<string, string> = {}): Headers {
+async function driveHeaders(extra: Record<string, string> = {}): Promise<Headers> {
   const h = new Headers(extra);
-  h.set("Authorization", `Bearer ${process.env.LOVABLE_API_KEY}`);
-  h.set("X-Connection-Api-Key", `${process.env.GOOGLE_DRIVE_API_KEY}`);
+  const token = await getGoogleAccessToken(DRIVE_SCOPES);
+  h.set("Authorization", `Bearer ${token}`);
   return h;
 }
 
@@ -42,14 +43,14 @@ function escQ(s: string) {
 async function findFolder(name: string, parentId: string): Promise<string | null> {
   const q = `name = '${escQ(name)}' and '${parentId}' in parents and mimeType = '${FOLDER_MIME}' and trashed = false`;
   const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name)")}&pageSize=1`;
-  const data = await driveJson(url, { method: "GET", headers: driveHeaders() });
+  const data = await driveJson(url, { method: "GET", headers: await driveHeaders() });
   return data.files?.[0]?.id ?? null;
 }
 
 async function createFolder(name: string, parentId: string): Promise<string> {
   const data = await driveJson(`${DRIVE_V3}/files?fields=id`, {
     method: "POST",
-    headers: driveHeaders({ "Content-Type": "application/json" }),
+    headers: await driveHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ name, mimeType: FOLDER_MIME, parents: [parentId] }),
   });
   return data.id as string;
@@ -116,7 +117,7 @@ async function ensureFolderPath(parts: string[]): Promise<string> {
 async function findFileInFolder(name: string, parentId: string): Promise<string | null> {
   const q = `name = '${escQ(name)}' and '${parentId}' in parents and trashed = false`;
   const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name)")}&pageSize=1`;
-  const data = await driveJson(url, { method: "GET", headers: driveHeaders() });
+  const data = await driveJson(url, { method: "GET", headers: await driveHeaders() });
   return data.files?.[0]?.id ?? null;
 }
 
@@ -131,7 +132,7 @@ async function uploadBytes(opts: {
   if (existing) {
     const res = await fetch(`${DRIVE_UPLOAD}/${existing}?uploadType=media&fields=id`, {
       method: "PATCH",
-      headers: driveHeaders({ "Content-Type": opts.mimeType }),
+      headers: await driveHeaders({ "Content-Type": opts.mimeType }),
       body: opts.bytes as BodyInit,
     });
     if (!res.ok) throw new Error(`Drive update ${res.status}: ${(await res.text()).slice(0, 300)}`);
@@ -151,7 +152,7 @@ async function uploadBytes(opts: {
   body.set(tail, head.byteLength + opts.bytes.byteLength);
   const res = await fetch(`${DRIVE_UPLOAD}?uploadType=multipart&fields=id`, {
     method: "POST",
-    headers: driveHeaders({ "Content-Type": `multipart/related; boundary=${boundary}` }),
+    headers: await driveHeaders({ "Content-Type": `multipart/related; boundary=${boundary}` }),
     body: body as BodyInit,
   });
   const text = await res.text();
@@ -329,7 +330,7 @@ export const syncRevisionToDrive = createServerFn({ method: "POST" })
       throw err;
     }
 
-    if (!process.env.LOVABLE_API_KEY || !process.env.GOOGLE_DRIVE_API_KEY) {
+    if (!isGoogleAuthConfigured()) {
       // Drive não configurado: retorna sucesso baseado no Storage.
       return {
         ok: true,
@@ -526,7 +527,7 @@ export const getRevisionPdfBase64 = createServerFn({ method: "POST" })
       }
     } catch { /* cai para Drive */ }
 
-    if (!process.env.LOVABLE_API_KEY || !process.env.GOOGLE_DRIVE_API_KEY) {
+    if (!isGoogleAuthConfigured()) {
       throw new Error("Prévia indisponível: PDF ainda não foi armazenado. Finalize novamente o ensaio.");
     }
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -546,7 +547,7 @@ export const getRevisionPdfBase64 = createServerFn({ method: "POST" })
     if (!fileId) throw new Error("Nenhum PDF encontrado no Drive para este ensaio.");
     const res = await fetch(`${DRIVE_V3}/files/${fileId}?alt=media`, {
       method: "GET",
-      headers: driveHeaders(),
+      headers: await driveHeaders(),
     });
     if (!res.ok) throw new Error(`Drive download ${res.status}`);
     const buf = new Uint8Array(await res.arrayBuffer());

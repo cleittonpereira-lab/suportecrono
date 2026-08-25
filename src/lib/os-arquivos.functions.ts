@@ -1,37 +1,29 @@
 import { createServerFn } from "@tanstack/react-start";
 import fs from "fs";
 import path from "path";
+import { getGoogleAccessToken, isGoogleAuthConfigured } from "./google-auth.server";
 
 /**
  * Integração com Google Drive e fallback local em disco para Notas & Arquivos de OS.
  */
 
-const GATEWAY = "https://connector-gateway.lovable.dev/google_drive";
+const GATEWAY = "https://www.googleapis.com";
 const ROOT_CHAIN = ["AppRecebimento", "programação", "ProgramaçãoEnsaios"] as const;
-
-function env() {
-  const e = process.env as Record<string, string | undefined>;
-  return {
-    LOVABLE_API_KEY: e.LOVABLE_API_KEY ?? "",
-    GOOGLE_DRIVE_API_KEY: e.GOOGLE_DRIVE_API_KEY ?? "",
-  };
-}
+const DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive"];
 
 function hasDriveAuth() {
-  const e = env();
-  return Boolean(e.LOVABLE_API_KEY && e.GOOGLE_DRIVE_API_KEY);
+  return isGoogleAuthConfigured();
 }
 
-function authHeaders() {
-  const e = env();
+async function authHeaders() {
+  const token = await getGoogleAccessToken(DRIVE_SCOPES);
   return {
-    Authorization: `Bearer ${e.LOVABLE_API_KEY}`,
-    "X-Connection-Api-Key": e.GOOGLE_DRIVE_API_KEY,
+    Authorization: `Bearer ${token}`,
   };
 }
 
 async function driveGet(urlPath: string) {
-  const res = await fetch(`${GATEWAY}${urlPath}`, { headers: authHeaders() });
+  const res = await fetch(`${GATEWAY}${urlPath}`, { headers: await authHeaders() });
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`Drive ${res.status}: ${body.slice(0, 300)}`);
@@ -58,7 +50,7 @@ async function createFolder(name: string, parentId: string | null): Promise<stri
   if (parentId) metadata.parents = [parentId];
   const res = await fetch(`${GATEWAY}/drive/v3/files?supportsAllDrives=true&fields=id`, {
     method: "POST",
-    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    headers: { ...(await authHeaders()), "Content-Type": "application/json" },
     body: JSON.stringify(metadata),
   });
   if (!res.ok) {
@@ -201,7 +193,7 @@ export const uploadOsFile = createServerFn({ method: "POST" })
           const res = await fetch(url, {
             method: "POST",
             headers: {
-              ...authHeaders(),
+              ...(await authHeaders()),
               "Content-Type": `multipart/related; boundary=${boundary}`,
             },
             body,
@@ -239,7 +231,7 @@ export const deleteOsFile = createServerFn({ method: "POST" })
       try {
         const res = await fetch(`${GATEWAY}/drive/v3/files/${data.fileId}?supportsAllDrives=true`, {
           method: "DELETE",
-          headers: authHeaders(),
+          headers: await authHeaders(),
         });
         if (res.ok || res.status === 204) return { ok: true };
       } catch {
@@ -267,7 +259,7 @@ export const fetchOsFileContent = createServerFn({ method: "GET" })
         );
         const res = await fetch(
           `${GATEWAY}/drive/v3/files/${data.fileId}?alt=media&supportsAllDrives=true`,
-          { headers: authHeaders() },
+          { headers: await authHeaders() },
         );
         if (res.ok) {
           const buf = new Uint8Array(await res.arrayBuffer());
@@ -320,7 +312,7 @@ export const getOsNotes = createServerFn({ method: "GET" })
           const files = j.files ?? [];
           if (files.length > 0) {
             const res = await fetch(`${GATEWAY}/drive/v3/files/${files[0].id}?alt=media&supportsAllDrives=true`, {
-              headers: authHeaders(),
+              headers: await authHeaders(),
             });
             if (res.ok) return { notes: await res.text() };
           }
@@ -367,17 +359,19 @@ export const saveOsNotes = createServerFn({ method: "POST" })
           body.set(tail, head.length + bin.length);
 
           const uploadUrl = `${GATEWAY}/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id`;
+          const uploadHeaders = await authHeaders();
           const res = await fetch(uploadUrl, {
             method: "POST",
-            headers: { ...authHeaders(), "Content-Type": `multipart/related; boundary=${boundary}` },
+            headers: { ...uploadHeaders, "Content-Type": `multipart/related; boundary=${boundary}` },
             body,
           });
           if (res.ok) {
+            const deleteHeaders = await authHeaders();
             await Promise.allSettled(
               noteFiles.map((f: any) =>
                 fetch(`${GATEWAY}/drive/v3/files/${f.id}?supportsAllDrives=true`, {
                   method: "DELETE",
-                  headers: authHeaders(),
+                  headers: deleteHeaders,
                 }),
               ),
             );
