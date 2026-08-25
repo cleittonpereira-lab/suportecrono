@@ -17,9 +17,25 @@ export const testDriveRoundTrip = createServerFn({ method: "GET" })
     if (data.secret !== "suportecrono-migrate-2026-lab-tables") {
       throw new Error("unauthorized");
     }
-    const { hasDriveCredentials, ensureFolderPath, writeDriveJson, readDriveJson } = await import("@/lib/driveStorage");
+    const { hasDriveCredentials, ensureFolderPath, writeDriveJson, readDriveJson, DRIVE_ROOT_FOLDER_ID } = await import("@/lib/driveStorage");
+    const { isGoogleAuthConfigured, getGoogleAccessToken } = await import("@/lib/google-auth.server");
     const steps: string[] = [];
-    steps.push(`hasDriveCredentials(): ${hasDriveCredentials()}`);
+    steps.push(`hasDriveCredentials() [conector Lovable]: ${hasDriveCredentials()}`);
+    steps.push(`isGoogleAuthConfigured() [conta de servico direta]: ${isGoogleAuthConfigured()}`);
+    if (isGoogleAuthConfigured()) {
+      try {
+        const token = await getGoogleAccessToken(["https://www.googleapis.com/auth/drive"]);
+        steps.push(`getGoogleAccessToken OK (token obtido, ${token.length} chars)`);
+        const res = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${DRIVE_ROOT_FOLDER_ID}?fields=id,name,mimeType`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        const text = await res.text();
+        steps.push(`Chamada direta Drive API (pasta raiz): status ${res.status} - ${text.slice(0, 300)}`);
+      } catch (err) {
+        steps.push(`Conta de servico ERRO: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
     try {
       const folderId = await ensureFolderPath(["_diagnostico"]);
       steps.push(`ensureFolderPath OK: folderId=${folderId}`);
