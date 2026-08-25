@@ -19,8 +19,8 @@ import { z } from "zod";
 import type { Amostra, Coords, Ensaio, EnsaioStatus, EnsaioTipo, LabState, OS, Photo } from "@/features/lab/types";
 import { ensureFolderPath, listFilesInFolder, readDriveJson, writeDriveJson, deleteDriveFile, findFileInFolder, DRIVE_ROOT_FOLDER_ID } from "@/lib/driveStorage";
 
-type SerializableJson = string | number | boolean | null | SerializableJson[] | { [key: string]: SerializableJson };
-function toSerializableJson(value: unknown): SerializableJson | undefined {
+export type SerializableJson = string | number | boolean | null | SerializableJson[] | { [key: string]: SerializableJson };
+export function toSerializableJson(value: unknown): SerializableJson | undefined {
   if (value === undefined) return undefined;
   try {
     return JSON.parse(JSON.stringify(value)) as SerializableJson;
@@ -61,7 +61,23 @@ type AmostraFile = {
   rev: number;
 };
 
-type EnsaioFile = {
+export type ApprovalEvent = {
+  action: string;
+  comment?: string | null;
+  authorId?: string | null;
+  authorName?: string | null;
+  authorRole?: string | null;
+  createdAt: string;
+};
+
+export type DraftHistoryEntry = {
+  changedAt: string;
+  changedBy?: string | null;
+  changedByName?: string | null;
+  diff: Record<string, { de: SerializableJson; para: SerializableJson }>;
+};
+
+export type EnsaioFile = {
   id: string;
   amostraId: string;
   tipo: string;
@@ -75,15 +91,22 @@ type EnsaioFile = {
   createdAt: string;
   updatedAt: string;
   rev: number;
+  // Consolidado aqui: farol/aprovações/histórico do mesmo ensaio (ver
+  // draft.functions.ts e approvals.functions.ts). upsertEnsaioFn (chamado
+  // pelo labStore a cada patchEnsaio/onPayloadChange) preserva esses campos
+  // via merge com o arquivo existente — nunca os sobrescreve às cegas.
+  workflowStatus?: string;
+  approvals?: ApprovalEvent[];
+  draftHistory?: DraftHistoryEntry[];
 };
 
 const FOLDER_OS = ["lab-os"];
 const FOLDER_AMOSTRAS = ["lab-amostras"];
-const FOLDER_ENSAIOS = ["lab-ensaios"];
+export const FOLDER_ENSAIOS = ["lab-ensaios"];
 
 const osFileName = (id: string) => `${id}.json`;
 const amostraFileName = (osId: string, id: string) => `${osId}__${id}.json`;
-const ensaioFileName = (amostraId: string, id: string) => `${amostraId}__${id}.json`;
+export const ensaioFileName = (amostraId: string, id: string) => `${amostraId}__${id}.json`;
 
 function osToPublic(f: OSFile): Omit<OS, "amostras"> {
   return {
@@ -320,18 +343,22 @@ export const upsertEnsaioFn = createServerFn({ method: "POST" })
     const name = ensaioFileName(data.amostraId, data.id);
     const existing = await readDriveJson<EnsaioFile>(name, folderId);
     const nextRev = (existing?.rev ?? 0) + 1;
+    // Mescla com o existente: preserva workflowStatus/approvals/draftHistory
+    // (geridos por draft.functions.ts/approvals.functions.ts) e só troca o
+    // payload se um novo de fato foi enviado - nunca apaga por omissão.
     const file: EnsaioFile = {
+      ...existing,
       id: data.id,
       amostraId: data.amostraId,
       tipo: data.tipo,
-      status: data.status ?? null,
-      label: data.label ?? null,
-      nome: data.nome ?? null,
-      sigla: data.sigla ?? null,
-      operator: data.operator ?? null,
-      photos: (data.photos ?? []) as unknown as Photo[],
-      payload: data.payload ?? null,
-      createdAt: data.createdAt,
+      status: data.status ?? existing?.status ?? null,
+      label: data.label ?? existing?.label ?? null,
+      nome: data.nome ?? existing?.nome ?? null,
+      sigla: data.sigla ?? existing?.sigla ?? null,
+      operator: data.operator ?? existing?.operator ?? null,
+      photos: (data.photos ?? existing?.photos ?? []) as unknown as Photo[],
+      payload: data.payload !== undefined ? data.payload : (existing?.payload ?? null),
+      createdAt: existing?.createdAt ?? data.createdAt,
       updatedAt: data.updatedAt,
       rev: nextRev,
     };

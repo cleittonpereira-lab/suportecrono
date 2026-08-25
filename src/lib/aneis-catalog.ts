@@ -147,11 +147,12 @@ export async function fetchRemoteAneisCatalog(): Promise<AnelItem[] | null> {
   try {
     const mod = await import("@/lib/draft.functions");
     const res = await mod.loadSharedDraft({ data: { scopeId: "config/aneis_catalog" } });
-    if (res?.success && res.payload?.aneis && Array.isArray(res.payload.aneis)) {
+    const payload = res?.payload as { aneis?: unknown } | null | undefined;
+    if (res?.success && payload?.aneis && Array.isArray(payload.aneis)) {
       if (typeof window !== "undefined") {
-        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(res.payload.aneis)); } catch {}
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(payload.aneis)); } catch {}
       }
-      return res.payload.aneis as AnelItem[];
+      return payload.aneis as AnelItem[];
     }
   } catch {}
   return null;
