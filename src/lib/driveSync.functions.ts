@@ -114,6 +114,30 @@ async function ensureFolderPath(parts: string[]): Promise<string> {
   return parent;
 }
 
+async function listFilesInFolder(parentId: string): Promise<{ id: string; name: string }[]> {
+  const q = `'${parentId}' in parents and trashed = false and mimeType != '${FOLDER_MIME}'`;
+  const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name)")}&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=drive&driveId=${DRIVE_ROOT_FOLDER_ID}`;
+  try {
+    const data = await driveJson(url, { method: "GET", headers: await driveHeaders() });
+    return (data.files ?? []) as { id: string; name: string }[];
+  } catch {
+    return [];
+  }
+}
+
+function parseScope(scopeId: string): { osId: string; amostraId: string; ensaioId: string } | null {
+  const parts = scopeId.split("/");
+  const iOs = parts.indexOf("os");
+  const iAm = parts.indexOf("amostra");
+  const iEn = parts.indexOf("ensaio");
+  if (iOs === -1 || iAm === -1 || iEn === -1) return null;
+  const osId = parts[iOs + 1];
+  const amostraId = parts[iAm + 1];
+  const ensaioId = parts[iEn + 1];
+  if (!osId || !amostraId || !ensaioId) return null;
+  return { osId, amostraId, ensaioId };
+}
+
 async function findFileInFolder(name: string, parentId: string): Promise<string | null> {
   const q = `name = '${escQ(name)}' and '${parentId}' in parents and trashed = false`;
   const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name)")}&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=drive&driveId=${DRIVE_ROOT_FOLDER_ID}`;
@@ -274,7 +298,12 @@ function ensaioFolderParts(input: z.infer<typeof SyncRevisionInput>) {
   return [os, amostra, ensaio];
 }
 
-async function logSync(row: {
+/**
+ * Log de auditoria das operações de sync — best-effort, nunca bloqueia o
+ * fluxo principal (o PDF/foto já foi salvo quando isso é chamado; um erro
+ * aqui não pode fazer a operação inteira falhar nem travar sem Supabase).
+ */
+function logSync(row: {
   scope_id: string;
   rev: number | null;
   kind: string;
@@ -283,22 +312,10 @@ async function logSync(row: {
   file_id?: string | null;
   folder_id?: string | null;
   metadata?: Record<string, unknown> | null;
-}) {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  await supabaseAdmin.from("drive_sync_log").insert(row as never);
-}
-
-async function upsertIndex(input: z.infer<typeof SyncRevisionInput>) {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  await supabaseAdmin.from("lab_index").upsert({
-    scope_id: input.scopeId,
-    os_numero: input.os.numero,
-    os_cliente: input.os.cliente,
-    amostra_code: input.amostra.code,
-    ensaio_tipo: input.ensaio.tipo,
-    ensaio_nome: input.ensaio.nome,
-    updated_at: new Date().toISOString(),
-  });
+}): void {
+  if (row.status === "error") {
+    console.warn(`[driveSync] ${row.kind} falhou para ${row.scope_id} rev ${row.rev}:`, row.error);
+  }
 }
 
 export const syncRevisionToDrive = createServerFn({ method: "POST" })
@@ -317,8 +334,6 @@ export const syncRevisionToDrive = createServerFn({ method: "POST" })
         status: "ok",
         file_id: storagePath,
       });
-      // Atualiza índice mesmo sem Drive (para o ensaio aparecer nas listas).
-      await upsertIndex(data);
     } catch (err) {
       await logSync({
         scope_id: data.scopeId,
@@ -423,8 +438,6 @@ export const syncRevisionToDrive = createServerFn({ method: "POST" })
         overwrite: true,
       });
 
-      await upsertIndex(data);
-
       return {
         ok: true,
         ensaioFolderId,
@@ -447,24 +460,73 @@ export const syncRevisionToDrive = createServerFn({ method: "POST" })
     }
   });
 
+type DriveSyncEntry = {
+  scope_id: string;
+  rev: number | null;
+  kind: string;
+  status: string;
+  error: string | null;
+  file_id: string | null;
+  folder_id: string | null;
+  created_at: string;
+};
+
+/**
+ * Reconstrói o status de sync a partir dos PDFs que realmente existem na
+ * pasta do Drive deste ensaio (não depende mais de um log separado — só
+ * sabemos "existe/não existe agora", não o histórico de tentativas
+ * passadas, mas é o que a UI realmente usa).
+ */
 export const getDriveSyncStatus = createServerFn({ method: "GET" })
   .inputValidator((input: unknown) => z.object({ scopeId: z.string() }).parse(input))
-  .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: rows, error } = await supabaseAdmin
-      .from("drive_sync_log")
-      .select("id, scope_id, rev, kind, status, error, file_id, folder_id, created_at")
-      .eq("scope_id", data.scopeId)
-      .order("created_at", { ascending: false })
-      .limit(100);
-    if (error) throw new Error(error.message);
-    return { entries: rows ?? [] };
+  .handler(async ({ data }): Promise<{ entries: DriveSyncEntry[] }> => {
+    try {
+      const ids = parseScope(data.scopeId);
+      if (!ids || !isGoogleAuthConfigured()) return { entries: [] };
+
+      const { ensureFolderPath: ensureFolderPathShared, readDriveJson } = await import("@/lib/driveStorage");
+      const osFolderId = await ensureFolderPathShared(["lab-os"]);
+      const os = await readDriveJson<any>(`${ids.osId}.json`, osFolderId);
+      const amFolderId = await ensureFolderPathShared(["lab-amostras"]);
+      const am = await readDriveJson<any>(`${ids.osId}__${ids.amostraId}.json`, amFolderId);
+      const enFolderId = await ensureFolderPathShared(["lab-ensaios"]);
+      const en = await readDriveJson<any>(`${ids.amostraId}__${ids.ensaioId}.json`, enFolderId);
+      if (!os || !am || !en) return { entries: [] };
+
+      const parts = ensaioFolderParts({
+        scopeId: data.scopeId,
+        os: { numero: os.numero || "", cliente: os.client || "" },
+        amostra: { code: am.code || am.reportNumber || "", descricao: am.description || "" },
+        ensaio: { tipo: en.tipo || "", nome: en.nome || "" },
+      } as any);
+      const relFolderId = await ensureFolderPath([...parts, "relatorios"]);
+      const files = (await listFilesInFolder(relFolderId)).filter((f) => f.name.toLowerCase().endsWith(".pdf"));
+      const nowIso = new Date().toISOString();
+
+      const entries: DriveSyncEntry[] = files.map((f) => {
+        const m = f.name.match(/Rev-(\d+)/i);
+        return {
+          scope_id: data.scopeId,
+          rev: m ? Number(m[1]) : null,
+          kind: "pdf",
+          status: "ok",
+          error: null,
+          file_id: f.id,
+          folder_id: relFolderId,
+          created_at: nowIso,
+        };
+      });
+      return { entries };
+    } catch {
+      return { entries: [] };
+    }
   });
 
 /**
- * Registra o ensaio no `lab_index` com workflow_status='digitacao' na
- * primeira vez que é aberto. Se já existir, apenas atualiza metadados
- * (OS/amostra/ensaio) mantendo o workflow_status atual.
+ * Registrar a abertura de um ensaio não é mais necessário: o arquivo do
+ * ensaio no Drive (lab-ensaios/{amostraId}__{ensaioId}.json) já é criado
+ * pelo próprio labStore assim que o ensaio existe. Mantido como no-op só
+ * para não quebrar chamadores existentes.
  */
 const RegisterDraftInput = z.object({
   scopeId: z.string().min(1),
@@ -475,26 +537,8 @@ const RegisterDraftInput = z.object({
 
 export const registerEnsaioDraft = createServerFn({ method: "POST" })
   .inputValidator((v: unknown) => RegisterDraftInput.parse(v))
-  .handler(async ({ data }) => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: existing } = await supabaseAdmin
-      .from("lab_index")
-      .select("scope_id, workflow_status")
-      .eq("scope_id", data.scopeId)
-      .maybeSingle();
-    const patch: Record<string, unknown> = {
-      scope_id: data.scopeId,
-      os_numero: data.os.numero,
-      os_cliente: data.os.cliente,
-      amostra_code: data.amostra.code,
-      ensaio_tipo: data.ensaio.tipo,
-      ensaio_nome: data.ensaio.nome,
-      updated_at: new Date().toISOString(),
-    };
-    if (!existing) patch.workflow_status = "digitacao";
-    const { error } = await supabaseAdmin.from("lab_index").upsert(patch as never);
-    if (error) throw new Error(error.message);
-    return { ok: true, created: !existing };
+  .handler(async () => {
+    return { ok: true, created: false };
   });
 
 /**
@@ -530,22 +574,40 @@ export const getRevisionPdfBase64 = createServerFn({ method: "POST" })
     if (!isGoogleAuthConfigured()) {
       throw new Error("Prévia indisponível: PDF ainda não foi armazenado. Finalize novamente o ensaio.");
     }
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    let q = supabaseAdmin
-      .from("drive_sync_log")
-      .select("file_id, rev, created_at")
-      .eq("scope_id", data.scopeId)
-      .eq("kind", "pdf")
-      .eq("status", "ok")
-      .not("file_id", "is", null)
-      .order("created_at", { ascending: false })
-      .limit(1);
-    if (typeof data.rev === "number") q = q.eq("rev", data.rev);
-    const { data: rows, error } = await q;
-    if (error) throw new Error(error.message);
-    const fileId = rows?.[0]?.file_id as string | undefined;
-    if (!fileId) throw new Error("Nenhum PDF encontrado no Drive para este ensaio.");
-    const res = await fetch(`${DRIVE_V3}/files/${fileId}?alt=media&supportsAllDrives=true`, {
+
+    // Busca direto na pasta do Drive deste ensaio (deduzida a partir dos
+    // arquivos lab-os/lab-amostras/lab-ensaios), sem depender de nenhum log.
+    const ids = parseScope(data.scopeId);
+    if (!ids) throw new Error("scopeId inválido.");
+
+    const { ensureFolderPath: ensureFolderPathShared, readDriveJson } = await import("@/lib/driveStorage");
+    const osFolderId = await ensureFolderPathShared(["lab-os"]);
+    const os = await readDriveJson<any>(`${ids.osId}.json`, osFolderId);
+    const amFolderId = await ensureFolderPathShared(["lab-amostras"]);
+    const am = await readDriveJson<any>(`${ids.osId}__${ids.amostraId}.json`, amFolderId);
+    const enFolderId = await ensureFolderPathShared(["lab-ensaios"]);
+    const en = await readDriveJson<any>(`${ids.amostraId}__${ids.ensaioId}.json`, enFolderId);
+    if (!os || !am || !en) throw new Error("Ensaio não encontrado.");
+
+    const parts = ensaioFolderParts({
+      scopeId: data.scopeId,
+      os: { numero: os.numero || "", cliente: os.client || "" },
+      amostra: { code: am.code || am.reportNumber || "", descricao: am.description || "" },
+      ensaio: { tipo: en.tipo || "", nome: en.nome || "" },
+    } as any);
+    const relFolderId = await ensureFolderPath([...parts, "relatorios"]);
+    const files = (await listFilesInFolder(relFolderId)).filter((f) => f.name.toLowerCase().endsWith(".pdf"));
+    if (files.length === 0) throw new Error("Nenhum PDF encontrado no Drive para este ensaio.");
+
+    let target = files[0];
+    if (typeof data.rev === "number") {
+      const wanted = files.find((f) => f.name.includes(`Rev-${String(data.rev).padStart(2, "0")}`));
+      if (wanted) target = wanted;
+    } else {
+      target = [...files].sort((a, b) => b.name.localeCompare(a.name))[0];
+    }
+
+    const res = await fetch(`${DRIVE_V3}/files/${target.id}?alt=media&supportsAllDrives=true`, {
       method: "GET",
       headers: await driveHeaders(),
     });
@@ -556,7 +618,8 @@ export const getRevisionPdfBase64 = createServerFn({ method: "POST" })
     for (let i = 0; i < buf.length; i += CHUNK) {
       bin += String.fromCharCode(...buf.subarray(i, i + CHUNK));
     }
-    return { base64: btoa(bin), rev: rows?.[0]?.rev ?? null };
+    const revMatch = target.name.match(/Rev-(\d+)/i);
+    return { base64: btoa(bin), rev: revMatch ? Number(revMatch[1]) : null };
   });
 
 /**
