@@ -20,7 +20,7 @@ const FOLDER_MIME = "application/vnd.google-apps.folder";
 const DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive"];
 
 /** ID da pasta raiz oficial de relatórios da Suporte no Google Drive */
-export const DRIVE_ROOT_FOLDER_ID = "1buEmIk9ksuC3n9ndQRxqQkyN5SYgugAb";
+export const DRIVE_ROOT_FOLDER_ID = process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID || "0AB6VPuj1fWHEUk9PVA";
 
 async function driveHeaders(extra: Record<string, string> = {}): Promise<Headers> {
   const h = new Headers(extra);
