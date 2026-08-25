@@ -34,6 +34,7 @@ import {
 import { getRevisionPdfBase64 } from "@/lib/driveSync.functions";
 import { buildScopeId } from "@/lib/scope";
 import { mespIndexMetadata, syncMEspARevision } from "@/features/mesp-natural/drive-sync";
+import { beginSave, endSave } from "@/lib/save-in-flight";
 import { MEspAReport, renderMEspAPdfBlob } from "@/features/mesp-natural/report";
 import { useCadastroByOs } from "@/hooks/use-cadastro-by-os";
 import { useAuth } from "@/hooks/use-auth";
@@ -396,6 +397,7 @@ export function MEspAEnsaioEditor() {
     if (!ctx) return;
     persist("concluido");
     setBusy(true);
+    const saveToken = beginSave();
     const tid = toast.loading(skipVerification ? "Enviando para aprovação…" : "Enviando para verificação…");
     try {
       const pend = await criarFn({
@@ -443,6 +445,7 @@ export function MEspAEnsaioEditor() {
       toast.error(e instanceof Error ? e.message : "Falha ao registrar pendência", { id: tid });
     } finally {
       setBusy(false);
+      endSave(saveToken);
     }
   };
 

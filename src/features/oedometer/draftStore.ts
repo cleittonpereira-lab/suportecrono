@@ -1,4 +1,5 @@
 import { saveSharedDraft, loadSharedDraft } from "@/lib/draft.functions";
+import { trackSave } from "@/lib/save-in-flight";
 import { toast } from "sonner";
 
 const DRAFT_PREFIX = "suportecrono_oed_draft_";
@@ -32,7 +33,7 @@ export function saveOedDraft(scopeId: string, data: any) {
   const timer = setTimeout(() => {
     saveTimers.delete(scopeId);
     const expectedRev = knownRevs.get(scopeId);
-    saveSharedDraft({ data: { scopeId, payload, expectedRev } })
+    trackSave(() => saveSharedDraft({ data: { scopeId, payload, expectedRev } }))
       .then((res) => {
         if (res.conflict) {
           toast.warning("Atenção: Relatório alterado em outro computador", {

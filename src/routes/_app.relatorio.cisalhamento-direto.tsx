@@ -1,5 +1,6 @@
 import { SyncStatusBadge } from "@/components/SyncStatusBadge";
 import { saveSharedDraft, loadSharedDraft } from "@/lib/draft.functions";
+import { beginSave, endSave } from "@/lib/save-in-flight";
 import { buildScopeId } from "@/lib/scope";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useRef, useState, useEffect } from "react";
@@ -727,6 +728,7 @@ export function CDPage() {
     const skipVerification = opts?.skipVerification === true;
     setWfStatus(skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao");
     setSaveBusy(true);
+    const saveToken = beginSave();
     const tid = toast.loading("Gerando e salvando versão PDF…");
     try {
       const blob = await buildReportPdfBlob();
@@ -811,6 +813,7 @@ export function CDPage() {
       toast.error("Erro ao salvar versão / solicitar verificação: " + (err instanceof Error ? err.message : String(err)), { id: tid });
     } finally {
       setSaveBusy(false);
+      endSave(saveToken);
     }
   };
 

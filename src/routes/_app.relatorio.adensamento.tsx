@@ -135,6 +135,7 @@ import { exportOedometerXlsx } from "@/features/oedometer/exportXlsx";
 import { syncOedometerRevisionToDrive } from "@/features/oedometer/driveSync";
 import { saveOedReportVersion, listOedReportVersions } from "@/features/oedometer/report-versions";
 import { saveOedDraft, loadOedDraft, fetchRemoteOedDraft } from "@/features/oedometer/draftStore";
+import { beginSave, endSave } from "@/lib/save-in-flight";
 import { requestApproval, verifyApproval, decideApproval, listApprovals, getWorkflowStatuses } from "@/lib/approvals.functions";
 import { buildScopeId } from "@/lib/scope";
 import { WorkflowFarol } from "@/features/lab/components/WorkflowFarol";
@@ -590,6 +591,7 @@ export function AdensamentoPage() {
     const targetStatus = opts?.skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao";
     setWfStatus(targetStatus);
     setSavingVersion(true);
+    const saveToken = beginSave();
     const tid = toast.loading("Gerando laudo PDF e sincronizando com Google Drive…");
     try {
       const revNumber = versions.length > 0 ? Math.max(...versions.map((v) => v.rev)) + 1 : 0;
@@ -778,6 +780,7 @@ export function AdensamentoPage() {
       toast.error(`Falha ao salvar versão / enviar para verificação: ${e?.message || e}`, { id: tid });
     } finally {
       setSavingVersion(false);
+      endSave(saveToken);
     }
   };
 

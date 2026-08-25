@@ -15,6 +15,7 @@ import { ThemeProvider } from "@/hooks/use-theme";
 import { AuthProvider } from "@/hooks/use-auth";
 import { Toaster } from "@/components/ui/sonner";
 import { AppVersionFooter } from "@/components/AppVersionFooter";
+import { useBlockExitWhileSaving } from "@/hooks/use-block-exit-while-saving";
 
 function NotFoundComponent() {
   return (
@@ -133,6 +134,7 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  useBlockExitWhileSaving();
 
   return (
     <QueryClientProvider client={queryClient}>

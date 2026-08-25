@@ -20,6 +20,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import type { Amostra, Ensaio, EnsaioTipo, LabState, OS, Photo } from "./types";
 import { loadLabTree, upsertOSFn, upsertAmostraFn, upsertEnsaioFn, deleteOSFn, deleteAmostraFn, deleteEnsaioFn } from "@/lib/lab-entities.functions";
 import { loadLabStateFromDrive } from "@/lib/labState.functions";
+import { trackSave } from "@/lib/save-in-flight";
 import type { LabEnsaioSnapshot } from "@/lib/lab-ensaios.functions";
 
 const STORAGE_KEY = "lab://os-store/v1";
@@ -135,7 +136,7 @@ function scheduleEntitySave(id: string, run: () => Promise<void>) {
   if (existing) clearTimeout(existing);
   const timer = setTimeout(() => {
     saveTimers.delete(id);
-    void run()
+    void trackSave(run)
       .then(() => clearDirty(id))
       .catch((err) => {
         console.warn(`[lab/store] Falha ao salvar ${id}, tentando novamente:`, err);

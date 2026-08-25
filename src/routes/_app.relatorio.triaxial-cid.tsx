@@ -84,6 +84,7 @@ import type {
 } from "@/features/triaxial-cid/types";
 import { SEED_SAMPLE, EMPTY_SPECIMENS } from "@/features/triaxial-cid/seed";
 import { loadDraft, saveDraft, fetchRemoteTriaxialDraft } from "@/features/triaxial-cid/draftStore";
+import { beginSave, endSave } from "@/lib/save-in-flight";
 import {
   fitEnvelope,
   mohrCirclePoints,
@@ -688,6 +689,7 @@ export function TriaxialCidPage() {
     const skipVerification = opts?.skipVerification === true;
     setWfStatus(skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao");
     setSaveBusy(true);
+    const saveToken = beginSave();
     const toastId = toast.loading("Aguarde enquanto estamos salvando a versão…");
     try {
       const blob = await buildReportPdfBlob();
@@ -783,6 +785,7 @@ export function TriaxialCidPage() {
       toast.error("Falha ao salvar versão: " + (err instanceof Error ? err.message : String(err)), { id: toastId });
     } finally {
       setSaveBusy(false);
+      endSave(saveToken);
     }
   };
 

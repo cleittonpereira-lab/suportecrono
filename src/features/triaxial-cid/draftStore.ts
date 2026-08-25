@@ -5,6 +5,7 @@
  */
 import type { TriaxialSample, TriaxialSpecimen } from "./types";
 import { saveSharedDraft, loadSharedDraft } from "@/lib/draft.functions";
+import { trackSave } from "@/lib/save-in-flight";
 import { toast } from "sonner";
 
 const KEY = (scopeId: string) => `triaxial-cid:draft:${scopeId}`;
@@ -70,7 +71,7 @@ export function saveDraft(scopeId: string, draft: Partial<TriaxialDraft>): void 
   const timer = setTimeout(() => {
     saveTimers.delete(scopeId);
     const expectedRev = knownRevs.get(scopeId);
-    saveSharedDraft({ data: { scopeId, payload, expectedRev } })
+    trackSave(() => saveSharedDraft({ data: { scopeId, payload, expectedRev } }))
       .then((res) => {
         if (res.conflict) {
           toast.warning("Atenção: Relatório alterado em outro computador", {
