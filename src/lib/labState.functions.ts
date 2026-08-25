@@ -7,7 +7,6 @@ import { z } from "zod";
 import { readDriveJson, writeDriveJson, DRIVE_ROOT_FOLDER_ID } from "./driveStorage";
 
 const STATE_FILENAME = "_lab-state.json";
-const GLOBAL_SCOPE_ID = "__global_lab_state__";
 
 export const loadLabStateFromDrive = createServerFn({ method: "GET" })
   .handler(async () => {
@@ -22,22 +21,7 @@ export const loadLabStateFromDrive = createServerFn({ method: "GET" })
       console.warn("[loadLabState] Aviso ao ler do Google Drive:", err);
     }
 
-    // 2. Fallback secundário no Supabase se existir
-    try {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      const { data: row } = await supabaseAdmin
-        .from("lab_index")
-        .select("extra, updated_at")
-        .eq("scope_id", GLOBAL_SCOPE_ID)
-        .maybeSingle();
-
-      if (row?.extra) {
-        const stateJson = typeof row.extra === "string" ? row.extra : JSON.stringify(row.extra);
-        return { stateJson, fileId: "supabase", updatedAt: row.updated_at };
-      }
-    } catch {}
-
-    // 3. Fallback em arquivo local se existir
+    // 2. Fallback em arquivo local se existir
     try {
       const fs = await import("node:fs");
       const path = await import("node:path");
@@ -72,19 +56,6 @@ export const saveLabStateToDrive = createServerFn({ method: "POST" })
     } catch (err) {
       console.error("[saveLabState] Erro ao gravar no Google Drive:", err);
     }
-
-    // 2. Grava no Supabase como espelho secundário (não-bloqueante)
-    try {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      await supabaseAdmin.from("lab_index").upsert({
-        scope_id: GLOBAL_SCOPE_ID,
-        os_numero: "GLOBAL",
-        ensaio_nome: "Lab State",
-        workflow_status: "sincronizado",
-        extra: parsed,
-        updated_at: nowIso,
-      });
-    } catch {}
 
     return { ok: true, fileId: "gdrive", savedAt: nowIso };
   });
