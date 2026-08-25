@@ -1,5 +1,5 @@
 import { saveSharedDraft, loadSharedDraft } from "@/lib/draft.functions";
-import { trackSave } from "@/lib/save-in-flight";
+import { trackSave, markDirty, markClean } from "@/lib/save-in-flight";
 import { toast } from "sonner";
 
 const DRAFT_PREFIX = "suportecrono_oed_draft_";
@@ -26,6 +26,8 @@ export function saveOedDraft(scopeId: string, data: any, actor?: { id?: string; 
     console.warn("Falha ao salvar rascunho de adensamento:", e);
   }
 
+  markDirty();
+
   // Sincroniza em nuvem no Supabase
   if (saveTimers.has(scopeId)) {
     clearTimeout(saveTimers.get(scopeId));
@@ -49,6 +51,7 @@ export function saveOedDraft(scopeId: string, data: any, actor?: { id?: string; 
           knownRevs.set(scopeId, res.rev);
           persistRev(scopeId, res.rev);
         }
+        markClean();
       })
       .catch((err) => {
         console.warn("[OED saveSharedDraft] Falha na sincronização em nuvem:", err);

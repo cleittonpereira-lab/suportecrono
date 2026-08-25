@@ -5,7 +5,7 @@
  */
 import type { TriaxialSample, TriaxialSpecimen } from "./types";
 import { saveSharedDraft, loadSharedDraft } from "@/lib/draft.functions";
-import { trackSave } from "@/lib/save-in-flight";
+import { trackSave, markDirty, markClean } from "@/lib/save-in-flight";
 import { toast } from "sonner";
 
 const KEY = (scopeId: string) => `triaxial-cid:draft:${scopeId}`;
@@ -68,6 +68,8 @@ export function saveDraft(
     window.localStorage.setItem(KEY(scopeId), JSON.stringify(payload));
   } catch {}
 
+  markDirty();
+
   // Sincroniza em nuvem no Supabase
   if (saveTimers.has(scopeId)) {
     clearTimeout(saveTimers.get(scopeId));
@@ -91,6 +93,7 @@ export function saveDraft(
           knownRevs.set(scopeId, res.rev);
           persistRev(scopeId, res.rev);
         }
+        markClean();
       })
       .catch((err) => {
         console.warn("[Triaxial saveSharedDraft] Falha na sincronização em nuvem:", err);

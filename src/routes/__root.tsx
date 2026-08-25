@@ -16,6 +16,7 @@ import { AuthProvider } from "@/hooks/use-auth";
 import { Toaster } from "@/components/ui/sonner";
 import { AppVersionFooter } from "@/components/AppVersionFooter";
 import { useBlockExitWhileSaving } from "@/hooks/use-block-exit-while-saving";
+import { ExitSaveDialog } from "@/components/ExitSaveDialog";
 
 function NotFoundComponent() {
   return (
@@ -134,7 +135,7 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
-  useBlockExitWhileSaving();
+  const exitResolver = useBlockExitWhileSaving();
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -144,6 +145,7 @@ function RootComponent() {
           <Outlet />
           <Toaster richColors position="top-right" />
           <AppVersionFooter />
+          <ExitSaveDialog resolver={exitResolver} />
         </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>

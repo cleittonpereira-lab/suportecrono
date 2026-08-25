@@ -1,23 +1,16 @@
 import { useBlocker } from "@tanstack/react-router";
-import { toast } from "sonner";
-import { isSavingInFlight, useIsSavingInFlight } from "@/lib/save-in-flight";
+import { useIsDirty, waitUntilSaved } from "@/lib/save-in-flight";
+
+export { waitUntilSaved };
 
 /**
  * Bloqueia a navegação (dentro do app e fechamento/recarregamento da aba)
- * enquanto houver um rascunho ou versão ainda sendo salvo no Drive, para
- * não perder o que o usuário acabou de digitar.
+ * só quando há edição não salva de verdade (não a cada gravação silenciosa
+ * em segundo plano). Ao tentar sair com algo pendente, devolve um "resolver"
+ * (como Excel/Word): o chamador decide como perguntar "salvar e sair" ou
+ * "sair sem salvar" — ver <ExitSaveDialog />.
  */
-export function useBlockExitWhileSaving(): void {
-  const isSaving = useIsSavingInFlight();
-
-  useBlocker({
-    shouldBlockFn: () => {
-      if (!isSavingInFlight()) return false;
-      toast.warning("Rascunho sendo salvo no Drive…", {
-        description: "Aguarde alguns segundos antes de sair para não perder as informações.",
-      });
-      return true;
-    },
-    enableBeforeUnload: isSaving,
-  });
+export function useBlockExitWhileSaving() {
+  const dirty = useIsDirty();
+  return useBlocker({ condition: dirty });
 }

@@ -5,7 +5,7 @@
  */
 import type { CDSample, CDSpecimen, CDAxisCfg } from "./types";
 import { saveSharedDraft, loadSharedDraft } from "@/lib/draft.functions";
-import { trackSave } from "@/lib/save-in-flight";
+import { trackSave, markDirty, markClean } from "@/lib/save-in-flight";
 import { toast } from "sonner";
 
 const KEY = (scopeId: string) => `cisalhamento-direto:draft:${scopeId}`;
@@ -63,6 +63,8 @@ export function saveDraft(
     window.localStorage.setItem(KEY(scopeId), JSON.stringify(payload));
   } catch {}
 
+  markDirty();
+
   // Sincroniza em segundo plano com a nuvem (Supabase)
   if (saveTimers.has(scopeId)) {
     clearTimeout(saveTimers.get(scopeId));
@@ -86,6 +88,7 @@ export function saveDraft(
           knownRevs.set(scopeId, res.rev);
           persistRev(scopeId, res.rev);
         }
+        markClean();
       })
       .catch((err) => {
         console.warn("[CD saveSharedDraft] Falha na sincronização:", err);
