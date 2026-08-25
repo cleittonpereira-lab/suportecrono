@@ -39,9 +39,21 @@ export const testDriveRoundTrip = createServerFn({ method: "GET" })
     try {
       const folderId = await ensureFolderPath(["_diagnostico"]);
       steps.push(`ensureFolderPath OK: folderId=${folderId}`);
+      const { uploadBytesToDrive } = await import("@/lib/driveStorage");
       const testValue = { ping: Date.now() };
-      const w = await writeDriveJson("_ping.json", testValue, folderId);
-      steps.push(`writeDriveJson OK: ${JSON.stringify(w)}`);
+      const bytes = new TextEncoder().encode(JSON.stringify(testValue));
+      try {
+        const fileId = await uploadBytesToDrive({
+          parentId: folderId,
+          name: "_ping.json",
+          mimeType: "application/json",
+          bytes,
+          overwrite: true,
+        });
+        steps.push(`uploadBytesToDrive OK: fileId=${fileId}`);
+      } catch (uploadErr) {
+        steps.push(`uploadBytesToDrive ERRO REAL: ${uploadErr instanceof Error ? uploadErr.message : String(uploadErr)}`);
+      }
       const r = await readDriveJson<typeof testValue>("_ping.json", folderId);
       steps.push(`readDriveJson: ${JSON.stringify(r)}`);
       const roundTripOk = r?.ping === testValue.ping;
