@@ -803,6 +803,7 @@ function CentralRelatoriosPage() {
                   <TableHead className="w-36">Técnico Bancada</TableHead>
                   <TableHead className="w-32">Status Bancada</TableHead>
                   <TableHead className="w-32 text-center">Status Relatório</TableHead>
+                  <TableHead className="w-36 text-center">Último Salvamento</TableHead>
                   <TableHead className="w-32 text-center">Conclusão / Início</TableHead>
                   <TableHead className="w-56 text-right">Ações de Processamento</TableHead>
                 </TableRow>
@@ -810,7 +811,7 @@ function CentralRelatoriosPage() {
               <TableBody>
                 {filteredGantt.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-10 text-muted-foreground text-sm">
+                    <TableCell colSpan={9} className="text-center py-10 text-muted-foreground text-sm">
                       Nenhum ensaio encontrado para os filtros selecionados.
                     </TableCell>
                   </TableRow>
@@ -911,10 +912,23 @@ function CentralRelatoriosPage() {
                               Não Iniciado
                             </Badge>
                           )}
-                          {pendExistente && pendExistente.status !== "pendente" && (
-                            <div className="mt-1 text-[10px] text-muted-foreground">
-                              Último salvamento: {format(new Date(pendExistente.updated_at), "dd/MM HH:mm", { locale: ptBR })}
+                        </TableCell>
+                        <TableCell className="text-center text-xs">
+                          {pendExistente && pendExistente.status !== "pendente" ? (
+                            <div className="space-y-0.5">
+                              <div className="font-medium text-foreground">
+                                {format(new Date(pendExistente.updated_at), "dd/MM HH:mm", { locale: ptBR })}
+                              </div>
+                              <div className="text-[10px] text-muted-foreground truncate max-w-[130px] mx-auto">
+                                {pendExistente.aprovador_nome ||
+                                  pendExistente.verificador_nome ||
+                                  pendExistente.digitador_nome ||
+                                  pendExistente.operador_nome ||
+                                  "—"}
+                              </div>
                             </div>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
                           )}
                         </TableCell>
                         <TableCell className="text-center text-xs">
