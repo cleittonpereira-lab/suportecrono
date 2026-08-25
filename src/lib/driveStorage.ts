@@ -57,7 +57,7 @@ export async function findFileInFolder(name: string, parentId: string): Promise<
   if (!hasDriveCredentials()) return null;
   try {
     const q = `name = '${escQ(name)}' and '${parentId}' in parents and trashed = false`;
-    const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name)")}&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`;
+    const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name)")}&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=drive&driveId=${DRIVE_ROOT_FOLDER_ID}`;
     const res = await fetch(url, { method: "GET", headers: await driveHeaders() });
     if (!res.ok) return null;
     const data = (await res.json()) as { files?: { id: string }[] };
@@ -71,7 +71,7 @@ export async function findFolder(name: string, parentId: string): Promise<string
   if (!hasDriveCredentials()) return null;
   try {
     const q = `name = '${escQ(name)}' and '${parentId}' in parents and mimeType = '${FOLDER_MIME}' and trashed = false`;
-    const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name)")}&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`;
+    const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name)")}&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=drive&driveId=${DRIVE_ROOT_FOLDER_ID}`;
     const res = await fetch(url, { method: "GET", headers: await driveHeaders() });
     if (!res.ok) return null;
     const data = (await res.json()) as { files?: { id: string }[] };
@@ -138,7 +138,8 @@ export async function listFilesInFolder(parentId: string): Promise<{ id: string;
         pageSize: "1000",
         supportsAllDrives: "true",
         includeItemsFromAllDrives: "true",
-        corpora: "allDrives",
+        corpora: "drive",
+        driveId: DRIVE_ROOT_FOLDER_ID,
       });
       if (pageToken) params.set("pageToken", pageToken);
       const res = await fetch(`${DRIVE_V3}/files?${params.toString()}`, { method: "GET", headers: await driveHeaders() });

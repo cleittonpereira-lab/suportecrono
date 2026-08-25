@@ -42,7 +42,7 @@ function escQ(s: string) {
 
 async function findFolder(name: string, parentId: string): Promise<string | null> {
   const q = `name = '${escQ(name)}' and '${parentId}' in parents and mimeType = '${FOLDER_MIME}' and trashed = false`;
-  const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name)")}&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`;
+  const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name)")}&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=drive&driveId=${DRIVE_ROOT_FOLDER_ID}`;
   const data = await driveJson(url, { method: "GET", headers: await driveHeaders() });
   return data.files?.[0]?.id ?? null;
 }
@@ -116,7 +116,7 @@ async function ensureFolderPath(parts: string[]): Promise<string> {
 
 async function findFileInFolder(name: string, parentId: string): Promise<string | null> {
   const q = `name = '${escQ(name)}' and '${parentId}' in parents and trashed = false`;
-  const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name)")}&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`;
+  const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name)")}&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=drive&driveId=${DRIVE_ROOT_FOLDER_ID}`;
   const data = await driveJson(url, { method: "GET", headers: await driveHeaders() });
   return data.files?.[0]?.id ?? null;
 }
