@@ -466,13 +466,14 @@ export function CDPage() {
 
   useEffect(() => {
     if (!remoteLoaded) return;
-    const h = window.setTimeout(() => {
-      const draftPhotos = ctx?.photos ?? (draft as any)?.photos ?? [];
-      const draftData = { sample, specimens, selectedCpId, tab, adjust, axisCfg, photos: draftPhotos };
-      saveDraft(scopeId, draftData);
-      if (ctx?.ensaio) ctx.onPayloadChange(draftData);
-    }, 400);
-    return () => window.clearTimeout(h);
+    // Grava no localStorage imediatamente a cada mudança — não espera 400ms
+    // de silêncio. Se o usuário recarregar a página logo após digitar, o
+    // valor já precisa estar salvo localmente (o envio para o servidor,
+    // dentro de saveDraft, continua com seu próprio debounce interno).
+    const draftPhotos = ctx?.photos ?? (draft as any)?.photos ?? [];
+    const draftData = { sample, specimens, selectedCpId, tab, adjust, axisCfg, photos: draftPhotos };
+    saveDraft(scopeId, draftData);
+    if (ctx?.ensaio) ctx.onPayloadChange(draftData);
   }, [remoteLoaded, scopeId, sample, specimens, selectedCpId, tab, adjust, axisCfg, ctx, ctx?.photos]);
 
   const sortedSpecimens = useMemo(

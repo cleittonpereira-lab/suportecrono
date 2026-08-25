@@ -651,12 +651,13 @@ export function TriaxialCidPage() {
   // Auto-persistência do rascunho (após carregar da nuvem)
   useEffect(() => {
     if (!remoteLoaded) return;
-    const h = window.setTimeout(() => {
-      const payload = { sample, specimens, selectedCpId, tab, adjust, axisCfg, photos: ctx?.photos || [] };
-      saveDraft(scopeId, payload);
-      ctx?.onPayloadChange(payload);
-    }, 400);
-    return () => window.clearTimeout(h);
+    // Grava no localStorage imediatamente a cada mudança — não espera 400ms
+    // de silêncio. Se o usuário recarregar a página logo após digitar, o
+    // valor já precisa estar salvo localmente (o envio para o servidor,
+    // dentro de saveDraft, continua com seu próprio debounce interno).
+    const payload = { sample, specimens, selectedCpId, tab, adjust, axisCfg, photos: ctx?.photos || [] };
+    saveDraft(scopeId, payload);
+    ctx?.onPayloadChange(payload);
   }, [remoteLoaded, scopeId, sample, specimens, selectedCpId, tab, adjust, axisCfg, ctx]);
 
   /**
