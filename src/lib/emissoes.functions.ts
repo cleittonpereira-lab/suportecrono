@@ -1,11 +1,12 @@
 /**
  * Central de Emissões — listagem global de aprovações para admin/verificador,
- * enriquecida com metadados de OS/Amostra/Ensaio via `lab_index`.
+ * lida diretamente dos arquivos por-ensaio no Drive (lab-ensaios/).
  */
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
-import type { ApprovalRow } from "./approvals.functions";
+import { ensureFolderPath, listFilesInFolder, readDriveJson } from "@/lib/driveStorage";
+import { FOLDER_ENSAIOS, type EnsaioFile } from "@/lib/lab-entities.functions";
 
 export interface EmissaoRow {
   /** null quando ensaio está apenas em "digitacao" e ainda não gerou nenhuma revisão. */
@@ -13,7 +14,7 @@ export interface EmissaoRow {
   scope_id: string;
   rev: number | null;
   status: string; // status da última revisão OU "digitacao" quando não há revisão
-  workflow_status: string; // status do fluxo no lab_index
+  workflow_status: string; // status do fluxo no arquivo do ensaio
   requested_by: string | null;
   requested_by_name: string | null;
   requested_at: string | null;
@@ -39,116 +40,103 @@ export interface EmissaoRow {
 }
 
 const Input = z.object({
-  /** filtro por workflow_status do lab_index. */
+  /** filtro por workflow_status do arquivo do ensaio. */
   workflowStatuses: z.array(z.string()).optional(),
 });
 
 export const listEmissoes = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((v: unknown) => Input.parse(v))
-  .handler(async ({ data, context }) => {
-    const { supabase, userId } = context as {
-      supabase: import("@supabase/supabase-js").SupabaseClient;
-      userId: string;
-    };
+  .handler(async ({ data }): Promise<EmissaoRow[]> => {
     try {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const enFolderId = await ensureFolderPath(FOLDER_ENSAIOS);
+      const amFolderId = await ensureFolderPath(["lab-amostras"]);
+      const osFolderId = await ensureFolderPath(["lab-os"]);
 
-      // Base: lab_index (todos os ensaios registrados)
-      let idxQ = supabaseAdmin
-        .from("lab_index")
-        .select("*")
-        .like("scope_id", "os/%")
-        .order("updated_at", { ascending: false });
-      if (data.workflowStatuses && data.workflowStatuses.length > 0) {
-        idxQ = idxQ.in("workflow_status", data.workflowStatuses as never);
+      const files = await listFilesInFolder(enFolderId);
+      const ensaios = (
+        await Promise.all(files.map((f) => readDriveJson<EnsaioFile>(f.name, enFolderId)))
+      ).filter((e): e is EnsaioFile => e !== null);
+
+      const filtered = data.workflowStatuses && data.workflowStatuses.length > 0
+        ? ensaios.filter((e) => data.workflowStatuses!.includes(e.workflowStatus || "digitacao"))
+        : ensaios;
+
+      if (filtered.length === 0) return [];
+
+      // Índice de nome de arquivo -> amostraId, montado uma vez (evita
+      // listar a pasta de amostras de novo para cada ensaio).
+      const amFiles = await listFilesInFolder(amFolderId);
+      const amFileByAmostraId = new Map<string, string>();
+      for (const f of amFiles) {
+        const amId = f.name.replace(/\.json$/, "").split("__").slice(1).join("__");
+        if (amId) amFileByAmostraId.set(amId, f.name);
       }
-      const { data: idxRows, error } = await idxQ;
-      if (error) {
-        console.warn("[listEmissoes] Erro ao consultar lab_index:", error.message);
-        return [] as EmissaoRow[];
-      }
-      const rows = (idxRows ?? []) as Array<Record<string, unknown>>;
-      if (rows.length === 0) return [] as EmissaoRow[];
 
-    const scopeIds = rows.map((r) => String(r.scope_id));
-    const osAmostraPairs = rows
-      .map((r) => ({ os: String(r.os_numero ?? ""), amostra: String(r.amostra_code ?? "") }))
-      .filter((r) => r.os && r.amostra);
-    const { data: approvals } = await supabaseAdmin
-      .from("lab_report_approvals")
-      .select("*")
-      .in("scope_id", scopeIds)
-      .order("rev", { ascending: false });
-    const osList = Array.from(new Set(osAmostraPairs.map((r) => r.os)));
-    const { data: pendencias } = osList.length
-      ? await supabaseAdmin
-          .from("lab_pendencias_digitacao")
-          .select("os, amostra, created_at, updated_at, status, payload, digitador_user_id")
-          .in("os", osList)
-      : { data: [] };
-    // última revisão por scope
-    const latest = new Map<string, ApprovalRow>();
-    for (const a of ((approvals ?? []) as ApprovalRow[])) {
-      if (!latest.has(a.scope_id)) latest.set(a.scope_id, a);
-    }
-    const pendByKey = new Map<string, Record<string, unknown>>();
-    const digitadorIds = new Set<string>();
-    for (const p of (pendencias ?? []) as Array<Record<string, unknown>>) {
-      const key = `${String(p.os ?? "")}::${String(p.amostra ?? "")}`;
-      if (!pendByKey.has(key)) pendByKey.set(key, p);
-      if (p.digitador_user_id) digitadorIds.add(String(p.digitador_user_id));
-    }
-    const { data: profiles } = digitadorIds.size
-      ? await supabaseAdmin.from("profiles").select("id,nome,email").in("id", Array.from(digitadorIds))
-      : { data: [] };
-    const nameById = new Map<string, string>();
-    for (const p of (profiles ?? []) as Array<Record<string, unknown>>) {
-      nameById.set(String(p.id), String(p.nome || p.email || ""));
-    }
+      const amostraCache = new Map<string, any>();
+      const osCache = new Map<string, any>();
 
-    return rows.map((r) => {
-      const scopeId = String(r.scope_id);
-      const a = latest.get(scopeId);
-      const pend = pendByKey.get(`${String(r.os_numero ?? "")}::${String(r.amostra_code ?? "")}`);
-      const digitadorId = pend?.digitador_user_id ? String(pend.digitador_user_id) : null;
-      const payload = pend?.payload && typeof pend.payload === "object" && !Array.isArray(pend.payload)
-        ? (pend.payload as Record<string, unknown>)
-        : {};
-      const startedAt = typeof payload.digitacao_started_at === "string" ? payload.digitacao_started_at : null;
-      const finishedAt = typeof payload.digitacao_finished_at === "string" ? payload.digitacao_finished_at : null;
-      return {
-        id: a?.id ?? null,
-        scope_id: scopeId,
-        rev: a?.rev ?? null,
-        status: a?.status ?? "digitacao",
-        workflow_status: String(r.workflow_status ?? "digitacao"),
-        requested_by: a?.requested_by ?? null,
-        requested_by_name: a?.requested_by_name ?? null,
-        requested_at: a?.requested_at ?? null,
-        verified_by: a?.verified_by ?? null,
-        verified_by_name: a?.verified_by_name ?? null,
-        verified_at: a?.verified_at ?? null,
-        verification_comment: a?.verification_comment ?? null,
-        decided_by: a?.decided_by ?? null,
-        decided_by_name: a?.decided_by_name ?? null,
-        decided_at: a?.decided_at ?? null,
-        comment: a?.comment ?? null,
-        filename: a?.filename ?? null,
-        os_numero: (r.os_numero as string | null) ?? null,
-        os_cliente: (r.os_cliente as string | null) ?? null,
-        amostra_code: (r.amostra_code as string | null) ?? null,
-        ensaio_tipo: (r.ensaio_tipo as string | null) ?? null,
-        ensaio_nome: (r.ensaio_nome as string | null) ?? null,
-        updated_at: (r.updated_at as string | null) ?? null,
-        pendencia_created_at: (pend?.created_at as string | null) ?? null,
-        pendencia_started_at: startedAt,
-        pendencia_finished_at: finishedAt ?? a?.requested_at ?? null,
-        digitador_nome: digitadorId ? nameById.get(digitadorId) ?? null : null,
-      };
-    }) as EmissaoRow[];
-  } catch (err) {
-    console.warn("[listEmissoes] Erro capturado:", err);
-    return [] as EmissaoRow[];
-  }
-});
+      const rows = await Promise.all(
+        filtered.map(async (en): Promise<EmissaoRow> => {
+          const approvals = (en.reportApprovals ?? []).slice().sort((a, b) => b.rev - a.rev);
+          const latest = approvals[0];
+
+          let amostra: any = amostraCache.get(en.amostraId);
+          if (amostra === undefined) {
+            const fname = amFileByAmostraId.get(en.amostraId);
+            amostra = fname ? await readDriveJson<any>(fname, amFolderId) : null;
+            amostraCache.set(en.amostraId, amostra);
+          }
+
+          let os: any = amostra?.osId ? osCache.get(amostra.osId) : null;
+          if (amostra?.osId && os === undefined) {
+            os = await readDriveJson<any>(`${amostra.osId}.json`, osFolderId);
+            osCache.set(amostra.osId, os);
+          }
+
+          const scopeId = amostra?.osId
+            ? `os/${amostra.osId}/amostra/${en.amostraId}/ensaio/${en.id}`
+            : `amostra/${en.amostraId}/ensaio/${en.id}`;
+
+          return {
+            id: latest?.id ?? null,
+            scope_id: scopeId,
+            rev: latest?.rev ?? null,
+            status: latest?.status ?? "digitacao",
+            workflow_status: en.workflowStatus || "digitacao",
+            requested_by: latest?.requested_by ?? null,
+            requested_by_name: latest?.requested_by_name ?? null,
+            requested_at: latest?.requested_at ?? null,
+            verified_by: latest?.verified_by ?? null,
+            verified_by_name: latest?.verified_by_name ?? null,
+            verified_at: latest?.verified_at ?? null,
+            verification_comment: latest?.verification_comment ?? null,
+            decided_by: latest?.decided_by ?? null,
+            decided_by_name: latest?.decided_by_name ?? null,
+            decided_at: latest?.decided_at ?? null,
+            comment: latest?.comment ?? null,
+            filename: latest?.filename ?? null,
+            os_numero: os?.numero ?? null,
+            os_cliente: os?.client ?? null,
+            amostra_code: amostra?.code ?? amostra?.reportNumber ?? null,
+            ensaio_tipo: en.tipo ?? null,
+            ensaio_nome: en.nome ?? null,
+            updated_at: en.updatedAt ?? null,
+            // Timing detalhado de SLA da Central de Pendências não é
+            // correlacionado aqui (pendência é indexada por texto
+            // os/amostra/ensaio, sem chave direta pro arquivo do ensaio) -
+            // usa o requested_by_name da própria aprovação como digitador.
+            pendencia_created_at: null,
+            pendencia_started_at: null,
+            pendencia_finished_at: null,
+            digitador_nome: latest?.requested_by_name ?? null,
+          };
+        }),
+      );
+
+      return rows.sort((a, b) => (a.updated_at ?? "") < (b.updated_at ?? "") ? 1 : -1);
+    } catch (err) {
+      console.warn("[listEmissoes] Erro capturado:", err);
+      return [];
+    }
+  });
