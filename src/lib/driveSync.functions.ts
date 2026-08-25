@@ -42,13 +42,13 @@ function escQ(s: string) {
 
 async function findFolder(name: string, parentId: string): Promise<string | null> {
   const q = `name = '${escQ(name)}' and '${parentId}' in parents and mimeType = '${FOLDER_MIME}' and trashed = false`;
-  const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name)")}&pageSize=1`;
+  const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name)")}&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`;
   const data = await driveJson(url, { method: "GET", headers: await driveHeaders() });
   return data.files?.[0]?.id ?? null;
 }
 
 async function createFolder(name: string, parentId: string): Promise<string> {
-  const data = await driveJson(`${DRIVE_V3}/files?fields=id`, {
+  const data = await driveJson(`${DRIVE_V3}/files?fields=id&supportsAllDrives=true`, {
     method: "POST",
     headers: await driveHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ name, mimeType: FOLDER_MIME, parents: [parentId] }),
@@ -116,7 +116,7 @@ async function ensureFolderPath(parts: string[]): Promise<string> {
 
 async function findFileInFolder(name: string, parentId: string): Promise<string | null> {
   const q = `name = '${escQ(name)}' and '${parentId}' in parents and trashed = false`;
-  const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name)")}&pageSize=1`;
+  const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name)")}&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`;
   const data = await driveJson(url, { method: "GET", headers: await driveHeaders() });
   return data.files?.[0]?.id ?? null;
 }
@@ -130,7 +130,7 @@ async function uploadBytes(opts: {
 }): Promise<string> {
   const existing = opts.overwrite ? await findFileInFolder(opts.name, opts.parentId) : null;
   if (existing) {
-    const res = await fetch(`${DRIVE_UPLOAD}/${existing}?uploadType=media&fields=id`, {
+    const res = await fetch(`${DRIVE_UPLOAD}/${existing}?uploadType=media&fields=id&supportsAllDrives=true`, {
       method: "PATCH",
       headers: await driveHeaders({ "Content-Type": opts.mimeType }),
       body: opts.bytes as BodyInit,
@@ -150,7 +150,7 @@ async function uploadBytes(opts: {
   body.set(head, 0);
   body.set(opts.bytes, head.byteLength);
   body.set(tail, head.byteLength + opts.bytes.byteLength);
-  const res = await fetch(`${DRIVE_UPLOAD}?uploadType=multipart&fields=id`, {
+  const res = await fetch(`${DRIVE_UPLOAD}?uploadType=multipart&fields=id&supportsAllDrives=true`, {
     method: "POST",
     headers: await driveHeaders({ "Content-Type": `multipart/related; boundary=${boundary}` }),
     body: body as BodyInit,
@@ -545,7 +545,7 @@ export const getRevisionPdfBase64 = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     const fileId = rows?.[0]?.file_id as string | undefined;
     if (!fileId) throw new Error("Nenhum PDF encontrado no Drive para este ensaio.");
-    const res = await fetch(`${DRIVE_V3}/files/${fileId}?alt=media`, {
+    const res = await fetch(`${DRIVE_V3}/files/${fileId}?alt=media&supportsAllDrives=true`, {
       method: "GET",
       headers: await driveHeaders(),
     });

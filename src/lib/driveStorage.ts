@@ -57,7 +57,7 @@ export async function findFileInFolder(name: string, parentId: string): Promise<
   if (!hasDriveCredentials()) return null;
   try {
     const q = `name = '${escQ(name)}' and '${parentId}' in parents and trashed = false`;
-    const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name)")}&pageSize=1`;
+    const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name)")}&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`;
     const res = await fetch(url, { method: "GET", headers: await driveHeaders() });
     if (!res.ok) return null;
     const data = (await res.json()) as { files?: { id: string }[] };
@@ -71,7 +71,7 @@ export async function findFolder(name: string, parentId: string): Promise<string
   if (!hasDriveCredentials()) return null;
   try {
     const q = `name = '${escQ(name)}' and '${parentId}' in parents and mimeType = '${FOLDER_MIME}' and trashed = false`;
-    const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name)")}&pageSize=1`;
+    const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name)")}&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`;
     const res = await fetch(url, { method: "GET", headers: await driveHeaders() });
     if (!res.ok) return null;
     const data = (await res.json()) as { files?: { id: string }[] };
@@ -83,7 +83,7 @@ export async function findFolder(name: string, parentId: string): Promise<string
 
 export async function createFolder(name: string, parentId: string): Promise<string> {
   if (!hasDriveCredentials()) return `local_folder_${Date.now()}`;
-  const res = await fetch(`${DRIVE_V3}/files?fields=id`, {
+  const res = await fetch(`${DRIVE_V3}/files?fields=id&supportsAllDrives=true`, {
     method: "POST",
     headers: await driveHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ name, mimeType: FOLDER_MIME, parents: [parentId] }),
@@ -136,6 +136,9 @@ export async function listFilesInFolder(parentId: string): Promise<{ id: string;
         q,
         fields: "nextPageToken,files(id,name)",
         pageSize: "1000",
+        supportsAllDrives: "true",
+        includeItemsFromAllDrives: "true",
+        corpora: "allDrives",
       });
       if (pageToken) params.set("pageToken", pageToken);
       const res = await fetch(`${DRIVE_V3}/files?${params.toString()}`, { method: "GET", headers: await driveHeaders() });
@@ -154,7 +157,7 @@ export async function listFilesInFolder(parentId: string): Promise<{ id: string;
 export async function deleteDriveFile(fileId: string): Promise<void> {
   if (!hasDriveCredentials()) return;
   try {
-    await fetch(`${DRIVE_V3}/files/${fileId}`, { method: "DELETE", headers: await driveHeaders() });
+    await fetch(`${DRIVE_V3}/files/${fileId}?supportsAllDrives=true`, { method: "DELETE", headers: await driveHeaders() });
   } catch (err) {
     console.warn("[DriveStorage] Erro ao apagar arquivo:", err);
   }
@@ -177,7 +180,7 @@ export async function uploadBytesToDrive(opts: {
 
   const existingId = opts.overwrite !== false ? await findFileInFolder(opts.name, opts.parentId) : null;
   if (existingId) {
-    const res = await fetch(`${DRIVE_UPLOAD}/${existingId}?uploadType=media&fields=id`, {
+    const res = await fetch(`${DRIVE_UPLOAD}/${existingId}?uploadType=media&fields=id&supportsAllDrives=true`, {
       method: "PATCH",
       headers: await driveHeaders({ "Content-Type": opts.mimeType }),
       body: opts.bytes as BodyInit,
@@ -199,7 +202,7 @@ export async function uploadBytesToDrive(opts: {
   body.set(opts.bytes, head.byteLength);
   body.set(tail, head.byteLength + opts.bytes.byteLength);
 
-  const res = await fetch(`${DRIVE_UPLOAD}?uploadType=multipart&fields=id`, {
+  const res = await fetch(`${DRIVE_UPLOAD}?uploadType=multipart&fields=id&supportsAllDrives=true`, {
     method: "POST",
     headers: await driveHeaders({ "Content-Type": `multipart/related; boundary=${boundary}` }),
     body: body as BodyInit,
@@ -227,7 +230,7 @@ export async function readDriveJson<T>(filename: string, parentId: string = DRIV
     try {
       const fileId = await findFileInFolder(filename, parentId);
       if (fileId) {
-        const res = await fetch(`${DRIVE_V3}/files/${fileId}?alt=media`, {
+        const res = await fetch(`${DRIVE_V3}/files/${fileId}?alt=media&supportsAllDrives=true`, {
           method: "GET",
           headers: await driveHeaders(),
         });
