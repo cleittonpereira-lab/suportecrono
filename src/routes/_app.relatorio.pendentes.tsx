@@ -16,6 +16,7 @@ import {
   type PendenciaDigitacao,
 } from "@/lib/lab-pendencias.functions";
 import { listRows } from "@/lib/programacao.functions";
+import { normOs, normAmostra, normMethod } from "@/lib/pendencia-match";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
@@ -138,25 +139,7 @@ const SLA_LABEL: Record<SlaStatus, string> = {
 };
 
 
-function normOs(val: string | null | undefined): string {
-  if (!val) return "";
-  return String(val).trim().replace(/^OS[-\s]*/i, "").toLowerCase();
-}
-
-function normAmostra(val: string | null | undefined): string {
-  if (!val) return "";
-  return String(val).trim().toLowerCase();
-}
-
-function normMethod(val: string | null | undefined): string {
-  if (!val) return "";
-  const s = String(val).toLowerCase();
-  if (s.includes("cisalhamento") || s.includes("cd")) return "cisalhamento-direto";
-  if (s.includes("adensamento") || s.includes("oed") || s.includes("adens")) return "adensamento";
-  if (s.includes("triaxial") || s.includes("tri")) return "triaxial-cid";
-  if (s.includes("m.esp") || s.includes("mesp") || s.includes("massa")) return "mesp-a";
-  return s;
-}
+// normOs/normAmostra/normMethod: ver src/lib/pendencia-match.ts (compartilhado com os editores de relatório).
 
 function CentralRelatoriosPage() {
   const qc = useQueryClient();

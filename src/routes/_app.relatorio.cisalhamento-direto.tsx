@@ -1,6 +1,8 @@
 import { SyncStatusBadge } from "@/components/SyncStatusBadge";
 import { saveSharedDraft, loadSharedDraft } from "@/lib/draft.functions";
 import { beginSave, endSave } from "@/lib/save-in-flight";
+import { listPendenciasDigitacao, atualizarPendenciaDigitacao } from "@/lib/lab-pendencias.functions";
+import { findMatchingPendencia } from "@/lib/pendencia-match";
 import { buildScopeId } from "@/lib/scope";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useRef, useState, useEffect } from "react";
@@ -800,6 +802,23 @@ export function CDPage() {
         });
       }
       setWfStatus(skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao");
+
+      // Mantém a pendência da Central de Processamento (criada pelo Gantt)
+      // em sincronia com o fluxo de aprovação — não bloqueia se falhar.
+      try {
+        const pendencias = await listPendenciasDigitacao();
+        const pend = findMatchingPendencia(pendencias, {
+          os: sample.os,
+          amostra: sample.reportNumber || sample.code,
+          tipo: "cisalhamento-direto",
+        });
+        if (pend) {
+          await atualizarPendenciaDigitacao({ data: { id: pend.id, status: "digitado" } });
+        }
+      } catch (syncErr) {
+        console.warn("[cisalhamento-direto] Falha ao sincronizar pendência:", syncErr);
+      }
+
       await refreshApprovals();
 
       toast.success(

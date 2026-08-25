@@ -136,6 +136,8 @@ import { syncOedometerRevisionToDrive } from "@/features/oedometer/driveSync";
 import { saveOedReportVersion, listOedReportVersions } from "@/features/oedometer/report-versions";
 import { saveOedDraft, loadOedDraft, fetchRemoteOedDraft } from "@/features/oedometer/draftStore";
 import { beginSave, endSave } from "@/lib/save-in-flight";
+import { listPendenciasDigitacao, atualizarPendenciaDigitacao } from "@/lib/lab-pendencias.functions";
+import { findMatchingPendencia } from "@/lib/pendencia-match";
 import { requestApproval, verifyApproval, decideApproval, listApprovals, getWorkflowStatuses } from "@/lib/approvals.functions";
 import { buildScopeId } from "@/lib/scope";
 import { WorkflowFarol } from "@/features/lab/components/WorkflowFarol";
@@ -743,6 +745,22 @@ export function AdensamentoPage() {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       } as any]);
+
+      // Mantém a pendência da Central de Processamento (criada pelo Gantt)
+      // em sincronia com o fluxo de aprovação — não bloqueia se falhar.
+      try {
+        const pendencias = await listPendenciasDigitacao();
+        const pend = findMatchingPendencia(pendencias, {
+          os: sample.os,
+          amostra: sample.reportNumber || sample.code,
+          tipo: "adensamento",
+        });
+        if (pend) {
+          await atualizarPendenciaDigitacao({ data: { id: pend.id, status: "digitado" } });
+        }
+      } catch (syncErr) {
+        console.warn("[adensamento] Falha ao sincronizar pendência:", syncErr);
+      }
 
       const savePayload = {
         sample,

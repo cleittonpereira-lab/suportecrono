@@ -85,6 +85,8 @@ import type {
 import { SEED_SAMPLE, EMPTY_SPECIMENS } from "@/features/triaxial-cid/seed";
 import { loadDraft, saveDraft, fetchRemoteTriaxialDraft } from "@/features/triaxial-cid/draftStore";
 import { beginSave, endSave } from "@/lib/save-in-flight";
+import { listPendenciasDigitacao, atualizarPendenciaDigitacao } from "@/lib/lab-pendencias.functions";
+import { findMatchingPendencia } from "@/lib/pendencia-match";
 import {
   fitEnvelope,
   mohrCirclePoints,
@@ -768,6 +770,23 @@ export function TriaxialCidPage() {
           });
         }
         setWfStatus(skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao");
+
+        // Mantém a pendência da Central de Processamento (criada pelo Gantt)
+        // em sincronia com o fluxo de aprovação — não bloqueia se falhar.
+        try {
+          const pendencias = await listPendenciasDigitacao();
+          const pend = findMatchingPendencia(pendencias, {
+            os: sample.os,
+            amostra: sample.reportNumber || sample.code,
+            tipo: "triaxial-cid",
+          });
+          if (pend) {
+            await atualizarPendenciaDigitacao({ data: { id: pend.id, status: "digitado" } });
+          }
+        } catch (syncErr) {
+          console.warn("[triaxial-cid] Falha ao sincronizar pendência:", syncErr);
+        }
+
         await refreshApprovals();
         toast.success(
           skipVerification

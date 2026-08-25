@@ -15,6 +15,14 @@ import { ensureFolderPath, readDriveJson, writeDriveJson, listFilesInFolder, fin
 
 type JsonValue = string | number | boolean | null | { [k: string]: JsonValue } | JsonValue[];
 
+function displayName(claims: { email?: string; user_metadata?: { full_name?: string; name?: string } } | undefined) {
+  return (
+    (claims?.user_metadata?.full_name as string | undefined) ||
+    (claims?.user_metadata?.name as string | undefined) ||
+    (claims?.email ? claims.email.split("@")[0] : "Operador")
+  );
+}
+
 function asJsonObject(val: JsonValue | null | undefined): Record<string, unknown> {
   if (val && typeof val === "object" && !Array.isArray(val)) {
     return val as Record<string, unknown>;
@@ -165,9 +173,19 @@ export const atualizarStatusPendencia = createServerFn({ method: "POST" })
       updated_at: now,
     };
     if (data.observacao !== undefined) patch.observacao = data.observacao;
-    if (data.status === "em_digitacao" || data.status === "digitado") patch.digitador_user_id = context.userId;
-    if (data.status === "verificado") patch.verificador_user_id = context.userId;
-    if (data.status === "aprovado") patch.aprovador_user_id = context.userId;
+    const actorName = displayName((context as { claims?: { email?: string; user_metadata?: { full_name?: string; name?: string } } }).claims);
+    if (data.status === "em_digitacao" || data.status === "digitado") {
+      patch.digitador_user_id = context.userId;
+      patch.digitador_nome = actorName;
+    }
+    if (data.status === "verificado") {
+      patch.verificador_user_id = context.userId;
+      patch.verificador_nome = actorName;
+    }
+    if (data.status === "aprovado") {
+      patch.aprovador_user_id = context.userId;
+      patch.aprovador_nome = actorName;
+    }
 
     const nextRecord: PendenciaDigitacao = { ...existing, ...patch, rev: (existing.rev ?? 0) + 1 };
     await writeDriveJson(name, nextRecord, folderId);
