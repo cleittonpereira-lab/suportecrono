@@ -85,6 +85,8 @@ import type {
 import { SEED_SAMPLE, EMPTY_SPECIMENS } from "@/features/triaxial-cid/seed";
 import { loadDraft, saveDraft, fetchRemoteTriaxialDraft } from "@/features/triaxial-cid/draftStore";
 import { beginSave, endSave } from "@/lib/save-in-flight";
+import { useDraftActivity } from "@/hooks/use-draft-activity";
+import { EditingPresenceBanner, DraftHistoryButton } from "@/components/DraftActivityInfo";
 import { listPendenciasDigitacao, atualizarPendenciaDigitacao } from "@/lib/lab-pendencias.functions";
 import { findMatchingPendencia } from "@/lib/pendencia-match";
 import {
@@ -219,6 +221,7 @@ export function TriaxialCidPage() {
     ctx && ctx.os && ctx.amostra && ctx.ensaio
       ? buildScopeId(ctx.os.id, ctx.amostra.id, ctx.ensaio.id)
       : (ctx?.ensaio?.id ?? "local");
+  const draftActivity = useDraftActivity(scopeId);
   // Rascunho persistido em localStorage (por escopo), carregado uma única vez no mount.
   const draftRef = useRef<ReturnType<typeof loadDraft>>(null);
   if (draftRef.current === null) {
@@ -659,7 +662,7 @@ export function TriaxialCidPage() {
     // valor já precisa estar salvo localmente (o envio para o servidor,
     // dentro de saveDraft, continua com seu próprio debounce interno).
     const payload = { sample, specimens, selectedCpId, tab, adjust, axisCfg, photos: ctx?.photos || [] };
-    saveDraft(scopeId, payload);
+    saveDraft(scopeId, payload, { id: user?.id, name: displayName });
     ctx?.onPayloadChange(payload);
   }, [remoteLoaded, scopeId, sample, specimens, selectedCpId, tab, adjust, axisCfg, ctx]);
 
@@ -762,7 +765,7 @@ export function TriaxialCidPage() {
           },
         });
         const currentDraft = { sample, specimens, selectedCpId, tab, adjust, axisCfg, photos: ctx?.photos || [] };
-        saveDraft(scopeId, currentDraft);
+        saveDraft(scopeId, currentDraft, { id: user?.id, name: displayName });
         if (ctx && ctx.os && ctx.amostra && ctx.ensaio) {
           labStore.patchEnsaio(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, {
             payload: currentDraft,
@@ -1065,7 +1068,8 @@ export function TriaxialCidPage() {
                   return "digitacao";
                 })()
               } />
-                <SyncStatusBadge state="synced" />
+                <SyncStatusBadge state="synced" lastSavedAt={draftActivity.lastSavedAt} />
+                <DraftHistoryButton history={draftActivity.history} />
             </div>
             <h2 className="mt-2 text-xl font-semibold">
               Ensaio Triaxial {sample.condition === "saturado" ? "CIDsat" : "CIDnat"}
@@ -1395,6 +1399,15 @@ export function TriaxialCidPage() {
             )}
           </Card>
         )}
+
+        <div className="mb-3">
+          <EditingPresenceBanner
+            lastSavedAt={draftActivity.lastSavedAt}
+            lastSavedByName={draftActivity.lastSavedByName}
+            lastSavedById={draftActivity.lastSavedById}
+            currentUserId={user?.id}
+          />
+        </div>
 
         <Tabs value={tab} onValueChange={setTab}>
 

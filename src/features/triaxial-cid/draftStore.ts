@@ -57,7 +57,11 @@ export function loadDraft(scopeId: string): Partial<TriaxialDraft> | null {
   }
 }
 
-export function saveDraft(scopeId: string, draft: Partial<TriaxialDraft>): void {
+export function saveDraft(
+  scopeId: string,
+  draft: Partial<TriaxialDraft>,
+  actor?: { id?: string; name?: string },
+): void {
   if (typeof window === "undefined") return;
   const payload = { ...draft, rev: knownRevs.get(scopeId), savedAt: new Date().toISOString() };
   try {
@@ -71,7 +75,9 @@ export function saveDraft(scopeId: string, draft: Partial<TriaxialDraft>): void 
   const timer = setTimeout(() => {
     saveTimers.delete(scopeId);
     const expectedRev = knownRevs.get(scopeId);
-    trackSave(() => saveSharedDraft({ data: { scopeId, payload, expectedRev } }))
+    trackSave(() =>
+      saveSharedDraft({ data: { scopeId, payload, expectedRev, changedBy: actor?.id, changedByName: actor?.name } }),
+    )
       .then((res) => {
         if (res.conflict) {
           toast.warning("Atenção: Relatório alterado em outro computador", {

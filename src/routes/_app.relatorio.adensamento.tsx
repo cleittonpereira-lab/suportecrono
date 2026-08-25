@@ -136,6 +136,8 @@ import { syncOedometerRevisionToDrive } from "@/features/oedometer/driveSync";
 import { saveOedReportVersion, listOedReportVersions } from "@/features/oedometer/report-versions";
 import { saveOedDraft, loadOedDraft, fetchRemoteOedDraft } from "@/features/oedometer/draftStore";
 import { beginSave, endSave } from "@/lib/save-in-flight";
+import { useDraftActivity } from "@/hooks/use-draft-activity";
+import { EditingPresenceBanner, DraftHistoryButton } from "@/components/DraftActivityInfo";
 import { listPendenciasDigitacao, atualizarPendenciaDigitacao } from "@/lib/lab-pendencias.functions";
 import { findMatchingPendencia } from "@/lib/pendencia-match";
 import { requestApproval, verifyApproval, decideApproval, listApprovals, getWorkflowStatuses } from "@/lib/approvals.functions";
@@ -389,6 +391,7 @@ export function AdensamentoPage() {
     ctx && ctx.os && ctx.amostra && ctx.ensaio
       ? buildScopeId(ctx.os.id, ctx.amostra.id, ctx.ensaio.id)
       : `os/${sample.os || "OS"}/amostra/${sample.code || "AMOSTRA"}/ensaio/adensamento`;
+  const draftActivity = useDraftActivity(scopeId);
   const phys = useMemo(() => physicalIndices(sample), [sample]);
   const [stages, setStages] = useState<Stage[]>(() => {
     const payloadStages = (ctx?.ensaio?.payload as any)?.stages;
@@ -498,7 +501,7 @@ export function AdensamentoPage() {
       showResults,
       photos: ctx?.photos || [],
     };
-    saveOedDraft(scopeId, savePayload);
+    saveOedDraft(scopeId, savePayload, { id: user?.id, name: displayName });
     const t = setTimeout(() => setIsSavingDraft(false), 800);
     return () => clearTimeout(t);
   }, [remoteLoaded, scopeId, sample, stages, validation, preAdjust, cvAdjust, axisCfg, methodCas, methodPS, showResults, ctx?.photos]);
@@ -774,7 +777,7 @@ export function AdensamentoPage() {
         showResults,
         photos: ctx?.photos || [],
       };
-      saveOedDraft(scopeId, savePayload);
+      saveOedDraft(scopeId, savePayload, { id: user?.id, name: displayName });
       if (ctx && ctx.os && ctx.amostra && ctx.ensaio) {
         labStore.patchEnsaio(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, {
           payload: savePayload,
@@ -1132,7 +1135,8 @@ export function AdensamentoPage() {
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <Badge variant="outline">ABNT NBR 16853 / ASTM D2435</Badge>
-              <SyncStatusBadge state={isSavingDraft ? "saving" : "synced"} />
+              <SyncStatusBadge state={isSavingDraft ? "saving" : "synced"} lastSavedAt={draftActivity.lastSavedAt} />
+              <DraftHistoryButton history={draftActivity.history} />
               <WorkflowFarol status={
     (() => {
       const st = wfStatus || approvals[0]?.status || (ctx?.ensaio as any)?.status || "em_digitacao";
@@ -1484,6 +1488,15 @@ export function AdensamentoPage() {
       </Card>
 
       <main className="w-full">
+
+        <div className="mb-3">
+          <EditingPresenceBanner
+            lastSavedAt={draftActivity.lastSavedAt}
+            lastSavedByName={draftActivity.lastSavedByName}
+            lastSavedById={draftActivity.lastSavedById}
+            currentUserId={user?.id}
+          />
+        </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-5 bg-muted/60">

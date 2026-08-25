@@ -1,6 +1,8 @@
 import { SyncStatusBadge } from "@/components/SyncStatusBadge";
 import { saveSharedDraft, loadSharedDraft } from "@/lib/draft.functions";
 import { beginSave, endSave } from "@/lib/save-in-flight";
+import { useDraftActivity } from "@/hooks/use-draft-activity";
+import { EditingPresenceBanner, DraftHistoryButton } from "@/components/DraftActivityInfo";
 import { listPendenciasDigitacao, atualizarPendenciaDigitacao } from "@/lib/lab-pendencias.functions";
 import { findMatchingPendencia } from "@/lib/pendencia-match";
 import { buildScopeId } from "@/lib/scope";
@@ -202,6 +204,7 @@ export function CDPage() {
     ctx && ctx.os && ctx.amostra && ctx.ensaio
       ? buildScopeId(ctx.os.id, ctx.amostra.id, ctx.ensaio.id)
       : (ctx?.ensaio?.id ?? "local");
+  const draftActivity = useDraftActivity(scopeId);
 
   const draftRef = useRef<ReturnType<typeof loadDraft>>(null);
   if (draftRef.current === null) draftRef.current = loadDraft(scopeId);
@@ -475,7 +478,7 @@ export function CDPage() {
     // dentro de saveDraft, continua com seu próprio debounce interno).
     const draftPhotos = ctx?.photos ?? (draft as any)?.photos ?? [];
     const draftData = { sample, specimens, selectedCpId, tab, adjust, axisCfg, photos: draftPhotos };
-    saveDraft(scopeId, draftData);
+    saveDraft(scopeId, draftData, { id: user?.id, name: displayName });
     if (ctx?.ensaio) ctx.onPayloadChange(draftData);
   }, [remoteLoaded, scopeId, sample, specimens, selectedCpId, tab, adjust, axisCfg, ctx, ctx?.photos]);
 
@@ -794,7 +797,7 @@ export function CDPage() {
         },
       });
       const currentDraft = { sample, specimens, selectedCpId, tab, adjust, axisCfg, photos: ctx?.photos || [] };
-      saveDraft(scopeId, currentDraft);
+      saveDraft(scopeId, currentDraft, { id: user?.id, name: displayName });
       if (ctx && ctx.os && ctx.amostra && ctx.ensaio) {
         labStore.patchEnsaio(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, {
           payload: currentDraft,
@@ -1019,7 +1022,8 @@ export function CDPage() {
                     return "digitacao";
                   })()
                 } />
-                <SyncStatusBadge state="synced" />
+                <SyncStatusBadge state="synced" lastSavedAt={draftActivity.lastSavedAt} />
+                <DraftHistoryButton history={draftActivity.history} />
               </div>
               <h1 className="mt-1 text-xl font-bold tracking-tight">
                 {getReportTitle(sample.testCondition)}
@@ -1404,6 +1408,15 @@ export function CDPage() {
             )}
           </Card>
         )}
+
+        <div className="mb-3">
+          <EditingPresenceBanner
+            lastSavedAt={draftActivity.lastSavedAt}
+            lastSavedByName={draftActivity.lastSavedByName}
+            lastSavedById={draftActivity.lastSavedById}
+            currentUserId={user?.id}
+          />
+        </div>
 
         {/* Abas Principais de Edição */}
         <Tabs value={tab} onValueChange={setTab} className="flex-1 overflow-hidden flex flex-col">

@@ -17,7 +17,7 @@ function persistRev(scopeId: string, rev: number): void {
   } catch {}
 }
 
-export function saveOedDraft(scopeId: string, data: any) {
+export function saveOedDraft(scopeId: string, data: any, actor?: { id?: string; name?: string }) {
   if (typeof window === "undefined" || typeof localStorage === "undefined") return;
   const payload = { ...data, rev: knownRevs.get(scopeId), savedAt: new Date().toISOString() };
   try {
@@ -33,7 +33,9 @@ export function saveOedDraft(scopeId: string, data: any) {
   const timer = setTimeout(() => {
     saveTimers.delete(scopeId);
     const expectedRev = knownRevs.get(scopeId);
-    trackSave(() => saveSharedDraft({ data: { scopeId, payload, expectedRev } }))
+    trackSave(() =>
+      saveSharedDraft({ data: { scopeId, payload, expectedRev, changedBy: actor?.id, changedByName: actor?.name } }),
+    )
       .then((res) => {
         if (res.conflict) {
           toast.warning("Atenção: Relatório alterado em outro computador", {

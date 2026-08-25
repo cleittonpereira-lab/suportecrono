@@ -911,6 +911,11 @@ function CentralRelatoriosPage() {
                               Não Iniciado
                             </Badge>
                           )}
+                          {pendExistente && pendExistente.status !== "pendente" && (
+                            <div className="mt-1 text-[10px] text-muted-foreground">
+                              Último salvamento: {format(new Date(pendExistente.updated_at), "dd/MM HH:mm", { locale: ptBR })}
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell className="text-center text-xs">
                           {item.fim_real ? (
@@ -1615,6 +1620,10 @@ function KanbanCard({
         <div className="flex items-center justify-between text-slate-500">
           <span>Tempo decorrido:</span>
           <span className="font-mono">{sla.totalLeadTime.formattedDuration}</span>
+        </div>
+        <div className="flex items-center justify-between text-slate-500">
+          <span>Último salvamento:</span>
+          <span className="font-mono">{format(new Date(item.updated_at), "dd/MM HH:mm", { locale: ptBR })}</span>
         </div>
       </div>
 

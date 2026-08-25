@@ -37,14 +37,18 @@ export function SyncStatusBadge({
     );
   }
 
+  const lastSavedLabel = lastSavedAt
+    ? new Date(lastSavedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+    : null;
+
   return (
     <Badge
       variant="outline"
       className={`border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 gap-1.5 px-3 py-1 text-xs font-semibold shadow-xs ${className}`}
-      title={lastSavedAt ? `Última sincronização: ${new Date(lastSavedAt).toLocaleTimeString("pt-BR")}` : "Sincronizado"}
+      title={lastSavedAt ? `Último salvamento: ${new Date(lastSavedAt).toLocaleString("pt-BR")}` : "Sincronizado"}
     >
       <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-      <span>Relatório 100% Sincronizado</span>
+      <span>Relatório 100% Sincronizado{lastSavedLabel ? ` · último salvamento ${lastSavedLabel}` : ""}</span>
     </Badge>
   );
 }
