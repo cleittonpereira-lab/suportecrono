@@ -104,101 +104,55 @@ export const getLabEnsaioSnapshot = createServerFn({ method: "POST" })
     const ids = parseScope(data.scopeId);
     if (!ids) return null;
 
-    // 1. Tenta buscar no Google Drive (_lab-state.json)
+    // Lê diretamente os arquivos individuais do Drive (fonte de verdade
+    // atual). Cada leitura é O(1) - sabemos o nome exato do arquivo pelos
+    // IDs no scopeId, sem precisar escanear/ler o resto.
     try {
-      const { readDriveJson } = await import("@/lib/driveStorage");
-      const globalState = await readDriveJson<any>("_lab-state.json");
-      if (globalState?.os && Array.isArray(globalState.os)) {
-        const foundOs = globalState.os.find((o: any) => o.id === ids.osId);
-        if (foundOs) {
-          const foundAm = (foundOs.amostras || []).find((a: any) => a.id === ids.amostraId);
-          if (foundAm) {
-            const foundEn = (foundAm.ensaios || []).find((e: any) => e.id === ids.ensaioId);
-            if (foundEn) {
-              return {
-                os: {
-                  id: foundOs.id,
-                  numero: foundOs.numero || ids.osId,
-                  client: foundOs.client,
-                  workNumber: foundOs.workNumber,
-                  local: foundOs.local,
-                  operator: foundOs.operator,
-                  technicalResp: foundOs.technicalResp,
-                  revision: foundOs.revision,
-                },
-                amostra: {
-                  id: foundAm.id,
-                  reportNumber: foundAm.reportNumber,
-                  code: foundAm.code,
-                  description: foundAm.description,
-                  granulometricDescription: foundAm.granulometricDescription,
-                  borehole: foundAm.borehole,
-                  depth: foundAm.depth,
-                  coords: foundAm.coords,
-                },
-                ensaio: {
-                  id: foundEn.id,
-                  tipo: foundEn.tipo,
-                  label: foundEn.label,
-                  status: foundEn.status || "rascunho",
-                  payload: toSerializableJson(foundEn.payload),
-                },
-              };
-            }
-          }
-        }
-      }
-    } catch {}
+      const { ensureFolderPath, readDriveJson } = await import("@/lib/driveStorage");
 
-    // 2. Fallback no Supabase lab_index
-    let idx: any = null;
-    let pendPayload: Record<string, unknown> = {};
+      const osFolderId = await ensureFolderPath(["lab-os"]);
+      const foundOs = await readDriveJson<any>(`${ids.osId}.json`, osFolderId);
+      if (!foundOs) return null;
 
-    try {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      const { data: idxRow } = await supabaseAdmin
-        .from("lab_index")
-        .select("scope_id, os_numero, os_cliente, amostra_code, ensaio_tipo, ensaio_nome, workflow_status, extra")
-        .eq("scope_id", data.scopeId)
-        .maybeSingle();
+      const amFolderId = await ensureFolderPath(["lab-amostras"]);
+      const foundAm = await readDriveJson<any>(`${ids.osId}__${ids.amostraId}.json`, amFolderId);
+      if (!foundAm) return null;
 
-      idx = idxRow;
-      if (idx?.extra) {
-        pendPayload = asObject(idx.extra);
-      }
-    } catch {}
+      const enFolderId = await ensureFolderPath(["lab-ensaios"]);
+      const foundEn = await readDriveJson<any>(`${ids.amostraId}__${ids.ensaioId}.json`, enFolderId);
+      if (!foundEn) return null;
 
-    if (!idx) return null;
-
-    const osNumero = String(idx.os_numero ?? "").trim();
-    const amostraCode = String(idx.amostra_code ?? "").trim();
-    const ident = asObject(pendPayload.ident);
-    const tipoRaw = idx.ensaio_tipo;
-    const tipo = isEnsaioTipo(tipoRaw) ? tipoRaw : (String(tipoRaw).includes("cisalhamento") ? "cisalhamento-direto" : "triaxial-cid");
-    const payload = Object.keys(pendPayload).length > 0 ? pendPayload : undefined;
-
-    return {
-      os: {
-        id: ids.osId,
-        numero: osNumero || ids.osId,
-        client: String(idx.os_cliente ?? ident.tomador ?? ""),
-        workNumber: "",
-        local: String(ident.obra ?? ""),
-      },
-      amostra: {
-        id: ids.amostraId,
-        reportNumber: amostraCode,
-        code: amostraCode,
-        description: String(ident.amostraDescricao ?? ""),
-        borehole: String(ident.furo ?? ""),
-        depth: String(ident.profundidade ?? ""),
-      },
-      ensaio: {
-        id: ids.ensaioId,
-        tipo,
-        label: String(idx.ensaio_nome ?? ""),
-        status: workflowToStatus(idx.workflow_status),
-        payload: toSerializableJson(payload),
-      },
-    };
+      return {
+        os: {
+          id: foundOs.id,
+          numero: foundOs.numero || ids.osId,
+          client: foundOs.client,
+          workNumber: foundOs.workNumber,
+          local: foundOs.local,
+          operator: foundOs.operator,
+          technicalResp: foundOs.technicalResp,
+          revision: foundOs.revision,
+        },
+        amostra: {
+          id: foundAm.id,
+          reportNumber: foundAm.reportNumber,
+          code: foundAm.code,
+          description: foundAm.description,
+          granulometricDescription: foundAm.granulometricDescription,
+          borehole: foundAm.borehole,
+          depth: foundAm.depth,
+          coords: foundAm.coords,
+        },
+        ensaio: {
+          id: foundEn.id,
+          tipo: foundEn.tipo,
+          label: foundEn.label,
+          status: foundEn.status || workflowToStatus(foundEn.workflowStatus),
+          payload: toSerializableJson(foundEn.payload),
+        },
+      };
+    } catch (err) {
+      console.warn("[getLabEnsaioSnapshot] Falha ao ler arquivos do Drive:", err);
+      return null;
+    }
   });

@@ -4,8 +4,6 @@ import type { ChegadaTask, ChegadaColumn, Option } from "./chegada-amostras-stor
 import fs from "node:fs";
 import path from "node:path";
 
-const CHEGADA_SCOPE_ID = "chegada_amostras_global_state";
-
 export const DEFAULT_COLUMNS: ChegadaColumn[] = [
   { id: "registro", title: "Registro", subtitle: "Chegada de amostras", isSystem: true },
   { id: "recebimento", title: "Recebimento", subtitle: "Conferência inicial" },
@@ -152,48 +150,6 @@ export async function handleFetchSharedChegadaState(): Promise<SharedChegadaStat
     }
   } catch {}
 
-  // 2. Fallback no Supabase
-  try {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data, error } = await supabaseAdmin
-      .from("lab_index")
-      .select("extra, updated_at")
-      .eq("scope_id", CHEGADA_SCOPE_ID)
-      .maybeSingle();
-
-    if (!error && data?.extra && typeof data.extra === "object") {
-      const extra = data.extra as any;
-      if (extra.tasks && typeof extra.tasks === "object") {
-        const dbUpdatedAt = data.updated_at ? new Date(data.updated_at).getTime() : 0;
-        const localUpdatedAt = localState.updatedAt ? new Date(localState.updatedAt).getTime() : 0;
-
-        if (dbUpdatedAt >= localUpdatedAt || Object.keys(localState.tasks).length === 0) {
-          const columns: ChegadaColumn[] = Array.isArray(extra.columns) && extra.columns.length > 0
-            ? extra.columns
-            : localState.columns;
-
-          const mergedTasks: Record<string, ChegadaTask[]> = { ...localState.tasks };
-          columns.forEach((col) => {
-            mergedTasks[col.id] = Array.isArray(extra.tasks?.[col.id]) ? extra.tasks[col.id] : (mergedTasks[col.id] || []);
-          });
-
-          const mergedState: SharedChegadaState = {
-            columns,
-            tasks: mergedTasks,
-            tipoOptions: Array.isArray(extra.tipoOptions) && extra.tipoOptions.length > 0 ? extra.tipoOptions : localState.tipoOptions,
-            recebidoOptions: Array.isArray(extra.recebidoOptions) && extra.recebidoOptions.length > 0 ? extra.recebidoOptions : localState.recebidoOptions,
-            updatedAt: data.updated_at || new Date().toISOString(),
-          };
-
-          writeLocalChegadaState(mergedState);
-          return mergedState;
-        }
-      }
-    }
-  } catch (err) {
-    console.warn("[handleFetchSharedChegadaState] Aviso Supabase:", err);
-  }
-
   return localState;
 }
 
@@ -270,20 +226,6 @@ export async function handleCreateSharedChegadaTask(
 
   writeLocalChegadaState(fullState);
 
-  try {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    await supabaseAdmin.from("lab_index").upsert({
-      scope_id: CHEGADA_SCOPE_ID,
-      os_numero: newTask.osCliente.substring(0, 50),
-      os_cliente: "CHEGADA_AMOSTRAS",
-      workflow_status: "ativo",
-      extra: fullState as any,
-      updated_at: nowIso,
-    });
-  } catch (err) {
-    console.warn("[handleCreateSharedChegadaTask] Aviso Supabase:", err);
-  }
-
   return {
     success: true,
     task: newTask,
@@ -315,20 +257,6 @@ export async function handleSaveSharedChegadaState(data: {
   };
 
   writeLocalChegadaState(newState);
-
-  try {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    await supabaseAdmin.from("lab_index").upsert({
-      scope_id: CHEGADA_SCOPE_ID,
-      os_numero: "GLOBAL",
-      os_cliente: "CHEGADA_AMOSTRAS",
-      workflow_status: "ativo",
-      extra: newState as any,
-      updated_at: nowIso,
-    });
-  } catch (err) {
-    console.warn("[handleSaveSharedChegadaState] Aviso Supabase:", err);
-  }
 
   return { success: true, updatedAt: nowIso };
 }
@@ -364,20 +292,6 @@ export async function handleAddSharedChegadaOption(data: {
 
   currentState.updatedAt = new Date().toISOString();
   writeLocalChegadaState(currentState);
-
-  try {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    await supabaseAdmin.from("lab_index").upsert({
-      scope_id: CHEGADA_SCOPE_ID,
-      os_numero: "GLOBAL",
-      os_cliente: "CHEGADA_AMOSTRAS",
-      workflow_status: "ativo",
-      extra: currentState as any,
-      updated_at: currentState.updatedAt,
-    });
-  } catch (err) {
-    console.warn("[handleAddSharedChegadaOption] Aviso Supabase:", err);
-  }
 
   return { success: true, options: updatedOptions };
 }
