@@ -18,17 +18,34 @@ export type CDDraft = {
   axisCfg?: CDAxisCfg;
   photos?: any[];
   savedAt: string;
+  /** Revisão (rev) do servidor em que este rascunho local se baseia. */
+  rev?: number;
 };
 
 const saveTimers = new Map<string, any>();
 const knownRevs = new Map<string, number>();
+
+/** Atualiza só o campo `rev` do rascunho já salvo em localStorage, sem mexer no resto. */
+function persistRev(scopeId: string, rev: number): void {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = window.localStorage.getItem(KEY(scopeId));
+    if (!raw) return;
+    const cur = JSON.parse(raw);
+    window.localStorage.setItem(KEY(scopeId), JSON.stringify({ ...cur, rev }));
+  } catch {}
+}
 
 export function loadDraft(scopeId: string): Partial<CDDraft> | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(KEY(scopeId));
     if (!raw) return null;
-    return JSON.parse(raw) as Partial<CDDraft>;
+    const parsed = JSON.parse(raw) as Partial<CDDraft>;
+    if (typeof parsed.rev === "number" && !knownRevs.has(scopeId)) {
+      knownRevs.set(scopeId, parsed.rev);
+    }
+    return parsed;
   } catch {
     return null;
   }
@@ -36,7 +53,7 @@ export function loadDraft(scopeId: string): Partial<CDDraft> | null {
 
 export function saveDraft(scopeId: string, draft: Partial<CDDraft>): void {
   if (typeof window === "undefined") return;
-  const payload = { ...draft, savedAt: new Date().toISOString() };
+  const payload = { ...draft, rev: knownRevs.get(scopeId), savedAt: new Date().toISOString() };
   try {
     window.localStorage.setItem(KEY(scopeId), JSON.stringify(payload));
   } catch {}
@@ -54,9 +71,13 @@ export function saveDraft(scopeId: string, draft: Partial<CDDraft>): void {
           toast.warning("Atenção: Relatório alterado em outro computador", {
             description: "Os dados foram atualizados no servidor por outro usuário.",
           });
-          if (res.currentRev) knownRevs.set(scopeId, res.currentRev);
+          if (res.currentRev) {
+            knownRevs.set(scopeId, res.currentRev);
+            persistRev(scopeId, res.currentRev);
+          }
         } else if (res.success && res.rev) {
           knownRevs.set(scopeId, res.rev);
+          persistRev(scopeId, res.rev);
         }
       })
       .catch((err) => {
@@ -71,6 +92,9 @@ export async function fetchRemoteDraft(
   opts?: { osNum?: string; amCode?: string; ensaioTipo?: string },
 ): Promise<Partial<CDDraft> | null> {
   try {
+    // Rev do rascunho que já está nesta máquina (localStorage), se houver.
+    const localRev = loadDraft(scopeId)?.rev;
+
     const res = await loadSharedDraft({
       data: {
         scopeId,
@@ -80,13 +104,21 @@ export async function fetchRemoteDraft(
       },
     });
     if (res?.success && res.payload) {
+      // Se o rascunho local já está na mesma rev do servidor (ou mais à
+      // frente — ex: acabou de digitar e recarregou antes do envio ao
+      // servidor terminar), NÃO sobrescreve a tela com o dado do servidor,
+      // que estaria desatualizado em relação ao que o usuário já digitou.
+      if (typeof res.rev === "number" && typeof localRev === "number" && res.rev <= localRev) {
+        return null;
+      }
       if (typeof res.rev === "number") {
         knownRevs.set(scopeId, res.rev);
       }
+      const payloadWithRev = { ...(res.payload as object), rev: res.rev } as Partial<CDDraft>;
       try {
-        window.localStorage.setItem(KEY(scopeId), JSON.stringify(res.payload));
+        window.localStorage.setItem(KEY(scopeId), JSON.stringify(payloadWithRev));
       } catch {}
-      return res.payload as Partial<CDDraft>;
+      return payloadWithRev;
     }
   } catch (err) {
     console.warn("[CD fetchRemoteDraft] Falha ao carregar rascunho remoto:", err);
