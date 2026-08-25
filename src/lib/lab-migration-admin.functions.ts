@@ -63,6 +63,124 @@ export const testDriveRoundTrip = createServerFn({ method: "GET" })
     return { steps };
   });
 
+const ImportInput = z.object({ secret: z.string(), stateJson: z.string().min(2) });
+
+/**
+ * Igual a runLabStateMigration, mas recebe o JSON do estado diretamente do
+ * cliente (em vez de tentar achar um _lab-state.json central que nunca
+ * existiu de verdade) — usado para importar o localStorage do navegador
+ * de quem realmente usa o sistema no dia a dia, que é onde os dados reais
+ * estão hoje.
+ */
+export const importLabStateFromClient = createServerFn({ method: "POST" })
+  .validator((v: unknown) => ImportInput.parse(v))
+  .handler(async ({ data }) => {
+    if (data.secret !== "suportecrono-migrate-2026-lab-tables") {
+      throw new Error("unauthorized");
+    }
+    const { upsertOSFn, upsertAmostraFn, upsertEnsaioFn } = await import("@/lib/lab-entities.functions");
+
+    let parsed: { os?: any[] };
+    try {
+      parsed = JSON.parse(data.stateJson);
+    } catch (err) {
+      return { ok: false, message: `Falha ao interpretar JSON: ${err instanceof Error ? err.message : String(err)}`, os: 0, amostras: 0, ensaios: 0, errors: [] as string[] };
+    }
+
+    const osList = Array.isArray(parsed.os) ? parsed.os : [];
+    let osCount = 0;
+    let amCount = 0;
+    let enCount = 0;
+    const errors: string[] = [];
+
+    for (const os of osList) {
+      if (!os?.id) continue;
+      try {
+        await upsertOSFn({
+          data: {
+            id: os.id,
+            numero: os.numero || "",
+            client: os.client ?? undefined,
+            workNumber: os.workNumber ?? undefined,
+            local: os.local ?? undefined,
+            operator: os.operator ?? undefined,
+            technicalResp: os.technicalResp ?? undefined,
+            revision: os.revision ?? undefined,
+            createdAt: os.createdAt || new Date().toISOString(),
+            updatedAt: os.updatedAt || new Date().toISOString(),
+          },
+        });
+      } catch (err) {
+        errors.push(`OS ${os.id} (${os.numero}): ${err instanceof Error ? err.message : String(err)}`);
+        continue;
+      }
+      osCount++;
+
+      for (const am of os.amostras ?? []) {
+        if (!am?.id) continue;
+        try {
+          await upsertAmostraFn({
+            data: {
+              id: am.id,
+              osId: os.id,
+              reportNumber: am.reportNumber ?? undefined,
+              borehole: am.borehole ?? undefined,
+              depth: am.depth ?? undefined,
+              description: am.description ?? undefined,
+              granulometricDescription: am.granulometricDescription ?? undefined,
+              code: am.code ?? undefined,
+              sampleType: am.sampleType ?? undefined,
+              materialType: am.materialType ?? undefined,
+              coords: am.coords ?? null,
+              photos: am.photos ?? [],
+              createdAt: am.createdAt || new Date().toISOString(),
+              updatedAt: am.updatedAt || new Date().toISOString(),
+            },
+          });
+        } catch (err) {
+          errors.push(`Amostra ${am.id} (OS ${os.numero}): ${err instanceof Error ? err.message : String(err)}`);
+          continue;
+        }
+        amCount++;
+
+        for (const en of am.ensaios ?? []) {
+          if (!en?.id) continue;
+          try {
+            await upsertEnsaioFn({
+              data: {
+                id: en.id,
+                amostraId: am.id,
+                tipo: en.tipo || "cisalhamento-direto",
+                status: en.status ?? undefined,
+                label: en.label ?? undefined,
+                nome: en.nome ?? undefined,
+                sigla: en.sigla ?? undefined,
+                operator: en.operator ?? undefined,
+                photos: en.photos ?? [],
+                payload: en.payload ?? null,
+                createdAt: en.createdAt || new Date().toISOString(),
+                updatedAt: en.updatedAt || new Date().toISOString(),
+              },
+            });
+          } catch (err) {
+            errors.push(`Ensaio ${en.id} (amostra ${am.code || am.reportNumber}): ${err instanceof Error ? err.message : String(err)}`);
+            continue;
+          }
+          enCount++;
+        }
+      }
+    }
+
+    return {
+      ok: true,
+      message: `Importação concluída: ${osCount} OS, ${amCount} amostras, ${enCount} ensaios (fonte: localStorage do navegador).`,
+      os: osCount,
+      amostras: amCount,
+      ensaios: enCount,
+      errors,
+    };
+  });
+
 export const runLabStateMigration = createServerFn({ method: "GET" })
   .validator((v: unknown) => Input.parse(v))
   .handler(async ({ data }) => {

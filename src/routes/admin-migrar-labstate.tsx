@@ -3,7 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { runLabStateMigration, testDriveRoundTrip } from "@/lib/lab-migration-admin.functions";
+import { runLabStateMigration, testDriveRoundTrip, importLabStateFromClient } from "@/lib/lab-migration-admin.functions";
 
 export const Route = createFileRoute("/admin-migrar-labstate")({
   component: AdminMigrarLabState,
@@ -12,6 +12,29 @@ export const Route = createFileRoute("/admin-migrar-labstate")({
 function AdminMigrarLabState() {
   const migrateFn = useServerFn(runLabStateMigration);
   const testDriveFn = useServerFn(testDriveRoundTrip);
+  const importFn = useServerFn(importLabStateFromClient);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<Awaited<ReturnType<typeof importLabStateFromClient>> | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+
+  async function runImportFromBrowser() {
+    setImporting(true);
+    setImportError(null);
+    setImportResult(null);
+    try {
+      const raw = typeof window !== "undefined" ? window.localStorage.getItem("lab://os-store/v1") : null;
+      if (!raw) {
+        setImportError("Nenhum dado encontrado no localStorage deste navegador (chave lab://os-store/v1).");
+        return;
+      }
+      const res = await importFn({ data: { secret: "suportecrono-migrate-2026-lab-tables", stateJson: raw } });
+      setImportResult(res);
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setImporting(false);
+    }
+  }
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<Awaited<ReturnType<typeof runLabStateMigration>> | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -71,6 +94,33 @@ function AdminMigrarLabState() {
               ))}
             </ul>
           )}
+
+          <div className="pt-4 border-t space-y-2">
+            <p className="text-sm font-medium">
+              Importar dados deste navegador (onde os dados reais realmente estão hoje)
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Abra esta página no navegador de quem usa o sistema normalmente (já logado), e clique abaixo.
+              Lê o localStorage deste navegador e envia pros arquivos novos no Drive.
+            </p>
+            <Button onClick={runImportFromBrowser} disabled={importing} variant="secondary">
+              {importing ? "Importando..." : "Importar do localStorage deste navegador"}
+            </Button>
+            {importError && <p className="text-sm text-destructive">Erro: {importError}</p>}
+            {importResult && (
+              <div className="text-sm space-y-2">
+                <p className="font-medium">{importResult.message}</p>
+                <p>OS: {importResult.os} · Amostras: {importResult.amostras} · Ensaios: {importResult.ensaios}</p>
+                {importResult.errors.length > 0 && (
+                  <ul className="list-disc pl-5 max-h-64 overflow-auto">
+                    {importResult.errors.map((e, i) => (
+                      <li key={i} className="text-xs text-muted-foreground">{e}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
           {error && <p className="text-sm text-destructive">Erro: {error}</p>}
           {result && (
             <div className="text-sm space-y-2">
