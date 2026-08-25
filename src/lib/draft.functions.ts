@@ -129,23 +129,23 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
       const name = ensaioFileName(ids.amostraId, ids.ensaioId);
       const existing = await readDriveJson<EnsaioFile>(name, folderId);
 
-      // Verificação de Concorrência Otimista (Optimistic Locking)
-      if (
-        existing &&
-        typeof data.expectedRev === "number" &&
-        typeof existing.rev === "number" &&
-        existing.rev > data.expectedRev
-      ) {
+      // Verificação de Concorrência Otimista (Optimistic Locking) — usa um
+      // contador dedicado ao rascunho (draftRev), separado do rev geral da
+      // entidade (que também é incrementado por fotos/status/aprovações).
+      // Comparar contra o rev geral fazia esse aviso disparar sem ninguém
+      // mais de fato ter editado o rascunho.
+      const currentDraftRev = existing?.draftRev ?? existing?.rev ?? 0;
+      if (existing && typeof data.expectedRev === "number" && currentDraftRev > data.expectedRev) {
         return {
           success: false,
           conflict: true,
-          currentRev: existing.rev,
+          currentRev: currentDraftRev,
           currentPayload: toSerializableJson(existing.payload) ?? null,
           message: "Este relatório foi alterado em outro computador enquanto você digitava.",
         };
       }
 
-      const nextRev = (existing?.rev ?? 0) + 1;
+      const nextRev = currentDraftRev + 1;
 
       // Diff de auditoria
       const oldPayload = (existing?.payload as Record<string, any>) || {};
@@ -174,9 +174,18 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
         payload,
         createdAt: existing?.createdAt || nowIso,
         updatedAt: nowIso,
-        rev: nextRev,
+        // rev geral da entidade não é tocado pelo rascunho — evita corrida
+        // com fotos/status, que também gravam neste mesmo arquivo (ver
+        // draftRev abaixo, dedicado só ao controle de concorrência do rascunho).
+        rev: existing?.rev ?? 0,
+        draftRev: nextRev,
         workflowStatus: existing?.workflowStatus,
         approvals: existing?.approvals,
+        // Preserva aprovações/comentários já registrados — sem isso, cada
+        // autosave do rascunho (a cada poucos segundos de digitação) apagava
+        // silenciosamente o histórico de verificação/aprovação do ensaio.
+        reportApprovals: existing?.reportApprovals,
+        approvalComments: existing?.approvalComments,
         draftHistory: history,
       };
 
@@ -210,7 +219,7 @@ export const loadSharedDraft = createServerFn({ method: "GET" })
         return {
           success: true,
           payload: existing.payload,
-          rev: existing.rev ?? 1,
+          rev: existing.draftRev ?? existing.rev ?? 1,
           updatedAt: existing.updatedAt,
         };
       }

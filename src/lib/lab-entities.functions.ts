@@ -123,6 +123,12 @@ export type EnsaioFile = {
   createdAt: string;
   updatedAt: string;
   rev: number;
+  // Contador de concorrência dedicado ao rascunho (payload), separado do
+  // rev geral acima — que também é incrementado por fotos/status/aprovações
+  // via upsertEnsaioFn. Sem essa separação, uma gravação de foto podia fazer
+  // o próximo autosave do rascunho reportar "alterado em outro computador"
+  // mesmo sem nenhum outro usuário/aba envolvido. Ver draft.functions.ts.
+  draftRev?: number;
   // Consolidado aqui: farol/aprovações/histórico do mesmo ensaio (ver
   // draft.functions.ts e approvals.functions.ts). upsertEnsaioFn (chamado
   // pelo labStore a cada patchEnsaio/onPayloadChange) preserva esses campos
