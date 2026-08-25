@@ -1,14 +1,17 @@
 /**
  * Server functions para o ciclo de vida de pendências de digitação e SLAs.
  *
- * Persistência soberana e relacional com Supabase (PostgreSQL / RLS / UNIQUE).
- * Garante integridade referencial, concorrência e sincronização em tempo real entre todas as máquinas.
+ * Persistência no Google Drive: um arquivo por pendência, nomeado de forma
+ * determinística a partir de (os, amostra, ensaio) — isso permite achar
+ * (ou confirmar que não existe) uma pendência por essas 3 chaves sem
+ * precisar listar/ler todos os arquivos da pasta, preservando o mesmo
+ * comportamento idempotente que a constraint UNIQUE(os,amostra,ensaio)
+ * dava no Supabase.
  */
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { z } from "zod";
-import crypto from "node:crypto";
+import { ensureFolderPath, readDriveJson, writeDriveJson, listFilesInFolder, findFileInFolder, deleteDriveFile } from "@/lib/driveStorage";
 
 type JsonValue = string | number | boolean | null | { [k: string]: JsonValue } | JsonValue[];
 
@@ -17,6 +20,13 @@ function asJsonObject(val: JsonValue | null | undefined): Record<string, unknown
     return val as Record<string, unknown>;
   }
   return {};
+}
+
+const FOLDER_PENDENCIAS = ["lab-pendencias"];
+
+function pendenciaKey(os: string, amostra: string | null, ensaio: string): string {
+  const raw = `${os.trim()}__${(amostra ?? "").trim()}__${ensaio.trim()}`;
+  return raw.toLowerCase().replace(/[^a-z0-9_.-]+/g, "_");
 }
 
 export type PendenciaDigitacao = {
@@ -42,6 +52,7 @@ export type PendenciaDigitacao = {
   digitador_nome?: string | null;
   verificador_nome?: string | null;
   aprovador_nome?: string | null;
+  rev?: number;
 };
 
 const CriarInput = z.object({
@@ -60,74 +71,66 @@ export const criarPendenciaDigitacao = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) => CriarInput.parse(i))
   .handler(async ({ context, data }) => {
-    const amostraNorm =
-      data.amostra == null || data.amostra.trim() === "" ? null : data.amostra.trim();
-    const id = crypto.randomUUID();
+    const amostraNorm = data.amostra == null || data.amostra.trim() === "" ? null : data.amostra.trim();
+    const key = pendenciaKey(data.os.trim(), amostraNorm, data.ensaio.trim());
     const nowIso = new Date().toISOString();
+    const folderId = await ensureFolderPath(FOLDER_PENDENCIAS);
+    const name = `${key}.json`;
 
-    const insertData = {
-      id,
+    const existing = await readDriveJson<PendenciaDigitacao>(name, folderId);
+    if (existing) {
+      // Já existe (idempotente, igual ao ON CONFLICT antigo) - não sobrescreve status já avançado.
+      return { ok: true, id: existing.id, created: false };
+    }
+
+    const record: PendenciaDigitacao = {
+      id: key,
       os: data.os.trim(),
       amostra: amostraNorm,
       ensaio: data.ensaio.trim(),
       tipo_ensaio: data.tipo_ensaio ?? null,
       equipamento: data.equipamento ?? null,
-      programacao_id: data.programacao_id ?? null,
       operador_user_id: context.userId,
       operador_nome: data.operador_nome ?? null,
       status: "pendente",
       origem: data.origem ?? "gantt",
       payload: {
         ...(data.payload || {}),
+        programacao_id: data.programacao_id ?? null,
         execucao_concluida_at: nowIso,
-      } as never,
+      } as JsonValue,
       data_conclusao: nowIso,
+      observacao: null,
       created_at: nowIso,
       updated_at: nowIso,
+      rev: 1,
     };
 
-    const { error } = await supabaseAdmin
-      .from("lab_pendencias_digitacao")
-      .upsert(insertData, { onConflict: "os,amostra,ensaio" });
-
-    if (error) {
-      throw new Error(`Falha ao registrar pendência no Supabase: ${error.message}`);
-    }
-
-    return { ok: true, id, created: true };
+    await writeDriveJson(name, record, folderId);
+    return { ok: true, id: key, created: true };
   });
 
 export const listPendenciasDigitacao = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async (): Promise<PendenciaDigitacao[]> => {
     try {
-      const { data, error } = await supabaseAdmin
-        .from("lab_pendencias_digitacao")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        console.warn("[listPendenciasDigitacao] Erro Supabase:", error);
-        return [];
-      }
-
-      return (data || []) as PendenciaDigitacao[];
-    } catch (err: any) {
+      const folderId = await ensureFolderPath(FOLDER_PENDENCIAS);
+      const files = await listFilesInFolder(folderId);
+      const rows = await Promise.all(
+        files.map((f) => readDriveJson<PendenciaDigitacao>(f.name, folderId)),
+      );
+      return rows
+        .filter((r): r is PendenciaDigitacao => r !== null)
+        .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+    } catch (err) {
       console.warn("[listPendenciasDigitacao] Falha:", err);
       return [];
     }
   });
 
 const UpdateStatusInput = z.object({
-  id: z.string().uuid(),
-  status: z.enum([
-    "pendente",
-    "em_digitacao",
-    "digitado",
-    "verificado",
-    "aprovado",
-    "concluido_externo",
-  ]),
+  id: z.string().min(1),
+  status: z.enum(["pendente", "em_digitacao", "digitado", "verificado", "aprovado", "concluido_externo"]),
   observacao: z.string().optional(),
   payload: z.record(z.unknown()).optional(),
 });
@@ -137,20 +140,15 @@ export const atualizarStatusPendencia = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => UpdateStatusInput.parse(i))
   .handler(async ({ context, data }) => {
     const now = new Date().toISOString();
-
-    const { data: existing, error: findErr } = await supabaseAdmin
-      .from("lab_pendencias_digitacao")
-      .select("*")
-      .eq("id", data.id)
-      .maybeSingle();
-
-    if (findErr) {
-      throw new Error(`Erro ao buscar pendência: ${findErr.message}`);
+    const folderId = await ensureFolderPath(FOLDER_PENDENCIAS);
+    const name = `${data.id}.json`;
+    const existing = await readDriveJson<PendenciaDigitacao>(name, folderId);
+    if (!existing) {
+      throw new Error("Pendência não encontrada.");
     }
 
-    const prevPayload = asJsonObject((existing?.payload as JsonValue) ?? null);
+    const prevPayload = asJsonObject(existing.payload);
     const incomingPayload = data.payload ?? {};
-
     const nextPayload = {
       ...prevPayload,
       ...incomingPayload,
@@ -161,63 +159,18 @@ export const atualizarStatusPendencia = createServerFn({ method: "POST" })
       ...(data.status === "concluido_externo" ? { concluido_externo_at: now } : {}),
     };
 
-    const patch: Record<string, unknown> = {
+    const patch: Partial<PendenciaDigitacao> = {
       status: data.status,
-      payload: nextPayload as never,
+      payload: nextPayload as JsonValue,
       updated_at: now,
     };
+    if (data.observacao !== undefined) patch.observacao = data.observacao;
+    if (data.status === "em_digitacao" || data.status === "digitado") patch.digitador_user_id = context.userId;
+    if (data.status === "verificado") patch.verificador_user_id = context.userId;
+    if (data.status === "aprovado") patch.aprovador_user_id = context.userId;
 
-    if (data.observacao !== undefined) {
-      patch.observacao = data.observacao;
-    }
-    if (data.status === "em_digitacao" || data.status === "digitado") {
-      patch.digitador_user_id = context.userId;
-    }
-    if (data.status === "verificado") {
-      patch.verificador_user_id = context.userId;
-    }
-    if (data.status === "aprovado") {
-      patch.aprovador_user_id = context.userId;
-    }
-
-    const { error: updErr } = await supabaseAdmin
-      .from("lab_pendencias_digitacao")
-      .update(patch as any)
-      .eq("id", data.id);
-
-    if (updErr) {
-      throw new Error(`Erro ao atualizar pendência no banco: ${updErr.message}`);
-    }
-
-    // Espelha (melhor esforço) no pipeline de workflow dos editores de
-    // relatório (lab_index.workflow_status), que é lido pelos editores e
-    // pela tela da Amostra. Não é a fonte de verdade deste lado — se não
-    // achar um registro correspondente, não falha a atualização da Central.
-    if (existing?.os && existing?.ensaio && data.status !== "concluido_externo") {
-      try {
-        const workflowStatus =
-          data.status === "aprovado" ? "aprovado" :
-          data.status === "verificado" ? "aguardando_aprovacao" :
-          data.status === "digitado" ? "aguardando_verificacao" :
-          "digitacao"; // "pendente" ou "em_digitacao"
-
-        let sel = supabaseAdmin
-          .from("lab_index")
-          .select("scope_id")
-          .eq("os_numero", existing.os)
-          .eq("ensaio_nome", existing.ensaio);
-        sel = existing.amostra ? sel.eq("amostra_code", existing.amostra) : sel.is("amostra_code", null);
-        const { data: matches } = await sel;
-        if (matches && matches.length === 1) {
-          await supabaseAdmin
-            .from("lab_index")
-            .update({ workflow_status: workflowStatus, updated_at: now })
-            .eq("scope_id", matches[0].scope_id);
-        }
-      } catch {
-        // silencioso: espelho best-effort, não é a fonte de verdade
-      }
-    }
+    const nextRecord: PendenciaDigitacao = { ...existing, ...patch, rev: (existing.rev ?? 0) + 1 };
+    await writeDriveJson(name, nextRecord, folderId);
 
     return { ok: true };
   });
@@ -225,14 +178,14 @@ export const atualizarStatusPendencia = createServerFn({ method: "POST" })
 export const atualizarPendenciaDigitacao = atualizarStatusPendencia;
 
 const ConcluirExternoInput = z.object({
-  id: z.string().uuid(),
+  id: z.string().min(1),
   observacao: z.string().optional(),
 });
 
 export const concluirPendenciaExterna = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) => ConcluirExternoInput.parse(i))
-  .handler(async ({ context, data }) => {
+  .handler(async ({ data }) => {
     return atualizarStatusPendencia({
       data: {
         id: data.id,
@@ -258,7 +211,11 @@ export const criarRelatorioAvulso = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => CriarAvulsoInput.parse(i))
   .handler(async ({ context, data }) => {
     const now = new Date().toISOString();
-    const id = crypto.randomUUID();
+    const amostraNorm = data.amostra?.trim() || null;
+    const key = pendenciaKey(data.os.trim(), amostraNorm, data.ensaio.trim());
+    const folderId = await ensureFolderPath(FOLDER_PENDENCIAS);
+    const name = `${key}.json`;
+
     const payload = {
       cliente: data.cliente || "",
       obra: data.obra || "",
@@ -266,44 +223,38 @@ export const criarRelatorioAvulso = createServerFn({ method: "POST" })
       avulso: true,
     };
 
-    const { error } = await supabaseAdmin.from("lab_pendencias_digitacao").insert({
-      id,
+    const record: PendenciaDigitacao = {
+      id: key,
       os: data.os.trim(),
-      amostra: data.amostra?.trim() || null,
+      amostra: amostraNorm,
       ensaio: data.ensaio.trim(),
       tipo_ensaio: data.tipo_ensaio.trim(),
+      equipamento: null,
       status: "em_digitacao",
       origem: "avulso",
       digitador_user_id: context.userId,
+      operador_user_id: null,
       operador_nome: data.operador_nome?.trim() || null,
       observacao: data.observacoes?.trim() || null,
-      payload: payload as never,
+      payload: payload as JsonValue,
       data_conclusao: now,
       created_at: now,
       updated_at: now,
-    });
+      rev: 1,
+    };
 
-    if (error) {
-      throw new Error(`Erro ao criar relatório avulso: ${error.message}`);
-    }
-
-    return { ok: true, id };
+    await writeDriveJson(name, record, folderId);
+    return { ok: true, id: key };
   });
 
-const DeleteInput = z.object({ id: z.string().uuid() });
+const DeleteInput = z.object({ id: z.string().min(1) });
 
 export const removerPendenciaDigitacao = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) => DeleteInput.parse(i))
   .handler(async ({ data }) => {
-    const { error } = await supabaseAdmin
-      .from("lab_pendencias_digitacao")
-      .delete()
-      .eq("id", data.id);
-
-    if (error) {
-      throw new Error(`Erro ao excluir pendência: ${error.message}`);
-    }
-
+    const folderId = await ensureFolderPath(FOLDER_PENDENCIAS);
+    const fileId = await findFileInFolder(`${data.id}.json`, folderId);
+    if (fileId) await deleteDriveFile(fileId);
     return { ok: true };
   });
