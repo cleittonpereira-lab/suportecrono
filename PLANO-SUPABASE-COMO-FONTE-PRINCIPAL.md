@@ -4,7 +4,17 @@
 
 ---
 
-## ATUALIZAÇÃO 2026-08-24 (pós-implementação parcial pelo Antigravity, commit `7527b77`)
+## ATUALIZAÇÃO 2026-08-24 (parte 2) — bug de perda de dados no reload + sugestão de URL
+
+**Achado crítico, corrigido (commit `0837ef9`):** ao digitar num campo (ex: cápsula), o rascunho é salvo no `localStorage` na hora, mas o envio pro Supabase é assíncrono com até ~800ms de atraso (debounce duplo: 400ms no componente + 400ms no `draftStore`). Se a página recarregasse dentro desse intervalo, a busca do rascunho no servidor (ainda desatualizada) sobrescrevia incondicionalmente a tela — apagando o que tinha acabado de ser digitado, mesmo sem nenhum conflito real de outro usuário/computador. Corrigido guardando a `rev` do servidor junto com o rascunho local, e só deixando o servidor sobrescrever a tela quando a rev dele for realmente mais nova. Aplicado em Cisalhamento Direto, Triaxial CID e Adensamento (`src/features/*/draftStore.ts`).
+
+**Sugestão do usuário, ainda não implementada:** URLs com um código único e rastreável por relatório, em vez dos IDs internos atuais. É uma boa ideia de UX/rastreabilidade, mas é uma mudança de escopo maior (afeta roteamento e possivelmente como links são compartilhados/impressos) — vale tratar como um item separado depois que a base de sincronização estiver 100% estável, não em cima da correção de bugs urgentes.
+
+**Importante:** o usuário testou o site **publicado (Vercel)** e ainda viu o bug antigo do CD.IN/CD.NAT — isso é esperado, pois os commits de hoje só existem no GitHub até a Vercel fazer um novo deploy. Ainda não confirmamos se o deploy está desbloqueado (havia um deploy travado relatado no início da sessão). Antes de testar qualquer correção de hoje, confirmar que o deploy mais recente na Vercel corresponde ao commit `0837ef9` (ou mais novo).
+
+---
+
+## ATUALIZAÇÃO 2026-08-24 (parte 1) (pós-implementação parcial pelo Antigravity, commit `7527b77`)
 
 O commit `7527b77 feat(arch): migracao para Supabase como fonte principal e Drive para arquivos grandes` já implementou boa parte das Fases 2, 3, 4 e 7 abaixo (rascunhos e aprovações migrados para o Supabase com `rev`, `_approvals-index.json` eliminado, chave da Service Account removida do código, `getWorkflowStatuses` duplicado unificado numa função só). **Isso já é uma melhoria real e deve ser mantido**, não revertido.
 
