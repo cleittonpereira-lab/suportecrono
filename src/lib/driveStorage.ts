@@ -164,6 +164,54 @@ export async function deleteDriveFile(fileId: string): Promise<void> {
   }
 }
 
+/**
+ * Envia os bytes por upload resumível (protocolo de 2 etapas: inicia a sessão,
+ * depois envia o conteúdo). Ao contrário do upload simples/multipart (limitado
+ * a arquivos pequenos, ~5MB), o resumível funciona de forma confiável para
+ * qualquer tamanho — necessário porque ensaios com várias fotos facilmente
+ * passam de 5MB em JSON (fotos ficam em base64 dentro do arquivo do ensaio).
+ */
+async function uploadBytesResumable(opts: {
+  parentId: string;
+  name: string;
+  mimeType: string;
+  bytes: Uint8Array;
+  existingId: string | null;
+}): Promise<string> {
+  const isUpdate = !!opts.existingId;
+  const initUrl = isUpdate
+    ? `${DRIVE_UPLOAD}/${opts.existingId}?uploadType=resumable&supportsAllDrives=true`
+    : `${DRIVE_UPLOAD}?uploadType=resumable&supportsAllDrives=true`;
+  const metadata = isUpdate ? {} : { name: opts.name, parents: [opts.parentId] };
+
+  const initRes = await fetch(initUrl, {
+    method: isUpdate ? "PATCH" : "POST",
+    headers: await driveHeaders({
+      "Content-Type": "application/json; charset=UTF-8",
+      "X-Upload-Content-Type": opts.mimeType,
+    }),
+    body: JSON.stringify(metadata),
+  });
+  if (!initRes.ok) {
+    throw new Error(`Drive resumable init error ${initRes.status}: ${(await initRes.text()).slice(0, 300)}`);
+  }
+  const uploadUrl = initRes.headers.get("Location");
+  if (!uploadUrl) {
+    throw new Error("Drive resumable init: resposta sem cabeçalho Location");
+  }
+
+  const putRes = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: { "Content-Type": opts.mimeType },
+    body: opts.bytes as BodyInit,
+  });
+  if (!putRes.ok) {
+    throw new Error(`Drive resumable upload error ${putRes.status}: ${(await putRes.text()).slice(0, 300)}`);
+  }
+  const result = (await putRes.json()) as { id: string };
+  return result.id;
+}
+
 export async function uploadBytesToDrive(opts: {
   parentId: string;
   name: string;
@@ -180,42 +228,7 @@ export async function uploadBytesToDrive(opts: {
   }
 
   const existingId = opts.overwrite !== false ? await findFileInFolder(opts.name, opts.parentId) : null;
-  if (existingId) {
-    const res = await fetch(`${DRIVE_UPLOAD}/${existingId}?uploadType=media&fields=id&supportsAllDrives=true`, {
-      method: "PATCH",
-      headers: await driveHeaders({ "Content-Type": opts.mimeType }),
-      body: opts.bytes as BodyInit,
-    });
-    if (!res.ok) throw new Error(`Drive update error ${res.status}: ${(await res.text()).slice(0, 300)}`);
-    return existingId;
-  }
-
-  const boundary = `----driveSovereign${Math.random().toString(36).slice(2)}`;
-  const metadata = JSON.stringify({ name: opts.name, parents: [opts.parentId] });
-  const enc = new TextEncoder();
-  const head = enc.encode(
-    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n` +
-      `--${boundary}\r\nContent-Type: ${opts.mimeType}\r\n\r\n`,
-  );
-  const tail = enc.encode(`\r\n--${boundary}--\r\n`);
-  const body = new Uint8Array(head.byteLength + opts.bytes.byteLength + tail.byteLength);
-  body.set(head, 0);
-  body.set(opts.bytes, head.byteLength);
-  body.set(tail, head.byteLength + opts.bytes.byteLength);
-
-  const res = await fetch(`${DRIVE_UPLOAD}?uploadType=multipart&fields=id&supportsAllDrives=true`, {
-    method: "POST",
-    headers: await driveHeaders({ "Content-Type": `multipart/related; boundary=${boundary}` }),
-    body: body as BodyInit,
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Drive upload error ${res.status}: ${errText.slice(0, 300)}`);
-  }
-
-  const result = (await res.json()) as { id: string };
-  return result.id;
+  return uploadBytesResumable({ ...opts, existingId });
 }
 
 /** Lê um arquivo JSON do Google Drive com fallback em cache */
@@ -285,18 +298,14 @@ export async function writeDriveJson<T>(
     fs.writeFileSync(getLocalPath(filename), jsonStr, "utf8");
   } catch {}
 
-  // Grava no Google Drive
-  try {
-    const fileId = await uploadBytesToDrive({
-      parentId,
-      name: filename,
-      mimeType: "application/json",
-      bytes,
-      overwrite: true,
-    });
-    return { ok: true, fileId };
-  } catch (err) {
-    console.error(`[DriveStorage] Erro ao gravar ${filename} no Drive:`, err);
-    return { ok: true, fileId: "local_saved" };
-  }
+  // Grava no Google Drive — erro é propagado (não mascarado como sucesso),
+  // para que quem chamou perceba a falha e tente novamente.
+  const fileId = await uploadBytesToDrive({
+    parentId,
+    name: filename,
+    mimeType: "application/json",
+    bytes,
+    overwrite: true,
+  });
+  return { ok: true, fileId };
 }
