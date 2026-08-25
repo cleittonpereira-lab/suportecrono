@@ -1,10 +1,10 @@
 /**
  * Utilitário TEMPORÁRIO de migração — traz os dados que já existem no
- * mecanismo antigo (_lab-state.json) para as tabelas novas (lab_os,
- * lab_amostras, lab_ensaios). Protegido por segredo (não por login, para
- * poder ser disparado uma vez sem depender de sessão de usuário). Remover
- * este arquivo e a rota que o chama depois de confirmar que a migração
- * rodou com sucesso.
+ * mecanismo antigo (_lab-state.json) para os arquivos individuais no Drive
+ * (lab-os/, lab-amostras/, lab-ensaios/). Protegido por segredo (não por
+ * login, para poder ser disparado uma vez sem depender de sessão de
+ * usuário). Remover este arquivo e a rota que o chama depois de confirmar
+ * que a migração rodou com sucesso.
  */
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
@@ -17,7 +17,7 @@ export const testDriveRoundTrip = createServerFn({ method: "GET" })
     if (data.secret !== "suportecrono-migrate-2026-lab-tables") {
       throw new Error("unauthorized");
     }
-    const { hasDriveCredentials, ensureFolderPath, writeDriveJson, readDriveJson, DRIVE_ROOT_FOLDER_ID } = await import("@/lib/driveStorage");
+    const { hasDriveCredentials, ensureFolderPath, readDriveJson, uploadBytesToDrive, DRIVE_ROOT_FOLDER_ID } = await import("@/lib/driveStorage");
     const { isGoogleAuthConfigured, getGoogleAccessToken } = await import("@/lib/google-auth.server");
     const steps: string[] = [];
     steps.push(`hasDriveCredentials() [conector Lovable]: ${hasDriveCredentials()}`);
@@ -27,7 +27,7 @@ export const testDriveRoundTrip = createServerFn({ method: "GET" })
         const token = await getGoogleAccessToken(["https://www.googleapis.com/auth/drive"]);
         steps.push(`getGoogleAccessToken OK (token obtido, ${token.length} chars)`);
         const res = await fetch(
-          `https://www.googleapis.com/drive/v3/files/${DRIVE_ROOT_FOLDER_ID}?fields=id,name,mimeType`,
+          `https://www.googleapis.com/drive/v3/files/${DRIVE_ROOT_FOLDER_ID}?fields=id,name,mimeType&supportsAllDrives=true`,
           { headers: { Authorization: `Bearer ${token}` } },
         );
         const text = await res.text();
@@ -39,7 +39,6 @@ export const testDriveRoundTrip = createServerFn({ method: "GET" })
     try {
       const folderId = await ensureFolderPath(["_diagnostico"]);
       steps.push(`ensureFolderPath OK: folderId=${folderId}`);
-      const { uploadBytesToDrive } = await import("@/lib/driveStorage");
       const testValue = { ping: Date.now() };
       const bytes = new TextEncoder().encode(JSON.stringify(testValue));
       try {
@@ -71,36 +70,12 @@ export const runLabStateMigration = createServerFn({ method: "GET" })
       throw new Error("unauthorized");
     }
 
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { loadLabStateFromDrive } = await import("@/lib/labState.functions");
     const { hasDriveCredentials } = await import("@/lib/driveStorage");
+    const { upsertOSFn, upsertAmostraFn, upsertEnsaioFn } = await import("@/lib/lab-entities.functions");
 
-    // Diagnóstico: testa cada camada do mecanismo antigo separadamente para
-    // entender exatamente onde os dados estão (ou não estão). Não chama
-    // readDriveJson diretamente aqui (trava/demora demais em paralelo com a
-    // chamada já feita dentro de loadLabStateFromDrive logo abaixo).
     const diag: string[] = [];
     diag.push(`hasDriveCredentials(): ${hasDriveCredentials()}`);
-    try {
-      const { data: globalRow, error: globalErr } = await supabaseAdmin
-        .from("lab_index")
-        .select("extra, updated_at")
-        .eq("scope_id", "__global_lab_state__")
-        .maybeSingle();
-      if (globalErr) diag.push(`Supabase lab_index GLOBAL: ERRO - ${globalErr.message}`);
-      else if (globalRow?.extra) {
-        const asAny = globalRow.extra as any;
-        diag.push(`Supabase lab_index GLOBAL: encontrado (${Array.isArray(asAny?.os) ? asAny.os.length : "?"} OS, atualizado ${globalRow.updated_at})`);
-      } else diag.push(`Supabase lab_index GLOBAL: vazio/não encontrado`);
-    } catch (err) {
-      diag.push(`Supabase lab_index GLOBAL: ERRO - ${err instanceof Error ? err.message : String(err)}`);
-    }
-    try {
-      const { count, error: cntErr } = await supabaseAdmin.from("lab_pendencias_digitacao").select("*", { count: "exact", head: true });
-      diag.push(`lab_pendencias_digitacao (referência - deve ter dados reais): ${cntErr ? `ERRO - ${cntErr.message}` : `${count} linhas`}`);
-    } catch (err) {
-      diag.push(`lab_pendencias_digitacao: ERRO - ${err instanceof Error ? err.message : String(err)}`);
-    }
 
     const timeout = <T,>(p: Promise<T>, ms: number, label: string): Promise<T> =>
       Promise.race([
@@ -134,66 +109,75 @@ export const runLabStateMigration = createServerFn({ method: "GET" })
 
     for (const os of osList) {
       if (!os?.id) continue;
-      const { error: osErr } = await supabaseAdmin.from("lab_os").upsert({
-        id: os.id,
-        numero: os.numero || "",
-        client: os.client ?? null,
-        work_number: os.workNumber ?? null,
-        local: os.local ?? null,
-        operator: os.operator ?? null,
-        technical_resp: os.technicalResp ?? null,
-        revision: os.revision ?? null,
-        created_at: os.createdAt || new Date().toISOString(),
-        updated_at: os.updatedAt || new Date().toISOString(),
-      });
-      if (osErr) {
-        errors.push(`OS ${os.id} (${os.numero}): ${osErr.message}`);
+      try {
+        await upsertOSFn({
+          data: {
+            id: os.id,
+            numero: os.numero || "",
+            client: os.client ?? undefined,
+            workNumber: os.workNumber ?? undefined,
+            local: os.local ?? undefined,
+            operator: os.operator ?? undefined,
+            technicalResp: os.technicalResp ?? undefined,
+            revision: os.revision ?? undefined,
+            createdAt: os.createdAt || new Date().toISOString(),
+            updatedAt: os.updatedAt || new Date().toISOString(),
+          },
+        });
+      } catch (err) {
+        errors.push(`OS ${os.id} (${os.numero}): ${err instanceof Error ? err.message : String(err)}`);
         continue;
       }
       osCount++;
 
       for (const am of os.amostras ?? []) {
         if (!am?.id) continue;
-        const { error: amErr } = await supabaseAdmin.from("lab_amostras").upsert({
-          id: am.id,
-          os_id: os.id,
-          report_number: am.reportNumber ?? null,
-          borehole: am.borehole ?? null,
-          depth: am.depth ?? null,
-          description: am.description ?? null,
-          granulometric_description: am.granulometricDescription ?? null,
-          code: am.code ?? null,
-          sample_type: am.sampleType ?? null,
-          material_type: am.materialType ?? null,
-          coords: am.coords ?? null,
-          photos: am.photos ?? [],
-          created_at: am.createdAt || new Date().toISOString(),
-          updated_at: am.updatedAt || new Date().toISOString(),
-        });
-        if (amErr) {
-          errors.push(`Amostra ${am.id} (OS ${os.numero}): ${amErr.message}`);
+        try {
+          await upsertAmostraFn({
+            data: {
+              id: am.id,
+              osId: os.id,
+              reportNumber: am.reportNumber ?? undefined,
+              borehole: am.borehole ?? undefined,
+              depth: am.depth ?? undefined,
+              description: am.description ?? undefined,
+              granulometricDescription: am.granulometricDescription ?? undefined,
+              code: am.code ?? undefined,
+              sampleType: am.sampleType ?? undefined,
+              materialType: am.materialType ?? undefined,
+              coords: am.coords ?? null,
+              photos: am.photos ?? [],
+              createdAt: am.createdAt || new Date().toISOString(),
+              updatedAt: am.updatedAt || new Date().toISOString(),
+            },
+          });
+        } catch (err) {
+          errors.push(`Amostra ${am.id} (OS ${os.numero}): ${err instanceof Error ? err.message : String(err)}`);
           continue;
         }
         amCount++;
 
         for (const en of am.ensaios ?? []) {
           if (!en?.id) continue;
-          const { error: enErr } = await supabaseAdmin.from("lab_ensaios").upsert({
-            id: en.id,
-            amostra_id: am.id,
-            tipo: en.tipo || "cisalhamento-direto",
-            status: en.status ?? null,
-            label: en.label ?? null,
-            nome: en.nome ?? null,
-            sigla: en.sigla ?? null,
-            operator: en.operator ?? null,
-            photos: en.photos ?? [],
-            payload: en.payload ?? null,
-            created_at: en.createdAt || new Date().toISOString(),
-            updated_at: en.updatedAt || new Date().toISOString(),
-          });
-          if (enErr) {
-            errors.push(`Ensaio ${en.id} (amostra ${am.code || am.reportNumber}): ${enErr.message}`);
+          try {
+            await upsertEnsaioFn({
+              data: {
+                id: en.id,
+                amostraId: am.id,
+                tipo: en.tipo || "cisalhamento-direto",
+                status: en.status ?? undefined,
+                label: en.label ?? undefined,
+                nome: en.nome ?? undefined,
+                sigla: en.sigla ?? undefined,
+                operator: en.operator ?? undefined,
+                photos: en.photos ?? [],
+                payload: en.payload ?? null,
+                createdAt: en.createdAt || new Date().toISOString(),
+                updatedAt: en.updatedAt || new Date().toISOString(),
+              },
+            });
+          } catch (err) {
+            errors.push(`Ensaio ${en.id} (amostra ${am.code || am.reportNumber}): ${err instanceof Error ? err.message : String(err)}`);
             continue;
           }
           enCount++;
