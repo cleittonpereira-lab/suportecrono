@@ -20,18 +20,14 @@ export const runLabStateMigration = createServerFn({ method: "GET" })
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { loadLabStateFromDrive } = await import("@/lib/labState.functions");
-    const { readDriveJson, DRIVE_ROOT_FOLDER_ID, hasDriveCredentials } = await import("@/lib/driveStorage");
+    const { hasDriveCredentials } = await import("@/lib/driveStorage");
 
     // Diagnóstico: testa cada camada do mecanismo antigo separadamente para
-    // entender exatamente onde os dados estão (ou não estão).
+    // entender exatamente onde os dados estão (ou não estão). Não chama
+    // readDriveJson diretamente aqui (trava/demora demais em paralelo com a
+    // chamada já feita dentro de loadLabStateFromDrive logo abaixo).
     const diag: string[] = [];
     diag.push(`hasDriveCredentials(): ${hasDriveCredentials()}`);
-    try {
-      const driveState = await readDriveJson<any>("_lab-state.json", DRIVE_ROOT_FOLDER_ID);
-      diag.push(`Drive _lab-state.json: ${driveState ? `encontrado (${Array.isArray(driveState?.os) ? driveState.os.length : "?"} OS)` : "vazio/não encontrado"}`);
-    } catch (err) {
-      diag.push(`Drive _lab-state.json: ERRO - ${err instanceof Error ? err.message : String(err)}`);
-    }
     try {
       const { data: globalRow, error: globalErr } = await supabaseAdmin
         .from("lab_index")
@@ -53,7 +49,19 @@ export const runLabStateMigration = createServerFn({ method: "GET" })
       diag.push(`lab_pendencias_digitacao: ERRO - ${err instanceof Error ? err.message : String(err)}`);
     }
 
-    const res = await loadLabStateFromDrive();
+    const timeout = <T,>(p: Promise<T>, ms: number, label: string): Promise<T> =>
+      Promise.race([
+        p,
+        new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`Timeout (${ms}ms) em ${label}`)), ms)),
+      ]);
+
+    let res: { stateJson: string | null; fileId: string | null };
+    try {
+      res = await timeout(loadLabStateFromDrive(), 20_000, "loadLabStateFromDrive");
+    } catch (err) {
+      diag.push(`loadLabStateFromDrive: ${err instanceof Error ? err.message : String(err)}`);
+      return { ok: true, message: "loadLabStateFromDrive travou/expirou. Veja o diagnóstico.", os: 0, amostras: 0, ensaios: 0, errors: diag };
+    }
     if (!res.stateJson) {
       return { ok: true, message: "Nenhum estado de laboratório encontrado. Nada para migrar.", os: 0, amostras: 0, ensaios: 0, errors: diag };
     }
