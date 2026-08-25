@@ -20,10 +20,42 @@ export const runLabStateMigration = createServerFn({ method: "GET" })
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { loadLabStateFromDrive } = await import("@/lib/labState.functions");
+    const { readDriveJson, DRIVE_ROOT_FOLDER_ID, hasDriveCredentials } = await import("@/lib/driveStorage");
+
+    // Diagnóstico: testa cada camada do mecanismo antigo separadamente para
+    // entender exatamente onde os dados estão (ou não estão).
+    const diag: string[] = [];
+    diag.push(`hasDriveCredentials(): ${hasDriveCredentials()}`);
+    try {
+      const driveState = await readDriveJson<any>("_lab-state.json", DRIVE_ROOT_FOLDER_ID);
+      diag.push(`Drive _lab-state.json: ${driveState ? `encontrado (${Array.isArray(driveState?.os) ? driveState.os.length : "?"} OS)` : "vazio/não encontrado"}`);
+    } catch (err) {
+      diag.push(`Drive _lab-state.json: ERRO - ${err instanceof Error ? err.message : String(err)}`);
+    }
+    try {
+      const { data: globalRow, error: globalErr } = await supabaseAdmin
+        .from("lab_index")
+        .select("extra, updated_at")
+        .eq("scope_id", "__global_lab_state__")
+        .maybeSingle();
+      if (globalErr) diag.push(`Supabase lab_index GLOBAL: ERRO - ${globalErr.message}`);
+      else if (globalRow?.extra) {
+        const asAny = globalRow.extra as any;
+        diag.push(`Supabase lab_index GLOBAL: encontrado (${Array.isArray(asAny?.os) ? asAny.os.length : "?"} OS, atualizado ${globalRow.updated_at})`);
+      } else diag.push(`Supabase lab_index GLOBAL: vazio/não encontrado`);
+    } catch (err) {
+      diag.push(`Supabase lab_index GLOBAL: ERRO - ${err instanceof Error ? err.message : String(err)}`);
+    }
+    try {
+      const { count, error: cntErr } = await supabaseAdmin.from("lab_pendencias_digitacao").select("*", { count: "exact", head: true });
+      diag.push(`lab_pendencias_digitacao (referência - deve ter dados reais): ${cntErr ? `ERRO - ${cntErr.message}` : `${count} linhas`}`);
+    } catch (err) {
+      diag.push(`lab_pendencias_digitacao: ERRO - ${err instanceof Error ? err.message : String(err)}`);
+    }
 
     const res = await loadLabStateFromDrive();
     if (!res.stateJson) {
-      return { ok: true, message: "Nenhum estado de laboratório encontrado. Nada para migrar.", os: 0, amostras: 0, ensaios: 0, errors: [] as string[] };
+      return { ok: true, message: "Nenhum estado de laboratório encontrado. Nada para migrar.", os: 0, amostras: 0, ensaios: 0, errors: diag };
     }
 
     let parsed: { os?: any[] };
