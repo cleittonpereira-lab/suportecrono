@@ -596,9 +596,15 @@ function CentralRelatoriosPage() {
         </div>
       </div>
 
-      {/* Cards de Métricas Principais */}
+      {/* Cards de Métricas Principais — clicáveis: filtram a lista abaixo */}
       <div className="grid gap-3 grid-cols-2 md:grid-cols-4 lg:grid-cols-7">
-        <Card className="border-amber-500/20 bg-amber-50/30 dark:bg-amber-950/10">
+        <Card
+          role="button"
+          tabIndex={0}
+          onClick={() => { navigate({ to: "/relatorio/pendentes", search: { tab: "gantt-fila" } }); setGanttFilter("concluido"); }}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate({ to: "/relatorio/pendentes", search: { tab: "gantt-fila" } }); setGanttFilter("concluido"); } }}
+          className="border-amber-500/20 bg-amber-50/30 dark:bg-amber-950/10 cursor-pointer transition-shadow hover:shadow-md hover:ring-1 hover:ring-amber-500/40"
+        >
           <CardContent className="p-3">
             <div className="text-[10px] font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wider">
               Prontos na Bancada
@@ -610,7 +616,13 @@ function CentralRelatoriosPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-sky-500/20 bg-sky-50/30 dark:bg-sky-950/10">
+        <Card
+          role="button"
+          tabIndex={0}
+          onClick={() => { navigate({ to: "/relatorio/pendentes", search: { tab: "gantt-fila" } }); setGanttFilter("execucao"); }}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate({ to: "/relatorio/pendentes", search: { tab: "gantt-fila" } }); setGanttFilter("execucao"); } }}
+          className="border-sky-500/20 bg-sky-50/30 dark:bg-sky-950/10 cursor-pointer transition-shadow hover:shadow-md hover:ring-1 hover:ring-sky-500/40"
+        >
           <CardContent className="p-3">
             <div className="text-[10px] font-semibold text-sky-700 dark:text-sky-400 uppercase tracking-wider">
               Em Bancada
@@ -622,7 +634,13 @@ function CentralRelatoriosPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-blue-500/20 bg-blue-50/30 dark:bg-blue-950/10">
+        <Card
+          role="button"
+          tabIndex={0}
+          onClick={() => navigate({ to: "/relatorio/pendentes", search: { tab: "fluxo-relatorios" } })}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate({ to: "/relatorio/pendentes", search: { tab: "fluxo-relatorios" } }); } }}
+          className="border-blue-500/20 bg-blue-50/30 dark:bg-blue-950/10 cursor-pointer transition-shadow hover:shadow-md hover:ring-1 hover:ring-blue-500/40"
+        >
           <CardContent className="p-3">
             <div className="text-[10px] font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wider">
               Em Digitação
@@ -634,7 +652,13 @@ function CentralRelatoriosPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-violet-500/20 bg-violet-50/30 dark:bg-violet-950/10">
+        <Card
+          role="button"
+          tabIndex={0}
+          onClick={() => navigate({ to: "/relatorio/pendentes", search: { tab: "fluxo-relatorios" } })}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate({ to: "/relatorio/pendentes", search: { tab: "fluxo-relatorios" } }); } }}
+          className="border-violet-500/20 bg-violet-50/30 dark:bg-violet-950/10 cursor-pointer transition-shadow hover:shadow-md hover:ring-1 hover:ring-violet-500/40"
+        >
           <CardContent className="p-3">
             <div className="text-[10px] font-semibold text-violet-700 dark:text-violet-400 uppercase tracking-wider">
               Verificação
@@ -646,7 +670,13 @@ function CentralRelatoriosPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-indigo-500/20 bg-indigo-50/30 dark:bg-indigo-950/10">
+        <Card
+          role="button"
+          tabIndex={0}
+          onClick={() => navigate({ to: "/relatorio/pendentes", search: { tab: "fluxo-relatorios" } })}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate({ to: "/relatorio/pendentes", search: { tab: "fluxo-relatorios" } }); } }}
+          className="border-indigo-500/20 bg-indigo-50/30 dark:bg-indigo-950/10 cursor-pointer transition-shadow hover:shadow-md hover:ring-1 hover:ring-indigo-500/40"
+        >
           <CardContent className="p-3">
             <div className="text-[10px] font-semibold text-indigo-700 dark:text-indigo-400 uppercase tracking-wider">
               Aprovação RT
@@ -658,7 +688,13 @@ function CentralRelatoriosPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-950/10">
+        <Card
+          role="button"
+          tabIndex={0}
+          onClick={() => navigate({ to: "/relatorio/pendentes", search: { tab: "emissoes-historico" } })}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate({ to: "/relatorio/pendentes", search: { tab: "emissoes-historico" } }); } }}
+          className="border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-950/10 cursor-pointer transition-shadow hover:shadow-md hover:ring-1 hover:ring-emerald-500/40"
+        >
           <CardContent className="p-3">
             <div className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">
               Concluídos
@@ -670,7 +706,13 @@ function CentralRelatoriosPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-border bg-card">
+        <Card
+          role="button"
+          tabIndex={0}
+          onClick={() => { navigate({ to: "/relatorio/pendentes", search: { tab: "gantt-fila" } }); setGanttFilter("planejado"); }}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate({ to: "/relatorio/pendentes", search: { tab: "gantt-fila" } }); setGanttFilter("planejado"); } }}
+          className="border-border bg-card cursor-pointer transition-shadow hover:shadow-md hover:ring-1 hover:ring-border"
+        >
           <CardContent className="p-3">
             <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
               Gantt Previsto
