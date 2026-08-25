@@ -16,7 +16,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { getGoogleAccessToken, isGoogleAuthConfigured } from "./google-auth.server";
 
-export const DRIVE_ROOT_FOLDER_ID = process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID || "0AB6VPuj1fWHEUk9PVA";
+export const DRIVE_ROOT_FOLDER_ID = "0AB6VPuj1fWHEUk9PVA";
 const DRIVE_V3 = "https://www.googleapis.com/drive/v3";
 const DRIVE_UPLOAD = "https://www.googleapis.com/upload/drive/v3/files";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
