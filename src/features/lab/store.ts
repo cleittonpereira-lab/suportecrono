@@ -275,6 +275,18 @@ async function hydrate(): Promise<void> {
   return hydrationPromise;
 }
 
+/**
+ * Reaproveita a referência local quando o conteúdo é idêntico ao que veio do
+ * servidor. Sem isso, cada refresh (a cada 8s) trocava toda entidade "limpa"
+ * por um objeto novo mesmo sem nenhuma mudança real — e como vários efeitos
+ * (ex.: autosave do rascunho) dependem da identidade desses objetos, isso
+ * disparava gravações repetidas no Drive o tempo todo, sem edição nenhuma.
+ */
+function reuseIfUnchanged<T>(local: T | undefined, remote: T): T {
+  if (local !== undefined && JSON.stringify(local) === JSON.stringify(remote)) return local;
+  return remote;
+}
+
 /** Funde o snapshot do servidor com o estado local, preservando entidades com escrita pendente/em voo. */
 function mergeRemote(local: LabState, remote: LabState): LabState {
   const localOSMap = new Map(local.os.map((o) => [o.id, o]));
@@ -298,20 +310,23 @@ function mergeRemote(local: LabState, remote: LabState): LabState {
 
       const mergedEnsaios = remoteA.ensaios.map((remoteE) => {
         const localE = localEnMap.get(remoteE.id);
-        return dirtyIds.has(remoteE.id) && localE ? localE : remoteE;
+        if (dirtyIds.has(remoteE.id) && localE) return localE;
+        return reuseIfUnchanged(localE, remoteE);
       });
       // Ensaios que só existem localmente ainda (criados agora, gravação em voo).
       const localOnlyEnsaios = (localA?.ensaios ?? []).filter(
         (e) => !remoteEnIds.has(e.id) && dirtyIds.has(e.id),
       );
 
-      return { ...baseAm, ensaios: [...mergedEnsaios, ...localOnlyEnsaios] };
+      const mergedAmostra = { ...baseAm, ensaios: [...mergedEnsaios, ...localOnlyEnsaios] };
+      return reuseIfUnchanged(localA, mergedAmostra);
     });
     const localOnlyAmostras = (localO?.amostras ?? []).filter(
       (a) => !remoteAmIds.has(a.id) && dirtyIds.has(a.id),
     );
 
-    return { ...baseOS, amostras: [...mergedAmostras, ...localOnlyAmostras] };
+    const mergedOSEntry = { ...baseOS, amostras: [...mergedAmostras, ...localOnlyAmostras] };
+    return reuseIfUnchanged(localO, mergedOSEntry);
   });
 
   const localOnlyOS = local.os.filter((o) => !remoteOSIds.has(o.id) && dirtyIds.has(o.id));
