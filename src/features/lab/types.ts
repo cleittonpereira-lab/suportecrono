@@ -15,7 +15,8 @@ export type EnsaioTipo =
   | "triaxial-ciu"
   | "triaxial-uu"
   | "cisalhamento-direto"
-  | "mesp-a";            // Massa Específica Aparente Natural (NBR 16867:2020)
+  | "mesp-a"             // Massa Específica Aparente Natural (NBR 16867:2020)
+  | "modulo-resiliencia"; // Módulo de Resiliência de solos (DNIT 134/2018-ME)
 
 export type EnsaioStatus =
   | "rascunho"
@@ -121,6 +122,7 @@ export const ENSAIO_LABEL: Record<EnsaioTipo, string> = {
   "triaxial-uu": "Triaxial UU",
   "cisalhamento-direto": "Cisalhamento Direto",
   "mesp-a": "Massa Específica Aparente Natural",
+  "modulo-resiliencia": "Módulo de Resiliência (DNIT 134)",
 };
 
 export const ENSAIO_DISPONIVEL: EnsaioTipo[] = [
@@ -129,6 +131,7 @@ export const ENSAIO_DISPONIVEL: EnsaioTipo[] = [
   "triaxial-cid-nat",
   "cisalhamento-direto",
   "mesp-a",
+  "modulo-resiliencia",
 ];
 
 /**
@@ -181,5 +184,10 @@ export const ENSAIO_TAG: Record<EnsaioTipo, EnsaioTagInfo> = {
     code: "M.ESP.A",
     className:
       "bg-orange-500/15 text-orange-700 border-orange-500/40 dark:text-orange-300",
+  },
+  "modulo-resiliencia": {
+    code: "MR",
+    className:
+      "bg-teal-500/15 text-teal-700 border-teal-500/40 dark:text-teal-300",
   },
 };

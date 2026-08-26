@@ -14,6 +14,7 @@ import { TriaxialCidPage as TriaxialCidPageInner } from "@/routes/_app.relatorio
 import { AdensamentoPage as AdensamentoPageInner } from "@/routes/_app.relatorio.adensamento";
 import { CDPage as CDPageInner } from "@/routes/_app.relatorio.cisalhamento-direto";
 import { MEspAEnsaioEditor } from "@/features/mesp-natural/editor";
+import { MRPage as MRPageInner } from "@/routes/_app.relatorio.modulo-resiliencia";
 
 export const Route = createFileRoute(
   "/_app/relatorio/os/$osId/amostra/$amostraId/ensaio/$ensaioId",
@@ -56,6 +57,7 @@ function EnsaioEditor() {
   function detectTipo(): EnsaioTipo {
     const id = ensaioId.toLowerCase();
     if (id.includes("aden")) return "adensamento";
+    if (id.includes("resil") || id.includes("modulo") || id.includes("mr.")) return "modulo-resiliencia";
     if (id.includes("tri") || id.includes("cid")) return "triaxial-cid";
     if (id.includes("mesp")) return "mesp-a";
     return "cisalhamento-direto";
@@ -263,6 +265,9 @@ function pickEditor(tipo: string): React.FC {
   }
   if (norm.includes("aden") || norm.includes("oed")) {
     return AdensamentoPageInner as unknown as React.FC;
+  }
+  if (norm.includes("resiliencia") || norm.includes("resiliência") || norm.includes("modulo-resiliencia")) {
+    return MRPageInner as unknown as React.FC;
   }
   if (norm.includes("mesp") || norm.includes("m.esp")) {
     return MEspAEnsaioEditor as unknown as React.FC;
