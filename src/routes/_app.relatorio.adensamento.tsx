@@ -294,75 +294,7 @@ export function AdensamentoPage() {
     }
   }, [currentUserName]);
 
-  // Pré-preenche com os dados já digitados em campo (via QR na bancada),
-  // se o relatório ainda não tiver nenhum payload salvo — evita redigitar
-  // moldagem/cápsulas que o técnico já lançou pelo celular. Só entra uma
-  // vez, e nunca sobrescreve edição já feita no editor completo.
   const [prefilledFromDigitalizacao, setPrefilledFromDigitalizacao] = useState(false);
-  useEffect(() => {
-    if (!ctx || ctx.ensaio.payload) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const pendencias = await listPendenciasDigitacao();
-        const pend = findMatchingPendencia(pendencias, {
-          os: ctx.os.numero,
-          amostra: ctx.amostra.reportNumber || ctx.amostra.code,
-          tipo: "adensamento",
-        });
-        const fieldPayload = pend?.payload as any;
-        if (cancelled || !fieldPayload?.moldagem) return;
-
-        const mapCaps = (arr: any[]) =>
-          (Array.isArray(arr) ? arr : [])
-            .filter((c) => c && (c.capsula || c.massaCapsula || c.massaCapsulaSoloUmido))
-            .map((c) => ({
-              numero: c.capsula || "",
-              tara: Number(c.massaCapsula) || 0,
-              wet: Number(c.massaCapsulaSoloUmido) || 0,
-              dry: Number(c.massaCapsulaSoloSeco) || 0,
-            }));
-
-        setSample((prev: any) => ({
-          ...prev,
-          ringNumber: fieldPayload.moldagem.anelNumero || prev.ringNumber,
-          ringDiameter: fieldPayload.moldagem.diametroMm || prev.ringDiameter,
-          ringHeight: fieldPayload.moldagem.alturaMm || prev.ringHeight,
-          ringMass: fieldPayload.moldagem.massaAnel ?? prev.ringMass,
-          wetMassInitialWithRing: fieldPayload.moldagem.massaAnelSoloUmido ?? prev.wetMassInitialWithRing,
-          wetMassFinal: fieldPayload.desmontagem?.massaCpFinal ?? prev.wetMassFinal,
-          capsules: mapCaps(fieldPayload.capsulas).length > 0 ? mapCaps(fieldPayload.capsulas) : prev.capsules,
-          finalCapsules: mapCaps(fieldPayload.capsulasFinais).length > 0 ? mapCaps(fieldPayload.capsulasFinais) : prev.finalCapsules,
-        }));
-        setPrefilledFromDigitalizacao(true);
-
-        if (ctx.os && ctx.amostra && ctx.ensaio) {
-          const fotos = [
-            ...(fieldPayload.fotosMoldagem || []).map((p: any) => ({ ...p, kind: "moldagem" as const })),
-            ...(fieldPayload.fotosDesmontagem || []).map((p: any) => ({ ...p, kind: "outro" as const })),
-          ];
-          for (const p of fotos) {
-            if (p?.dataUrl) {
-              labStore.addEnsaioPhoto(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, {
-                dataUrl: p.dataUrl,
-                bytes: p.bytes || 0,
-                kind: p.kind,
-                caption: p.caption || undefined,
-              });
-            }
-          }
-        }
-
-        toast.success("Dados pré-preenchidos da digitalização de campo — confira antes de continuar.");
-      } catch {
-        // silencioso — não bloqueia o carregamento normal do editor
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctx?.ensaio?.id]);
 
   const currentGanttProg = useMemo(() => {
     const osNum = (sample.os || ctx?.os?.numero || "").trim();
@@ -554,6 +486,84 @@ export function AdensamentoPage() {
       setRemoteLoaded(true);
     });
   }, [scopeId]);
+
+  // Pré-preenche com os dados já digitados em campo (via QR na bancada),
+  // quando o rascunho real (local + nuvem, já carregado acima) não tem
+  // NADA ainda — evita redigitar moldagem/cápsulas que o técnico já lançou
+  // pelo celular. Crítico: só decide isso depois que `remoteLoaded` vira
+  // true (rascunho de verdade já foi checado), nunca antes — checar
+  // `ctx.ensaio.payload` aqui seria errado, porque esse campo só é
+  // atualizado ao clicar "Salvar Versão", não a cada autosave do
+  // rascunho, e ficaria reaplicando os dados antigos da digitalização por
+  // cima de edições já salvas a cada vez que a página fosse recarregada.
+  const prefillCheckedRef = useRef(false);
+  useEffect(() => {
+    if (!remoteLoaded || prefillCheckedRef.current || !ctx) return;
+    prefillCheckedRef.current = true;
+    const jaTemDados = (sample.capsules && sample.capsules.length > 0) || !!sample.ringDiameter;
+    if (jaTemDados) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const pendencias = await listPendenciasDigitacao();
+        const pend = findMatchingPendencia(pendencias, {
+          os: ctx.os.numero,
+          amostra: ctx.amostra.reportNumber || ctx.amostra.code,
+          tipo: "adensamento",
+        });
+        const fieldPayload = pend?.payload as any;
+        if (cancelled || !fieldPayload?.moldagem) return;
+
+        const mapCaps = (arr: any[]) =>
+          (Array.isArray(arr) ? arr : [])
+            .filter((c) => c && (c.capsula || c.massaCapsula || c.massaCapsulaSoloUmido))
+            .map((c) => ({
+              numero: c.capsula || "",
+              tara: Number(c.massaCapsula) || 0,
+              wet: Number(c.massaCapsulaSoloUmido) || 0,
+              dry: Number(c.massaCapsulaSoloSeco) || 0,
+            }));
+
+        setSample((prev: any) => ({
+          ...prev,
+          ringNumber: fieldPayload.moldagem.anelNumero || prev.ringNumber,
+          ringDiameter: fieldPayload.moldagem.diametroMm || prev.ringDiameter,
+          ringHeight: fieldPayload.moldagem.alturaMm || prev.ringHeight,
+          ringMass: fieldPayload.moldagem.massaAnel ?? prev.ringMass,
+          wetMassInitialWithRing: fieldPayload.moldagem.massaAnelSoloUmido ?? prev.wetMassInitialWithRing,
+          wetMassFinal: fieldPayload.desmontagem?.massaCpFinal ?? prev.wetMassFinal,
+          capsules: mapCaps(fieldPayload.capsulas).length > 0 ? mapCaps(fieldPayload.capsulas) : prev.capsules,
+          finalCapsules: mapCaps(fieldPayload.capsulasFinais).length > 0 ? mapCaps(fieldPayload.capsulasFinais) : prev.finalCapsules,
+        }));
+        setPrefilledFromDigitalizacao(true);
+
+        if (ctx.os && ctx.amostra && ctx.ensaio) {
+          const fotos = [
+            ...(fieldPayload.fotosMoldagem || []).map((p: any) => ({ ...p, kind: "moldagem" as const })),
+            ...(fieldPayload.fotosDesmontagem || []).map((p: any) => ({ ...p, kind: "outro" as const })),
+          ];
+          for (const p of fotos) {
+            if (p?.dataUrl) {
+              labStore.addEnsaioPhoto(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, {
+                dataUrl: p.dataUrl,
+                bytes: p.bytes || 0,
+                kind: p.kind,
+                caption: p.caption || undefined,
+              });
+            }
+          }
+        }
+
+        toast.success("Dados pré-preenchidos da digitalização de campo — confira antes de continuar.");
+      } catch {
+        // silencioso — não bloqueia o carregamento normal do editor
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remoteLoaded]);
 
   // Salva rascunho automaticamente
   useEffect(() => {
