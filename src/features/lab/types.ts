@@ -131,6 +131,7 @@ export const ENSAIO_DISPONIVEL: EnsaioTipo[] = [
   "adensamento",
   "triaxial-cid-sat",
   "triaxial-cid-nat",
+  "triaxial-uu",
   "cisalhamento-direto",
   "mesp-a",
   "modulo-resiliencia",

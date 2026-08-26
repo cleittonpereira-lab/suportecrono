@@ -60,6 +60,7 @@ function EnsaioEditor() {
     if (id.includes("aden")) return "adensamento";
     if (id.includes("resil") || id.includes("modulo") || id.includes("mr.")) return "modulo-resiliencia";
     if (id.includes("umid")) return "umidade-natural";
+    if (id.includes("triaxial-uu") || id.includes("tri.uu") || /\buu\b/.test(id)) return "triaxial-uu";
     if (id.includes("tri") || id.includes("cid")) return "triaxial-cid";
     if (id.includes("mesp")) return "mesp-a";
     return "cisalhamento-direto";

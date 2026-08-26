@@ -167,6 +167,7 @@ export function EnsaioListByType({ tipo }: { tipo: EnsaioTipo }) {
           (tipo === "adensamento" && (m === "adensamento" || nomeEnsaio.toLowerCase().includes("adens"))) ||
           ((tipo === "triaxial-cid" || tipo === "triaxial-cid-sat" || tipo === "triaxial-cid-nat") &&
             (m === "triaxial-cid" || nomeEnsaio.toLowerCase().includes("tri"))) ||
+          (tipo === "triaxial-uu" && /\buu\b|\btri\.?\s*uu\b/i.test(nomeEnsaio)) ||
           (tipo === "mesp-a" && (m === "mesp-a" || nomeEnsaio.toLowerCase().includes("mesp")));
 
         if (!match) return null;
@@ -206,6 +207,7 @@ export function EnsaioListByType({ tipo }: { tipo: EnsaioTipo }) {
       if (tipo === "adensamento") return m === "adensamento" || r.tipo_ensaio === "adensamento";
       if (tipo === "triaxial-cid" || tipo === "triaxial-cid-sat" || tipo === "triaxial-cid-nat")
         return m === "triaxial-cid" || r.tipo_ensaio?.includes("triaxial");
+      if (tipo === "triaxial-uu") return /\buu\b|\btri\.?\s*uu\b/i.test(r.ensaio ?? "") || r.tipo_ensaio === "triaxial-uu";
       if (tipo === "mesp-a") return m === "mesp-a" || r.tipo_ensaio === "mesp-a";
       return false;
     });

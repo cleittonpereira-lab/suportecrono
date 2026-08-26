@@ -95,15 +95,26 @@ import {
   processSpecimen,
 } from "@/features/triaxial-cid/domain/calc";
 
-const NORMS: ReportNorm[] = [
+const NORMS_CID: ReportNorm[] = [
   { text: "ASTM D7181-20 — Consolidated Drained Triaxial Compression Test for Soils" },
   { text: "ISO 17892-9:2018 — Consolidated triaxial compression tests on water-saturated soils", italic: true },
 ];
 
-const reportTitleFor = (condition: "saturado" | "natural") =>
-  condition === "saturado"
+const NORMS_UU: ReportNorm[] = [
+  { text: "ASTM D2850-15 — Unconsolidated-Undrained Triaxial Compression Test on Cohesive Soils" },
+  { text: "NBR 12770 — Solo coesivo — Determinação da resistência à compressão não confinada", italic: true },
+];
+
+const normsFor = (testType: "cid" | "uu") => (testType === "uu" ? NORMS_UU : NORMS_CID);
+/** @deprecated use `normsFor("cid")` — mantido para não quebrar referências existentes. */
+const NORMS = NORMS_CID;
+
+const reportTitleFor = (condition: "saturado" | "natural", testType: "cid" | "uu" = "cid") => {
+  if (testType === "uu") return "ENSAIO TRIAXIAL NÃO CONSOLIDADO NÃO DRENADO (UU)";
+  return condition === "saturado"
     ? "ENSAIO TRIAXIAL ADENSADO DRENADO SATURADO (CIDsat)"
     : "ENSAIO TRIAXIAL ADENSADO DRENADO NATURAL (CIDnat)";
+};
 
 type AxisCfg = {
   eaMax: number; qMax: number; sigmaDMax: number;
@@ -252,8 +263,12 @@ export function TriaxialCidPage() {
         date: new Date().toISOString().split("T")[0],
         typedBy: draft?.sample?.typedBy || ctx.ensaio.operator || currentUserName,
         condition: "saturado",
+        // Deriva o tipo de ensaio (CID x UU) do tipo do ensaio registrado no
+        // laboratório na primeira abertura — depois disso o campo é
+        // independente e o usuário pode ajustar na aba Amostra, igual `condition`.
+        testType: ctx.ensaio.tipo === "triaxial-uu" ? "uu" : "cid",
         sampleType: "Bloco Indeformado",
-        equipment: (ctx.ensaio.payload as any)?.sample?.equipment || "Triaxial CID",
+        equipment: (ctx.ensaio.payload as any)?.sample?.equipment || (ctx.ensaio.tipo === "triaxial-uu" ? "Triaxial UU" : "Triaxial CID"),
         specDimensions: "38x76 mm",
         filterPaperResistance: 0,
         labManager: "Engº Cleitton Pereira",
@@ -270,6 +285,9 @@ export function TriaxialCidPage() {
   const [sample, setSample] = useState<TriaxialSample>(
     () => (draft?.sample ? { ...initialSample, ...draft.sample } : initialSample),
   );
+  // Amostras existentes não têm `testType` gravado — tratadas como "cid" (compat).
+  const testType = sample.testType ?? "cid";
+  const isUU = testType === "uu";
 
   useEffect(() => {
     if (!sample.typedBy && currentUserName) {
@@ -362,6 +380,13 @@ export function TriaxialCidPage() {
     () => draft?.selectedCpId ?? EMPTY_SPECIMENS[0].id,
   );
   const [tab, setTab] = useState(() => draft?.tab ?? "amostra");
+  // Rede de segurança: se um rascunho salvo trouxer a aba "saturacao"/
+  // "adensamento" junto com testType "uu" (ex.: mudou de CID pra UU em outro
+  // computador), essas abas não têm mais gatilho na TabsList — sem isso o
+  // usuário ficaria preso numa aba sem como voltar por clique.
+  useEffect(() => {
+    if (isUU && (tab === "saturacao" || tab === "adensamento")) setTab("amostra");
+  }, [isUU, tab]);
   const reportRef = useRef<HTMLDivElement>(null);
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [obsDialogOpen, setObsDialogOpen] = useState(false);
@@ -635,7 +660,7 @@ export function TriaxialCidPage() {
     fetchRemoteTriaxialDraft(scopeId, {
       osNum: ctx?.os?.numero,
       amCode: ctx?.amostra?.reportNumber || ctx?.amostra?.code,
-      ensaioTipo: "triaxial-cid",
+      ensaioTipo: ctx?.ensaio?.tipo || "triaxial-cid",
     }).then((remote) => {
       if (remote) {
         if (remote.sample) setSample((s) => ({ ...s, ...remote.sample }));
@@ -664,7 +689,15 @@ export function TriaxialCidPage() {
     const payload = { sample, specimens, selectedCpId, tab, adjust, axisCfg, photos: ctx?.photos || [] };
     saveDraft(scopeId, payload, { id: user?.id, name: displayName });
     ctx?.onPayloadChange(payload);
-  }, [remoteLoaded, scopeId, sample, specimens, selectedCpId, tab, adjust, axisCfg, ctx]);
+    // Depende só de `ctx?.photos` (conteúdo), NUNCA do objeto `ctx` inteiro —
+    // ver nota equivalente no editor de Módulo de Resiliência: o
+    // LabEnsaioProvider recria `ctx` a cada render, e como este efeito
+    // também regrava `ensaio.payload` via `ctx.onPayloadChange`, depender de
+    // `ctx` aqui formava um laço infinito (grava → ensaio muda de referência
+    // → ctx muda → efeito recorre → grava de novo). Bug real, pré-existente,
+    // encontrado ao testar esta tela nesta sessão.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remoteLoaded, scopeId, sample, specimens, selectedCpId, tab, adjust, axisCfg, ctx?.photos]);
 
   /**
    * Renderiza o PDF do relatório e devolve como Blob (para salvar como versão).
@@ -1076,13 +1109,15 @@ export function TriaxialCidPage() {
                 <DraftHistoryButton history={draftActivity.history} />
             </div>
             <h2 className="mt-2 text-xl font-semibold">
-              Ensaio Triaxial {sample.condition === "saturado" ? "CIDsat" : "CIDnat"}
+              Ensaio Triaxial {isUU ? "UU" : sample.condition === "saturado" ? "CIDsat" : "CIDnat"}
             </h2>
             <p className="text-sm text-muted-foreground">
-              Consolidado isotropicamente, cisalhamento drenado
-              {sample.condition === "saturado"
+              {isUU
+                ? "Não consolidado, não drenado — cisalhamento em tensões totais."
+                : "Consolidado isotropicamente, cisalhamento drenado"}
+              {!isUU && (sample.condition === "saturado"
                 ? " — saturado por contra-pressão."
-                : " — na umidade natural."}
+                : " — na umidade natural.")}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 justify-end">
@@ -1309,7 +1344,7 @@ export function TriaxialCidPage() {
                 <div>
                   <div className="text-muted-foreground">Condição do ensaio</div>
                   <div className="font-medium">
-                    {sample.condition === "saturado" ? "CIDsat — Saturado" : "CIDnat — Natural"}
+                    {isUU ? "UU — Não Consolidado Não Drenado" : sample.condition === "saturado" ? "CIDsat — Saturado" : "CIDnat — Natural"}
                   </div>
                 </div>
                 <div>
@@ -1441,12 +1476,16 @@ export function TriaxialCidPage() {
           </div>
 
           <div className="flex items-center gap-2">
-          <TabsList className={`grid flex-1 ${sample.condition === "natural" ? "grid-cols-5" : "grid-cols-6"}`}>
+          <TabsList className={`grid flex-1 ${isUU ? "grid-cols-4" : sample.condition === "natural" ? "grid-cols-5" : "grid-cols-6"}`}>
             <TabsTrigger value="amostra"><Beaker className="mr-1 h-3 w-3" />Amostra</TabsTrigger>
-            {sample.condition === "saturado" && (
+            {/* UU: sem fase de saturação por contra-pressão nem adensamento —
+                o CP é cisalhado direto na condição em que chegou. */}
+            {!isUU && sample.condition === "saturado" && (
               <TabsTrigger value="saturacao">Saturação</TabsTrigger>
             )}
-            <TabsTrigger value="adensamento">Adensamento</TabsTrigger>
+            {!isUU && (
+              <TabsTrigger value="adensamento">Adensamento</TabsTrigger>
+            )}
             <TabsTrigger value="cisalhamento"><Activity className="mr-1 h-3 w-3" />Cisalhamento</TabsTrigger>
             <TabsTrigger value="envoltoria"><BarChart3 className="mr-1 h-3 w-3" />Envoltória</TabsTrigger>
             <TabsTrigger value="versoes"><History className="mr-1 h-3 w-3" />Versões</TabsTrigger>
@@ -1466,21 +1505,39 @@ export function TriaxialCidPage() {
               <CardHeader><CardTitle className="text-sm">Propriedades e correções</CardTitle></CardHeader>
               <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div>
-                  <Label className="text-xs">Condição do ensaio</Label>
+                  <Label className="text-xs">Tipo de ensaio</Label>
                   <Select
-                    value={sample.condition}
+                    value={testType}
                     onValueChange={(v) => {
-                      updateSample("condition", v as "saturado" | "natural");
-                      if (v === "natural" && tab === "saturacao") setTab("adensamento");
+                      updateSample("testType", v as "cid" | "uu");
+                      if (v === "uu" && (tab === "saturacao" || tab === "adensamento")) setTab("cisalhamento");
                     }}
                   >
                     <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="saturado">Saturado (com contra-pressão)</SelectItem>
-                      <SelectItem value="natural">Natural (umidade natural)</SelectItem>
+                      <SelectItem value="cid">CID — Consolidado Drenado</SelectItem>
+                      <SelectItem value="uu">UU — Não Consolidado Não Drenado</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
+                {!isUU && (
+                  <div>
+                    <Label className="text-xs">Condição do ensaio</Label>
+                    <Select
+                      value={sample.condition}
+                      onValueChange={(v) => {
+                        updateSample("condition", v as "saturado" | "natural");
+                        if (v === "natural" && tab === "saturacao") setTab("adensamento");
+                      }}
+                    >
+                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="saturado">Saturado (com contra-pressão)</SelectItem>
+                        <SelectItem value="natural">Natural (umidade natural)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <NumField label="Gs" value={sample.Gs} onChange={(v) => updateSample("Gs", v)} step={0.01} />
                 <div className="flex items-end gap-2">
                   <Switch checked={sample.applyMembrane} onCheckedChange={(v) => updateSample("applyMembrane", v)} />
@@ -1622,7 +1679,7 @@ export function TriaxialCidPage() {
                               {s.displayId ?? s.id}
                             </span>
                             <span className="text-[10px] text-muted-foreground">
-                              σ3'={s.sigma3Target} kPa
+                              {isUU ? "σ3=" : "σ3'="}{s.sigma3Target} kPa
                             </span>
                           </div>
                           <div className="space-y-0.5 text-[10.5px] text-muted-foreground">
@@ -1631,8 +1688,8 @@ export function TriaxialCidPage() {
                             <div>w₀ = <b>{fmt(r.w0Pct, 2)}%</b></div>
                             <div>e₀ = <b>{fmt(r.e0, 3)}</b></div>
                             <div>Sr₀ = <b>{fmt(r.Sr0, 1)}%</b></div>
-                            <div>Ac = <b>{fmt(r.Ac, 2)}</b> cm²</div>
-                            {sample.condition === "saturado" && (
+                            <div>{isUU ? "A₀" : "Ac"} = <b>{fmt(r.Ac, 2)}</b> cm²</div>
+                            {!isUU && sample.condition === "saturado" && (
                               <div>B = <b>{r.BFinal != null ? fmt(r.BFinal, 3) : "—"}</b></div>
                             )}
                           </div>
@@ -1650,6 +1707,7 @@ export function TriaxialCidPage() {
                     onSelect={setSelectedCpId}
                     onRemove={removeCp}
                     canRemove={sortedSpecimens.length > 1}
+                    isUU={isUU}
                   />
                   {cp.rawImport ? (
                     <div className="flex items-center gap-2">
@@ -1829,7 +1887,7 @@ export function TriaxialCidPage() {
           {/* SATURAÇÃO — apenas quando ensaio é Saturado */}
           {sample.condition === "saturado" && (
           <TabsContent value="saturacao" className="mt-4">
-            <CpSelector specimens={sortedSpecimens} selectedId={selectedCpId} onSelect={setSelectedCpId} />
+            <CpSelector specimens={sortedSpecimens} selectedId={selectedCpId} onSelect={setSelectedCpId} isUU={isUU} />
             <Card>
               <CardHeader>
                 <CardTitle className="text-sm">Saturação — {cp.displayId ?? cp.id}</CardTitle>
@@ -1909,7 +1967,7 @@ export function TriaxialCidPage() {
 
           {/* ADENSAMENTO */}
           <TabsContent value="adensamento" className="mt-4">
-            <CpSelector specimens={sortedSpecimens} selectedId={selectedCpId} onSelect={setSelectedCpId} />
+            <CpSelector specimens={sortedSpecimens} selectedId={selectedCpId} onSelect={setSelectedCpId} isUU={isUU} />
             <Card>
               <CardHeader>
                 <CardTitle className="text-sm">Adensamento isotrópico — {cp.displayId ?? cp.id}</CardTitle>
@@ -1973,7 +2031,7 @@ export function TriaxialCidPage() {
 
           {/* CISALHAMENTO */}
           <TabsContent value="cisalhamento" className="mt-4 space-y-4">
-            <CpSelector specimens={sortedSpecimens} selectedId={selectedCpId} onSelect={setSelectedCpId} />
+            <CpSelector specimens={sortedSpecimens} selectedId={selectedCpId} onSelect={setSelectedCpId} isUU={isUU} />
             <ShearPhaseSection
               cp={cp}
               res={res}
@@ -1995,14 +2053,14 @@ export function TriaxialCidPage() {
           <TabsContent value="envoltoria" className="mt-4 space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle className="text-sm">Trajetórias q–p' e ruptura</CardTitle>
+                <CardTitle className="text-sm">Trajetórias q–{isUU ? "s" : "p'"} e ruptura</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="h-[380px]">
                   <ResponsiveContainer>
                     <ComposedChart>
                       <CartesianGrid stroke="#eee" strokeDasharray="3 3" />
-                      <XAxis type="number" dataKey="pPrime" domain={[0, "auto"]}><RLabel value="s' (kPa)" position="insideBottom" offset={-2} fontSize={11} /></XAxis>
+                      <XAxis type="number" dataKey="pPrime" domain={[0, "auto"]}><RLabel value={isUU ? "s (kPa)" : "s' (kPa)"} position="insideBottom" offset={-2} fontSize={11} /></XAxis>
                       <YAxis type="number" dataKey="q" domain={[0, "auto"]}><RLabel value="t (kPa)" angle={-90} position="insideLeft" fontSize={11} /></YAxis>
                       <Tooltip formatter={(v: number) => fmt(v, 1)} />
                       <Legend />
@@ -2014,7 +2072,7 @@ export function TriaxialCidPage() {
                           type="monotone"
                           stroke={specimens[i].color ?? BRAND}
                           dot={false}
-                          name={`${specimens[i].displayId ?? specimens[i].id} · σ'3=${fmt(specimens[i].sigma3Target ?? 0, 0)} kPa`}
+                          name={`${specimens[i].displayId ?? specimens[i].id} · ${isUU ? "σ3" : "σ'3"}=${fmt(specimens[i].sigma3Target ?? 0, 0)} kPa`}
                           strokeWidth={2}
                           isAnimationActive={false}
                         />
@@ -2039,17 +2097,19 @@ export function TriaxialCidPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-sm">Círculos de Mohr &amp; envoltória (σn, τ)</CardTitle>
-                <CardDescription>φ' e c' calculados a partir do ajuste em (p', q).</CardDescription>
+                <CardDescription>
+                  {isUU ? "φᵤ e cᵤ" : "φ' e c'"} calculados a partir do ajuste em ({isUU ? "s" : "p'"}, q).
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="h-[420px] w-full">
-                  <MohrChart specimens={specimens} results={results} envelope={envelope} />
+                  <MohrChart specimens={specimens} results={results} envelope={envelope} totalStress={isUU} />
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4 text-sm">
-                  <Stat label="φ' " value={envelope ? `${fmt(envelope.phiDeg, 2)}°` : "—"} />
-                  <Stat label="c' " value={envelope ? `${fmt(envelope.cPrime, 2)} kPa` : "—"} />
-                  <Stat label="M (t vs s')" value={envelope ? fmt(envelope.M, 3) : "—"} />
-                  <Stat label="a (t vs s')" value={envelope ? `${fmt(envelope.a, 1)} kPa` : "—"} />
+                  <Stat label={isUU ? "φᵤ " : "φ' "} value={envelope ? `${fmt(envelope.phiDeg, 2)}°` : "—"} />
+                  <Stat label={isUU ? "cᵤ " : "c' "} value={envelope ? `${fmt(envelope.cPrime, 2)} kPa` : "—"} />
+                  <Stat label={`M (t vs ${isUU ? "s" : "s'"})`} value={envelope ? fmt(envelope.M, 3) : "—"} />
+                  <Stat label={`a (t vs ${isUU ? "s" : "s'"})`} value={envelope ? `${fmt(envelope.a, 1)} kPa` : "—"} />
                 </div>
               </CardContent>
             </Card>
@@ -2259,7 +2319,7 @@ export function TriaxialCidPage() {
               <DialogHeader className="border-b px-4 py-3">
                 <DialogTitle className="text-primary">Relatório Técnico — Pré-visualização</DialogTitle>
                 <DialogDescription className="text-xs">
-                  {reportTitleFor(sample.condition)} · A4. Use o painel lateral para ajustar as escalas.
+                  {reportTitleFor(sample.condition, testType)} · A4. Use o painel lateral para ajustar as escalas.
                 </DialogDescription>
               </DialogHeader>
               <div className="flex h-[calc(92vh-9rem)] flex-col gap-4 overflow-hidden px-4 py-3 lg:flex-row lg:items-start">
@@ -2414,12 +2474,12 @@ export function TriaxialCidPage() {
         <Card className="mt-4">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Resultados finais</CardTitle>
-            <CardDescription>Envoltória efetiva ajustada pelo conjunto de CPs</CardDescription>
+            <CardDescription>{isUU ? "Envoltória em tensões totais" : "Envoltória efetiva"} ajustada pelo conjunto de CPs</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <SummaryStat label="φ' (efetivo)" value={envelope ? `${fmt(envelope.phiDeg, 1)}°` : "—"} />
-              <SummaryStat label="c' (efetivo)" value={envelope ? `${fmt(envelope.cPrime, 1)} kPa` : "—"} />
+              <SummaryStat label={isUU ? "φᵤ (total)" : "φ' (efetivo)"} value={envelope ? `${fmt(envelope.phiDeg, 1)}°` : "—"} />
+              <SummaryStat label={isUU ? "cᵤ (total)" : "c' (efetivo)"} value={envelope ? `${fmt(envelope.cPrime, 1)} kPa` : "—"} />
               <SummaryStat label="R² (ajuste)" value={envelope ? fmt(envelope.r2, 3) : "—"} />
               <SummaryStat label="Nº CPs" value={String(specimens.length)} />
             </div>
@@ -2929,12 +2989,14 @@ function CpSelector({
   onSelect,
   onRemove,
   canRemove,
+  isUU = false,
 }: {
   specimens: TriaxialSpecimen[];
   selectedId: string;
   onSelect: (id: string) => void;
   onRemove?: (id: string) => void;
   canRemove?: boolean;
+  isUU?: boolean;
 }) {
   return (
     <div className="mb-3 flex flex-wrap items-center gap-1 border-b border-border pb-1">
@@ -2952,7 +3014,7 @@ function CpSelector({
             }}
           >
             <button type="button" onClick={() => onSelect(c.id)}>
-              {c.displayId ?? c.id} — σ3'={c.sigma3Target} kPa
+              {c.displayId ?? c.id} — {isUU ? "σ3" : "σ3'"}={c.sigma3Target} kPa
             </button>
             {onRemove && canRemove && (
               <button
@@ -3542,13 +3604,20 @@ function MohrChart({
   envelope,
   sigmaMax: sigmaMaxProp,
   tauMax: tauMaxProp,
+  totalStress = false,
 }: {
   specimens: TriaxialSpecimen[];
   results: ReturnType<typeof processSpecimen>[];
   envelope: ReturnType<typeof fitEnvelope>;
   sigmaMax?: number;
   tauMax?: number;
+  /** UU: os campos `sigma1Prime`/`sigma3Prime`/`cPrime` já equivalem a tensão
+   * total (backPressure=0, sem poropressão) — só troca o símbolo exibido. */
+  totalStress?: boolean;
 }) {
+  const sigmaSym = totalStress ? "σ" : "σ'";
+  const phiSym = totalStress ? "φᵤ" : "φ'";
+  const cSym = totalStress ? "cᵤ" : "c'";
   const circles = results
     .map((r, i) =>
       r.failure
@@ -3584,7 +3653,7 @@ function MohrChart({
         <ScatterChart margin={{ top: 28, right: 20, bottom: 56, left: 14 }}>
           <CartesianGrid stroke="#eee" strokeDasharray="3 3" />
           <XAxis type="number" dataKey="sigma" domain={[0, maxSigma]} ticks={equalTicks(0, maxSigma)} interval={0}>
-            <RLabel value="σ' (kPa)" position="insideBottom" offset={-24} fontSize={11} />
+            <RLabel value={`${sigmaSym} (kPa)`} position="insideBottom" offset={-24} fontSize={11} />
           </XAxis>
           <YAxis type="number" dataKey="tau" domain={[0, maxTau]} ticks={equalTicks(0, maxTau)} interval={0}>
             <RLabel value="τ (kPa)" angle={-90} position="insideLeft" offset={-2} fontSize={11} />
@@ -3595,7 +3664,7 @@ function MohrChart({
             <Scatter
               key={c.id}
               data={c.data}
-              name={`${c.displayId ?? c.id} · σ'3=${fmt(c.sigma3Target, 0)} kPa`}
+              name={`${c.displayId ?? c.id} · ${sigmaSym}3=${fmt(c.sigma3Target, 0)} kPa`}
               line={{ stroke: c.color, strokeWidth: 2 }}
               shape={() => <g />}
               fill={c.color}
@@ -3604,7 +3673,7 @@ function MohrChart({
           {envLine && (
             <Scatter
               data={envLine}
-              name={`Envoltória: φ'=${fmt(envelope!.phiDeg, 1)}°, c'=${fmt(envelope!.cPrime, 1)} kPa`}
+              name={`Envoltória: ${phiSym}=${fmt(envelope!.phiDeg, 1)}°, ${cSym}=${fmt(envelope!.cPrime, 1)} kPa`}
               line={{ stroke: ACCENT, strokeWidth: 2, strokeDasharray: "6 4" }}
               shape={() => <g />}
               fill={ACCENT}
@@ -3630,6 +3699,8 @@ function SummaryTablePage({
   results: ReturnType<typeof processSpecimen>[];
   envelope: ReturnType<typeof fitEnvelope>;
 }) {
+  const isUUReport = sample.testType === "uu";
+  const sigSym = isUUReport ? "σ3" : "σ3'";
   // Derivações por CP
   const rowData = specimens.map((cp, i) => {
     const r = results[i];
@@ -3694,7 +3765,7 @@ function SummaryTablePage({
             <th className={`${cell} bg-[#141414]/5 text-left`}>Característica da Amostra</th>
             {specimens.map((cp) => (
               <th key={cp.id} className={`${cell} bg-[#141414]/5`} style={{ color: cp.color }}>
-                {cp.displayId ?? cp.id} · σ3'={fmt(cp.sigma3Target, 0)} kPa
+                {cp.displayId ?? cp.id} · {sigSym}={fmt(cp.sigma3Target, 0)} kPa
               </th>
             ))}
           </tr>
@@ -3712,23 +3783,31 @@ function SummaryTablePage({
           <Row label="Índice de Vazios Inicial, e₀" values={rowData.map((d) => fmt(d.r.e0, 3))} />
           <Row label="Grau de Saturação Inicial, S₀" unit="%" values={rowData.map((d) => fmt(d.r.Sr0, 2))} />
           <Row label="Drenos Laterais" values={rowData.map((d) => d.cp.lateralDrains ?? "—")} />
-          <Row label="Tensão Confinante, σ3'" unit="kPa" values={rowData.map((d) => fmt(d.cp.sigma3Target, 0))} />
-          <Row label="Variação Volumétrica (adens.)" unit="cm³" values={rowData.map((d) => fmt(d.r.dVcons, 2))} />
-          <Row label="Volume Final, Vf" unit="cm³" values={rowData.map((d) => fmt(d.r.Vc, 2))} />
-          <Row label="Altura após adensamento, hc" unit="mm" values={rowData.map((d) => fmt(d.r.Hc, 2))} />
-          <Row label="Diâmetro após adensamento, Dc" unit="mm" values={rowData.map((d) => fmt(d.Df_mm, 2))} />
+          <Row label={`Tensão Confinante, ${sigSym}`} unit="kPa" values={rowData.map((d) => fmt(d.cp.sigma3Target, 0))} />
+          {!isUUReport && (
+            <>
+              <Row label="Variação Volumétrica (adens.)" unit="cm³" values={rowData.map((d) => fmt(d.r.dVcons, 2))} />
+              <Row label="Volume Final, Vf" unit="cm³" values={rowData.map((d) => fmt(d.r.Vc, 2))} />
+              <Row label="Altura após adensamento, hc" unit="mm" values={rowData.map((d) => fmt(d.r.Hc, 2))} />
+              <Row label="Diâmetro após adensamento, Dc" unit="mm" values={rowData.map((d) => fmt(d.Df_mm, 2))} />
+            </>
+          )}
           <Row label="Umidade final, wf" unit="%" values={rowData.map((d) => d.cp.wFinalPct != null ? fmt(d.cp.wFinalPct, 2) : "—")} />
           <Row label="Grau de Saturação Final, Sf" unit="%" values={rowData.map((d) => d.Sf != null ? fmt(d.Sf, 2) : "—")} />
-          <Row label="Drenagem no Adensamento" values={rowData.map((d) => d.cp.consolidationDrainage ?? "—")} />
+          {!isUUReport && (
+            <Row label="Drenagem no Adensamento" values={rowData.map((d) => d.cp.consolidationDrainage ?? "—")} />
+          )}
           <Row label="Velocidade de Deformação" unit="mm/min" values={rowData.map((d) => d.cp.strainRate != null ? fmt(d.cp.strainRate, 3) : "—")} />
           <Row label="Critério de Ruptura Adotado" values={rowData.map((d) => d.failCritLabel)} />
           <Row label="Tensão Desviadora Corrigida" unit="kPa" values={rowData.map((d) => d.r.failure ? fmt(d.r.failure.q, 2) : "—")} />
           <Row label="Deformação Axial na Ruptura" unit="%" values={rowData.map((d) => d.r.failure ? fmt(d.r.failure.eaPct, 2) : "—")} />
-          <Row label="Tensão Efetiva Principal Menor, σ3'" unit="kPa" values={rowData.map((d) => d.r.failure ? fmt(d.r.failure.sigma3Prime, 2) : "—")} />
-          <Row label="Tensão Efetiva Principal Maior, σ1'" unit="kPa" values={rowData.map((d) => d.r.failure ? fmt(d.r.failure.sigma1Prime, 2) : "—")} />
-          <Row label="Razão de Tensões Principais σ1'/σ3'" values={rowData.map((d) => d.r.failure ? fmt(d.r.failure.ratio, 2) : "—")} />
-          <Row label="s' na ruptura" unit="kPa" values={rowData.map((d) => d.r.failure ? fmt(d.r.failure.pPrime, 2) : "—")} />
-          <Row label="p na ruptura" unit="kPa" values={rowData.map((d) => isFinite(d.pTotal) ? fmt(d.pTotal, 2) : "—")} />
+          <Row label={isUUReport ? "Tensão Principal Menor, σ3" : "Tensão Efetiva Principal Menor, σ3'"} unit="kPa" values={rowData.map((d) => d.r.failure ? fmt(d.r.failure.sigma3Prime, 2) : "—")} />
+          <Row label={isUUReport ? "Tensão Principal Maior, σ1" : "Tensão Efetiva Principal Maior, σ1'"} unit="kPa" values={rowData.map((d) => d.r.failure ? fmt(d.r.failure.sigma1Prime, 2) : "—")} />
+          <Row label={isUUReport ? "Razão de Tensões Principais σ1/σ3" : "Razão de Tensões Principais σ1'/σ3'"} values={rowData.map((d) => d.r.failure ? fmt(d.r.failure.ratio, 2) : "—")} />
+          <Row label={isUUReport ? "s na ruptura" : "s' na ruptura"} unit="kPa" values={rowData.map((d) => d.r.failure ? fmt(d.r.failure.pPrime, 2) : "—")} />
+          {!isUUReport && (
+            <Row label="p na ruptura" unit="kPa" values={rowData.map((d) => isFinite(d.pTotal) ? fmt(d.pTotal, 2) : "—")} />
+          )}
           <Row label="q na ruptura" unit="kPa" values={rowData.map((d) => d.r.failure ? fmt(d.r.failure.q, 2) : "—")} />
           <Row label="Índice de vazios final, ef" values={rowData.map((d) => isFinite(d.eFinal) ? fmt(d.eFinal, 3) : "—")} />
           <tr>
@@ -3739,10 +3818,10 @@ function SummaryTablePage({
       </table>
       <div className="mt-1 grid grid-cols-3 gap-2 text-[9px]">
         <div className="rounded border border-[#141414]/40 px-2 py-1">
-          <b>φ' =</b> {envelope ? `${fmt(envelope.phiDeg, 2)}°` : "—"}
+          <b>{isUUReport ? "φᵤ =" : "φ' ="}</b> {envelope ? `${fmt(envelope.phiDeg, 2)}°` : "—"}
         </div>
         <div className="rounded border border-[#141414]/40 px-2 py-1">
-          <b>c' =</b> {envelope ? `${fmt(envelope.cPrime, 2)} kPa` : "—"}
+          <b>{isUUReport ? "cᵤ =" : "c' ="}</b> {envelope ? `${fmt(envelope.cPrime, 2)} kPa` : "—"}
         </div>
         <div className="rounded border border-[#141414]/40 px-2 py-1">
           <b>R² =</b> {envelope ? fmt(envelope.r2, 3) : "—"}
@@ -3776,9 +3855,11 @@ function TriaxialReport({
     pMax: 0, sigmaMax: 0, tauMax: 0, sqrtTMax: 0, dvMax: 0,
     dvShearMin: 0, dvShearMax: 0, eModMax: 0, ratioMax: 0,
   };
-  const REPORT_TITLE = reportTitleFor(sample.condition);
+  const reportTestType = sample.testType ?? "cid";
+  const isUUReport = reportTestType === "uu";
+  const REPORT_TITLE = reportTitleFor(sample.condition, reportTestType);
   const page = (n: number, children: React.ReactNode) => (
-    <ReportPage sample={sample} page={n} total={total} title={REPORT_TITLE} norms={NORMS}>
+    <ReportPage sample={sample} page={n} total={total} title={REPORT_TITLE} norms={normsFor(reportTestType)}>
       {children}
     </ReportPage>
   );
@@ -3804,11 +3885,11 @@ function TriaxialReport({
         />
       ))}
 
-      {/* Página 3 — q vs εa (topo) + Variação Volumétrica cm³ vs εa (baixo) */}
+      {/* Página 3 — q vs εa (topo) + Variação Volumétrica cm³ vs εa (baixo, só CID — no UU não há variação de volume) */}
       {page(3, (
         <div className="flex h-full flex-col gap-2 text-[10px] text-[#141414]">
           <SectionBar>Gráfico de Tensão Desvio versus Deformação Axial Específica</SectionBar>
-          <div className="h-[52%]">
+          <div className={isUUReport ? "h-full" : "h-[52%]"}>
             <ResponsiveContainer>
               <ComposedChart margin={{ top: 6, right: 12, bottom: 24, left: 40 }}>
                 <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" />
@@ -3821,39 +3902,43 @@ function TriaxialReport({
                 <Legend wrapperStyle={{ fontSize: 10 }} verticalAlign="top" />
                 {specimens.map((cp, i) => (
                   <Line key={cp.id} data={results[i].shearCurve} dataKey="sigmaD" stroke={cp.color}
-                    name={`${cp.displayId ?? cp.id} · σ3'=${cp.sigma3Target} kPa`} type="monotone" dot={false}
+                    name={`${cp.displayId ?? cp.id} · ${isUUReport ? "σ3" : "σ3'"}=${cp.sigma3Target} kPa`} type="monotone" dot={false}
                     strokeWidth={1.8} isAnimationActive={false} />
                 ))}
               </ComposedChart>
             </ResponsiveContainer>
           </div>
-          <SectionBar>Variação Volumétrica versus Deformação Axial Específica</SectionBar>
-          <div className="h-[42%]">
-            <ResponsiveContainer>
-              <ComposedChart margin={{ top: 6, right: 12, bottom: 24, left: 40 }}>
-                <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" />
-                <XAxis type="number" dataKey="eaPct" domain={axisDomain(0, cfg.eaMax)} tick={{ fontSize: 10 }} ticks={equalTicks(0, cfg.eaMax)} interval={0}>
-                  <RLabel value="εa - Deformação Axial Específica [%]" position="insideBottom" offset={-8} fontSize={10} />
-                </XAxis>
-                <YAxis reversed domain={axisDomain(cfg.dvShearMin, cfg.dvShearMax)} tick={{ fontSize: 10 }} ticks={equalTicks(cfg.dvShearMin, cfg.dvShearMax)} interval={0}>
-                  <RLabel value="Variação Volumétrica [cm³]" angle={-90} position="insideLeft" offset={-4} fontSize={10} />
-                </YAxis>
-                <ReferenceLine y={0} stroke="#999" />
-                <Legend wrapperStyle={{ fontSize: 10 }} verticalAlign="top" />
-                {specimens.map((cp, i) => {
-                  const V0 = results[i].V0;
-                  const data = results[i].shearCurve.map((p) => ({ eaPct: p.eaPct, dv: (p.evPct / 100) * V0 }));
-                  return (
-                    <Line key={cp.id} data={data} dataKey="dv" stroke={cp.color} name={cp.displayId ?? cp.id}
-                      type="monotone" dot={false} strokeWidth={1.8} isAnimationActive={false} />
-                  );
-                })}
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="text-[8.5px] text-[#141414]/70">
-            Legenda: (+) Valores Positivos Representam REDUÇÃO DE VOLUME; (−) Valores Negativos representam AUMENTO DE VOLUME.
-          </div>
+          {!isUUReport && (
+            <>
+              <SectionBar>Variação Volumétrica versus Deformação Axial Específica</SectionBar>
+              <div className="h-[42%]">
+                <ResponsiveContainer>
+                  <ComposedChart margin={{ top: 6, right: 12, bottom: 24, left: 40 }}>
+                    <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" />
+                    <XAxis type="number" dataKey="eaPct" domain={axisDomain(0, cfg.eaMax)} tick={{ fontSize: 10 }} ticks={equalTicks(0, cfg.eaMax)} interval={0}>
+                      <RLabel value="εa - Deformação Axial Específica [%]" position="insideBottom" offset={-8} fontSize={10} />
+                    </XAxis>
+                    <YAxis reversed domain={axisDomain(cfg.dvShearMin, cfg.dvShearMax)} tick={{ fontSize: 10 }} ticks={equalTicks(cfg.dvShearMin, cfg.dvShearMax)} interval={0}>
+                      <RLabel value="Variação Volumétrica [cm³]" angle={-90} position="insideLeft" offset={-4} fontSize={10} />
+                    </YAxis>
+                    <ReferenceLine y={0} stroke="#999" />
+                    <Legend wrapperStyle={{ fontSize: 10 }} verticalAlign="top" />
+                    {specimens.map((cp, i) => {
+                      const V0 = results[i].V0;
+                      const data = results[i].shearCurve.map((p) => ({ eaPct: p.eaPct, dv: (p.evPct / 100) * V0 }));
+                      return (
+                        <Line key={cp.id} data={data} dataKey="dv" stroke={cp.color} name={cp.displayId ?? cp.id}
+                          type="monotone" dot={false} strokeWidth={1.8} isAnimationActive={false} />
+                      );
+                    })}
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="text-[8.5px] text-[#141414]/70">
+                Legenda: (+) Valores Positivos Representam REDUÇÃO DE VOLUME; (−) Valores Negativos representam AUMENTO DE VOLUME.
+              </div>
+            </>
+          )}
         </div>
       ))}
 
@@ -3870,16 +3955,16 @@ function TriaxialReport({
         const alphaDeg = envelope ? Math.atan(envelope.M) * 180 / Math.PI : 0;
         const mohrPage = page(4, (
           <div className="flex h-full flex-col gap-2 text-[10px] text-[#141414]">
-            <SectionBar>Envoltória de Ruptura — Mohr-Coulomb — Tensões Efetivas</SectionBar>
+            <SectionBar>Envoltória de Ruptura — Mohr-Coulomb — {isUUReport ? "Tensões Totais" : "Tensões Efetivas"}</SectionBar>
             <div className="w-full flex-1 min-h-0">
-              <MohrChart specimens={specimens} results={results} envelope={envelope} sigmaMax={unified} tauMax={unified} />
+              <MohrChart specimens={specimens} results={results} envelope={envelope} sigmaMax={unified} tauMax={unified} totalStress={isUUReport} />
             </div>
             <div className="mt-1 flex flex-wrap justify-center gap-2 text-[12px]">
                   <span className="rounded border border-[#141414]/60 bg-[#f3f4f6] px-3 py-1">
-                    <b>c'</b> <span className="text-[10px] text-[#141414]/70">(intercepto coesivo efetivo)</span> <b>=</b> {envelope ? `${fmt(envelope.cPrime, 2)} kPa` : "—"}
+                    <b>{isUUReport ? "cᵤ" : "c'"}</b> <span className="text-[10px] text-[#141414]/70">(intercepto coesivo {isUUReport ? "não drenado" : "efetivo"})</span> <b>=</b> {envelope ? `${fmt(envelope.cPrime, 2)} kPa` : "—"}
                   </span>
                   <span className="rounded border border-[#141414]/60 bg-[#f3f4f6] px-3 py-1">
-                    <b>φ'</b> <span className="text-[10px] text-[#141414]/70">(ângulo de atrito efetivo)</span> <b>=</b> {envelope ? `${fmt(envelope.phiDeg, 2)}°` : "—"}
+                    <b>{isUUReport ? "φᵤ" : "φ'"}</b> <span className="text-[10px] text-[#141414]/70">(ângulo de atrito {isUUReport ? "não drenado" : "efetivo"})</span> <b>=</b> {envelope ? `${fmt(envelope.phiDeg, 2)}°` : "—"}
                   </span>
                   <span className="rounded border border-[#141414]/60 bg-[#f3f4f6] px-3 py-1">
                     <b>R² =</b> {envelope ? fmt(envelope.r2, 3) : "—"}
@@ -3889,13 +3974,13 @@ function TriaxialReport({
         ));
         const pathPage = page(5, (
           <div className="flex h-full flex-col gap-2 text-[10px] text-[#141414]">
-            <SectionBar>Caminho de Tensões (stress path) — Diagrama t–s' (MIT) — Tensões Efetivas</SectionBar>
+            <SectionBar>Caminho de Tensões (stress path) — Diagrama t–{isUUReport ? "s" : "s'"} (MIT) — {isUUReport ? "Tensões Totais" : "Tensões Efetivas"}</SectionBar>
             <div className="w-full flex-1 min-h-0">
               <ResponsiveContainer>
                 <ComposedChart margin={{ top: 24, right: 16, bottom: 56, left: 52 }}>
                   <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" />
                   <XAxis type="number" dataKey="pPrime" domain={[0, unified]} tick={{ fontSize: 10 }} ticks={equalTicks(0, unified)} interval={0}>
-                    <RLabel value="s' [kPa]" position="insideBottom" offset={-24} fontSize={10} />
+                    <RLabel value={isUUReport ? "s [kPa]" : "s' [kPa]"} position="insideBottom" offset={-24} fontSize={10} />
                   </XAxis>
                   <YAxis type="number" dataKey="q" domain={[0, unified]} tick={{ fontSize: 10 }} ticks={equalTicks(0, unified)} interval={0}>
                     <RLabel value="t [kPa]" angle={-90} position="insideLeft" offset={-6} fontSize={10} />
@@ -3903,7 +3988,7 @@ function TriaxialReport({
                   <Legend wrapperStyle={{ fontSize: 10 }} verticalAlign="top" />
                   {specimens.map((cp, i) => (
                     <Line key={cp.id} data={results[i].shearCurve} dataKey="q" stroke={cp.color}
-                      name={`${cp.displayId ?? cp.id} · σ3'=${cp.sigma3Target} kPa`} type="monotone"
+                      name={`${cp.displayId ?? cp.id} · ${isUUReport ? "σ3" : "σ3'"}=${cp.sigma3Target} kPa`} type="monotone"
                       dot={false} strokeWidth={1.8} isAnimationActive={false} />
                   ))}
                   {envelope && (() => {
@@ -3911,17 +3996,17 @@ function TriaxialReport({
                       { pPrime: 0, q: envelope.a },
                       { pPrime: unified, q: envelope.a + envelope.M * unified },
                     ];
-                    return <Line data={envLine} dataKey="q" type="linear" stroke="#8a6f4c" strokeWidth={2} dot={false} name="Envoltória Efetiva Kf" isAnimationActive={false} />;
+                    return <Line data={envLine} dataKey="q" type="linear" stroke="#8a6f4c" strokeWidth={2} dot={false} name={isUUReport ? "Envoltória Kf" : "Envoltória Efetiva Kf"} isAnimationActive={false} />;
                   })()}
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
             <div className="mt-1 flex flex-wrap justify-center gap-2 text-[12px]">
                   <span className="rounded border border-[#141414]/60 bg-[#f3f4f6] px-3 py-1">
-                    <b>a'</b> <span className="text-[10px] text-[#141414]/70">(intercepto Kf)</span> <b>=</b> {envelope ? `${fmt(envelope.a, 2)} kPa` : "—"}
+                    <b>{isUUReport ? "a" : "a'"}</b> <span className="text-[10px] text-[#141414]/70">(intercepto Kf)</span> <b>=</b> {envelope ? `${fmt(envelope.a, 2)} kPa` : "—"}
                   </span>
                   <span className="rounded border border-[#141414]/60 bg-[#f3f4f6] px-3 py-1">
-                    <b>α'</b> <span className="text-[10px] text-[#141414]/70">(inclinação Kf)</span> <b>=</b> {envelope ? `${fmt(alphaDeg, 2)}°` : "—"}
+                    <b>{isUUReport ? "α" : "α'"}</b> <span className="text-[10px] text-[#141414]/70">(inclinação Kf)</span> <b>=</b> {envelope ? `${fmt(alphaDeg, 2)}°` : "—"}
                   </span>
                   <span className="rounded border border-[#141414]/60 bg-[#f3f4f6] px-3 py-1">
                     <b>R² =</b> {envelope ? fmt(envelope.r2, 3) : "—"}
@@ -3959,7 +4044,7 @@ function TriaxialReport({
               </ComposedChart>
             </ResponsiveContainer>
           </div>
-          <SectionBar>Razão das Tensões Principais (σ'1/σ'3) versus Deformação Axial Específica</SectionBar>
+          <SectionBar>Razão das Tensões Principais ({isUUReport ? "σ1/σ3" : "σ'1/σ'3"}) versus Deformação Axial Específica</SectionBar>
           <div className="h-[46%]">
             <ResponsiveContainer>
               <ComposedChart margin={{ top: 6, right: 12, bottom: 24, left: 40 }}>
@@ -3968,7 +4053,7 @@ function TriaxialReport({
                   <RLabel value="εa - Deformação Axial Específica [%]" position="insideBottom" offset={-8} fontSize={10} />
                 </XAxis>
                 <YAxis domain={axisDomain(0, cfg.ratioMax)} tick={{ fontSize: 10 }} ticks={equalTicks(0, cfg.ratioMax)} interval={0}>
-                  <RLabel value="σ'1 / σ'3" angle={-90} position="insideLeft" offset={-4} fontSize={10} />
+                  <RLabel value={isUUReport ? "σ1 / σ3" : "σ'1 / σ'3"} angle={-90} position="insideLeft" offset={-4} fontSize={10} />
                 </YAxis>
                 <Legend wrapperStyle={{ fontSize: 10 }} verticalAlign="top" />
                 {specimens.map((cp, i) => {
@@ -3994,9 +4079,9 @@ function TriaxialReport({
           page={7 + i}
           total={total}
           title={REPORT_TITLE}
-          norms={NORMS}
+          norms={normsFor(reportTestType)}
         >
-          <SpecimenPage cp={cp} r={results[i]} cfg={cfg} photos={photos.filter((p) => p.specimenId === cp.id)} />
+          <SpecimenPage cp={cp} r={results[i]} cfg={cfg} photos={photos.filter((p) => p.specimenId === cp.id)} isUUReport={isUUReport} />
         </ReportPage>
       ))}
 
@@ -4159,6 +4244,7 @@ function CoverPage({
   results: ReturnType<typeof processSpecimen>[];
 }) {
   const cp0 = specimens[0];
+  const isUUReport = sample.testType === "uu";
   const bMax = Math.max(
     0,
     ...specimens.flatMap((s) => s.saturation.map((st) => st.bValue ?? 0)),
@@ -4168,30 +4254,43 @@ function CoverPage({
   const satMethods = Array.from(
     new Set(specimens.map((s) => (s.saturationMethod === "percolacao" ? "Percolação Ascendente" : "Contra-pressão"))),
   ).join(" + ");
-  const condLabel = sample.condition === "saturado"
-    ? (sample.saturationConditionText || `Saturação por ${satMethods}`)
-    : "Ensaio na umidade natural (sem saturação)";
+  const condLabel = isUUReport
+    ? "Ensaio não consolidado, não drenado (sem saturação/adensamento controlados)"
+    : sample.condition === "saturado"
+      ? (sample.saturationConditionText || `Saturação por ${satMethods}`)
+      : "Ensaio na umidade natural (sem saturação)";
+  const rows: [string, string][] = [
+    ["Equipamento Utilizado", (sample.equipment && sample.equipment.trim()) || "—"],
+    ["Tipo do Ensaio", isUUReport
+      ? "Compressão Triaxial Não Consolidado Não Drenado - UU"
+      : sample.condition === "saturado"
+        ? "Compressão Triaxial Adensado Isotropicamente e Drenado - CIDsat"
+        : "Compressão Triaxial Adensado Isotropicamente e Drenado - CIDnat"],
+    ["Norma Adotada", isUUReport ? "ASTM D2850:2015 / NBR 12770" : "ASTM D7181:2020 / ISO 17892-9:2018"],
+    ["Tipo da Amostra", sample.sampleType ?? "—"],
+    ["Condição do Ensaio", condLabel],
+  ];
+  if (!isUUReport) {
+    rows.push(["Parâmetro B de Skempton (mín. alcançado)", sample.condition === "saturado"
+      ? (bMax > 0 ? fmt(bMax, 2) : "—")
+      : "N/A — ensaio na umidade natural"]);
+  }
+  rows.push(
+    ["Dimensões Características da Amostra", sample.specDimensions ?? "—"],
+    ["Número de Corpos de Prova", String(specimens.length)],
+  );
+  if (!isUUReport) {
+    rows.push(
+      ["Drenos Laterais", cp0?.lateralDrains ?? "—"],
+      ["Drenagem no Adensamento", cp0?.consolidationDrainage ?? "—"],
+    );
+  }
   return (
     <div className="space-y-2 text-[10px] text-[#141414]">
       <SectionBar>Parâmetros e Condições do Ensaio</SectionBar>
       <table className="w-full border-collapse">
         <tbody>
-          {[
-            ["Equipamento Utilizado", (sample.equipment && sample.equipment.trim()) || "—"],
-            ["Tipo do Ensaio", sample.condition === "saturado"
-              ? "Compressão Triaxial Adensado Isotropicamente e Drenado - CIDsat"
-              : "Compressão Triaxial Adensado Isotropicamente e Drenado - CIDnat"],
-            ["Norma Adotada", "ASTM D7181:2020 / ISO 17892-9:2018"],
-            ["Tipo da Amostra", sample.sampleType ?? "—"],
-            ["Condição do Ensaio", condLabel],
-            ["Parâmetro B de Skempton (mín. alcançado)", sample.condition === "saturado"
-              ? (bMax > 0 ? fmt(bMax, 2) : "—")
-              : "N/A — ensaio na umidade natural"],
-            ["Dimensões Características da Amostra", sample.specDimensions ?? "—"],
-            ["Número de Corpos de Prova", String(specimens.length)],
-            ["Drenos Laterais", cp0?.lateralDrains ?? "—"],
-            ["Drenagem no Adensamento", cp0?.consolidationDrainage ?? "—"],
-          ].map(([label, value]) => (
+          {rows.map(([label, value]) => (
             <tr key={label}>
               <td className={`${cell} ${bold} w-[45%]`}>{label}</td>
               <td className={cell}>{value}</td>
@@ -4232,16 +4331,18 @@ function SpecimenPage({
   r,
   cfg,
   photos,
+  isUUReport = false,
 }: {
   cp: TriaxialSpecimen;
   r: ReturnType<typeof processSpecimen>;
   cfg: AxisCfg;
   photos: import("@/features/lab/types").Photo[];
+  isUUReport?: boolean;
 }) {
   const dvShear = r.shearCurve.map((p) => ({ eaPct: p.eaPct, dv: (p.evPct / 100) * r.V0 }));
   const moldagem = photos.find((p) => p.kind === "moldagem");
   const ruptura = photos.find((p) => p.kind === "ruptura");
-  const legend = `${cp.displayId ?? cp.id} · σ3'=${cp.sigma3Target} kPa`;
+  const legend = `${cp.displayId ?? cp.id} · ${isUUReport ? "σ3" : "σ3'"}=${cp.sigma3Target} kPa`;
   const PhotoBox = ({ title, photo }: { title: string; photo?: import("@/features/lab/types").Photo }) => (
     <div className="flex h-full min-h-0 flex-col gap-1 overflow-hidden rounded border border-[#141414]/60">
       <div className="bg-[#d1d5db] px-2 py-[3px] text-center text-[9.5px] font-bold uppercase text-[#111827]">
@@ -4284,7 +4385,9 @@ function SpecimenPage({
         </ResponsiveContainer>
         <PhotoBox title="Registro Fotográfico na Moldagem" photo={moldagem} />
       </div>
-      <SectionBar>Variação Volumétrica versus Deformação Axial Específica — {cp.displayId ?? cp.id}</SectionBar>
+      <SectionBar>
+        {isUUReport ? "Controle Volumétrico (esperado ≈ 0 — ensaio não drenado)" : "Variação Volumétrica versus Deformação Axial Específica"} — {cp.displayId ?? cp.id}
+      </SectionBar>
       <div className="grid h-[46%] grid-cols-[1fr_38%] gap-2">
         <ResponsiveContainer>
           <ComposedChart margin={{ top: 6, right: 12, bottom: 22, left: 40 }}>
