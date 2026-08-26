@@ -37,13 +37,12 @@ import { ChegadaMultiSelect } from "@/components/chegada/ChegadaMultiSelect";
 import { ChegadaImageGallery } from "@/components/chegada/ChegadaImageGallery";
 import { SuporteLogo } from "@/components/suporte-logo";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { toPng } from "html-to-image";
-import { jsPDF } from "jspdf";
 import {
   RecebimentoReceiptPage,
   RecebimentoReceiptPhotosPage,
   type RecebimentoReceiptData,
 } from "@/components/chegada/RecebimentoReceiptTemplate";
+import { waitForOffscreenEl, rasterizeToPdfBlob, downloadOrShareBlob } from "@/components/chegada/recebimentoPdf";
 
 export const Route = createFileRoute("/registro-amostra")({
   head: () => ({
@@ -117,90 +116,27 @@ export function RegistroAmostraStandalonePage() {
     setLastReceipt(null);
   };
 
-  /** Rasteriza o comprovante (offscreen) e devolve como Blob PDF — mesma técnica já usada nos laudos técnicos. */
-  const buildReceiptPdfBlob = async (): Promise<Blob> => {
-    // O container offscreen só é montado pelo React depois que `lastReceipt` é setado —
-    // espera até ~2s pelo commit em vez de falhar de cara quando chamado logo em seguida.
-    // O container offscreen só é montado pelo React depois que `lastReceipt` é setado —
-    // espera até ~2s pelo commit em vez de falhar de cara quando chamado logo em seguida.
-    let el = receiptRef.current;
-    for (let tries = 0; !el && tries < 40; tries++) {
-      await new Promise((r) => setTimeout(r, 50));
-      el = receiptRef.current;
-    }
-    if (!el) throw new Error("Comprovante ainda não está pronto.");
-
-    const prevStyle = { position: el.style.position, top: el.style.top, left: el.style.left, opacity: el.style.opacity, zIndex: el.style.zIndex };
-    Object.assign(el.style, { position: "fixed", top: "0", left: "0", zIndex: "2147483647", opacity: "1" });
-
-    // Espera 2 frames de composição pra garantir que o layout offscreen já
-    // aplicou os estilos acima — com um limite de tempo, pra não travar pra
-    // sempre se a aba estiver em segundo plano (rAF pausa nesse caso).
-    await new Promise<void>((resolve) => {
-      let done = false;
-      const finish = () => { if (!done) { done = true; resolve(); } };
-      requestAnimationFrame(() => requestAnimationFrame(finish));
-      setTimeout(finish, 400);
-    });
-    await new Promise((r) => setTimeout(r, 150));
-
-    try {
-      const pages = Array.from(el.querySelectorAll<HTMLElement>(".printable-report"));
-      if (pages.length === 0) throw new Error("Nenhuma página do comprovante encontrada.");
-
-      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
-      for (let i = 0; i < pages.length; i++) {
-        const dataUrl = await toPng(pages[i], {
-          pixelRatio: 2.5,
-          cacheBust: true,
-          backgroundColor: "#ffffff",
-          style: { width: "210mm", boxSizing: "border-box" },
-        });
-        if (i > 0) pdf.addPage("a4", "portrait");
-        pdf.addImage(dataUrl, "PNG", 0, 0, 210, 297, undefined, "FAST");
-      }
-      return pdf.output("blob");
-    } finally {
-      Object.assign(el.style, prevStyle);
-    }
-  };
-
   /** Gera o PDF e baixa (ou abre o compartilhamento nativo, quando disponível — ex.: WhatsApp no celular). */
   const handleGerarECompartilharPdf = async (receipt: RecebimentoReceiptData, autoShare: boolean) => {
     setPdfBusy(true);
     const tid = toast.loading("Gerando comprovante em PDF…");
     try {
-      const blob = await buildReceiptPdfBlob();
+      const el = await waitForOffscreenEl(() => receiptRef.current);
+      const blob = await rasterizeToPdfBlob(el);
       const filename = `Comprovante-Recebimento_${receipt.numeroControle}.pdf`;
-      const file = new File([blob], filename, { type: "application/pdf" });
-
-      if (autoShare && typeof navigator !== "undefined" && (navigator as any).canShare?.({ files: [file] })) {
-        try {
-          await (navigator as any).share({
-            files: [file],
-            title: filename,
-            text: `Comprovante de recebimento ${receipt.numeroControle} — ${receipt.osCliente}`,
-          });
-          toast.success("Comprovante pronto para compartilhar!", { id: tid });
-          return;
-        } catch (shareErr: any) {
-          // Usuário cancelou o compartilhamento — não é erro, só cai no download normal.
-          if (shareErr?.name === "AbortError") {
-            toast.dismiss(tid);
-            return;
-          }
-        }
+      const result = await downloadOrShareBlob(
+        blob,
+        filename,
+        `Comprovante de recebimento ${receipt.numeroControle} — ${receipt.osCliente}`,
+        autoShare
+      );
+      if (result === "shared") {
+        toast.success("Comprovante pronto para compartilhar!", { id: tid });
+      } else if (result === "share-cancelled") {
+        toast.dismiss(tid);
+      } else {
+        toast.success("Comprovante em PDF baixado com sucesso!", { id: tid });
       }
-
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      toast.success("Comprovante em PDF baixado com sucesso!", { id: tid });
     } catch (err: any) {
       toast.error("Erro ao gerar PDF: " + (err?.message || err), { id: tid });
     } finally {

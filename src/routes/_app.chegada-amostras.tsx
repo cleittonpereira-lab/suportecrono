@@ -22,8 +22,9 @@ import {
   AlertTriangle,
   FolderPlus,
   Kanban,
+  FileDown,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -71,6 +72,7 @@ import {
   addRecebidoOption,
   formatDateToday,
   formatNow,
+  gerarNumeroControle,
   useChegadaRealtimeSync,
   CHEGADA_UPDATE_EVENT,
   CHEGADA_COLUMNS_EVENT,
@@ -82,6 +84,12 @@ import {
 } from "@/lib/chegada-amostras-store";
 import { ChegadaMultiSelect } from "@/components/chegada/ChegadaMultiSelect";
 import { ChegadaImageGallery } from "@/components/chegada/ChegadaImageGallery";
+import {
+  RecebimentoReceiptPage,
+  RecebimentoReceiptPhotosPage,
+  type RecebimentoReceiptData,
+} from "@/components/chegada/RecebimentoReceiptTemplate";
+import { waitForOffscreenEl, rasterizeToPdfBlob, downloadOrShareBlob } from "@/components/chegada/recebimentoPdf";
 
 export const Route = createFileRoute("/_app/chegada-amostras")({
   head: () => ({
@@ -123,6 +131,12 @@ function ChegadaAmostras() {
 
   // Utilitários de link
   const [copiedLink, setCopiedLink] = useState(false);
+
+  // Comprovante em PDF (gerado sob demanda a partir de um card já salvo —
+  // cobre o caso do operador ter esquecido de gerar na hora do registro)
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfReceipt, setPdfReceipt] = useState<RecebimentoReceiptData | null>(null);
+  const receiptRef = useRef<HTMLDivElement>(null);
 
   const handleCopyMobileLink = () => {
     const origin = typeof window !== "undefined" ? window.location.origin : "";
@@ -329,6 +343,66 @@ function ChegadaAmostras() {
       images: task.images || [],
     });
     setIsCreateDialogOpen(true);
+  };
+
+  /**
+   * Gera (ou recupera) o comprovante em PDF de um card já salvo — cobre o caso
+   * do operador ter esquecido de gerar na hora do registro. Cards antigos sem
+   * `numeroControle` (anteriores a este recurso) ganham um agora, persistido
+   * no próprio card pra ficar estável em gerações futuras.
+   */
+  const handleGerarPdfParaTask = async (task: ChegadaTask) => {
+    setPdfBusy(true);
+    const tid = toast.loading("Gerando comprovante em PDF…");
+    try {
+      let numeroControle = task.numeroControle;
+      if (!numeroControle) {
+        numeroControle = gerarNumeroControle();
+        const updatedTask = { ...task, numeroControle };
+        const newTasks = { ...tasks };
+        for (const colId in newTasks) {
+          newTasks[colId] = newTasks[colId].map((t) => (t.id === task.id ? updatedTask : t));
+        }
+        setTasks(newTasks);
+        saveStoredTasks(newTasks, columns);
+      }
+
+      const [, horaRegistro] = (task.criadoEm || "").split(" ");
+      const receipt: RecebimentoReceiptData = {
+        numeroControle,
+        osCliente: task.osCliente,
+        dataChegada: task.dataChegada,
+        horaRegistro: horaRegistro || "—",
+        registradoPor: task.criadoPor || "Colaborador",
+        tipoAmostra: task.tipoAmostra,
+        recebidoPor: task.recebidoPor,
+        sup: task.sup,
+        relacaoAmostras: task.relacaoAmostras,
+        images: task.images || [],
+      };
+      setPdfReceipt(receipt);
+
+      const el = await waitForOffscreenEl(() => receiptRef.current);
+      const blob = await rasterizeToPdfBlob(el);
+      const filename = `Comprovante-Recebimento_${receipt.numeroControle}.pdf`;
+      const result = await downloadOrShareBlob(
+        blob,
+        filename,
+        `Comprovante de recebimento ${receipt.numeroControle} — ${receipt.osCliente}`,
+        true
+      );
+      if (result === "shared") {
+        toast.success("Comprovante pronto para compartilhar!", { id: tid });
+      } else if (result === "share-cancelled") {
+        toast.dismiss(tid);
+      } else {
+        toast.success("Comprovante em PDF baixado com sucesso!", { id: tid });
+      }
+    } catch (err: any) {
+      toast.error("Erro ao gerar PDF: " + (err?.message || err), { id: tid });
+    } finally {
+      setPdfBusy(false);
+    }
   };
 
   // Gerenciamento de Colunas
@@ -552,6 +626,15 @@ function ChegadaAmostras() {
                                         </DropdownMenuItem>
                                         <DropdownMenuItem onClick={(e) => openEditDialog(task, e)}>
                                           Editar
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                          disabled={pdfBusy}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            void handleGerarPdfParaTask(task);
+                                          }}
+                                        >
+                                          Gerar PDF do Comprovante
                                         </DropdownMenuItem>
                                         <DropdownMenuSeparator />
                                         <DropdownMenuItem
@@ -1051,6 +1134,17 @@ function ChegadaAmostras() {
               <Button
                 type="button"
                 size="sm"
+                variant="outline"
+                disabled={pdfBusy}
+                onClick={() => selectedTask && handleGerarPdfParaTask(selectedTask)}
+                className="text-xs font-semibold gap-1.5"
+              >
+                <FileDown className="h-3.5 w-3.5" />
+                <span>{pdfBusy ? "Gerando..." : "Gerar PDF"}</span>
+              </Button>
+              <Button
+                type="button"
+                size="sm"
                 onClick={async () => {
                   if (!selectedTask) return;
                   try {
@@ -1101,6 +1195,25 @@ function ChegadaAmostras() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Container offscreen usado apenas para rasterizar o comprovante em PDF */}
+      {pdfReceipt && (
+        <div
+          ref={receiptRef}
+          style={{ position: "fixed", top: 0, left: "-9999px", opacity: 0, pointerEvents: "none" }}
+        >
+          <RecebimentoReceiptPage data={pdfReceipt} />
+          {Array.from({ length: Math.ceil(pdfReceipt.images.length / 9) }).map((_, pageIndex) => (
+            <RecebimentoReceiptPhotosPage
+              key={pageIndex}
+              data={pdfReceipt}
+              photos={pdfReceipt.images.slice(pageIndex * 9, pageIndex * 9 + 9)}
+              pageIndex={pageIndex}
+              totalPages={1 + Math.ceil(pdfReceipt.images.length / 9)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
