@@ -11,6 +11,8 @@
  * tela de campo (mesmo padrão de `adens-scan/ui.tsx`), sem tocar no
  * scanner ou na lógica dos ensaios já existentes.
  */
+import { isAsfDapTag } from "@/features/asf-dap/calc";
+import { dispatchAsfDap } from "@/features/asf-dap/ui";
 
 export type DigitScanPlugin = {
   /** Chave estável — normalmente o `codigo` cadastrado em Tipos de Ensaio. */
@@ -21,22 +23,22 @@ export type DigitScanPlugin = {
   match: (codigoOuNome: string) => boolean;
   /** Rota da tela de campo (padrão `AdensPendenciaEditor`: recebe `?pid=`). */
   route: string;
+  /**
+   * Cria/reaproveita a pendência de digitação e devolve pra onde navegar —
+   * chamado pelo scanner assim que o `match` acerta. Deve ser uma função
+   * standalone (sem hooks), já que roda fora de um componente React.
+   */
+  dispatch: (payload: Record<string, unknown>) => Promise<{ to: string; search?: Record<string, unknown> }>;
 };
 
-function normTipo(s: string): string {
-  return (s || "").trim().toLowerCase();
-}
-
 export const DIGIT_SCAN_REGISTRY: DigitScanPlugin[] = [
-  // Exemplo de como uma próxima entrada fica, ao implementar a tela de
-  // campo do tipo (mesma estrutura de adens-scan/ui.tsx):
-  //
-  // {
-  //   key: "TRI.UU",
-  //   label: "Triaxial UU",
-  //   match: (v) => /triaxial\s*uu|^tri\.?\s*uu\b/i.test(normTipo(v)),
-  //   route: "/relatorio/digitalizacao/triaxial-uu",
-  // },
+  {
+    key: "ASF.DAP",
+    label: "Densidade Aparente do CP (ASF.DAP)",
+    match: isAsfDapTag,
+    route: "/relatorio/digitalizacao/asf-dap",
+    dispatch: dispatchAsfDap,
+  },
 ];
 
 /** Encontra o plugin registrado para um código/nome de tipo de ensaio, se houver. */

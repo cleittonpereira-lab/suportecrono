@@ -806,7 +806,13 @@ export function ScannerCard({ onIdentified }: { onIdentified: (id: Identificacao
       const plugin =
         findDigitScanPlugin(payload.ensaio_tag_nome) || findDigitScanPlugin(payload.ensaio_tag_descricao);
       if (plugin) {
-        navigate({ to: plugin.route, search: { qr: JSON.stringify(payload) } as any });
+        void plugin
+          .dispatch(payload as unknown as Record<string, unknown>)
+          .then((result) => navigate(result as any))
+          .catch((e: unknown) => {
+            setScanError("Falha ao registrar: " + (e instanceof Error ? e.message : String(e)));
+            decodedLockRef.current = false;
+          });
         return;
       }
       setNotFoundMsg(

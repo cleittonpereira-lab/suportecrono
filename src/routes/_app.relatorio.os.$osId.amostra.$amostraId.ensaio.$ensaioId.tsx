@@ -16,6 +16,7 @@ import { CDPage as CDPageInner } from "@/routes/_app.relatorio.cisalhamento-dire
 import { MEspAEnsaioEditor } from "@/features/mesp-natural/editor";
 import { MRPage as MRPageInner } from "@/routes/_app.relatorio.modulo-resiliencia";
 import { UNPage as UNPageInner } from "@/routes/_app.relatorio.umidade-natural";
+import { ASFPage as AsfDapPageInner } from "@/routes/_app.relatorio.asf-dap";
 
 export const Route = createFileRoute(
   "/_app/relatorio/os/$osId/amostra/$amostraId/ensaio/$ensaioId",
@@ -64,6 +65,7 @@ function EnsaioEditor() {
     if (id.includes("triaxial-ciu") || id.includes("tri.ciu") || /\bciu\b/.test(id)) return "triaxial-ciu";
     if (id.includes("tri") || id.includes("cid")) return "triaxial-cid";
     if (id.includes("mesp")) return "mesp-a";
+    if (id.includes("asf") || id.includes("dap")) return "asf-dap";
     return "cisalhamento-direto";
   }
 
@@ -275,6 +277,9 @@ function pickEditor(tipo: string): React.FC {
   }
   if (norm.includes("umidade-natural")) {
     return UNPageInner as unknown as React.FC;
+  }
+  if (norm.includes("asf") || norm.includes("dap")) {
+    return AsfDapPageInner as unknown as React.FC;
   }
   if (norm.includes("mesp") || norm.includes("m.esp")) {
     return MEspAEnsaioEditor as unknown as React.FC;

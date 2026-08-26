@@ -17,7 +17,8 @@ export type EnsaioTipo =
   | "cisalhamento-direto"
   | "mesp-a"             // Massa Específica Aparente Natural (NBR 16867:2020)
   | "modulo-resiliencia" // Módulo de Resiliência de solos (DNIT 134/2018-ME)
-  | "umidade-natural";   // Teor de Umidade Natural (NBR 6457)
+  | "umidade-natural"    // Teor de Umidade Natural (NBR 6457)
+  | "asf-dap";           // Densidade Aparente de misturas asfálticas (DNIT 428/2022-ME)
 
 export type EnsaioStatus =
   | "rascunho"
@@ -125,6 +126,7 @@ export const ENSAIO_LABEL: Record<EnsaioTipo, string> = {
   "mesp-a": "Massa Específica Aparente Natural",
   "modulo-resiliencia": "Módulo de Resiliência (DNIT 134)",
   "umidade-natural": "Umidade Natural (NBR 6457)",
+  "asf-dap": "Densidade Aparente — ASF.DAP (DNIT 428/2022-ME)",
 };
 
 export const ENSAIO_DISPONIVEL: EnsaioTipo[] = [
@@ -137,6 +139,7 @@ export const ENSAIO_DISPONIVEL: EnsaioTipo[] = [
   "mesp-a",
   "modulo-resiliencia",
   "umidade-natural",
+  "asf-dap",
 ];
 
 /**
@@ -199,5 +202,10 @@ export const ENSAIO_TAG: Record<EnsaioTipo, EnsaioTagInfo> = {
     code: "UMID",
     className:
       "bg-lime-500/15 text-lime-700 border-lime-500/40 dark:text-lime-300",
+  },
+  "asf-dap": {
+    code: "ASF.DAP",
+    className:
+      "bg-cyan-500/15 text-cyan-700 border-cyan-500/40 dark:text-cyan-300",
   },
 };

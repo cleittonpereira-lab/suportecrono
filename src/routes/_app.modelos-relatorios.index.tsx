@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Beaker, FlaskConical, FileText, Gauge, Droplets } from "lucide-react";
+import { ArrowRight, Beaker, FlaskConical, FileText, Gauge, Droplets, Layers } from "lucide-react";
 
 export const Route = createFileRoute("/_app/modelos-relatorios/")({
   ssr: false,
@@ -91,6 +91,15 @@ const MODELOS = [
     norma: "NBR 6457",
     icon: Droplets,
     tag: "UMID",
+  },
+  {
+    to: "/modelos-relatorios/asf-dap" as const,
+    titulo: "Densidade Aparente (ASF.DAP)",
+    descricao:
+      "Modelo do relatório de densidade relativa aparente e massa específica aparente de misturas asfálticas compactadas.",
+    norma: "DNIT 428/2022-ME",
+    icon: Layers,
+    tag: "ASF.DAP",
   },
 ];
 
