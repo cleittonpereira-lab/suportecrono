@@ -37,33 +37,17 @@ import {
 } from "@/lib/business-days";
 import { criarPendenciaDigitacao } from "@/lib/lab-pendencias.functions";
 import { formatDurReal, durRealDays } from "@/lib/duracao-real";
-
-const SHEET_AMOSTRAS = "Amostras";
-const SHEET_ENSAIOS = "Ensaios";
-const SHEET_PROGS = "Programações";
-const SHEET_TIPOS = "Tipos de Ensaio";
-const SHEET_EQUIPS = "Equipamentos";
-
-const PROG_COLUMNS = [
-  "id",
-  "ensaio_id",
-  "equipamento_id",
-  "data_inicio",
-  "data_fim",
-  "data_inicio_prevista",
-  "duracao_dias",
-  "data_inicio_real",
-  "data_fim_real",
-  "inicio_real_ts",
-  "fim_real_ts",
-  "status",
-  "progresso",
-  "observacoes",
-  "tecnico",
-  "incluir_fds",
-  "created_at",
-  "updated_at",
-];
+import {
+  SHEET_AMOSTRAS,
+  SHEET_ENSAIOS,
+  SHEET_PROGS,
+  SHEET_TIPOS,
+  SHEET_EQUIPS,
+  PROG_COLUMNS,
+  parseProgramacaoRow,
+  type Programacao,
+} from "@/lib/programacao-model";
+import { recalculateDownstream } from "@/lib/programacao-cascade";
 
 type Amostra = {
   id: string;
@@ -85,24 +69,6 @@ type Ensaio = {
 };
 type TipoEnsaio = { id: string; nome: string; cor_gantt: string | null; equipamentos_ids: string[] };
 type Equipamento = { id: string; nome: string };
-type Programacao = {
-  id: string;
-  ensaio_id: string;
-  equipamento_id: string | null;
-  data_inicio: string | null;
-  data_fim: string | null;
-  data_inicio_prevista: string | null;
-  duracao_dias: number;
-  data_inicio_real: string | null;
-  data_fim_real: string | null;
-  inicio_real_ts: string | null;
-  fim_real_ts: string | null;
-  status: "planejado" | "em_execucao" | "concluido";
-  progresso: number;
-  observacoes: string | null;
-  tecnico: string | null;
-  incluir_fds: boolean;
-};
 
 /* ------------------------------- Rota ------------------------------- */
 export const Route = createFileRoute("/_app/programacao/gantt")({
@@ -165,49 +131,7 @@ function GanttPage() {
   const { data: progs = [] } = useQuery({
     queryKey: ["programacoes_full"],
     queryFn: async () =>
-      (await listRows({ data: { sheet: SHEET_PROGS } })).map((r) => {
-        const prevista = r.data_inicio_prevista || r.data_inicio || null;
-        let dur = Number(r.duracao_dias || 0);
-        if (!dur && r.data_inicio && r.data_fim) {
-          const a = new Date(r.data_inicio + "T00:00:00").getTime();
-          const b = new Date(r.data_fim + "T00:00:00").getTime();
-          dur = Math.max(1, Math.round((b - a) / 86400000) + 1);
-        }
-        if (!dur) dur = 1;
-        const inicioReal = r.data_inicio_real || null;
-        const fimReal = r.data_fim_real || null;
-        const inicioRealTs = r.inicio_real_ts || null;
-        const fimRealTs = r.fim_real_ts || null;
-        const rawStatus = (r.status || "").trim().toLowerCase() as Programacao["status"];
-        const status: Programacao["status"] = fimReal
-          ? "concluido"
-          : inicioReal
-          ? "em_execucao"
-          : rawStatus === "em_execucao" || rawStatus === "concluido"
-          ? rawStatus
-          : "planejado";
-        const incluir_fds = parseIncluirFds(r.incluir_fds);
-        const effInicio = inicioReal || prevista;
-        const effFim = fimReal || (effInicio ? endIsoFromDur(effInicio, dur, incluir_fds) : null);
-        return {
-          id: r.id,
-          ensaio_id: r.ensaio_id ?? "",
-          equipamento_id: r.equipamento_id || null,
-          data_inicio: effInicio,
-          data_fim: effFim,
-          data_inicio_prevista: prevista,
-          duracao_dias: dur,
-          data_inicio_real: inicioReal,
-          data_fim_real: fimReal,
-          inicio_real_ts: inicioRealTs,
-          fim_real_ts: fimRealTs,
-          status,
-          progresso: Number(r.progresso || (status === "concluido" ? 100 : status === "em_execucao" ? 50 : 0)),
-          observacoes: r.observacoes || null,
-          tecnico: r.tecnico || null,
-          incluir_fds,
-        };
-      }) as Programacao[],
+      (await listRows({ data: { sheet: SHEET_PROGS } })).map(parseProgramacaoRow),
   });
 
   const tipoById = useMemo(() => new Map(tipos.map((t) => [t.id, t])), [tipos]);
@@ -583,36 +507,21 @@ function GanttPage() {
     setDropTarget(null);
   };
 
-  // Helper: mutation direta sem passar pela `savProg` (usada para cascatas em lote)
-  const shiftDownstream = async (equipamentoId: string, sinceIso: string, deltaDays: number) => {
-    if (!equipamentoId || deltaDays <= 0) return 0;
-    const alvos = progs.filter(
-      (p) =>
-        p.equipamento_id === equipamentoId &&
-        p.status === "planejado" &&
-        p.data_inicio_prevista &&
-        p.data_inicio_prevista > sinceIso,
-    );
-    for (const p of alvos) {
-      const novoInicio = addBusinessOffsetIso(p.data_inicio_prevista!, deltaDays, p.incluir_fds);
-      const novoFim = endIsoFromDur(novoInicio, p.duracao_dias || 1, p.incluir_fds);
-      await updateRow({
-        data: {
-          sheet: SHEET_PROGS,
-          id: p.id,
-          patch: {
-            data_inicio_prevista: novoInicio,
-            data_inicio: novoInicio,
-            data_fim: novoFim,
-          },
-        },
-      });
-    }
-    if (alvos.length > 0) {
+  // Cascata de reagendamento: ao iniciar/terminar um ensaio, recalcula o
+  // início dos sucessores (predecessor_id, ou próximo do mesmo equipamento)
+  // a partir da nova data efetiva — pra frente (termina antes) ou pra trás
+  // (atrasa). Mesmo motor usado pelo scan.tsx, pra bancada e escritório se
+  // comportarem de forma idêntica.
+  const runCascade = async (anchorProgId: string, anchorFinishIso: string) => {
+    const { shifted } = await recalculateDownstream(anchorProgId, anchorFinishIso, progs, async (id, patch) => {
+      await updateRow({ data: { sheet: SHEET_PROGS, id, patch } });
+    });
+    if (shifted > 0) {
+      toast.info(`${shifted} ensaio(s) reagendado(s) automaticamente`);
       qc.invalidateQueries({ queryKey: ["programacoes_full"] });
       qc.invalidateQueries({ queryKey: ["programacoes"] });
     }
-    return alvos.length;
+    return shifted;
   };
 
   /* ---- Impressão do Gantt (linha do tempo visual + tabela com status) ---- */
@@ -1473,9 +1382,8 @@ function GanttPage() {
           const hoje = toIso(new Date());
           const nowTs = new Date().toISOString();
           const dur = detailProg.duracao_dias || 1;
-          const iniPrev = detailProg.data_inicio_prevista;
-          const delay = iniPrev ? diffDaysIso(iniPrev, hoje) : 0;
-          const equipId = detailProg.equipamento_id;
+          const novoFim = endIsoFromDur(hoje, dur, detailProg.incluir_fds);
+          const progId = detailProg.id;
           savProg.mutate(
             {
               id: detailProg.id,
@@ -1485,17 +1393,14 @@ function GanttPage() {
                 status: "em_execucao",
                 progresso: 0,
                 data_inicio: hoje,
-                data_fim: endIsoFromDur(hoje, dur, detailProg.incluir_fds),
+                data_fim: novoFim,
                 tecnico,
               },
             },
             {
               onSuccess: async () => {
                 setDetailProg(null);
-                if (equipId && delay > 0 && iniPrev) {
-                  const n = await shiftDownstream(equipId, iniPrev, delay);
-                  if (n > 0) toast.info(`${n} ensaio(s) empurrado(s) em ${delay}d na fila deste equipamento`);
-                }
+                await runCascade(progId, novoFim);
               },
             },
           );
@@ -1510,6 +1415,7 @@ function GanttPage() {
           const hoje = toIso(new Date());
           const nowTs = new Date().toISOString();
           const inicioEff = detailProg.data_inicio_real || detailProg.data_inicio || hoje;
+          const progId = detailProg.id;
           savProg.mutate(
             {
               id: detailProg.id,
@@ -1522,7 +1428,14 @@ function GanttPage() {
                 data_fim: hoje,
               },
             },
-            { onSuccess: () => setDetailProg(null) },
+            {
+              onSuccess: async () => {
+                setDetailProg(null);
+                // Termina antes do previsto -> puxa o início do próximo;
+                // termina depois -> atrasa o próximo. Mesma cascata do onIniciar.
+                await runCascade(progId, hoje);
+              },
+            },
           );
         }}
       />

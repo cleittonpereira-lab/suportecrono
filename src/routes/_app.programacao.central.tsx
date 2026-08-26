@@ -4,6 +4,17 @@ import { ClipboardList as PageIcon } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { listRows, insertRow, updateRow, deleteRow, ensureColumns } from "@/lib/programacao.functions";
+import {
+  SHEET_AMOSTRAS,
+  SHEET_ENSAIOS,
+  SHEET_PROGS,
+  SHEET_TIPOS,
+  SHEET_EQUIPS,
+  PROG_COLUMNS,
+  parseProgramacaoRow,
+  type Programacao,
+} from "@/lib/programacao-model";
+import { recalculateDownstream } from "@/lib/programacao-cascade";
 import { ProgramarDetalhesDialog } from "@/components/programar-detalhes-dialog";
 import { BulkProgramarDialog } from "@/components/bulk-programar-dialog";
 import { fetchCadastroOs } from "@/lib/cadastro.functions";
@@ -79,23 +90,6 @@ type Ensaio = {
 };
 type TipoEnsaio = { id: string; nome: string; cor_gantt: string | null };
 type TipoEnsaioFull = TipoEnsaio & { equipamentos_ids: string[] };
-type Programacao = {
-  id: string;
-  ensaio_id: string;
-  status: "planejado" | "em_execucao" | "concluido";
-  data_inicio_prevista: string | null;
-  duracao_dias: number;
-  data_inicio_real: string | null;
-  data_fim_real: string | null;
-  inicio_real_ts: string | null;
-  fim_real_ts: string | null;
-  data_fim: string | null;
-  observacoes: string | null;
-  tecnico: string | null;
-  equipamento_id: string | null;
-  incluir_fds: boolean;
-  predecessor_id: string | null;
-};
 
 /** Status derivado do ensaio cruzando com a programação do Gantt. */
 type EfStatus =
@@ -162,12 +156,6 @@ const EF_KANBAN: Record<EfStatus, { col: string; bar: string; card: string; dot:
     dot: "bg-muted-foreground/60",
   },
 };
-
-const SHEET_AMOSTRAS = "Amostras";
-const SHEET_ENSAIOS = "Ensaios";
-const SHEET_PROGS = "Programações";
-const SHEET_TIPOS = "Tipos de Ensaio";
-const SHEET_EQUIPS = "Equipamentos";
 
 const PRIO_LABEL = { baixa: "Baixa", media: "Média", alta: "Alta", urgente: "Urgente" } as const;
 const PRIO_COLOR: Record<Amostra["prioridade"], string> = {
@@ -312,23 +300,7 @@ function CentralPage() {
     queryKey: ["programacoes"],
     queryFn: async () => {
       const rows = await listRows({ data: { sheet: SHEET_PROGS } });
-      return rows.map((r) => ({
-        id: r.id,
-        ensaio_id: r.ensaio_id ?? "",
-        status: ((r.status || "planejado") as Programacao["status"]),
-        data_inicio_prevista: r.data_inicio_prevista || null,
-        duracao_dias: Number(r.duracao_dias) || 1,
-        data_inicio_real: r.data_inicio_real || null,
-        data_fim_real: r.data_fim_real || null,
-        inicio_real_ts: r.inicio_real_ts || null,
-        fim_real_ts: r.fim_real_ts || null,
-        data_fim: r.data_fim || null,
-        observacoes: r.observacoes || null,
-        tecnico: r.tecnico || null,
-        equipamento_id: r.equipamento_id || null,
-        incluir_fds: parseIncluirFds(r.incluir_fds),
-        predecessor_id: r.predecessor_id || null,
-      })) as Programacao[];
+      return rows.map(parseProgramacaoRow);
     },
   });
   const { data: equipamentos = [] } = useQuery({

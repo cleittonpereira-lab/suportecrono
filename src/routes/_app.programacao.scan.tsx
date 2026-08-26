@@ -17,11 +17,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  SHEET_AMOSTRAS,
+  SHEET_ENSAIOS,
+  SHEET_PROGS,
+  SHEET_TIPOS,
+  parseProgramacaoRow,
+  type Programacao,
+} from "@/lib/programacao-model";
+import { recalculateDownstream } from "@/lib/programacao-cascade";
+import { endIsoFromDur } from "@/lib/business-days";
 
-const SHEET_AMOSTRAS = "Amostras";
-const SHEET_ENSAIOS = "Ensaios";
-const SHEET_PROGS = "Programações";
-const SHEET_TIPOS = "Tipos de Ensaio";
+const isMespATipo = (nome: string) => /m\.?\s*esp\.?\s*a|massa\s+espec[ií]fica\s+aparente/i.test(nome);
 
 export const Route = createFileRoute("/_app/programacao/scan")({
   component: ScanPage,
@@ -91,15 +98,7 @@ function ScanPage() {
   const { data: progs = [] } = useQuery({
     queryKey: ["programacoes"],
     queryFn: async () =>
-      (await listRows({ data: { sheet: SHEET_PROGS } })).map((r) => ({
-        id: r.id,
-        ensaio_id: r.ensaio_id ?? "",
-        status: (r.status || "planejado") as "planejado" | "em_execucao" | "concluido",
-        data_inicio_real: r.data_inicio_real || "",
-        data_fim_real: r.data_fim_real || "",
-        equipamento_id: r.equipamento_id || "",
-        tecnico: r.tecnico || "",
-      })),
+      (await listRows({ data: { sheet: SHEET_PROGS } })).map(parseProgramacaoRow),
   });
 
   const savProg = useMutation({
@@ -109,6 +108,19 @@ function ScanPage() {
       qc.invalidateQueries({ queryKey: ["programacoes"] });
     },
   });
+
+  // Mesma cascata de reagendamento do Gantt desktop — iniciar/concluir pelo
+  // celular deve se comportar de forma idêntica a iniciar/concluir pela tela
+  // do escritório.
+  const runCascade = async (anchorProgId: string, anchorFinishIso: string) => {
+    const { shifted } = await recalculateDownstream(anchorProgId, anchorFinishIso, progs, async (id, patch) => {
+      await updateRow({ data: { sheet: SHEET_PROGS, id, patch } });
+    });
+    if (shifted > 0) {
+      toast.info(`${shifted} ensaio(s) reagendado(s) automaticamente`);
+      qc.invalidateQueries({ queryKey: ["programacoes"] });
+    }
+  };
 
   // Cleanup camera on unmount
   useEffect(() => {
@@ -260,25 +272,28 @@ function ScanPage() {
     if (!match || !("prog" in match) || !match.prog) return;
     const hoje = isoToday();
     const nowTs = new Date().toISOString();
+    const prog = match.prog;
+    const novoFim = endIsoFromDur(hoje, prog.duracao_dias || 1, prog.incluir_fds);
     savProg.mutate(
       {
-        id: match.prog.id,
+        id: prog.id,
         row: {
           data_inicio_real: hoje,
           inicio_real_ts: nowTs,
           status: "em_execucao",
           progresso: 10,
           data_inicio: hoje,
+          data_fim: novoFim,
         },
       },
       {
         onSuccess: async () => {
           toast.success("Ensaio iniciado");
+          await runCascade(prog.id, novoFim);
           // Ponte Scan -> Relatório: M.ESP.A já vira pendência ao iniciar.
           try {
             if (match && "amostra" in match && match.amostra && match.tipo) {
-              const isMespA = /m\.?\s*esp\.?\s*a|massa\s+espec[ií]fica\s+aparente/i.test(match.tipo.nome);
-              if (isMespA) {
+              if (isMespATipo(match.tipo.nome)) {
                 await criarPendenciaDigitacao({
                   data: {
                     os: match.amostra.os_numero,
@@ -286,8 +301,8 @@ function ScanPage() {
                     ensaio: match.tipo.nome,
                     tipo_ensaio: match.tipo.nome,
                     equipamento: null,
-                    programacao_id: match.prog?.id ?? null,
-                    operador_nome: match.prog?.tecnico ?? null,
+                    programacao_id: prog.id ?? null,
+                    operador_nome: prog.tecnico ?? null,
                   },
                 });
               }
@@ -302,9 +317,10 @@ function ScanPage() {
     if (!match || !("prog" in match) || !match.prog) return;
     const hoje = isoToday();
     const nowTs = new Date().toISOString();
+    const prog = match.prog;
     savProg.mutate(
       {
-        id: match.prog.id,
+        id: prog.id,
         row: {
           data_fim_real: hoje,
           fim_real_ts: nowTs,
@@ -316,9 +332,14 @@ function ScanPage() {
       {
         onSuccess: async () => {
           toast.success("Ensaio concluído");
-          // Ponte Scan -> Relatório (Pendente de digitação)
+          // Termina antes do previsto -> puxa o início do próximo; termina
+          // depois -> atrasa o próximo. Mesma cascata do Gantt desktop.
+          await runCascade(prog.id, hoje);
+          // Ponte Scan -> Relatório (Pendente de digitação). M.ESP.A já tem
+          // sua própria pendência criada ao iniciar — não duplicamos aqui,
+          // igual ao Gantt desktop faz ao concluir uma programação.
           try {
-            if (match && "amostra" in match && match.amostra && match.tipo) {
+            if (match && "amostra" in match && match.amostra && match.tipo && !isMespATipo(match.tipo.nome)) {
               await criarPendenciaDigitacao({
                 data: {
                   os: match.amostra.os_numero,
@@ -326,8 +347,8 @@ function ScanPage() {
                   ensaio: match.tipo.nome,
                   tipo_ensaio: match.tipo.nome,
                   equipamento: null,
-                  programacao_id: match.prog?.id ?? null,
-                  operador_nome: match.prog?.tecnico ?? null,
+                  programacao_id: prog.id ?? null,
+                  operador_nome: prog.tecnico ?? null,
                 },
               });
             }
@@ -480,7 +501,7 @@ function EnsaioCard({
     amostra: { id: string; os_numero: string; codigo_amostra: string; descricao: string; tomador: string; obra: string };
     tipo: { id: string; nome: string; codigo: string };
     ensaio: { id: string; status: string };
-    prog: { id: string; status: "planejado" | "em_execucao" | "concluido"; data_inicio_real: string; data_fim_real: string; tecnico: string } | null;
+    prog: Programacao | null;
   };
   payload: QrPayload;
   onIniciar: () => void;
