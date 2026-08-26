@@ -79,6 +79,7 @@ type TipoEnsaio = {
   nome: string;
   cor_gantt: string | null;
   equipamentos_ids?: string[];
+  tempo_medio_h?: number | null;
 };
 type Equipamento = { id: string; nome: string };
 type Programacao = {
@@ -220,7 +221,9 @@ export function BulkProgramarDialog({
       .sort((a, b) => a.nome.localeCompare(b.nome));
   }, [sel, ensaios, tipoById]);
 
-  // Inicializa duração dos tipos ao entrar na cascata (padrão 1 dia)
+  // Inicializa duração dos tipos ao entrar na cascata — a partir do tempo
+  // médio cadastrado no Tipo de Ensaio quando existir, senão 1 dia.
+  // Continua editável por tipo depois disso.
   useEffect(() => {
     if (tab !== "cascata") return;
     setDursByTipo((prev) => {
@@ -228,7 +231,10 @@ export function BulkProgramarDialog({
       let changed = false;
       for (const t of tiposSelecionados) {
         if (next[t.id] == null) {
-          next[t.id] = "1";
+          const fromTipo = t.tempo_medio_h && t.tempo_medio_h > 0
+            ? Math.max(0.25, Math.round((t.tempo_medio_h / 8) * 4) / 4)
+            : 1;
+          next[t.id] = String(fromTipo);
           changed = true;
         }
       }

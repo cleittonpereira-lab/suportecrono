@@ -67,7 +67,7 @@ type Ensaio = {
   observacoes?: string | null;
   detalhes_tecnicos?: string | null;
 };
-type TipoEnsaio = { id: string; nome: string; cor_gantt: string | null; equipamentos_ids: string[] };
+type TipoEnsaio = { id: string; nome: string; cor_gantt: string | null; equipamentos_ids: string[]; tempo_medio_h: number | null };
 type Equipamento = { id: string; nome: string };
 
 /* ------------------------------- Rota ------------------------------- */
@@ -118,6 +118,7 @@ function GanttPage() {
         nome: r.nome ?? "",
         cor_gantt: r.cor_gantt || null,
         equipamentos_ids: (r.equipamentos_ids || "").split(",").map((s) => s.trim()).filter(Boolean),
+        tempo_medio_h: r.tempo_medio_h ? Number(r.tempo_medio_h) : null,
       })) as TipoEnsaio[],
   });
   const { data: equipamentos = [] } = useQuery({
@@ -482,14 +483,19 @@ function GanttPage() {
         },
       });
     } else if (dragEnsaioId) {
+      // Duração padrão a partir do tempo médio cadastrado no Tipo de
+      // Ensaio (continua editável depois, aqui é só o valor inicial).
+      const ens = ensaioById.get(dragEnsaioId);
+      const tempoMedioH = ens ? tipoById.get(ens.tipo_ensaio_id)?.tempo_medio_h : null;
+      const dur = tempoMedioH && tempoMedioH > 0 ? Math.max(0.25, Math.round((tempoMedioH / 8) * 4) / 4) : 1;
       savProg.mutate({
         row: {
           ensaio_id: dragEnsaioId,
           equipamento_id: equipamentoId ?? "",
           data_inicio_prevista: iso,
           data_inicio: iso,
-          duracao_dias: 1,
-          data_fim: iso,
+          duracao_dias: dur,
+          data_fim: endIsoFromDur(iso, dur, false),
           status: "planejado",
           progresso: 0,
           incluir_fds: false,
@@ -1684,6 +1690,17 @@ function ProgForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ensaioId]);
   const tipoSel = ensaioSel ? tipoById.get(ensaioSel.tipo_ensaio_id) : null;
+  // Ao criar uma programação nova, sugere a duração a partir do tempo médio
+  // cadastrado no Tipo de Ensaio — continua editável, só não fica em "1"
+  // sem nenhuma relação com o ensaio selecionado.
+  useEffect(() => {
+    if (editing) return;
+    if (duracao !== "1") return;
+    if (!tipoSel?.tempo_medio_h || tipoSel.tempo_medio_h <= 0) return;
+    const dur = Math.max(0.25, Math.round((tipoSel.tempo_medio_h / 8) * 4) / 4);
+    setDuracao(String(dur));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tipoSel?.tempo_medio_h]);
   const allowedIds = tipoSel?.equipamentos_ids ?? [];
   const equipsFiltrados = allowedIds.length > 0
     ? equipamentos.filter((eq) => allowedIds.includes(eq.id))

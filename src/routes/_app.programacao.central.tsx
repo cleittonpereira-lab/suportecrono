@@ -88,7 +88,7 @@ type Ensaio = {
   observacoes: string | null;
   detalhes_tecnicos: string | null;
 };
-type TipoEnsaio = { id: string; nome: string; cor_gantt: string | null };
+type TipoEnsaio = { id: string; nome: string; cor_gantt: string | null; tempo_medio_h: number | null };
 type TipoEnsaioFull = TipoEnsaio & { equipamentos_ids: string[] };
 
 /** Status derivado do ensaio cruzando com a programação do Gantt. */
@@ -293,6 +293,7 @@ function CentralPage() {
         nome: r.nome ?? "",
         cor_gantt: r.cor_gantt || null,
         equipamentos_ids: (r.equipamentos_ids || "").split(",").map((s) => s.trim()).filter(Boolean),
+        tempo_medio_h: r.tempo_medio_h ? Number(r.tempo_medio_h) : null,
       })) as TipoEnsaioFull[];
     },
   });
