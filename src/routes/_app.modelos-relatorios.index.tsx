@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Beaker, FlaskConical, FileText } from "lucide-react";
+import { ArrowRight, Beaker, FlaskConical, FileText, Gauge, Droplets } from "lucide-react";
 
 export const Route = createFileRoute("/_app/modelos-relatorios/")({
   ssr: false,
@@ -55,6 +55,42 @@ const MODELOS = [
     norma: "ASTM D3080 / NBR 16853",
     icon: Beaker,
     tag: "CD",
+  },
+  {
+    to: "/modelos-relatorios/triaxial-uu" as const,
+    titulo: "Triaxial UU",
+    descricao:
+      "Modelo do relatório de compressão triaxial não consolidado não drenado. Mesmo editor do CID, com o seletor de tipo em UU.",
+    norma: "ASTM D2850 / NBR 12770",
+    icon: FlaskConical,
+    tag: "TRI.UU",
+  },
+  {
+    to: "/modelos-relatorios/triaxial-ciu" as const,
+    titulo: "Triaxial CIU",
+    descricao:
+      "Modelo do relatório de compressão triaxial consolidado não drenado. Mesmo editor do CID, com o seletor de tipo em CIU.",
+    norma: "ASTM D4767 / ISO 17892-9",
+    icon: FlaskConical,
+    tag: "TRI.CIU",
+  },
+  {
+    to: "/modelos-relatorios/modulo-resiliencia" as const,
+    titulo: "Módulo de Resiliência",
+    descricao:
+      "Modelo do relatório de Módulo de Resiliência de solos, com sequência de tensões e ajuste do modelo composto.",
+    norma: "DNIT 134/2018-ME",
+    icon: Gauge,
+    tag: "MR",
+  },
+  {
+    to: "/modelos-relatorios/umidade-natural" as const,
+    titulo: "Umidade Natural",
+    descricao:
+      "Modelo do relatório de teor de umidade natural por cápsulas.",
+    norma: "NBR 6457",
+    icon: Droplets,
+    tag: "UMID",
   },
 ];
 
