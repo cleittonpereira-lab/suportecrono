@@ -32,20 +32,24 @@ export interface TriaxialSample {
    * Condição do ensaio:
    * - "saturado": inclui fase de saturação por contra-pressão (B).
    * - "natural":  ensaio na umidade natural — fase de saturação suprimida.
-   * Só se aplica a `testType === "cid"` — no UU não há fase de saturação
+   * Não se aplica a `testType === "uu"` — no UU não há fase de saturação
    * controlada (o CP é cisalhado na condição/umidade em que chegou).
    */
   condition: "saturado" | "natural";
   /**
    * Tipo de ensaio triaxial:
    * - "cid": Consolidado Isotropicamente Drenado (ASTM D7181 / ISO 17892-9) — padrão.
+   * - "ciu": Consolidado Isotropicamente Não Drenado (ASTM D4767 / ISO 17892-9) —
+   *   mesmas fases de saturação/adensamento do CID; cisalhamento não drenado
+   *   medindo poropressão gerada (campo `uPore` de `ShearReading`) em vez de
+   *   variação de volume — resultado em tensões efetivas (σ', c', φ'), igual ao CID.
    * - "uu":  Não Consolidado Não Drenado (ASTM D2850 / NBR 12770) — sem fases de
    *   saturação/adensamento, cisalhamento em tensões totais (σ em vez de σ').
    * Campo independente de `condition`, seguindo o mesmo padrão (usuário
    * define na tela; não é derivado de `ensaio.tipo`). Ausente/undefined em
    * amostras já existentes é tratado como "cid" (compatibilidade).
    */
-  testType?: "cid" | "uu";
+  testType?: "cid" | "ciu" | "uu";
   /** Tipo/procedência da amostra (ex.: "Bloco Indeformado 30x30cm"). */
   sampleType?: string;
   /**

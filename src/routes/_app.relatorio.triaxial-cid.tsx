@@ -105,12 +105,24 @@ const NORMS_UU: ReportNorm[] = [
   { text: "NBR 12770 — Solo coesivo — Determinação da resistência à compressão não confinada", italic: true },
 ];
 
-const normsFor = (testType: "cid" | "uu") => (testType === "uu" ? NORMS_UU : NORMS_CID);
+const NORMS_CIU: ReportNorm[] = [
+  { text: "ASTM D4767-11 — Consolidated Undrained Triaxial Compression Test for Cohesive Soils" },
+  { text: "ISO 17892-9:2018 — Consolidated triaxial compression tests on water-saturated soils", italic: true },
+];
+
+type TestType = "cid" | "ciu" | "uu";
+
+const normsFor = (testType: TestType) => (testType === "uu" ? NORMS_UU : testType === "ciu" ? NORMS_CIU : NORMS_CID);
 /** @deprecated use `normsFor("cid")` — mantido para não quebrar referências existentes. */
 const NORMS = NORMS_CID;
 
-const reportTitleFor = (condition: "saturado" | "natural", testType: "cid" | "uu" = "cid") => {
+const reportTitleFor = (condition: "saturado" | "natural", testType: TestType = "cid") => {
   if (testType === "uu") return "ENSAIO TRIAXIAL NÃO CONSOLIDADO NÃO DRENADO (UU)";
+  if (testType === "ciu") {
+    return condition === "saturado"
+      ? "ENSAIO TRIAXIAL ADENSADO NÃO DRENADO SATURADO (CIUsat)"
+      : "ENSAIO TRIAXIAL ADENSADO NÃO DRENADO NATURAL (CIUnat)";
+  }
   return condition === "saturado"
     ? "ENSAIO TRIAXIAL ADENSADO DRENADO SATURADO (CIDsat)"
     : "ENSAIO TRIAXIAL ADENSADO DRENADO NATURAL (CIDnat)";
@@ -263,12 +275,13 @@ export function TriaxialCidPage() {
         date: new Date().toISOString().split("T")[0],
         typedBy: draft?.sample?.typedBy || ctx.ensaio.operator || currentUserName,
         condition: "saturado",
-        // Deriva o tipo de ensaio (CID x UU) do tipo do ensaio registrado no
-        // laboratório na primeira abertura — depois disso o campo é
+        // Deriva o tipo de ensaio (CID x CIU x UU) do tipo do ensaio registrado
+        // no laboratório na primeira abertura — depois disso o campo é
         // independente e o usuário pode ajustar na aba Amostra, igual `condition`.
-        testType: ctx.ensaio.tipo === "triaxial-uu" ? "uu" : "cid",
+        testType: ctx.ensaio.tipo === "triaxial-uu" ? "uu" : ctx.ensaio.tipo === "triaxial-ciu" ? "ciu" : "cid",
         sampleType: "Bloco Indeformado",
-        equipment: (ctx.ensaio.payload as any)?.sample?.equipment || (ctx.ensaio.tipo === "triaxial-uu" ? "Triaxial UU" : "Triaxial CID"),
+        equipment: (ctx.ensaio.payload as any)?.sample?.equipment ||
+          (ctx.ensaio.tipo === "triaxial-uu" ? "Triaxial UU" : ctx.ensaio.tipo === "triaxial-ciu" ? "Triaxial CIU" : "Triaxial CID"),
         specDimensions: "38x76 mm",
         filterPaperResistance: 0,
         labManager: "Engº Cleitton Pereira",
@@ -288,6 +301,7 @@ export function TriaxialCidPage() {
   // Amostras existentes não têm `testType` gravado — tratadas como "cid" (compat).
   const testType = sample.testType ?? "cid";
   const isUU = testType === "uu";
+  const isCIU = testType === "ciu";
 
   useEffect(() => {
     if (!sample.typedBy && currentUserName) {
@@ -1109,12 +1123,14 @@ export function TriaxialCidPage() {
                 <DraftHistoryButton history={draftActivity.history} />
             </div>
             <h2 className="mt-2 text-xl font-semibold">
-              Ensaio Triaxial {isUU ? "UU" : sample.condition === "saturado" ? "CIDsat" : "CIDnat"}
+              Ensaio Triaxial {isUU ? "UU" : isCIU ? (sample.condition === "saturado" ? "CIUsat" : "CIUnat") : sample.condition === "saturado" ? "CIDsat" : "CIDnat"}
             </h2>
             <p className="text-sm text-muted-foreground">
               {isUU
                 ? "Não consolidado, não drenado — cisalhamento em tensões totais."
-                : "Consolidado isotropicamente, cisalhamento drenado"}
+                : isCIU
+                  ? "Consolidado isotropicamente, cisalhamento não drenado (poropressão medida)"
+                  : "Consolidado isotropicamente, cisalhamento drenado"}
               {!isUU && (sample.condition === "saturado"
                 ? " — saturado por contra-pressão."
                 : " — na umidade natural.")}
@@ -1344,7 +1360,11 @@ export function TriaxialCidPage() {
                 <div>
                   <div className="text-muted-foreground">Condição do ensaio</div>
                   <div className="font-medium">
-                    {isUU ? "UU — Não Consolidado Não Drenado" : sample.condition === "saturado" ? "CIDsat — Saturado" : "CIDnat — Natural"}
+                    {isUU
+                      ? "UU — Não Consolidado Não Drenado"
+                      : isCIU
+                        ? (sample.condition === "saturado" ? "CIUsat — Saturado" : "CIUnat — Natural")
+                        : sample.condition === "saturado" ? "CIDsat — Saturado" : "CIDnat — Natural"}
                   </div>
                 </div>
                 <div>
@@ -1509,13 +1529,14 @@ export function TriaxialCidPage() {
                   <Select
                     value={testType}
                     onValueChange={(v) => {
-                      updateSample("testType", v as "cid" | "uu");
+                      updateSample("testType", v as TestType);
                       if (v === "uu" && (tab === "saturacao" || tab === "adensamento")) setTab("cisalhamento");
                     }}
                   >
                     <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="cid">CID — Consolidado Drenado</SelectItem>
+                      <SelectItem value="ciu">CIU — Consolidado Não Drenado</SelectItem>
                       <SelectItem value="uu">UU — Não Consolidado Não Drenado</SelectItem>
                     </SelectContent>
                   </Select>
@@ -2785,7 +2806,7 @@ function ShearPhaseSection({
                     </TableHead>
                     <TableHead className="text-center">
                       <div className="flex flex-col items-center leading-tight">
-                        <HeadWithInfo label="Poropressão" formula={"Poropressão medida (contra-pressão).\nCID: u ≈ u_back.\nSe vazio: u = u_back."} />
+                        <HeadWithInfo label="Poropressão" formula={"Poropressão medida.\nCID (drenado): u ≈ u_back — se vazio, assume u_back.\nCIU (não drenado): preencha com a leitura real do transdutor a cada estágio — é o dado principal do ensaio."} />
                         <span className="text-[10px] text-muted-foreground">(kPa)</span>
                       </div>
                     </TableHead>
@@ -3857,6 +3878,7 @@ function TriaxialReport({
   };
   const reportTestType = sample.testType ?? "cid";
   const isUUReport = reportTestType === "uu";
+  const isCIUReport = reportTestType === "ciu";
   const REPORT_TITLE = reportTitleFor(sample.condition, reportTestType);
   const page = (n: number, children: React.ReactNode) => (
     <ReportPage sample={sample} page={n} total={total} title={REPORT_TITLE} norms={normsFor(reportTestType)}>
@@ -3910,7 +3932,9 @@ function TriaxialReport({
           </div>
           {!isUUReport && (
             <>
-              <SectionBar>Variação Volumétrica versus Deformação Axial Específica</SectionBar>
+              <SectionBar>
+                {isCIUReport ? "Poropressão Gerada (u) versus Deformação Axial Específica" : "Variação Volumétrica versus Deformação Axial Específica"}
+              </SectionBar>
               <div className="h-[42%]">
                 <ResponsiveContainer>
                   <ComposedChart margin={{ top: 6, right: 12, bottom: 24, left: 40 }}>
@@ -3918,14 +3942,22 @@ function TriaxialReport({
                     <XAxis type="number" dataKey="eaPct" domain={axisDomain(0, cfg.eaMax)} tick={{ fontSize: 10 }} ticks={equalTicks(0, cfg.eaMax)} interval={0}>
                       <RLabel value="εa - Deformação Axial Específica [%]" position="insideBottom" offset={-8} fontSize={10} />
                     </XAxis>
-                    <YAxis reversed domain={axisDomain(cfg.dvShearMin, cfg.dvShearMax)} tick={{ fontSize: 10 }} ticks={equalTicks(cfg.dvShearMin, cfg.dvShearMax)} interval={0}>
-                      <RLabel value="Variação Volumétrica [cm³]" angle={-90} position="insideLeft" offset={-4} fontSize={10} />
-                    </YAxis>
+                    {isCIUReport ? (
+                      <YAxis domain={axisDomain(0, cfg.dvShearMax)} tick={{ fontSize: 10 }} interval={0}>
+                        <RLabel value="u - Poropressão [kPa]" angle={-90} position="insideLeft" offset={-4} fontSize={10} />
+                      </YAxis>
+                    ) : (
+                      <YAxis reversed domain={axisDomain(cfg.dvShearMin, cfg.dvShearMax)} tick={{ fontSize: 10 }} ticks={equalTicks(cfg.dvShearMin, cfg.dvShearMax)} interval={0}>
+                        <RLabel value="Variação Volumétrica [cm³]" angle={-90} position="insideLeft" offset={-4} fontSize={10} />
+                      </YAxis>
+                    )}
                     <ReferenceLine y={0} stroke="#999" />
                     <Legend wrapperStyle={{ fontSize: 10 }} verticalAlign="top" />
                     {specimens.map((cp, i) => {
                       const V0 = results[i].V0;
-                      const data = results[i].shearCurve.map((p) => ({ eaPct: p.eaPct, dv: (p.evPct / 100) * V0 }));
+                      const data = isCIUReport
+                        ? results[i].shearCurve.map((p) => ({ eaPct: p.eaPct, dv: p.sigma1 - p.sigma1Prime }))
+                        : results[i].shearCurve.map((p) => ({ eaPct: p.eaPct, dv: (p.evPct / 100) * V0 }));
                       return (
                         <Line key={cp.id} data={data} dataKey="dv" stroke={cp.color} name={cp.displayId ?? cp.id}
                           type="monotone" dot={false} strokeWidth={1.8} isAnimationActive={false} />
@@ -3935,7 +3967,9 @@ function TriaxialReport({
                 </ResponsiveContainer>
               </div>
               <div className="text-[8.5px] text-[#141414]/70">
-                Legenda: (+) Valores Positivos Representam REDUÇÃO DE VOLUME; (−) Valores Negativos representam AUMENTO DE VOLUME.
+                {isCIUReport
+                  ? "Poropressão gerada durante o cisalhamento não drenado (leitura direta, u = σ1 − σ'1)."
+                  : "Legenda: (+) Valores Positivos Representam REDUÇÃO DE VOLUME; (−) Valores Negativos representam AUMENTO DE VOLUME."}
               </div>
             </>
           )}
@@ -4081,7 +4115,7 @@ function TriaxialReport({
           title={REPORT_TITLE}
           norms={normsFor(reportTestType)}
         >
-          <SpecimenPage cp={cp} r={results[i]} cfg={cfg} photos={photos.filter((p) => p.specimenId === cp.id)} isUUReport={isUUReport} />
+          <SpecimenPage cp={cp} r={results[i]} cfg={cfg} photos={photos.filter((p) => p.specimenId === cp.id)} isUUReport={isUUReport} isCIUReport={isCIUReport} />
         </ReportPage>
       ))}
 
@@ -4245,6 +4279,7 @@ function CoverPage({
 }) {
   const cp0 = specimens[0];
   const isUUReport = sample.testType === "uu";
+  const isCIUReport = sample.testType === "ciu";
   const bMax = Math.max(
     0,
     ...specimens.flatMap((s) => s.saturation.map((st) => st.bValue ?? 0)),
@@ -4263,10 +4298,14 @@ function CoverPage({
     ["Equipamento Utilizado", (sample.equipment && sample.equipment.trim()) || "—"],
     ["Tipo do Ensaio", isUUReport
       ? "Compressão Triaxial Não Consolidado Não Drenado - UU"
-      : sample.condition === "saturado"
-        ? "Compressão Triaxial Adensado Isotropicamente e Drenado - CIDsat"
-        : "Compressão Triaxial Adensado Isotropicamente e Drenado - CIDnat"],
-    ["Norma Adotada", isUUReport ? "ASTM D2850:2015 / NBR 12770" : "ASTM D7181:2020 / ISO 17892-9:2018"],
+      : isCIUReport
+        ? (sample.condition === "saturado"
+            ? "Compressão Triaxial Adensado Isotropicamente e Não Drenado - CIUsat"
+            : "Compressão Triaxial Adensado Isotropicamente e Não Drenado - CIUnat")
+        : sample.condition === "saturado"
+          ? "Compressão Triaxial Adensado Isotropicamente e Drenado - CIDsat"
+          : "Compressão Triaxial Adensado Isotropicamente e Drenado - CIDnat"],
+    ["Norma Adotada", isUUReport ? "ASTM D2850:2015 / NBR 12770" : isCIUReport ? "ASTM D4767:2011 / ISO 17892-9:2018" : "ASTM D7181:2020 / ISO 17892-9:2018"],
     ["Tipo da Amostra", sample.sampleType ?? "—"],
     ["Condição do Ensaio", condLabel],
   ];
@@ -4332,14 +4371,18 @@ function SpecimenPage({
   cfg,
   photos,
   isUUReport = false,
+  isCIUReport = false,
 }: {
   cp: TriaxialSpecimen;
   r: ReturnType<typeof processSpecimen>;
   cfg: AxisCfg;
   photos: import("@/features/lab/types").Photo[];
   isUUReport?: boolean;
+  isCIUReport?: boolean;
 }) {
-  const dvShear = r.shearCurve.map((p) => ({ eaPct: p.eaPct, dv: (p.evPct / 100) * r.V0 }));
+  const dvShear = isCIUReport
+    ? r.shearCurve.map((p) => ({ eaPct: p.eaPct, dv: p.sigma1 - p.sigma1Prime }))
+    : r.shearCurve.map((p) => ({ eaPct: p.eaPct, dv: (p.evPct / 100) * r.V0 }));
   const moldagem = photos.find((p) => p.kind === "moldagem");
   const ruptura = photos.find((p) => p.kind === "ruptura");
   const legend = `${cp.displayId ?? cp.id} · ${isUUReport ? "σ3" : "σ3'"}=${cp.sigma3Target} kPa`;
@@ -4386,7 +4429,11 @@ function SpecimenPage({
         <PhotoBox title="Registro Fotográfico na Moldagem" photo={moldagem} />
       </div>
       <SectionBar>
-        {isUUReport ? "Controle Volumétrico (esperado ≈ 0 — ensaio não drenado)" : "Variação Volumétrica versus Deformação Axial Específica"} — {cp.displayId ?? cp.id}
+        {isUUReport
+          ? "Controle Volumétrico (esperado ≈ 0 — ensaio não drenado)"
+          : isCIUReport
+            ? "Poropressão Gerada (u) versus Deformação Axial Específica"
+            : "Variação Volumétrica versus Deformação Axial Específica"} — {cp.displayId ?? cp.id}
       </SectionBar>
       <div className="grid h-[46%] grid-cols-[1fr_38%] gap-2">
         <ResponsiveContainer>
@@ -4395,9 +4442,15 @@ function SpecimenPage({
             <XAxis type="number" dataKey="eaPct" domain={axisDomain(0, cfg.eaMax)} tick={{ fontSize: 9 }} ticks={equalTicks(0, cfg.eaMax)} interval={0}>
               <RLabel value="εa - Deformação Axial Específica [%]" position="insideBottom" offset={-6} fontSize={9} />
             </XAxis>
-            <YAxis reversed domain={axisDomain(cfg.dvShearMin, cfg.dvShearMax)} tick={{ fontSize: 9 }} ticks={equalTicks(cfg.dvShearMin, cfg.dvShearMax)} interval={0}>
-              <RLabel value="Variação Volumétrica [cm³]" angle={-90} position="insideLeft" offset={-2} fontSize={9} />
-            </YAxis>
+            {isCIUReport ? (
+              <YAxis domain={axisDomain(0, cfg.dvShearMax)} tick={{ fontSize: 9 }} interval={0}>
+                <RLabel value="u - Poropressão [kPa]" angle={-90} position="insideLeft" offset={-2} fontSize={9} />
+              </YAxis>
+            ) : (
+              <YAxis reversed domain={axisDomain(cfg.dvShearMin, cfg.dvShearMax)} tick={{ fontSize: 9 }} ticks={equalTicks(cfg.dvShearMin, cfg.dvShearMax)} interval={0}>
+                <RLabel value="Variação Volumétrica [cm³]" angle={-90} position="insideLeft" offset={-2} fontSize={9} />
+              </YAxis>
+            )}
             <ReferenceLine y={0} stroke="#999" />
             <Line data={dvShear} dataKey="dv" stroke={cp.color} name={legend} type="monotone"
               dot={false} strokeWidth={1.8} isAnimationActive={false} />
@@ -4407,7 +4460,9 @@ function SpecimenPage({
         <PhotoBox title="Registro Fotográfico após a Ruptura" photo={ruptura} />
       </div>
       <div className="text-[8.5px] text-[#141414]/70">
-        Legenda: (+) Valores Positivos Representam REDUÇÃO DE VOLUME; (−) Valores Negativos representam AUMENTO DE VOLUME.
+        {isCIUReport
+          ? "Poropressão gerada durante o cisalhamento não drenado (leitura direta, u = σ1 − σ'1)."
+          : "Legenda: (+) Valores Positivos Representam REDUÇÃO DE VOLUME; (−) Valores Negativos representam AUMENTO DE VOLUME."}
       </div>
     </div>
   );
