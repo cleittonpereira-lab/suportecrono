@@ -160,16 +160,22 @@ export function EnsaioListByType({ tipo }: { tipo: EnsaioTipo }) {
         const eq = p.equipamento_id ? eqMap.get(p.equipamento_id) : undefined;
         const nomeEnsaio = t?.nome ?? e?.status ?? "";
         const m = detectMethodology(nomeEnsaio, t?.nome);
+        // Mapeamento explícito cadastrado em "Tipos de Ensaio" (Programação ·
+        // Cadastro) — quando configurado, é autoritativo e substitui o
+        // adivinhamento por texto abaixo. Sem isso, ensaios com sigla fora do
+        // padrão (ex.: "TRI4.UU") podiam cair no ensaio errado por engano.
+        const tipoRelatorio = (t?.tipo_relatorio as string | undefined) || undefined;
 
         // Verifica se corresponde ao tipo atual
-        const match =
-          (tipo === "cisalhamento-direto" && (m === "cisalhamento-direto" || nomeEnsaio.toLowerCase().includes("cisalh"))) ||
-          (tipo === "adensamento" && (m === "adensamento" || nomeEnsaio.toLowerCase().includes("adens"))) ||
-          ((tipo === "triaxial-cid" || tipo === "triaxial-cid-sat" || tipo === "triaxial-cid-nat") &&
-            (m === "triaxial-cid" || nomeEnsaio.toLowerCase().includes("tri"))) ||
-          (tipo === "triaxial-uu" && /\buu\b|\btri\.?\s*uu\b/i.test(nomeEnsaio)) ||
-          (tipo === "triaxial-ciu" && /\bciu\b|\btri\.?\s*ciu\b/i.test(nomeEnsaio)) ||
-          (tipo === "mesp-a" && (m === "mesp-a" || nomeEnsaio.toLowerCase().includes("mesp")));
+        const match = tipoRelatorio
+          ? tipoRelatorio === tipo
+          : (tipo === "cisalhamento-direto" && (m === "cisalhamento-direto" || nomeEnsaio.toLowerCase().includes("cisalh"))) ||
+            (tipo === "adensamento" && (m === "adensamento" || nomeEnsaio.toLowerCase().includes("adens"))) ||
+            ((tipo === "triaxial-cid" || tipo === "triaxial-cid-sat" || tipo === "triaxial-cid-nat") &&
+              (m === "triaxial-cid" || nomeEnsaio.toLowerCase().includes("tri"))) ||
+            (tipo === "triaxial-uu" && /\buu\b|\btri\.?\s*uu\b/i.test(nomeEnsaio)) ||
+            (tipo === "triaxial-ciu" && /\bciu\b|\btri\.?\s*ciu\b/i.test(nomeEnsaio)) ||
+            (tipo === "mesp-a" && (m === "mesp-a" || nomeEnsaio.toLowerCase().includes("mesp")));
 
         if (!match) return null;
 

@@ -25,6 +25,7 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, Pencil, Trash2, Link2, X, ListChecks } from "lucide-react";
 import { toast } from "sonner";
 import { equipColor } from "@/lib/equip-colors";
+import { ENSAIO_DISPONIVEL, ENSAIO_LABEL, ENSAIO_TAG, type EnsaioTipo } from "@/features/lab/types";
 
 type Tipo = {
   id: string;
@@ -40,6 +41,13 @@ type Tipo = {
   permite_paralelo: boolean;
   cor_gantt: string | null;
   observacoes: string | null;
+  /**
+   * Qual editor/relatório este tipo de ensaio abre (ex.: "cisalhamento-direto",
+   * "triaxial-uu"). Autoritativo: quando definido, a Central de Processamento
+   * usa isso em vez de adivinhar pelo nome/sigla — evita um "TRI4.UU" cair
+   * na fila errada por causa de uma sigla fora do padrão.
+   */
+  tipo_relatorio: EnsaioTipo | null;
 };
 type Dep = { id: string; tipo_predecessor_id: string; tipo_sucessor_id: string };
 
@@ -68,6 +76,7 @@ function parseTipo(r: Record<string, string>): Tipo {
     permite_paralelo: boolFrom(r.permite_paralelo),
     cor_gantt: r.cor_gantt || null,
     observacoes: r.observacoes || null,
+    tipo_relatorio: (r.tipo_relatorio as EnsaioTipo) || null,
   };
 }
 
@@ -79,7 +88,7 @@ function TiposEnsaioPage() {
   const qc = useQueryClient();
 
   useEffect(() => {
-    ensureColumns({ data: { sheet: SHEET_TIPOS, columns: ["equipamentos_ids"] } }).catch(() => {});
+    ensureColumns({ data: { sheet: SHEET_TIPOS, columns: ["equipamentos_ids", "tipo_relatorio"] } }).catch(() => {});
   }, []);
 
   const { data: tipos = [] } = useQuery({
@@ -284,6 +293,7 @@ function TiposEnsaioPage() {
                   {listEdit && <TableHead className="w-10" />}
                   <TableHead>Nome</TableHead>
                   <TableHead>Código</TableHead>
+                  <TableHead>Tipo de Relatório</TableHead>
                   <TableHead>Equipamentos</TableHead>
                   <TableHead>Paralelo</TableHead>
                   <TableHead>Cor</TableHead>
@@ -347,6 +357,34 @@ function TiposEnsaioPage() {
                         />
                       ) : (
                         t.codigo ?? "—"
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {listEdit ? (
+                        <Select
+                          value={(draftOf(t, "tipo_relatorio") as string) ?? "__none__"}
+                          onValueChange={(v) => {
+                            const value = v === "__none__" ? null : (v as EnsaioTipo);
+                            setDraft(t.id, "tipo_relatorio", value);
+                            patchRow.mutate({ id: t.id, patch: { tipo_relatorio: value ?? "" } });
+                          }}
+                        >
+                          <SelectTrigger className="h-8 w-44"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">Não mapeado</SelectItem>
+                            {ENSAIO_DISPONIVEL.map((et) => (
+                              <SelectItem key={et} value={et}>{ENSAIO_LABEL[et]}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : t.tipo_relatorio ? (
+                        <span
+                          className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold ${ENSAIO_TAG[t.tipo_relatorio].className}`}
+                        >
+                          {ENSAIO_TAG[t.tipo_relatorio].code}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">— identifica por nome</span>
                       )}
                     </TableCell>
                     <TableCell>
@@ -455,6 +493,26 @@ function TipoForm({
         <div>
           <Label>Código</Label>
           <Input value={form.codigo ?? ""} onChange={(e) => set("codigo", e.target.value || null)} />
+        </div>
+        <div>
+          <Label>Tipo de Relatório</Label>
+          <Select
+            value={form.tipo_relatorio ?? "__none__"}
+            onValueChange={(v) => set("tipo_relatorio", v === "__none__" ? null : (v as EnsaioTipo))}
+          >
+            <SelectTrigger><SelectValue placeholder="Não mapeado — identifica por nome" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">Não mapeado (identifica por nome)</SelectItem>
+              {ENSAIO_DISPONIVEL.map((et) => (
+                <SelectItem key={et} value={et}>{ENSAIO_LABEL[et]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            Qual laudo/editor este tipo abre na Central de Processamento. Se a
+            sigla no cadastro (ex.: "TRI4.UU") não bater com o nome esperado,
+            defina aqui pra identificar certo em vez de adivinhar pelo nome.
+          </p>
         </div>
         <div className="col-span-2">
           <Label>Equipamentos compatíveis</Label>
