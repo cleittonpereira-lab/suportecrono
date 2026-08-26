@@ -39,6 +39,23 @@ export interface ChegadaTask {
   criadoEm?: string;
   origem?: RegistroOrigem;
   updatedAt?: string;
+  /**
+   * Número de controle do comprovante de recebimento (ex.: "REC-20260826-143521"),
+   * gerado no momento do registro — impresso no PDF gerado pra rastreabilidade.
+   */
+  numeroControle?: string;
+}
+
+/** Gera um número de controle legível e cronológico pro comprovante de recebimento. */
+export function gerarNumeroControle(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  const hh = String(now.getHours()).padStart(2, "0");
+  const mm = String(now.getMinutes()).padStart(2, "0");
+  const ss = String(now.getSeconds()).padStart(2, "0");
+  return `REC-${y}${m}${d}-${hh}${mm}${ss}`;
 }
 
 export const DEFAULT_COLUMNS: ChegadaColumn[] = [
@@ -345,6 +362,7 @@ export async function createChegadaRegistroAsync(
     criadoPor: data.criadoPor || "Colaborador",
     criadoEm: data.criadoEm || formatNow(),
     origem: data.origem || "colaborador",
+    numeroControle: data.numeroControle || gerarNumeroControle(),
     updatedAt: formatNow(),
   };
 
@@ -404,6 +422,7 @@ export function createChegadaRegistro(
     criadoPor: data.criadoPor || "Colaborador",
     criadoEm: data.criadoEm || formatNow(),
     origem: data.origem || "colaborador",
+    numeroControle: data.numeroControle || gerarNumeroControle(),
     updatedAt: formatNow(),
   };
 

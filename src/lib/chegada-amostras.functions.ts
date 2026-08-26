@@ -1,6 +1,25 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import type { ChegadaTask, ChegadaColumn, Option } from "./chegada-amostras-store";
+
+/**
+ * Gera um número de controle legível e cronológico pro comprovante de
+ * recebimento (ex.: "REC-20260826-143521"). Duplicado propositalmente de
+ * `chegada-amostras-store.ts` (mesmo padrão já usado ali pra formatação de
+ * data/hora) em vez de importar de lá — esse arquivo roda no servidor e
+ * `chegada-amostras-store.ts` importa DESTE arquivo, então importar na
+ * direção contrária criaria um ciclo de módulos.
+ */
+function gerarNumeroControleServer(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  const hh = String(now.getHours()).padStart(2, "0");
+  const mm = String(now.getMinutes()).padStart(2, "0");
+  const ss = String(now.getSeconds()).padStart(2, "0");
+  return `REC-${y}${m}${d}-${hh}${mm}${ss}`;
+}
 import { readDriveJson, writeDriveJson, DRIVE_ROOT_FOLDER_ID } from "@/lib/driveStorage";
 
 export const DEFAULT_COLUMNS: ChegadaColumn[] = [
@@ -147,6 +166,7 @@ export async function handleCreateSharedChegadaTask(
     criadoPor: data.criadoPor || "Colaborador",
     criadoEm: data.criadoEm || timeStr,
     origem: data.origem || "colaborador",
+    numeroControle: data.numeroControle || gerarNumeroControleServer(),
     updatedAt: timeStr,
   };
 
