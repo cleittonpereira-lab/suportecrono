@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
@@ -29,6 +29,7 @@ import { recalculateDownstream } from "@/lib/programacao-cascade";
 import { endIsoFromDur } from "@/lib/business-days";
 
 const isMespATipo = (nome: string) => /m\.?\s*esp\.?\s*a|massa\s+espec[ií]fica\s+aparente/i.test(nome);
+const isAdensamentoTipo = (nome: string) => /adensamento|edométric|^aden\b/i.test(nome);
 
 export const Route = createFileRoute("/_app/programacao/scan")({
   component: ScanPage,
@@ -54,6 +55,7 @@ function isoToday() {
 
 function ScanPage() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [scanning, setScanning] = useState(false);
   const [payload, setPayload] = useState<QrPayload | null>(null);
   const [rawInput, setRawInput] = useState("");
@@ -340,7 +342,7 @@ function ScanPage() {
           // igual ao Gantt desktop faz ao concluir uma programação.
           try {
             if (match && "amostra" in match && match.amostra && match.tipo && !isMespATipo(match.tipo.nome)) {
-              await criarPendenciaDigitacao({
+              const pend = await criarPendenciaDigitacao({
                 data: {
                   os: match.amostra.os_numero,
                   amostra: match.amostra.codigo_amostra ?? null,
@@ -349,6 +351,21 @@ function ScanPage() {
                   equipamento: null,
                   programacao_id: prog.id ?? null,
                   operador_nome: prog.tecnico ?? null,
+                },
+              });
+              // Encadeia os dois fluxos mobile: depois de concluir na
+              // bancada, oferece ir direto pra digitação de campo do mesmo
+              // ensaio, em vez de deixar a pessoa navegar manualmente.
+              const isAdens = isAdensamentoTipo(match.tipo.nome);
+              toast.info("Pronto para digitalização de campo", {
+                action: {
+                  label: "Ir para Digitalização",
+                  onClick: () =>
+                    navigate(
+                      isAdens
+                        ? { to: "/relatorio/digitalizacao/adensamento", search: { pid: pend.id } }
+                        : { to: "/relatorio/digitalizacao" },
+                    ),
                 },
               });
             }
