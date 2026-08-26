@@ -16,7 +16,8 @@ export type EnsaioTipo =
   | "triaxial-uu"
   | "cisalhamento-direto"
   | "mesp-a"             // Massa Específica Aparente Natural (NBR 16867:2020)
-  | "modulo-resiliencia"; // Módulo de Resiliência de solos (DNIT 134/2018-ME)
+  | "modulo-resiliencia" // Módulo de Resiliência de solos (DNIT 134/2018-ME)
+  | "umidade-natural";   // Teor de Umidade Natural (NBR 6457)
 
 export type EnsaioStatus =
   | "rascunho"
@@ -123,6 +124,7 @@ export const ENSAIO_LABEL: Record<EnsaioTipo, string> = {
   "cisalhamento-direto": "Cisalhamento Direto",
   "mesp-a": "Massa Específica Aparente Natural",
   "modulo-resiliencia": "Módulo de Resiliência (DNIT 134)",
+  "umidade-natural": "Umidade Natural (NBR 6457)",
 };
 
 export const ENSAIO_DISPONIVEL: EnsaioTipo[] = [
@@ -132,6 +134,7 @@ export const ENSAIO_DISPONIVEL: EnsaioTipo[] = [
   "cisalhamento-direto",
   "mesp-a",
   "modulo-resiliencia",
+  "umidade-natural",
 ];
 
 /**
@@ -189,5 +192,10 @@ export const ENSAIO_TAG: Record<EnsaioTipo, EnsaioTagInfo> = {
     code: "MR",
     className:
       "bg-teal-500/15 text-teal-700 border-teal-500/40 dark:text-teal-300",
+  },
+  "umidade-natural": {
+    code: "UMID",
+    className:
+      "bg-lime-500/15 text-lime-700 border-lime-500/40 dark:text-lime-300",
   },
 };
