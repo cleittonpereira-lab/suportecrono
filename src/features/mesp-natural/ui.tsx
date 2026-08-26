@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "sonner";
+import { findDigitScanPlugin } from "@/features/digit-scan/registry";
 import {
   Camera,
   StopCircle,
@@ -800,6 +801,14 @@ export function ScannerCard({ onIdentified }: { onIdentified: (id: Identificacao
     const isMesp = isMespANaturalTag(payload.ensaio_tag_nome) || isMespANaturalTag(payload.ensaio_tag_descricao);
     const isAdens = isAdensamentoTag(payload.ensaio_tag_nome) || isAdensamentoTag(payload.ensaio_tag_descricao);
     if (!isMesp && !isAdens) {
+      // Outros tipos de ensaio digitalizados (fora M.ESP.A/Adensamento)
+      // registram sua própria tela de campo aqui — ver digit-scan/registry.ts.
+      const plugin =
+        findDigitScanPlugin(payload.ensaio_tag_nome) || findDigitScanPlugin(payload.ensaio_tag_descricao);
+      if (plugin) {
+        navigate({ to: plugin.route, search: { qr: JSON.stringify(payload) } as any });
+        return;
+      }
       setNotFoundMsg(
         `Este QR é do ensaio "${payload.ensaio_tag_nome ?? "?"}". A digitalização atual cobre Massa Específica Aparente Natural (M.ESP.A) e Adensamento (ADENS).`,
       );
