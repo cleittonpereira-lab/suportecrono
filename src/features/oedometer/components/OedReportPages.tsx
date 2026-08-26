@@ -372,9 +372,9 @@ export function OedReportPhotoPage({
             {photosForPage.map((p, idx) => (
               <div key={p.id || idx} className="flex flex-col items-center">
                 <div className="w-full aspect-[3/4] max-h-[240px] bg-neutral-100 border border-[#141414]/25 rounded overflow-hidden flex items-center justify-center shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-                  {p.dataUrl ? (
+                  {(p.url || p.dataUrl) ? (
                     <img
-                      src={p.dataUrl}
+                      src={p.url || p.dataUrl}
                       alt={p.caption || "Foto"}
                       className="h-full w-full object-cover"
                       crossOrigin="anonymous"

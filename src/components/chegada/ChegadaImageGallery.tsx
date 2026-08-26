@@ -18,6 +18,25 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { uploadPhoto } from "@/lib/photo-upload.functions";
+
+/**
+ * Envia a foto (já comprimida) como arquivo real no Drive e devolve a URL
+ * curta (`/api/photo/...`) a guardar no lugar do texto base64 — é isso que
+ * evita reenviar megabytes de fotos toda vez que o quadro de Chegada de
+ * Amostras é sincronizado entre computadores. Se o envio falhar (rede
+ * instável etc.), cai de volta pro base64 local — a foto não se perde, só
+ * fica um pouco mais pesada no board até o próximo envio bem-sucedido.
+ */
+async function uploadAndGetUrl(dataUrl: string, namePrefix: string): Promise<string> {
+  try {
+    const res = await uploadPhoto({ data: { dataUrl, namePrefix } });
+    return res.url;
+  } catch (err) {
+    console.warn("[ChegadaImageGallery] Falha ao enviar foto pro Drive, mantendo local:", err);
+    return dataUrl;
+  }
+}
 
 interface ChegadaImageGalleryProps {
   images: string[];
@@ -43,6 +62,23 @@ export function ChegadaImageGallery({
   const streamRef = useRef<MediaStream | null>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
+
+  // Sempre com o array mais recente — usado pelo callback assíncrono de
+  // upload, que só resolve depois de o usuário já ter mexido na lista.
+  const imagesRef = useRef(images);
+  useEffect(() => { imagesRef.current = images; }, [images]);
+  const onChangeRef = useRef(onChange);
+  useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
+
+  /** Troca um base64 local pela URL curta assim que o upload termina, no array mais atual (não no que existia no momento da captura). */
+  const replaceImageValue = useCallback((oldVal: string, newVal: string) => {
+    const current = imagesRef.current;
+    const idx = current.indexOf(oldVal);
+    if (idx === -1) return; // foto já foi removida antes do upload terminar
+    const next = current.slice();
+    next[idx] = newVal;
+    onChangeRef.current?.(next);
+  }, []);
 
   // Stop camera stream safely
   const stopCameraStream = useCallback(() => {
@@ -124,9 +160,28 @@ export function ChegadaImageGallery({
     if (!videoRef.current || !onChange) return;
 
     const video = videoRef.current;
+    const srcW = video.videoWidth || 1280;
+    const srcH = video.videoHeight || 720;
+
+    // Reduz pro mesmo tamanho máximo (1280px) e qualidade (0,75) da galeria —
+    // sem isso, a foto da câmera ao vivo saía em resolução nativa (até
+    // 1920x1080) sem compressão nenhuma, muito mais pesada que as outras.
+    const maxDim = 1280;
+    let width = srcW;
+    let height = srcH;
+    if (width > maxDim || height > maxDim) {
+      if (width > height) {
+        height = Math.round((height * maxDim) / width);
+        width = maxDim;
+      } else {
+        width = Math.round((width * maxDim) / height);
+        height = maxDim;
+      }
+    }
+
     const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth || 1280;
-    canvas.height = video.videoHeight || 720;
+    canvas.width = width;
+    canvas.height = height;
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
@@ -135,12 +190,18 @@ export function ChegadaImageGallery({
     setCameraFlash(true);
     setTimeout(() => setCameraFlash(false), 200);
 
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const base64Image = canvas.toDataURL("image/jpeg", 0.85);
+    ctx.drawImage(video, 0, 0, width, height);
+    const base64Image = canvas.toDataURL("image/jpeg", 0.75);
 
     if (base64Image) {
       onChange([...images, base64Image]);
       setSessionPhotosCount((prev) => prev + 1);
+      // Envia em segundo plano e troca o base64 local pela URL curta assim
+      // que terminar — a foto já aparece na hora, o upload não trava a UI.
+      void uploadAndGetUrl(base64Image, "chegada").then((url) => {
+        if (url === base64Image) return;
+        replaceImageValue(base64Image, url);
+      });
     }
   };
 
@@ -232,6 +293,14 @@ export function ChegadaImageGallery({
           compressed.length === 1 ? "foto adicionada e otimizada" : "fotos adicionadas e otimizadas"
         } com sucesso!`
       );
+      // Envia pro Drive em segundo plano — a UI já mostra as fotos na hora
+      // via base64, e cada uma troca pra URL curta assim que terminar.
+      for (const base64 of compressed) {
+        void uploadAndGetUrl(base64, "chegada").then((url) => {
+          if (url === base64) return;
+          replaceImageValue(base64, url);
+        });
+      }
     } catch {
       toast.error("Erro ao processar imagens.");
     }

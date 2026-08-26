@@ -231,6 +231,63 @@ export async function uploadBytesToDrive(opts: {
   return uploadBytesResumable({ ...opts, existingId });
 }
 
+/**
+ * Envia uma foto (bytes de imagem) como arquivo binário próprio no Drive —
+ * ao contrário de `writeDriveJson`, que embute base64 dentro de um JSON.
+ * Cada foto vira um arquivo novo. Devolve um `fileId` — real (do Drive) em
+ * produção, ou um id local sintético (sem credenciais do Drive configuradas)
+ * — usado depois em `/api/photo/$fileId`.
+ *
+ * Não delega pro fallback local genérico de `uploadBytesToDrive` (que
+ * devolve a string fixa `"local_saved"`, própria pra documentos JSON
+ * únicos por entidade — colidiria entre fotos diferentes aqui).
+ */
+export async function uploadPhotoBytes(opts: {
+  parentId: string;
+  name: string;
+  mimeType: string;
+  bytes: Uint8Array;
+}): Promise<string> {
+  if (!hasDriveCredentials()) {
+    const id = `local_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    try {
+      fs.writeFileSync(getLocalPath(`photo_${id}`), opts.bytes);
+      fs.writeFileSync(getLocalPath(`photo_${id}.meta`), opts.mimeType, "utf8");
+    } catch {}
+    return id;
+  }
+  return uploadBytesResumable({ ...opts, existingId: null });
+}
+
+/** Lê os bytes brutos (não-JSON) de um arquivo do Drive pelo seu fileId — usado para servir fotos. */
+export async function readPhotoBytes(fileId: string): Promise<{ bytes: Uint8Array; mimeType: string } | null> {
+  if (!hasDriveCredentials()) {
+    try {
+      const local = getLocalPath(`photo_${fileId}`);
+      if (fs.existsSync(local)) {
+        const buf = fs.readFileSync(local);
+        const metaPath = getLocalPath(`photo_${fileId}.meta`);
+        const mimeType = fs.existsSync(metaPath) ? fs.readFileSync(metaPath, "utf8") : "image/jpeg";
+        return { bytes: new Uint8Array(buf), mimeType };
+      }
+    } catch {}
+    return null;
+  }
+  try {
+    const res = await fetch(`${DRIVE_V3}/files/${fileId}?alt=media&supportsAllDrives=true`, {
+      method: "GET",
+      headers: await driveHeaders(),
+    });
+    if (!res.ok) return null;
+    const mimeType = res.headers.get("content-type") || "application/octet-stream";
+    const buf = await res.arrayBuffer();
+    return { bytes: new Uint8Array(buf), mimeType };
+  } catch (err) {
+    console.warn("[DriveStorage] Erro ao ler foto:", err);
+    return null;
+  }
+}
+
 /** Lê um arquivo JSON do Google Drive com fallback em cache */
 export async function readDriveJson<T>(filename: string, parentId: string = DRIVE_ROOT_FOLDER_ID): Promise<T | null> {
   const cacheKey = `${parentId}:${filename}`;

@@ -398,8 +398,8 @@ export async function buildOedometerXlsxWorkbook({
       const colStart = i === 0 ? 0.1 : i === 1 ? 2.4 : 4.9;
       const colEnd = i === 0 ? 1.9 : i === 1 ? 4.6 : 6.9;
 
-      if (p.dataUrl) {
-        const b64 = await getImageBase64(p.dataUrl);
+      if (p.url || p.dataUrl) {
+        const b64 = await getImageBase64(p.url || p.dataUrl);
         if (b64) {
           const imgId = wb.addImage({ base64: b64, extension: "jpeg" });
           wsPh.addImage(imgId, {

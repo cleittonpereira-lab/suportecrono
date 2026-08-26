@@ -7,6 +7,24 @@ import { toast } from "sonner";
 import type { Photo } from "../types";
 import { fileToCompressedDataUrl, formatBytes } from "../photos";
 import { PhotoCropDialog } from "./PhotoCropDialog";
+import { uploadPhoto } from "@/lib/photo-upload.functions";
+
+/**
+ * Envia a foto (já recortada) como arquivo real no Drive e devolve a URL
+ * curta — evita reenviar megabytes de fotos toda vez que a árvore de
+ * relatórios do laboratório é sincronizada (a cada poucos segundos, por
+ * toda aba aberta). Se o envio falhar, guarda só o base64 mesmo — a foto
+ * não se perde, só fica mais pesada no JSON até o próximo salvamento.
+ */
+async function uploadAndGetUrl(dataUrl: string): Promise<string | undefined> {
+  try {
+    const res = await uploadPhoto({ data: { dataUrl, namePrefix: "ensaio" } });
+    return res.url;
+  } catch (err) {
+    console.warn("[PhotoUploader] Falha ao enviar foto pro Drive, mantendo local:", err);
+    return undefined;
+  }
+}
 
 interface Props {
   title: string;
@@ -83,7 +101,7 @@ export function PhotoUploader({ title, kind, photos = [], onAdd, onRemove, onUpd
             <div key={p.id} className="group relative overflow-hidden rounded-md border border-border bg-card">
               <div className="flex aspect-[3/4] w-full items-center justify-center bg-black/5 overflow-hidden">
                 <img
-                  src={p.dataUrl}
+                  src={p.url || p.dataUrl}
                   alt={p.caption ?? title}
                   className="h-full w-full object-cover"
                 />
@@ -139,8 +157,12 @@ export function PhotoUploader({ title, kind, photos = [], onAdd, onRemove, onUpd
             createdAt: new Date().toISOString(),
           }}
           onOpenChange={(o) => { if (!o) setPendingUpload(null); }}
-          onSave={(dataUrl, bytes) => {
-            onAdd({ dataUrl, bytes, kind: pendingUpload.kind, caption: pendingUpload.caption });
+          onSave={async (dataUrl, bytes) => {
+            const url = await uploadAndGetUrl(dataUrl);
+            // Se o envio deu certo, não guarda o base64 também — senão o
+            // JSON do ensaio continua tão pesado quanto antes. Só mantém
+            // `dataUrl` cheio quando o envio falhou (única cópia que sobrou).
+            onAdd({ dataUrl: url ? "" : dataUrl, bytes, kind: pendingUpload.kind, caption: pendingUpload.caption, url });
             setPendingUpload(null);
             toast.success("Foto adicionada e enquadrada com sucesso!");
           }}
@@ -153,8 +175,11 @@ export function PhotoUploader({ title, kind, photos = [], onAdd, onRemove, onUpd
           open={!!editing}
           photo={editing}
           onOpenChange={(o) => { if (!o) setEditing(null); }}
-          onSave={(dataUrl, bytes) => {
-            onUpdate(editing.id, { dataUrl, bytes });
+          onSave={async (dataUrl, bytes) => {
+            // Recorte muda os pixels — a URL antiga (se houver) fica errada,
+            // reenvia a foto recortada como um novo arquivo no Drive.
+            const url = await uploadAndGetUrl(dataUrl);
+            onUpdate(editing.id, { dataUrl: url ? "" : dataUrl, bytes, url });
             setEditing(null);
             toast.success("Recorte atualizado");
           }}

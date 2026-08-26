@@ -6,6 +6,8 @@ import { ReportHeader, ReportFooter, REPORT_PAGE_STYLE } from "@/components/repo
 export interface CDPhoto {
   id: string;
   dataUrl: string;
+  /** URL curta do arquivo real enviado ao Drive — preferir sempre que existir (ver `Photo.url` em `features/lab/types.ts`). */
+  url?: string;
   kind: "moldagem" | "ruptura" | "outro";
   specimenId?: string;
   caption?: string;
@@ -54,7 +56,7 @@ export function CDPhotoPage({
                     <div key={photo.id} className="flex flex-col items-center gap-2 border border-[#141414]/20 p-2 rounded-sm bg-white shadow-sm">
                       <div className="relative aspect-[3/4] w-full overflow-hidden bg-black/5">
                         <img
-                          src={photo.dataUrl}
+                          src={photo.url || photo.dataUrl}
                           alt={`Foto ${cp.displayId ?? cp.id}`}
                           className="h-full w-full object-contain"
                           crossOrigin="anonymous"

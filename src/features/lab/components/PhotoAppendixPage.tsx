@@ -68,7 +68,7 @@ function PhotoSection({ heading, items }: { heading: string; items: Photo[] }) {
           <figure key={p.id} className="overflow-hidden rounded border border-[#141414]/40">
             <div className="flex h-[65mm] w-full items-center justify-center bg-white">
               <img
-                src={p.dataUrl}
+                src={p.url || p.dataUrl}
                 alt={p.caption ?? heading}
                 className="max-h-full max-w-full object-contain"
                 crossOrigin="anonymous"

@@ -384,10 +384,11 @@ export async function buildCDRawDataXlsxWorkbook({
   // Carrega imagens das fotos
   const photoImageIds: { [photoId: string]: number } = {};
   for (const p of photos) {
-    if (p.dataUrl) {
-      const b64 = await getImageBase64(p.dataUrl);
+    const src = p.url || p.dataUrl;
+    if (src) {
+      const b64 = await getImageBase64(src);
       if (b64) {
-        const ext = p.dataUrl.includes("png") ? "png" : "jpeg";
+        const ext = src.includes("png") ? "png" : "jpeg";
         photoImageIds[p.id] = wb.addImage({ base64: b64, extension: ext });
       }
     }

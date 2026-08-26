@@ -36,6 +36,10 @@ export function PhotoCropDialog({
   const [oy, setOy] = useState(50);
   const [imgDims, setImgDims] = useState<{ w: number; h: number } | null>(null);
 
+  // Foto já enviada ao Drive tem `dataUrl` vazio e só `url` — preferir sempre
+  // que existir, senão o recorte de uma foto já salva carregaria em branco.
+  const photoSrc = photo.url || photo.dataUrl;
+
   useEffect(() => {
     if (!open) return;
     setZoom(1);
@@ -43,8 +47,8 @@ export function PhotoCropDialog({
     setOy(50);
     const img = new Image();
     img.onload = () => setImgDims({ w: img.width, h: img.height });
-    img.src = photo.dataUrl;
-  }, [open, photo.dataUrl]);
+    img.src = photoSrc;
+  }, [open, photoSrc]);
 
   const crop = useMemo(() => {
     if (!imgDims) return null;
@@ -109,7 +113,7 @@ export function PhotoCropDialog({
     await new Promise<void>((res, rej) => {
       img.onload = () => res();
       img.onerror = () => rej(new Error("Falha ao carregar imagem"));
-      img.src = photo.dataUrl;
+      img.src = photoSrc;
     });
     const canvas = document.createElement("canvas");
     canvas.width = OUT_W;
@@ -146,7 +150,7 @@ export function PhotoCropDialog({
         >
           {preview && (
             <img
-              src={photo.dataUrl}
+              src={photoSrc}
               alt=""
               draggable={false}
               style={{

@@ -4394,7 +4394,7 @@ function SpecimenPage({
       <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-white p-1">
         {photo ? (
           <img
-            src={photo.dataUrl}
+            src={photo.url || photo.dataUrl}
             alt={title}
             crossOrigin="anonymous"
             className="absolute inset-1 h-[calc(100%-0.5rem)] w-[calc(100%-0.5rem)] object-contain"

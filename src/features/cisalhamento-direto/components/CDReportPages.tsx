@@ -724,7 +724,7 @@ export function CDReportPage5({
 }: {
   sample: CDSample;
   specimens: CDSpecimen[];
-  photos?: { id: string; dataUrl: string; kind: string; specimenId?: string; caption?: string }[];
+  photos?: { id: string; dataUrl: string; url?: string; kind: string; specimenId?: string; caption?: string }[];
   pageIndex?: number;
   totalPages?: number;
 }) {
@@ -757,7 +757,7 @@ export function CDReportPage5({
                   <div className="w-full aspect-[3/4] max-h-[225px] bg-neutral-100 border border-[#141414]/25 rounded overflow-hidden flex items-center justify-center shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
                     {p ? (
                       <img
-                        src={p.dataUrl}
+                        src={p.url || p.dataUrl}
                         alt={cp.id}
                         className="h-full w-full object-cover"
                         crossOrigin="anonymous"
@@ -796,7 +796,7 @@ export function CDReportPage5({
                   <div className="w-full aspect-[3/4] max-h-[225px] bg-neutral-100 border border-[#141414]/25 rounded overflow-hidden flex items-center justify-center shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
                     {p ? (
                       <img
-                        src={p.dataUrl}
+                        src={p.url || p.dataUrl}
                         alt={cp.id}
                         className="h-full w-full object-cover"
                         crossOrigin="anonymous"
@@ -955,7 +955,7 @@ export function CDReportPages({
   specimens: CDSpecimen[];
   results: CDSpecimenResults[];
   envelope: CDEnvelopeResult | null;
-  photos?: { id: string; dataUrl: string; kind: string; specimenId?: string; caption?: string }[];
+  photos?: { id: string; dataUrl: string; url?: string; kind: string; specimenId?: string; caption?: string }[];
   axisCfg?: CDAxisCfg;
   totalPages?: number;
 }) {

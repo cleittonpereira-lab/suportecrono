@@ -38,8 +38,15 @@ export interface Coords {
 
 export interface Photo {
   id: string;
-  /** data URL (image/*;base64) — armazenamento leve no localStorage. */
+  /** data URL (image/*;base64) — mantido como fallback pra fotos antigas. */
   dataUrl: string;
+  /**
+   * URL curta (`/api/photo/...`) do arquivo real enviado ao Drive — quando
+   * presente, é o que deve ser usado pra exibir a foto (`url || dataUrl`).
+   * Evita reenviar/rebaixar megabytes de base64 toda vez que o ensaio é
+   * sincronizado; fotos antigas sem `url` continuam funcionando via `dataUrl`.
+   */
+  url?: string;
   caption?: string;
   /** Data ISO. */
   createdAt: string;
