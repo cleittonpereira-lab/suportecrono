@@ -480,7 +480,14 @@ export function CDPage() {
     const draftData = { sample, specimens, selectedCpId, tab, adjust, axisCfg, photos: draftPhotos };
     saveDraft(scopeId, draftData, { id: user?.id, name: displayName });
     if (ctx?.ensaio) ctx.onPayloadChange(draftData);
-  }, [remoteLoaded, scopeId, sample, specimens, selectedCpId, tab, adjust, axisCfg, ctx, ctx?.photos]);
+    // Depende só de `ctx?.photos` (conteúdo), NUNCA do objeto `ctx` inteiro —
+    // o LabEnsaioProvider recria `ctx` a cada render, e como este efeito
+    // também regrava `ensaio.payload` via `ctx.onPayloadChange`, depender de
+    // `ctx` aqui formava um laço infinito de "Maximum update depth exceeded"
+    // (grava → ensaio muda de referência → ctx muda → efeito recorre → grava
+    // de novo). Bug real, pré-existente, achado ao testar Triaxial CID.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remoteLoaded, scopeId, sample, specimens, selectedCpId, tab, adjust, axisCfg, ctx?.photos]);
 
   const sortedSpecimens = useMemo(
     () => [...specimens].sort((a, b) => (a.normalStressTarget ?? 0) - (b.normalStressTarget ?? 0)),
