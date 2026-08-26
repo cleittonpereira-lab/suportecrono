@@ -731,6 +731,10 @@ export function CDPage() {
 
   const handleSaveVersion = async (opts?: { skipVerification?: boolean }) => {
     const skipVerification = opts?.skipVerification === true;
+    // "Digitado por" passa a refletir quem realmente concluiu e enviou a
+    // digitação agora — antes ficava travado na primeira pessoa que tinha
+    // aberto o relatório, mesmo que outra tivesse feito o trabalho de fato.
+    setSample((prev) => ({ ...prev, typedBy: currentUserName }));
     setWfStatus(skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao");
     setSaveBusy(true);
     const saveToken = beginSave();

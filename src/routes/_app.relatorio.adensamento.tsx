@@ -594,6 +594,10 @@ export function AdensamentoPage() {
   // Salvar Versao e Google Drive com geracao real de PDF
   const handleSaveVersion = async (opts?: { skipVerification?: boolean }) => {
     const targetStatus = opts?.skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao";
+    // "Digitado por" passa a refletir quem realmente concluiu e enviou a
+    // digitação agora — antes ficava travado na primeira pessoa que tinha
+    // aberto o relatório, mesmo que outra tivesse feito o trabalho de fato.
+    setSample((prev: any) => ({ ...prev, typedBy: currentUserName }));
     setWfStatus(targetStatus);
     setSavingVersion(true);
     const saveToken = beginSave();
