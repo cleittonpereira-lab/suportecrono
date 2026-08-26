@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { toast } from "sonner";
 import {
   fetchSharedChegadaState,
   saveSharedChegadaState,
@@ -57,6 +58,64 @@ export const RECEBIDO_STORAGE_KEY = "chegada_amostras_recebido_options";
 export const CHEGADA_UPDATE_EVENT = "chegada_amostras_update";
 export const CHEGADA_COLUMNS_EVENT = "chegada_columns_update";
 export const CHEGADA_OPTIONS_EVENT = "chegada_options_update";
+
+export const REV_STORAGE_KEY = "chegada_amostras_rev";
+
+/**
+ * Revisão do quadro compartilhado que este cliente sabe que já leu.
+ * Enviada como `expectedRev` em toda gravação — o servidor recusa a
+ * gravação (em vez de sobrescrever) se o quadro real já estiver à frente
+ * disso. Ver `handleSaveSharedChegadaState` em `chegada-amostras.functions.ts`.
+ */
+let knownRev = 0;
+
+export function getKnownChegadaRev(): number {
+  if (knownRev > 0) return knownRev;
+  if (typeof window === "undefined") return 0;
+  const saved = localStorage.getItem(REV_STORAGE_KEY);
+  const parsed = saved ? parseInt(saved, 10) : 0;
+  knownRev = Number.isFinite(parsed) ? parsed : 0;
+  return knownRev;
+}
+
+function setKnownChegadaRev(rev: number): void {
+  knownRev = rev;
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(REV_STORAGE_KEY, String(rev));
+  } catch {}
+}
+
+type SaveChegadaResult = Awaited<ReturnType<typeof saveSharedChegadaState>>;
+
+/**
+ * Trata a resposta de uma gravação do quadro: em caso de sucesso, avança a
+ * revisão conhecida; em caso de conflito (outra pessoa gravou no meio
+ * tempo), NÃO aplica a gravação local — atualiza a tela com o estado real
+ * do servidor e avisa o usuário para repetir a ação, em vez de deixar a
+ * gravação antiga sobrescrever silenciosamente o que a outra pessoa fez.
+ */
+function handleChegadaSaveResult(res: SaveChegadaResult): void {
+  if (res.success) {
+    setKnownChegadaRev(res.rev);
+    return;
+  }
+  if (!res.conflict || typeof window === "undefined") return;
+  const cs = res.currentState;
+  try {
+    localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(cs.tasks));
+    localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(cs.columns));
+    localStorage.setItem(TIPO_AMOSTRA_STORAGE_KEY, JSON.stringify(cs.tipoOptions));
+    localStorage.setItem(RECEBIDO_STORAGE_KEY, JSON.stringify(cs.recebidoOptions));
+  } catch {}
+  setKnownChegadaRev(cs.rev);
+  window.dispatchEvent(new CustomEvent(CHEGADA_UPDATE_EVENT, { detail: cs.tasks }));
+  window.dispatchEvent(new CustomEvent(CHEGADA_COLUMNS_EVENT, { detail: cs.columns }));
+  window.dispatchEvent(new CustomEvent(CHEGADA_OPTIONS_EVENT));
+  toast.warning("Quadro atualizado por outra pessoa", {
+    description: "Alguém mexeu no quadro de Chegada de Amostras ao mesmo tempo. A tela foi atualizada com a versão mais recente — repita sua última ação se ela não aparecer.",
+  });
+}
 
 export const DEFAULT_TIPO_AMOSTRA_OPTIONS: Option[] = [
   { label: "DEF.1", value: "DEF.1" },
@@ -149,8 +208,9 @@ export function saveStoredColumns(columns: ChegadaColumn[]): void {
       tasks: getStoredTasks(),
       tipoOptions: getTipoAmostraOptions(),
       recebidoOptions: getRecebidoOptions(),
+      expectedRev: getKnownChegadaRev(),
     },
-  }).catch((e) => console.warn("[saveStoredColumns] Sync warning:", e));
+  }).then(handleChegadaSaveResult).catch((e) => console.warn("[saveStoredColumns] Sync warning:", e));
 }
 
 export function createChegadaColumn(title: string, subtitle?: string): ChegadaColumn {
@@ -182,8 +242,9 @@ export function createChegadaColumn(title: string, subtitle?: string): ChegadaCo
       tasks: currentTasks,
       tipoOptions: getTipoAmostraOptions(),
       recebidoOptions: getRecebidoOptions(),
+      expectedRev: getKnownChegadaRev(),
     },
-  }).catch((e) => console.warn("[createChegadaColumn] Sync warning:", e));
+  }).then(handleChegadaSaveResult).catch((e) => console.warn("[createChegadaColumn] Sync warning:", e));
 
   return newCol;
 }
@@ -212,8 +273,9 @@ export function deleteChegadaColumn(columnId: string): boolean {
       tasks: remainingTasks,
       tipoOptions: getTipoAmostraOptions(),
       recebidoOptions: getRecebidoOptions(),
+      expectedRev: getKnownChegadaRev(),
     },
-  }).catch((e) => console.warn("[deleteChegadaColumn] Sync warning:", e));
+  }).then(handleChegadaSaveResult).catch((e) => console.warn("[deleteChegadaColumn] Sync warning:", e));
 
   return true;
 }
@@ -258,8 +320,9 @@ export function saveStoredTasks(tasks: Record<string, ChegadaTask[]>, columns?: 
       tasks,
       tipoOptions: getTipoAmostraOptions(),
       recebidoOptions: getRecebidoOptions(),
+      expectedRev: getKnownChegadaRev(),
     },
-  }).catch((err) => {
+  }).then(handleChegadaSaveResult).catch((err) => {
     console.warn("[saveStoredTasks] Sync warning:", err);
   });
 }
@@ -315,6 +378,7 @@ export async function createChegadaRegistroAsync(
       localStorage.setItem(RECEBIDO_STORAGE_KEY, JSON.stringify(res.fullState.recebidoOptions));
       window.dispatchEvent(new CustomEvent(CHEGADA_UPDATE_EVENT, { detail: res.fullState.tasks }));
       window.dispatchEvent(new CustomEvent(CHEGADA_OPTIONS_EVENT));
+      if (typeof res.fullState.rev === "number") setKnownChegadaRev(res.fullState.rev);
     }
   } catch (err) {
     console.warn("[createChegadaRegistroAsync] Erro ao sincronizar com nuvem, mantido local:", err);
@@ -372,6 +436,7 @@ export function createChegadaRegistro(
         localStorage.setItem(RECEBIDO_STORAGE_KEY, JSON.stringify(res.fullState.recebidoOptions));
         window.dispatchEvent(new CustomEvent(CHEGADA_UPDATE_EVENT, { detail: res.fullState.tasks }));
         window.dispatchEvent(new CustomEvent(CHEGADA_OPTIONS_EVENT));
+        if (typeof res.fullState.rev === "number") setKnownChegadaRev(res.fullState.rev);
       }
     })
     .catch((err) => {
@@ -493,6 +558,13 @@ export function useChegadaRealtimeSync(
           localStorage.setItem(RECEBIDO_STORAGE_KEY, JSON.stringify(serverState.recebidoOptions));
         }
         window.dispatchEvent(new CustomEvent(CHEGADA_OPTIONS_EVENT));
+
+        // Mantém a revisão conhecida em dia mesmo sem edição local — é o
+        // que evita a maioria dos conflitos: ao editar, o `expectedRev`
+        // enviado já reflete o quadro mais recente, não uma cópia velha.
+        if (typeof serverState.rev === "number") {
+          setKnownChegadaRev(serverState.rev);
+        }
       }
     } catch (e) {
       // Falha silenciosa

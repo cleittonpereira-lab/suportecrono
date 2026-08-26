@@ -60,6 +60,14 @@ export interface SharedChegadaState {
   tipoOptions: Option[];
   recebidoOptions: Option[];
   updatedAt: string;
+  /**
+   * Contador de revisão do quadro inteiro — incrementado a cada gravação
+   * bem-sucedida. Usado para bloqueio otimista em `handleSaveSharedChegadaState`:
+   * sem isso, uma aba com o quadro desatualizado podia sobrescrever por cima
+   * de registros criados por outra pessoa nesse meio-tempo (bug real, ver
+   * histórico — dados de "Chegada de Amostras" somem/reaparecem entre usuários).
+   */
+  rev: number;
 }
 
 const CHEGADA_DRIVE_FILENAME = "_chegada-amostras.json";
@@ -85,6 +93,8 @@ export async function readLocalChegadaState(): Promise<SharedChegadaState> {
         tipoOptions: Array.isArray(parsed.tipoOptions) && parsed.tipoOptions.length > 0 ? parsed.tipoOptions : DEFAULT_TIPO_OPTIONS,
         recebidoOptions: Array.isArray(parsed.recebidoOptions) && parsed.recebidoOptions.length > 0 ? parsed.recebidoOptions : DEFAULT_RECEBIDO_OPTIONS,
         updatedAt: parsed.updatedAt || new Date().toISOString(),
+        // Arquivos gravados antes desta correção não têm `rev` — trata como 0.
+        rev: typeof parsed.rev === "number" ? parsed.rev : 0,
       };
     }
   } catch (e) {
@@ -97,6 +107,7 @@ export async function readLocalChegadaState(): Promise<SharedChegadaState> {
     tipoOptions: DEFAULT_TIPO_OPTIONS,
     recebidoOptions: DEFAULT_RECEBIDO_OPTIONS,
     updatedAt: new Date(0).toISOString(),
+    rev: 0,
   };
 }
 
@@ -179,6 +190,7 @@ export async function handleCreateSharedChegadaTask(
     tipoOptions,
     recebidoOptions,
     updatedAt: nowIso,
+    rev: currentState.rev + 1,
   };
 
   await writeLocalChegadaState(fullState);
@@ -190,20 +202,39 @@ export async function handleCreateSharedChegadaTask(
   };
 }
 
-/** Handler puro de salvamento de estado */
+/**
+ * Handler puro de salvamento de estado.
+ *
+ * Bloqueio otimista: o cliente manda o `rev` que ele leu por último
+ * (`expectedRev`). Se o `rev` atual no Drive já for maior que isso, alguém
+ * gravou uma mudança nesse meio-tempo — recusa a gravação (em vez de
+ * sobrescrever o quadro inteiro com uma cópia desatualizada) e devolve o
+ * estado atual pro cliente se atualizar e o usuário repetir a ação.
+ * Sem isso, uma aba com o quadro velho na memória apagava silenciosamente
+ * registros criados por outra pessoa (bug real de perda de dados).
+ */
 export async function handleSaveSharedChegadaState(data: {
   tasks: Record<string, ChegadaTask[]>;
   columns?: ChegadaColumn[];
   tipoOptions?: Option[];
   recebidoOptions?: Option[];
-}): Promise<{ success: boolean; updatedAt: string }> {
+  expectedRev?: number;
+}): Promise<
+  | { success: true; updatedAt: string; rev: number }
+  | { success: false; conflict: true; currentState: SharedChegadaState }
+> {
   const nowIso = new Date().toISOString();
   const currentState = await readLocalChegadaState();
+
+  if (typeof data.expectedRev === "number" && currentState.rev > data.expectedRev) {
+    return { success: false, conflict: true, currentState };
+  }
 
   const columns = data.columns || currentState.columns || DEFAULT_COLUMNS;
   const tasks = data.tasks || currentState.tasks;
   const tipoOptions = data.tipoOptions || currentState.tipoOptions || DEFAULT_TIPO_OPTIONS;
   const recebidoOptions = data.recebidoOptions || currentState.recebidoOptions || DEFAULT_RECEBIDO_OPTIONS;
+  const rev = currentState.rev + 1;
 
   const newState: SharedChegadaState = {
     columns,
@@ -211,11 +242,12 @@ export async function handleSaveSharedChegadaState(data: {
     tipoOptions,
     recebidoOptions,
     updatedAt: nowIso,
+    rev,
   };
 
   await writeLocalChegadaState(newState);
 
-  return { success: true, updatedAt: nowIso };
+  return { success: true, updatedAt: nowIso, rev };
 }
 
 /** Handler puro de opções */
@@ -248,6 +280,7 @@ export async function handleAddSharedChegadaOption(data: {
   }
 
   currentState.updatedAt = new Date().toISOString();
+  currentState.rev = currentState.rev + 1;
   await writeLocalChegadaState(currentState);
 
   return { success: true, options: updatedOptions };
@@ -260,8 +293,16 @@ export const fetchSharedChegadaState = createServerFn({ method: "GET" })
   });
 
 export const saveSharedChegadaState = createServerFn({ method: "POST" })
-  .validator((d: { tasks: Record<string, ChegadaTask[]>; columns?: ChegadaColumn[]; tipoOptions?: Option[]; recebidoOptions?: Option[] }) => d)
-  .handler(async ({ data }): Promise<{ success: boolean; updatedAt: string }> => {
+  .validator(
+    (d: {
+      tasks: Record<string, ChegadaTask[]>;
+      columns?: ChegadaColumn[];
+      tipoOptions?: Option[];
+      recebidoOptions?: Option[];
+      expectedRev?: number;
+    }) => d,
+  )
+  .handler(async ({ data }) => {
     return handleSaveSharedChegadaState(data);
   });
 
