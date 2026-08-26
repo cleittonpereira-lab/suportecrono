@@ -1,6 +1,5 @@
-import { SyncStatusBadge } from "@/components/SyncStatusBadge";
 import { useDraftActivity } from "@/hooks/use-draft-activity";
-import { EditingPresenceBanner, DraftHistoryButton } from "@/components/DraftActivityInfo";
+import { EditingPresenceBanner } from "@/components/DraftActivityInfo";
 import { buildScopeId } from "@/lib/scope";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useRef, useState, useEffect } from "react";
@@ -29,8 +28,6 @@ import {
   Plus,
   Trash2,
   CheckCircle2,
-  User,
-  FileEdit,
 } from "lucide-react";
 import { toast } from "sonner";
 import { toPng } from "html-to-image";
@@ -52,11 +49,11 @@ import {
 import { getWorkflowStatuses } from "@/lib/driveSync.functions";
 import { Textarea } from "@/components/ui/textarea";
 import { PhotoUploader } from "@/features/lab/components/PhotoUploader";
-import { WorkflowFarol } from "@/features/lab/components/WorkflowFarol";
 import { useOptionalLabEnsaio } from "@/features/lab/context";
 import { labStore } from "@/features/lab/store";
 import { EnsaioListByType } from "@/features/lab/components/EnsaioListByType";
 import { ReportPage, type ReportSample } from "@/components/report/ReportShell";
+import { EnsaioBadgesRow, EnsaioTitleBlock, AmostraSummaryCard, ResponsaveisBar } from "@/components/report/EnsaioReportHeader";
 import type { UmidadeNaturalSample, MoistureCapsule } from "@/features/umidade-natural/types";
 import { seedUmidadeNaturalSample } from "@/features/umidade-natural/types";
 import { capsuleMoisturePct, averageMoisturePct, moistureDeviations } from "@/features/umidade-natural/calc";
@@ -550,14 +547,16 @@ export function UNPage() {
               <Droplets className="h-6 w-6" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <Badge variant="outline">NBR 6457</Badge>
-                <WorkflowFarol status={rawSt} />
-                <SyncStatusBadge state="synced" lastSavedAt={draftActivity.lastSavedAt} />
-                <DraftHistoryButton history={draftActivity.history} />
-              </div>
-              <h1 className="mt-1 text-xl font-bold tracking-tight">Umidade Natural</h1>
-              <p className="text-xs text-muted-foreground">Teor de umidade natural por secagem em estufa.</p>
+              <EnsaioBadgesRow
+                norms={["NBR 6457"]}
+                status={rawSt}
+                lastSavedAt={draftActivity.lastSavedAt}
+                history={draftActivity.history}
+              />
+              <EnsaioTitleBlock
+                title="Umidade Natural"
+                description="Teor de umidade natural por secagem em estufa."
+              />
             </div>
           </div>
 
@@ -633,28 +632,11 @@ export function UNPage() {
           </div>
         </div>
 
-        {/* Barra de responsáveis */}
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-card/60 px-4 py-2.5 shadow-xs">
-          <div className="flex items-center gap-2">
-            <User className="h-4 w-4 text-primary" />
-            <span className="text-xs text-muted-foreground font-medium">Operador Bancada:</span>
-            <Badge variant="secondary" className="font-semibold text-xs text-foreground px-2 py-0.5">
-              {sample.operator || ctx?.ensaio?.operator || "—"}
-            </Badge>
-          </div>
-          <div className="flex items-center gap-2">
-            <FileEdit className="h-4 w-4 text-primary" />
-            <span className="text-xs text-muted-foreground font-medium">Digitado por:</span>
-            <Badge variant="secondary" className="font-semibold text-xs text-foreground px-2 py-0.5">
-              {sample.typedBy || currentUserName}
-            </Badge>
-          </div>
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-emerald-600" />
-            <span className="text-xs text-muted-foreground font-medium">Resp. Técnico:</span>
-            <span className="text-xs font-semibold text-foreground">{sample.technicalResp}</span>
-          </div>
-        </div>
+        <ResponsaveisBar
+          operador={sample.operator || ctx?.ensaio?.operator || "—"}
+          digitadoPor={sample.typedBy || currentUserName}
+          respTecnico={sample.technicalResp}
+        />
 
         <EditingPresenceBanner
           lastSavedAt={draftActivity.lastSavedAt}
@@ -664,27 +646,30 @@ export function UNPage() {
         />
 
         {/* Identificação */}
-        <Card className="mb-4 mt-3">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Identificação da Amostra</CardTitle>
-          </CardHeader>
-          <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <TxtField label="Cliente" value={sample.client} onChange={(v) => updateSample("client", v)} />
-            <TxtField label="Obra" value={sample.workNumber} onChange={(v) => updateSample("workNumber", v)} />
-            <TxtField label="O.S." value={sample.os} onChange={(v) => updateSample("os", v)} />
-            <TxtField label="Amostra" value={sample.reportNumber} onChange={(v) => updateSample("reportNumber", v)} />
-            <TxtField label="Furo" value={sample.borehole} onChange={(v) => updateSample("borehole", v)} />
-            <TxtField label="Profundidade" value={sample.depth} onChange={(v) => updateSample("depth", v)} />
-            <TxtField label="Local" value={sample.local} onChange={(v) => updateSample("local", v)} />
-            <TxtField label="Código" value={sample.code} onChange={(v) => updateSample("code", v)} />
-            <div className="col-span-2 md:col-span-2">
-              <TxtField label="Descrição Tátil-Visual" value={sample.description} onChange={(v) => updateSample("description", v)} />
+        <div className="mt-3">
+          <AmostraSummaryCard
+            reportNumber={sample.reportNumber}
+            osNumero={sample.os}
+            subtitle={`${sample.client || "—"} · Furo ${sample.borehole || "—"} · Prof. ${sample.depth || "—"}`}
+          >
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <TxtField label="Cliente" value={sample.client} onChange={(v) => updateSample("client", v)} />
+              <TxtField label="Obra" value={sample.workNumber} onChange={(v) => updateSample("workNumber", v)} />
+              <TxtField label="O.S." value={sample.os} onChange={(v) => updateSample("os", v)} />
+              <TxtField label="Amostra" value={sample.reportNumber} onChange={(v) => updateSample("reportNumber", v)} />
+              <TxtField label="Furo" value={sample.borehole} onChange={(v) => updateSample("borehole", v)} />
+              <TxtField label="Profundidade" value={sample.depth} onChange={(v) => updateSample("depth", v)} />
+              <TxtField label="Local" value={sample.local} onChange={(v) => updateSample("local", v)} />
+              <TxtField label="Código" value={sample.code} onChange={(v) => updateSample("code", v)} />
+              <div className="col-span-2 md:col-span-2">
+                <TxtField label="Descrição Tátil-Visual" value={sample.description} onChange={(v) => updateSample("description", v)} />
+              </div>
+              <div className="col-span-2 md:col-span-2">
+                <TxtField label="Descrição Granulométrica" value={sample.granulometricDescription} onChange={(v) => updateSample("granulometricDescription", v)} />
+              </div>
             </div>
-            <div className="col-span-2 md:col-span-2">
-              <TxtField label="Descrição Granulométrica" value={sample.granulometricDescription} onChange={(v) => updateSample("granulometricDescription", v)} />
-            </div>
-          </CardContent>
-        </Card>
+          </AmostraSummaryCard>
+        </div>
 
         {/* Cápsulas */}
         <Card className="mb-4">

@@ -1,6 +1,5 @@
-import { SyncStatusBadge } from "@/components/SyncStatusBadge";
 import { useDraftActivity } from "@/hooks/use-draft-activity";
-import { EditingPresenceBanner, DraftHistoryButton } from "@/components/DraftActivityInfo";
+import { EditingPresenceBanner } from "@/components/DraftActivityInfo";
 import { buildScopeId } from "@/lib/scope";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useRef, useState, useEffect } from "react";
@@ -12,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  Download, Gauge, Eye, Send, ShieldCheck, Plus, Trash2, CheckCircle2, User, FileEdit, Calculator,
+  Download, Gauge, Eye, Send, ShieldCheck, Plus, Trash2, CheckCircle2, Calculator,
 } from "lucide-react";
 import { toast } from "sonner";
 import { toPng } from "html-to-image";
@@ -37,11 +36,11 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { PhotoUploader } from "@/features/lab/components/PhotoUploader";
-import { WorkflowFarol } from "@/features/lab/components/WorkflowFarol";
 import { useOptionalLabEnsaio } from "@/features/lab/context";
 import { labStore } from "@/features/lab/store";
 import { EnsaioListByType } from "@/features/lab/components/EnsaioListByType";
 import { ReportPage, type ReportSample } from "@/components/report/ReportShell";
+import { EnsaioBadgesRow, EnsaioTitleBlock, AmostraSummaryCard, ResponsaveisBar } from "@/components/report/EnsaioReportHeader";
 import type { AsfDapSample, AsfDapCp } from "@/features/asf-dap/types";
 import { seedAsfDapSample, newAsfDapCp } from "@/features/asf-dap/types";
 import type { AsfDapTipoMistura, AsfDapFieldPayload } from "@/features/asf-dap/ui";
@@ -670,14 +669,16 @@ export function ASFPage() {
               <Gauge className="h-6 w-6" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <Badge variant="outline">DNIT 428/2022-ME</Badge>
-                <WorkflowFarol status={rawSt} />
-                <SyncStatusBadge state="synced" lastSavedAt={draftActivity.lastSavedAt} />
-                <DraftHistoryButton history={draftActivity.history} />
-              </div>
-              <h1 className="mt-1 text-xl font-bold tracking-tight">Densidade Aparente (ASF.DAP)</h1>
-              <p className="text-xs text-muted-foreground">Densidade relativa aparente e massa específica aparente de misturas asfálticas compactadas.</p>
+              <EnsaioBadgesRow
+                norms={["DNIT 428/2022-ME"]}
+                status={rawSt}
+                lastSavedAt={draftActivity.lastSavedAt}
+                history={draftActivity.history}
+              />
+              <EnsaioTitleBlock
+                title="Densidade Aparente (ASF.DAP)"
+                description="Densidade relativa aparente e massa específica aparente de misturas asfálticas compactadas."
+              />
             </div>
           </div>
 
@@ -753,28 +754,11 @@ export function ASFPage() {
           </div>
         </div>
 
-        {/* Barra de responsáveis */}
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-card/60 px-4 py-2.5 shadow-xs">
-          <div className="flex items-center gap-2">
-            <User className="h-4 w-4 text-primary" />
-            <span className="text-xs text-muted-foreground font-medium">Operador Bancada:</span>
-            <Badge variant="secondary" className="font-semibold text-xs text-foreground px-2 py-0.5">
-              {sample.operator || ctx?.ensaio?.operator || "—"}
-            </Badge>
-          </div>
-          <div className="flex items-center gap-2">
-            <FileEdit className="h-4 w-4 text-primary" />
-            <span className="text-xs text-muted-foreground font-medium">Digitado por:</span>
-            <Badge variant="secondary" className="font-semibold text-xs text-foreground px-2 py-0.5">
-              {sample.typedBy || currentUserName}
-            </Badge>
-          </div>
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-emerald-600" />
-            <span className="text-xs text-muted-foreground font-medium">Resp. Técnico:</span>
-            <span className="text-xs font-semibold text-foreground">{sample.technicalResp}</span>
-          </div>
-        </div>
+        <ResponsaveisBar
+          operador={sample.operator || ctx?.ensaio?.operator || "—"}
+          digitadoPor={sample.typedBy || currentUserName}
+          respTecnico={sample.technicalResp}
+        />
 
         <EditingPresenceBanner
           lastSavedAt={draftActivity.lastSavedAt}
@@ -784,22 +768,25 @@ export function ASFPage() {
         />
 
         {/* Identificação */}
-        <Card className="mb-4 mt-3">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Identificação da Amostra</CardTitle>
-          </CardHeader>
-          <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <TxtField label="Cliente" value={sample.client} onChange={(v) => updateSample("client", v)} />
-            <TxtField label="Obra" value={sample.workNumber} onChange={(v) => updateSample("workNumber", v)} />
-            <TxtField label="O.S." value={sample.os} onChange={(v) => updateSample("os", v)} />
-            <TxtField label="Amostra" value={sample.reportNumber} onChange={(v) => updateSample("reportNumber", v)} />
-            <TxtField label="Local / Serviço" value={sample.local} onChange={(v) => updateSample("local", v)} />
-            <TxtField label="Código" value={sample.code} onChange={(v) => updateSample("code", v)} />
-            <div className="col-span-2 md:col-span-2">
-              <TxtField label="Descrição" value={sample.description} onChange={(v) => updateSample("description", v)} />
+        <div className="mt-3">
+          <AmostraSummaryCard
+            reportNumber={sample.reportNumber}
+            osNumero={sample.os}
+            subtitle={`${sample.client || "—"} · ${sample.local || "—"}`}
+          >
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <TxtField label="Cliente" value={sample.client} onChange={(v) => updateSample("client", v)} />
+              <TxtField label="Obra" value={sample.workNumber} onChange={(v) => updateSample("workNumber", v)} />
+              <TxtField label="O.S." value={sample.os} onChange={(v) => updateSample("os", v)} />
+              <TxtField label="Amostra" value={sample.reportNumber} onChange={(v) => updateSample("reportNumber", v)} />
+              <TxtField label="Local / Serviço" value={sample.local} onChange={(v) => updateSample("local", v)} />
+              <TxtField label="Código" value={sample.code} onChange={(v) => updateSample("code", v)} />
+              <div className="col-span-2 md:col-span-2">
+                <TxtField label="Descrição" value={sample.description} onChange={(v) => updateSample("description", v)} />
+              </div>
             </div>
-          </CardContent>
-        </Card>
+          </AmostraSummaryCard>
+        </div>
 
         {/* Tipo de mistura */}
         <Card className="mb-4">
