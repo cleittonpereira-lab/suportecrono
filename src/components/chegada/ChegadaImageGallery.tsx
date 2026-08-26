@@ -429,19 +429,29 @@ export function ChegadaImageGallery({
                 <div className="absolute inset-0 bg-white z-20 animate-out fade-out duration-200 pointer-events-none" />
               )}
 
-              {cameraLoading ? (
-                <div className="flex flex-col items-center gap-2 text-white/70">
+              {/*
+                O <video> fica SEMPRE montado (nunca escondido atrás de um
+                if/ternário) — senão, quando o stream da câmera chega
+                (getUserMedia resolve depois de um tempo assíncrono),
+                `videoRef.current` ainda é null porque o elemento não existe
+                no DOM enquanto o spinner de carregamento está no lugar dele.
+                O resultado era um vídeo nunca conectado ao stream: a
+                permissão era concedida, mas a tela ficava preta.
+                O spinner agora fica por cima, como overlay, sem desmontar o vídeo.
+              */}
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-full object-cover select-none"
+              />
+
+              {cameraLoading && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white/70 bg-zinc-950">
                   <RefreshCw className="h-6 w-6 animate-spin text-primary" />
                   <span className="text-xs">Iniciando câmera...</span>
                 </div>
-              ) : (
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="w-full h-full object-cover select-none"
-                />
               )}
             </div>
 
