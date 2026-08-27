@@ -25,6 +25,34 @@ export interface Option {
   value: string;
 }
 
+/** Uma foto anexada a uma amostra específica, com data/hora e (melhor esforço) localização. */
+export interface AmostraFoto {
+  url: string;
+  /** Sempre presente — hora do dispositivo no momento do envio. */
+  capturedAt: string;
+  /** null quando o GPS foi negado, indisponível ou não respondeu a tempo. */
+  lat?: number | null;
+  lng?: number | null;
+}
+
+/** Uma amostra individual dentro de um registro de chegada — um registro pode ter várias. */
+export interface AmostraItem {
+  id: string;
+  tipo: string;
+  identificacao: string;
+  profundidade: string;
+  /** Texto livre — a unidade varia por tipo de amostra (ex.: "2 sacos", "1,5 kg", "30x30x30cm"). */
+  quantidadeVolume: string;
+  fotos: AmostraFoto[];
+}
+
+/** Assinatura capturada por toque na tela, como imagem PNG (data URL ou URL curta pós-upload). */
+export interface AssinaturaCapturada {
+  imagemUrl: string;
+  nome: string;
+  assinadoEm: string;
+}
+
 export interface ChegadaTask {
   id: string;
   osCliente: string;
@@ -44,6 +72,36 @@ export interface ChegadaTask {
    * gerado no momento do registro — impresso no PDF gerado pra rastreabilidade.
    */
   numeroControle?: string;
+  /**
+   * Amostras individuais do registro (tipo/identificação/profundidade/
+   * quantidade + fotos próprias cada uma). Opcional — registros anteriores a
+   * essa mudança não têm esse campo; `tipoAmostra`/`relacaoAmostras`/`images`
+   * continuam sendo gravados também (derivados daqui), pra tudo que já lê os
+   * campos antigos (o board, a página de OS) seguir funcionando sem mudança.
+   */
+  amostras?: AmostraItem[];
+  assinaturaCliente?: AssinaturaCapturada | null;
+}
+
+/** Deriva os campos antigos (tipoAmostra/relacaoAmostras/images) a partir da
+ * lista de amostras — mantém tudo que já lê os campos planos funcionando. */
+export function deriveFlatFieldsFromAmostras(amostras: AmostraItem[]): {
+  tipoAmostra: string[];
+  relacaoAmostras: string;
+  images: string[];
+} {
+  const tipoAmostra = Array.from(new Set(amostras.map((a) => a.tipo).filter(Boolean)));
+  const relacaoAmostras = amostras
+    .map((a) => {
+      const partes = [a.quantidadeVolume, a.tipo, a.identificacao && `— ${a.identificacao}`, a.profundidade && `(${a.profundidade})`]
+        .filter(Boolean)
+        .join(" ");
+      return partes;
+    })
+    .filter(Boolean)
+    .join("; ");
+  const images = amostras.flatMap((a) => a.fotos.map((f) => f.url));
+  return { tipoAmostra, relacaoAmostras, images };
 }
 
 /** Gera um número de controle legível e cronológico pro comprovante de recebimento. */

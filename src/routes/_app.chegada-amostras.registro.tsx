@@ -4,7 +4,6 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import {
   PackagePlus,
@@ -14,10 +13,10 @@ import {
   Sparkles,
   User,
   Calendar,
-  FileText,
   Copy,
   Check,
   PlusCircle,
+  PenLine,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
@@ -28,12 +27,15 @@ import {
   getRecebidoOptions,
   addRecebidoOption,
   formatDateToday,
+  deriveFlatFieldsFromAmostras,
   useChegadaRealtimeSync,
   CHEGADA_OPTIONS_EVENT,
   type Option,
+  type AmostraItem,
 } from "@/lib/chegada-amostras-store";
 import { ChegadaMultiSelect } from "@/components/chegada/ChegadaMultiSelect";
-import { ChegadaImageGallery } from "@/components/chegada/ChegadaImageGallery";
+import { AmostrasListEditor, novaAmostraVazia } from "@/components/chegada/AmostrasListEditor";
+import { SignaturePad } from "@/components/chegada/SignaturePad";
 
 export const Route = createFileRoute("/_app/chegada-amostras/registro")({
   head: () => ({
@@ -59,11 +61,10 @@ export function ChegadaAmostrasRegistroPage() {
   // Form State
   const [osCliente, setOsCliente] = useState("");
   const [dataChegada, setDataChegada] = useState(formatDateToday());
-  const [tipoAmostra, setTipoAmostra] = useState<string[]>([]);
   const [recebidoPor, setRecebidoPor] = useState<string[]>([]);
   const [sup, setSup] = useState("");
-  const [relacaoAmostras, setRelacaoAmostras] = useState("");
-  const [images, setImages] = useState<string[]>([]);
+  const [amostras, setAmostras] = useState<AmostraItem[]>(() => [novaAmostraVazia()]);
+  const [assinaturaCliente, setAssinaturaCliente] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
@@ -107,11 +108,10 @@ export function ChegadaAmostrasRegistroPage() {
   const handleResetForm = () => {
     setOsCliente("");
     setDataChegada(formatDateToday());
-    setTipoAmostra([]);
     setRecebidoPor([]);
     setSup("");
-    setRelacaoAmostras("");
-    setImages([]);
+    setAmostras([novaAmostraVazia()]);
+    setAssinaturaCliente(null);
     setIsSuccess(false);
     setRegisteredSummary(null);
   };
@@ -124,21 +124,22 @@ export function ChegadaAmostrasRegistroPage() {
       toast.error("Por favor, preencha o campo OS / Cliente.");
       return;
     }
-    if (tipoAmostra.length === 0) {
-      toast.error("Selecione ao menos um Tipo de Amostra.");
+    if (amostras.every((a) => !a.tipo.trim())) {
+      toast.error("Selecione o Tipo de ao menos uma amostra.");
       return;
     }
     if (recebidoPor.length === 0) {
       toast.error("Selecione quem recebeu as amostras no campo 'Recebido por'.");
       return;
     }
-    if (!relacaoAmostras.trim()) {
-      toast.error("Informe a Relação das Amostras recebidas.");
-      return;
-    }
 
     setIsSubmitting(true);
     try {
+      const { tipoAmostra, relacaoAmostras, images } = deriveFlatFieldsFromAmostras(amostras);
+      const assinatura = assinaturaCliente
+        ? { imagemUrl: assinaturaCliente, nome: osCliente, assinadoEm: new Date().toISOString() }
+        : null;
+
       // 2. Cria registro automático com persistência e sincronização em nuvem
       const created = await createChegadaRegistroAsync({
         osCliente,
@@ -148,6 +149,8 @@ export function ChegadaAmostrasRegistroPage() {
         sup,
         relacaoAmostras,
         images,
+        amostras,
+        assinaturaCliente: assinatura,
         priority: "media", // Prioridade padrão inicial para triagem administrativa
         criadoPor: currentUserName,
         origem: "colaborador",
@@ -169,11 +172,10 @@ export function ChegadaAmostrasRegistroPage() {
 
       // Limpa formulário
       setOsCliente("");
-      setTipoAmostra([]);
       setRecebidoPor([]);
       setSup("");
-      setRelacaoAmostras("");
-      setImages([]);
+      setAmostras([novaAmostraVazia()]);
+      setAssinaturaCliente(null);
     } catch (err: any) {
       toast.error("Erro ao registrar chegada: " + (err?.message || err));
     } finally {
@@ -325,45 +327,24 @@ export function ChegadaAmostrasRegistroPage() {
                 </div>
               </div>
 
-              {/* Grid: Tipo de Amostra & Recebido por */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold flex items-center justify-between text-foreground">
-                    <span className="flex items-center gap-1">
-                      Tipo de Amostra <span className="text-destructive">*</span>
-                    </span>
-                  </Label>
-                  <ChegadaMultiSelect
-                    options={tipoOptions}
-                    selected={tipoAmostra}
-                    onChange={setTipoAmostra}
-                    placeholder="Selecione os tipos..."
-                    searchPlaceholder="Filtrar tipos..."
-                    createButtonLabel="+ Novo Tipo de Amostra"
-                    createInputPlaceholder="Ex: DEF.80, BL.50, TUBO..."
-                    onAddOption={handleAddTipoOption}
-                    icon="tag"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold flex items-center justify-between text-foreground">
-                    <span className="flex items-center gap-1">
-                      Recebido por <span className="text-destructive">*</span>
-                    </span>
-                  </Label>
-                  <ChegadaMultiSelect
-                    options={recebidoOptions}
-                    selected={recebidoPor}
-                    onChange={setRecebidoPor}
-                    placeholder="Quem recebeu na bancada..."
-                    searchPlaceholder="Filtrar colaboradores..."
-                    createButtonLabel="+ Novo Responsável"
-                    createInputPlaceholder="Nome do colaborador..."
-                    onAddOption={handleAddRecebidoOption}
-                    icon="user"
-                  />
-                </div>
+              {/* Recebido por */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold flex items-center justify-between text-foreground">
+                  <span className="flex items-center gap-1">
+                    Recebido por <span className="text-destructive">*</span>
+                  </span>
+                </Label>
+                <ChegadaMultiSelect
+                  options={recebidoOptions}
+                  selected={recebidoPor}
+                  onChange={setRecebidoPor}
+                  placeholder="Quem recebeu na bancada..."
+                  searchPlaceholder="Filtrar colaboradores..."
+                  createButtonLabel="+ Novo Responsável"
+                  createInputPlaceholder="Nome do colaborador..."
+                  onAddOption={handleAddRecebidoOption}
+                  icon="user"
+                />
               </div>
 
               {/* SUP / Contrato Financeiro */}
@@ -381,32 +362,35 @@ export function ChegadaAmostrasRegistroPage() {
                 />
               </div>
 
-              {/* Relação das Amostras */}
-              <div className="space-y-1.5">
-                <Label htmlFor="relacaoAmostras" className="text-xs font-semibold flex items-center gap-1 text-foreground">
-                  Relação das Amostras <span className="text-destructive">*</span>
+              {/* Amostras (repetível: tipo/identificação/profundidade/quantidade + fotos próprias) */}
+              <div className="space-y-2 pt-2 border-t">
+                <Label className="text-xs font-semibold text-foreground flex items-center gap-1">
+                  Amostras <span className="text-destructive">*</span>
                 </Label>
-                <Textarea
-                  id="relacaoAmostras"
-                  value={relacaoAmostras}
-                  onChange={(e) => setRelacaoAmostras(e.target.value)}
-                  placeholder="Descreva a quantidade e identificação dos materiais (Ex: 04 blocos BL-01 a BL-04 e 02 sacos de solo)."
-                  className="text-xs min-h-[90px] bg-background shadow-2xs leading-relaxed"
-                  required
+                <AmostrasListEditor
+                  amostras={amostras}
+                  onChange={setAmostras}
+                  tipoOptions={tipoOptions}
+                  onAddTipoOption={handleAddTipoOption}
                 />
               </div>
 
-              {/* Registros Fotográficos (Câmera + Galeria + Lightbox) */}
+              {/* Assinatura do Cliente */}
               <div className="space-y-2 pt-2 border-t">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                    <FileText className="h-3.5 w-3.5 text-primary" />
-                    Registros Fotográficos das Amostras
-                  </Label>
-                  <span className="text-[11px] text-muted-foreground">Tire fotos pelo celular ou anexe da galeria</span>
+                <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                  <PenLine className="h-3.5 w-3.5 text-primary" />
+                  Assinatura de Recebimento
+                </Label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground flex flex-col justify-center">
+                    <span className="font-semibold text-foreground mb-0.5">Suporte Infra</span>
+                    <span>Assinado digitalmente, recebido no laboratório.</span>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[11px] text-muted-foreground">{osCliente.trim() || "Cliente"}</span>
+                    <SignaturePad onChange={setAssinaturaCliente} />
+                  </div>
                 </div>
-
-                <ChegadaImageGallery images={images} onChange={setImages} />
               </div>
             </CardContent>
 

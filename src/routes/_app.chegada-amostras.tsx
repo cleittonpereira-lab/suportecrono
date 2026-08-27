@@ -73,6 +73,7 @@ import {
   formatDateToday,
   formatNow,
   gerarNumeroControle,
+  deriveFlatFieldsFromAmostras,
   useChegadaRealtimeSync,
   CHEGADA_UPDATE_EVENT,
   CHEGADA_COLUMNS_EVENT,
@@ -81,12 +82,16 @@ import {
   type ChegadaColumn,
   type ChegadaTask,
   type Option,
+  type AmostraItem,
 } from "@/lib/chegada-amostras-store";
 import { ChegadaMultiSelect } from "@/components/chegada/ChegadaMultiSelect";
 import { ChegadaImageGallery } from "@/components/chegada/ChegadaImageGallery";
+import { AmostrasListEditor, novaAmostraVazia } from "@/components/chegada/AmostrasListEditor";
+import { SignaturePad } from "@/components/chegada/SignaturePad";
 import {
   RecebimentoReceiptPage,
   RecebimentoReceiptPhotosPage,
+  buildPhotoPages,
   type RecebimentoReceiptData,
 } from "@/components/chegada/RecebimentoReceiptTemplate";
 import { waitForOffscreenEl, rasterizeToPdfBlob, downloadOrShareBlob } from "@/components/chegada/recebimentoPdf";
@@ -156,12 +161,31 @@ function ChegadaAmostras() {
     osCliente: "",
     dataChegada: formatDateToday(),
     recebidoPor: [] as string[],
-    tipoAmostra: [] as string[],
-    relacaoAmostras: "",
+    amostras: [novaAmostraVazia()] as AmostraItem[],
+    assinaturaCliente: null as string | null,
     sup: "",
     priority: "media" as "baixa" | "media" | "alta",
-    images: [] as string[],
   });
+
+  /** Passa pro `AmostrasListEditor` — precisa aceitar a forma funcional `(prev) => next`
+   * pra geolocalização assíncrona não sobrescrever edições concorrentes. */
+  const updateAmostrasField = (updater: AmostraItem[] | ((prev: AmostraItem[]) => AmostraItem[])) => {
+    setFormData((prev) => ({
+      ...prev,
+      amostras: typeof updater === "function" ? (updater as (p: AmostraItem[]) => AmostraItem[])(prev.amostras) : updater,
+    }));
+  };
+
+  function synthAmostraFromLegacy(task: ChegadaTask): AmostraItem {
+    return {
+      id: "legacy_" + task.id,
+      tipo: task.tipoAmostra.join(", ") || "",
+      identificacao: "",
+      profundidade: "",
+      quantidadeVolume: task.relacaoAmostras || "",
+      fotos: (task.images || []).map((url) => ({ url, capturedAt: "", lat: null, lng: null })),
+    };
+  }
 
   // Re-sync local events
   useEffect(() => {
@@ -236,11 +260,10 @@ function ChegadaAmostras() {
       osCliente: "",
       dataChegada: formatDateToday(),
       recebidoPor: [],
-      tipoAmostra: [],
-      relacaoAmostras: "",
+      amostras: [novaAmostraVazia()],
+      assinaturaCliente: null,
       sup: "",
       priority: "media",
-      images: [],
     });
     setSelectedTask(null);
     setIsCreateDialogOpen(true);
@@ -251,14 +274,31 @@ function ChegadaAmostras() {
       toast.error("Por favor, preencha o campo OS / Cliente.");
       return;
     }
-    if (formData.tipoAmostra.length === 0) {
-      toast.error("Selecione ao menos um Tipo de Amostra.");
+    if (formData.amostras.every((a) => !a.tipo.trim())) {
+      toast.error("Selecione o Tipo de ao menos uma amostra.");
       return;
     }
     if (formData.recebidoPor.length === 0) {
       toast.error("Selecione quem recebeu as amostras.");
       return;
     }
+
+    const { tipoAmostra, relacaoAmostras, images } = deriveFlatFieldsFromAmostras(formData.amostras);
+    const assinaturaCliente = formData.assinaturaCliente
+      ? { imagemUrl: formData.assinaturaCliente, nome: formData.osCliente, assinadoEm: new Date().toISOString() }
+      : selectedTask?.assinaturaCliente ?? null;
+    const payload = {
+      osCliente: formData.osCliente,
+      dataChegada: formData.dataChegada,
+      recebidoPor: formData.recebidoPor,
+      sup: formData.sup,
+      priority: formData.priority,
+      tipoAmostra,
+      relacaoAmostras,
+      images,
+      amostras: formData.amostras,
+      assinaturaCliente,
+    };
 
     if (selectedTask) {
       // Editando task existente
@@ -268,7 +308,7 @@ function ChegadaAmostras() {
         if (index !== -1) {
           newTasks[colId][index] = {
             ...newTasks[colId][index],
-            ...formData,
+            ...payload,
             updatedAt: formatNow(),
           };
           newTasks[colId] = newTasks[colId].sort((a, b) => {
@@ -288,7 +328,7 @@ function ChegadaAmostras() {
 
       const newTask: ChegadaTask = {
         id: "amostra_" + Date.now().toString(36) + "_" + Math.random().toString(36).substring(2, 6),
-        ...formData,
+        ...payload,
         criadoPor: currentUserName,
         criadoEm: formatNow(),
         origem: "administrador",
@@ -336,11 +376,10 @@ function ChegadaAmostras() {
       osCliente: task.osCliente,
       dataChegada: task.dataChegada,
       recebidoPor: task.recebidoPor,
-      tipoAmostra: task.tipoAmostra,
-      relacaoAmostras: task.relacaoAmostras,
+      amostras: task.amostras && task.amostras.length > 0 ? task.amostras : [synthAmostraFromLegacy(task)],
+      assinaturaCliente: null,
       sup: task.sup || "",
       priority: task.priority,
-      images: task.images || [],
     });
     setIsCreateDialogOpen(true);
   };
@@ -379,11 +418,15 @@ function ChegadaAmostras() {
         sup: task.sup,
         relacaoAmostras: task.relacaoAmostras,
         images: task.images || [],
+        amostras: task.amostras,
+        assinaturaCliente: task.assinaturaCliente,
       };
       setPdfReceipt(receipt);
 
       const el = await waitForOffscreenEl(() => receiptRef.current);
-      const blob = await rasterizeToPdfBlob(el);
+      const blob = await rasterizeToPdfBlob(el, (done, total) => {
+        toast.loading(`Carregando fotos do comprovante… (${done}/${total})`, { id: tid });
+      });
       const filename = `Comprovante-Recebimento_${receipt.numeroControle}.pdf`;
       const result = await downloadOrShareBlob(
         blob,
@@ -773,23 +816,6 @@ function ChegadaAmostras() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold flex items-center justify-between">
-                  <span>Tipo de Amostra *</span>
-                </Label>
-                <ChegadaMultiSelect
-                  options={tipoAmostraOptions}
-                  selected={formData.tipoAmostra}
-                  onChange={(val) => setFormData((prev) => ({ ...prev, tipoAmostra: val }))}
-                  placeholder="Selecione os tipos..."
-                  searchPlaceholder="Filtrar tipos..."
-                  createButtonLabel="+ Novo Tipo de Amostra"
-                  createInputPlaceholder="Nome do novo tipo..."
-                  onAddOption={handleAddTipoOption}
-                  icon="tag"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold flex items-center justify-between">
                   <span>Recebido por *</span>
                 </Label>
                 <ChegadaMultiSelect
@@ -804,9 +830,7 @@ function ChegadaAmostras() {
                   icon="user"
                 />
               </div>
-            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="data" className="text-xs font-semibold">
                   Data de Chegada *
@@ -818,7 +842,9 @@ function ChegadaAmostras() {
                   className="h-9 text-xs bg-background"
                 />
               </div>
+            </div>
 
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="sup" className="text-xs font-semibold">
                   Registro de Contrato / SUP
@@ -831,46 +857,52 @@ function ChegadaAmostras() {
                   placeholder="Ex: SUP-2026-9812"
                 />
               </div>
+
+              {/* Prioridade */}
+              <div className="space-y-1.5">
+                <Label htmlFor="priority" className="text-xs font-semibold">
+                  Prioridade
+                </Label>
+                <select
+                  id="priority"
+                  value={formData.priority}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, priority: e.target.value as any }))}
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-xs shadow-2xs focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value="baixa">Baixa</option>
+                  <option value="media">Média</option>
+                  <option value="alta">Alta</option>
+                </select>
+              </div>
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="relacao" className="text-xs font-semibold">
-                Relação das Amostras *
-              </Label>
-              <Textarea
-                id="relacao"
-                value={formData.relacaoAmostras}
-                onChange={(e) => setFormData((prev) => ({ ...prev, relacaoAmostras: e.target.value }))}
-                className="min-h-[80px] text-xs bg-background leading-relaxed"
-                placeholder="Liste as amostras recebidas..."
-                required
-              />
-            </div>
-
-            {/* Prioridade */}
-            <div className="space-y-1.5">
-              <Label htmlFor="priority" className="text-xs font-semibold">
-                Prioridade
-              </Label>
-              <select
-                id="priority"
-                value={formData.priority}
-                onChange={(e) => setFormData((prev) => ({ ...prev, priority: e.target.value as any }))}
-                className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-xs shadow-2xs focus:outline-none focus:ring-1 focus:ring-primary"
-              >
-                <option value="baixa">Baixa</option>
-                <option value="media">Média</option>
-                <option value="alta">Alta</option>
-              </select>
-            </div>
-
-            {/* Fotos */}
+            {/* Amostras (repetível: tipo/identificação/profundidade/quantidade + fotos próprias) */}
             <div className="space-y-2 pt-2 border-t">
-              <Label className="text-xs font-semibold">Registros Fotográficos</Label>
-              <ChegadaImageGallery
-                images={formData.images}
-                onChange={(imgs) => setFormData((prev) => ({ ...prev, images: imgs }))}
+              <Label className="text-xs font-semibold">Amostras *</Label>
+              <AmostrasListEditor
+                amostras={formData.amostras}
+                onChange={updateAmostrasField}
+                tipoOptions={tipoAmostraOptions}
+                onAddTipoOption={handleAddTipoOption}
               />
+            </div>
+
+            {/* Assinatura do Cliente */}
+            <div className="space-y-2 pt-2 border-t">
+              <Label className="text-xs font-semibold">Assinatura de Recebimento</Label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground flex flex-col justify-center">
+                  <span className="font-semibold text-foreground mb-0.5">Suporte Infra</span>
+                  <span>Assinado digitalmente, recebido no laboratório.</span>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[11px] text-muted-foreground">
+                    {formData.osCliente.trim() || "Cliente"}
+                    {selectedTask?.assinaturaCliente && !formData.assinaturaCliente && " — já assinado (assine de novo pra substituir)"}
+                  </span>
+                  <SignaturePad onChange={(dataUrl) => setFormData((prev) => ({ ...prev, assinaturaCliente: dataUrl }))} />
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1097,6 +1129,20 @@ function ChegadaAmostras() {
                   <ChegadaImageGallery images={selectedTask.images} readOnly />
                 </div>
               )}
+
+              {/* Assinatura do Cliente */}
+              <div className="p-2.5 bg-background rounded-md border flex items-center justify-between">
+                <span className="text-[10px] uppercase font-semibold text-muted-foreground">Assinatura do Cliente</span>
+                {selectedTask.assinaturaCliente ? (
+                  <img
+                    src={selectedTask.assinaturaCliente.imagemUrl}
+                    alt="Assinatura do cliente"
+                    className="h-8 max-w-[140px] object-contain"
+                  />
+                ) : (
+                  <span className="text-[11px] text-muted-foreground italic">Não assinado</span>
+                )}
+              </div>
             </div>
           )}
 
@@ -1202,16 +1248,24 @@ function ChegadaAmostras() {
           ref={receiptRef}
           style={{ position: "fixed", top: 0, left: "-9999px", opacity: 0, pointerEvents: "none" }}
         >
-          <RecebimentoReceiptPage data={pdfReceipt} />
-          {Array.from({ length: Math.ceil(pdfReceipt.images.length / 9) }).map((_, pageIndex) => (
-            <RecebimentoReceiptPhotosPage
-              key={pageIndex}
-              data={pdfReceipt}
-              photos={pdfReceipt.images.slice(pageIndex * 9, pageIndex * 9 + 9)}
-              pageIndex={pageIndex}
-              totalPages={1 + Math.ceil(pdfReceipt.images.length / 9)}
-            />
-          ))}
+          {(() => {
+            const photoPages = buildPhotoPages(pdfReceipt);
+            const totalPages = 1 + photoPages.length;
+            return (
+              <>
+                <RecebimentoReceiptPage data={pdfReceipt} total={totalPages} />
+                {photoPages.map((groups, pageIndex) => (
+                  <RecebimentoReceiptPhotosPage
+                    key={pageIndex}
+                    data={pdfReceipt}
+                    groups={groups}
+                    pageIndex={pageIndex}
+                    totalPages={totalPages}
+                  />
+                ))}
+              </>
+            );
+          })()}
         </div>
       )}
     </div>

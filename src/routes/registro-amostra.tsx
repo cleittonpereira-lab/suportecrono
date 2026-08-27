@@ -4,7 +4,6 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import {
   PackagePlus,
@@ -12,11 +11,9 @@ import {
   Send,
   RotateCcw,
   Sparkles,
-  User,
-  Calendar,
-  FileText,
   PlusCircle,
   Share2,
+  PenLine,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
@@ -30,16 +27,20 @@ import {
   createChegadaRegistroAsync,
   useChegadaRealtimeSync,
   gerarNumeroControle,
+  deriveFlatFieldsFromAmostras,
   CHEGADA_OPTIONS_EVENT,
   type Option,
+  type AmostraItem,
 } from "@/lib/chegada-amostras-store";
 import { ChegadaMultiSelect } from "@/components/chegada/ChegadaMultiSelect";
-import { ChegadaImageGallery } from "@/components/chegada/ChegadaImageGallery";
+import { AmostrasListEditor, novaAmostraVazia } from "@/components/chegada/AmostrasListEditor";
+import { SignaturePad } from "@/components/chegada/SignaturePad";
 import { SuporteLogo } from "@/components/suporte-logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   RecebimentoReceiptPage,
   RecebimentoReceiptPhotosPage,
+  buildPhotoPages,
   type RecebimentoReceiptData,
 } from "@/components/chegada/RecebimentoReceiptTemplate";
 import { waitForOffscreenEl, rasterizeToPdfBlob, downloadOrShareBlob } from "@/components/chegada/recebimentoPdf";
@@ -69,11 +70,10 @@ export function RegistroAmostraStandalonePage() {
   // Form State
   const [osCliente, setOsCliente] = useState("");
   const [dataChegada, setDataChegada] = useState(formatDateToday());
-  const [tipoAmostra, setTipoAmostra] = useState<string[]>([]);
   const [recebidoPor, setRecebidoPor] = useState<string[]>([]);
   const [sup, setSup] = useState("");
-  const [relacaoAmostras, setRelacaoAmostras] = useState("");
-  const [images, setImages] = useState<string[]>([]);
+  const [amostras, setAmostras] = useState<AmostraItem[]>(() => [novaAmostraVazia()]);
+  const [assinaturaCliente, setAssinaturaCliente] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [registeredSummary, setRegisteredSummary] = useState<{ os: string; time: string } | null>(null);
@@ -106,11 +106,10 @@ export function RegistroAmostraStandalonePage() {
   const handleResetForm = () => {
     setOsCliente("");
     setDataChegada(formatDateToday());
-    setTipoAmostra([]);
     setRecebidoPor([]);
     setSup("");
-    setRelacaoAmostras("");
-    setImages([]);
+    setAmostras([novaAmostraVazia()]);
+    setAssinaturaCliente(null);
     setIsSuccess(false);
     setRegisteredSummary(null);
     setLastReceipt(null);
@@ -122,7 +121,9 @@ export function RegistroAmostraStandalonePage() {
     const tid = toast.loading("Gerando comprovante em PDF…");
     try {
       const el = await waitForOffscreenEl(() => receiptRef.current);
-      const blob = await rasterizeToPdfBlob(el);
+      const blob = await rasterizeToPdfBlob(el, (done, total) => {
+        toast.loading(`Carregando fotos do comprovante… (${done}/${total})`, { id: tid });
+      });
       const filename = `Comprovante-Recebimento_${receipt.numeroControle}.pdf`;
       const result = await downloadOrShareBlob(
         blob,
@@ -152,22 +153,22 @@ export function RegistroAmostraStandalonePage() {
       toast.error("Por favor, preencha o campo OS / Cliente.");
       return;
     }
-    if (tipoAmostra.length === 0) {
-      toast.error("Selecione ao menos um Tipo de Amostra.");
+    if (amostras.every((a) => !a.tipo.trim())) {
+      toast.error("Selecione o Tipo de ao menos uma amostra.");
       return;
     }
     if (recebidoPor.length === 0) {
       toast.error("Selecione quem recebeu as amostras no campo 'Recebido por'.");
       return;
     }
-    if (!relacaoAmostras.trim()) {
-      toast.error("Informe a Relação das Amostras recebidas.");
-      return;
-    }
 
     setIsSubmitting(true);
     try {
       const numeroControle = gerarNumeroControle();
+      const { tipoAmostra, relacaoAmostras, images } = deriveFlatFieldsFromAmostras(amostras);
+      const assinatura = assinaturaCliente
+        ? { imagemUrl: assinaturaCliente, nome: osCliente, assinadoEm: new Date().toISOString() }
+        : null;
 
       // 2. Cria registro automático com persistência e sincronização em nuvem
       const created = await createChegadaRegistroAsync({
@@ -178,6 +179,8 @@ export function RegistroAmostraStandalonePage() {
         sup,
         relacaoAmostras,
         images,
+        amostras,
+        assinaturaCliente: assinatura,
         priority: "media", // Prioridade padrão inicial para triagem administrativa
         criadoPor: currentUserName,
         origem: "colaborador",
@@ -202,6 +205,8 @@ export function RegistroAmostraStandalonePage() {
         sup,
         relacaoAmostras,
         images,
+        amostras,
+        assinaturaCliente: assinatura,
       };
       setLastReceipt(receipt);
       setIsSuccess(true);
@@ -213,11 +218,10 @@ export function RegistroAmostraStandalonePage() {
 
       // Limpa dados em segundo plano para o próximo
       setOsCliente("");
-      setTipoAmostra([]);
       setRecebidoPor([]);
       setSup("");
-      setRelacaoAmostras("");
-      setImages([]);
+      setAmostras([novaAmostraVazia()]);
+      setAssinaturaCliente(null);
 
       // 3. Gera e baixa o comprovante em PDF automaticamente.
       // (não tenta compartilhar aqui: navigator.share() exige um gesto do usuário
@@ -353,27 +357,8 @@ export function RegistroAmostraStandalonePage() {
                   />
                 </div>
 
-                {/* Grid: Tipo de Amostra & Recebido por */}
+                {/* Grid: Recebido por & Data de Chegada */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold text-foreground flex items-center justify-between">
-                      <span className="flex items-center gap-1">
-                        Tipo de Amostra <span className="text-destructive">*</span>
-                      </span>
-                    </Label>
-                    <ChegadaMultiSelect
-                      options={tipoOptions}
-                      selected={tipoAmostra}
-                      onChange={setTipoAmostra}
-                      placeholder="Selecione os tipos..."
-                      searchPlaceholder="Filtrar tipos..."
-                      createButtonLabel="+ Novo Tipo de Amostra"
-                      createInputPlaceholder="Nome do novo tipo..."
-                      onAddOption={handleAddTipoOption}
-                      icon="tag"
-                    />
-                  </div>
-
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold text-foreground flex items-center justify-between">
                       <span className="flex items-center gap-1">
@@ -392,10 +377,7 @@ export function RegistroAmostraStandalonePage() {
                       icon="user"
                     />
                   </div>
-                </div>
 
-                {/* Grid: Data de Chegada & SUP */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   <div className="space-y-1.5">
                     <Label htmlFor="dataChegada" className="text-xs font-semibold text-foreground flex items-center gap-1">
                       Data de Chegada <span className="text-destructive">*</span>
@@ -409,48 +391,52 @@ export function RegistroAmostraStandalonePage() {
                       required
                     />
                   </div>
-
-                  <div className="space-y-1.5">
-                    <Label htmlFor="sup" className="text-xs font-semibold text-foreground flex items-center justify-between">
-                      <span>SUP / Contrato</span>
-                      <span className="text-[10px] text-muted-foreground font-normal">Opcional</span>
-                    </Label>
-                    <Input
-                      id="sup"
-                      value={sup}
-                      onChange={(e) => setSup(e.target.value)}
-                      placeholder="Ex: SUP-001 ou CONTRATO-44"
-                      className="text-xs h-9 bg-background shadow-2xs"
-                    />
-                  </div>
                 </div>
 
-                {/* Relação das Amostras */}
+                {/* SUP / Contrato */}
                 <div className="space-y-1.5">
-                  <Label htmlFor="relacaoAmostras" className="text-xs font-semibold text-foreground flex items-center gap-1">
-                    Relação das Amostras <span className="text-destructive">*</span>
+                  <Label htmlFor="sup" className="text-xs font-semibold text-foreground flex items-center justify-between">
+                    <span>SUP / Contrato</span>
+                    <span className="text-[10px] text-muted-foreground font-normal">Opcional</span>
                   </Label>
-                  <Textarea
-                    id="relacaoAmostras"
-                    value={relacaoAmostras}
-                    onChange={(e) => setRelacaoAmostras(e.target.value)}
-                    placeholder="Descreva a quantidade e identificação dos materiais (Ex: 04 blocos BL-01 a BL-04 e 02 sacos de solo)."
-                    className="text-xs min-h-[90px] bg-background shadow-2xs leading-relaxed"
-                    required
+                  <Input
+                    id="sup"
+                    value={sup}
+                    onChange={(e) => setSup(e.target.value)}
+                    placeholder="Ex: SUP-001 ou CONTRATO-44"
+                    className="text-xs h-9 bg-background shadow-2xs"
                   />
                 </div>
 
-                {/* Fotos das Amostras (Câmera + Galeria) */}
+                {/* Amostras (repetível: tipo/identificação/profundidade/quantidade + fotos próprias) */}
                 <div className="space-y-2 pt-2 border-t">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                      <FileText className="h-3.5 w-3.5 text-primary" />
-                      Registros Fotográficos das Amostras
-                    </Label>
-                    <span className="text-[10px] text-muted-foreground">Tire fotos ou escolha da galeria</span>
-                  </div>
+                  <Label className="text-xs font-semibold text-foreground flex items-center gap-1">
+                    Amostras <span className="text-destructive">*</span>
+                  </Label>
+                  <AmostrasListEditor
+                    amostras={amostras}
+                    onChange={setAmostras}
+                    tipoOptions={tipoOptions}
+                    onAddTipoOption={handleAddTipoOption}
+                  />
+                </div>
 
-                  <ChegadaImageGallery images={images} onChange={setImages} />
+                {/* Assinatura do Cliente */}
+                <div className="space-y-2 pt-2 border-t">
+                  <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                    <PenLine className="h-3.5 w-3.5 text-primary" />
+                    Assinatura de Recebimento
+                  </Label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground flex flex-col justify-center">
+                      <span className="font-semibold text-foreground mb-0.5">Suporte Infra</span>
+                      <span>Assinado digitalmente, recebido no laboratório.</span>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-[11px] text-muted-foreground">{osCliente.trim() || "Cliente"}</span>
+                      <SignaturePad onChange={setAssinaturaCliente} />
+                    </div>
+                  </div>
                 </div>
               </CardContent>
 
@@ -487,16 +473,24 @@ export function RegistroAmostraStandalonePage() {
           ref={receiptRef}
           style={{ position: "fixed", top: 0, left: "-9999px", opacity: 0, pointerEvents: "none" }}
         >
-          <RecebimentoReceiptPage data={lastReceipt} />
-          {Array.from({ length: Math.ceil(lastReceipt.images.length / 9) }).map((_, pageIndex) => (
-            <RecebimentoReceiptPhotosPage
-              key={pageIndex}
-              data={lastReceipt}
-              photos={lastReceipt.images.slice(pageIndex * 9, pageIndex * 9 + 9)}
-              pageIndex={pageIndex}
-              totalPages={1 + Math.ceil(lastReceipt.images.length / 9)}
-            />
-          ))}
+          {(() => {
+            const photoPages = buildPhotoPages(lastReceipt);
+            const totalPages = 1 + photoPages.length;
+            return (
+              <>
+                <RecebimentoReceiptPage data={lastReceipt} total={totalPages} />
+                {photoPages.map((groups, pageIndex) => (
+                  <RecebimentoReceiptPhotosPage
+                    key={pageIndex}
+                    data={lastReceipt}
+                    groups={groups}
+                    pageIndex={pageIndex}
+                    totalPages={totalPages}
+                  />
+                ))}
+              </>
+            );
+          })()}
         </div>
       )}
     </div>
