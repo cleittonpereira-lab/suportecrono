@@ -13,9 +13,10 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useSchedule } from "@/hooks/use-schedule";
-import { classifyEspeciaisOs, normOs } from "@/lib/schedule-utils";
+import { classifyEspeciaisOs, normOs, splitSetores, splitEscopo } from "@/lib/schedule-utils";
 import { useOsGroups } from "@/features/lab/hooks/use-os-groups";
 import { getOsHub } from "@/lib/os-hub.functions";
+import { SetorBadges } from "@/components/setor-badges";
 
 function parseLocalDate(dateOnly: string): Date {
   const [y, m, d] = dateOnly.split("-").map(Number);
@@ -62,6 +63,20 @@ export function useEnsaiosEspeciaisRows() {
       const hub = hubQueries[i]?.data;
       const totalEnsaios = group?.ensaios.length ?? 0;
       const concluidos = group?.ensaios.filter((e) => e.status === "aprovado" || e.status === "concluido_externo").length ?? 0;
+
+      // Setores/escopo unificados: uma OS pode ter várias linhas no cronograma
+      // com tags diferentes — junta tudo sem duplicar (mesma lógica do hub da OS).
+      const setores = new Set<string>();
+      const escopoTags = new Set<string>();
+      const escopoExtras = new Set<string>();
+      for (const r of scheduleData?.rows ?? []) {
+        if (normOs(r.os) !== normOs(osNumero)) continue;
+        for (const s of splitSetores(r.setor)) setores.add(s);
+        const { tags, extras } = splitEscopo(r.escopo);
+        for (const t of tags) escopoTags.add(t);
+        for (const e of extras) if (e.trim()) escopoExtras.add(e.trim());
+      }
+
       return {
         osNumero,
         cliente: group?.cliente || `OS ${osNumero}`,
@@ -70,9 +85,11 @@ export function useEnsaiosEspeciaisRows() {
         concluidos,
         arquivada: hub?.arquivada ?? false,
         dataAcordadaAtual: hub?.dataAcordadaAtual ?? null,
+        setoresUnificados: Array.from(setores),
+        escoposUnificados: [...Array.from(escopoTags), ...Array.from(escopoExtras)],
       };
     });
-  }, [especiaisOsNumeros, osGroups, hubQueries]);
+  }, [especiaisOsNumeros, osGroups, hubQueries, scheduleData]);
 }
 
 export function EnsaiosEspeciaisView() {
@@ -143,8 +160,16 @@ export function EnsaiosEspeciaisView() {
                   </div>
                 </div>
 
-                <div className="min-w-0 flex-1 text-xs text-muted-foreground truncate">
-                  {r.obra || "—"}
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="text-xs text-muted-foreground truncate">{r.obra || "—"}</div>
+                  {(r.setoresUnificados.length > 0 || r.escoposUnificados.length > 0) && (
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {r.setoresUnificados.length > 0 && <SetorBadges setor={r.setoresUnificados.join(" / ")} size="xs" />}
+                      {r.escoposUnificados.map((e) => (
+                        <Badge key={e} variant="outline" className="text-[10px]">{e}</Badge>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
