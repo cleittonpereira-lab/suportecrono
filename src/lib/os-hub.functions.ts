@@ -165,3 +165,26 @@ export const postOsChatMessage = createServerFn({ method: "POST" })
     await writeDriveJson(name, hub, folderId);
     return message;
   });
+
+const DeleteChatInput = z.object({ osNumero: z.string().min(1), messageId: z.string().min(1) });
+
+export const excluirOsChatMessage = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => DeleteChatInput.parse(i))
+  .handler(async ({ context, data }) => {
+    const folderId = await ensureFolderPath(FOLDER_OS_HUB);
+    const name = `${osKey(data.osNumero)}.json`;
+    const hub = await readDriveJson<OsHubData>(name, folderId);
+    if (!hub) return { ok: true };
+
+    const msg = hub.messages.find((m) => m.id === data.messageId);
+    if (!msg) return { ok: true };
+    // Só quem escreveu a mensagem pode excluí-la.
+    if (msg.authorId !== context.userId) {
+      throw new Error("Só quem escreveu a mensagem pode excluí-la.");
+    }
+
+    hub.messages = hub.messages.filter((m) => m.id !== data.messageId);
+    await writeDriveJson(name, hub, folderId);
+    return { ok: true };
+  });

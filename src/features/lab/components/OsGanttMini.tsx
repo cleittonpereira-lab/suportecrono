@@ -3,12 +3,18 @@
  * Programação (Programações/Ensaios/Amostras/Tipos de Ensaio/Equipamentos),
  * só que restrito aos itens dessa OS. Não é o Gantt operacional completo
  * (_app.programacao.gantt.tsx, com edição/arraste) — é uma leitura rápida
- * do planejado × real dentro do hub da OS, com as datas sempre visíveis
- * (não só no hover).
+ * do previsto × real dentro do hub da OS, ao estilo MS Project (previsto e
+ * real lado a lado, com o desvio em dias).
+ *
+ * Dois modos: "Consolidado" (escala ajustada à largura, sem rolagem — boa
+ * visão geral) e "Ver tudo" (largura fixa por dia, com rolagem horizontal —
+ * mais preciso pra intervalos longos).
  */
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { differenceInCalendarDays, format, addDays, isValid, parseISO, startOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { Maximize2, Minimize2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { equipColor } from "@/lib/equip-colors";
 import { normOs } from "@/lib/schedule-utils";
 
@@ -17,9 +23,10 @@ interface Row {
   label: string;
   equipamento: string;
   status: string;
-  inicio: Date;
-  fim: Date;
-  real: boolean;
+  previstoInicio: Date | null;
+  previstoFim: Date | null;
+  realInicio: Date | null;
+  realFim: Date | null;
 }
 
 function parseDate(v: unknown): Date | null {
@@ -31,6 +38,8 @@ function parseDate(v: unknown): Date | null {
 function fmt(d: Date) {
   return format(d, "dd/MM", { locale: ptBR });
 }
+
+const DAY_PX = 34; // largura fixa de 1 dia no modo "ver tudo"
 
 export function OsGanttMini({
   osNumero,
@@ -47,6 +56,8 @@ export function OsGanttMini({
   tiposProg: any[];
   equipsProg: any[];
 }) {
+  const [expandido, setExpandido] = useState(false);
+
   const rows = useMemo<Row[]>(() => {
     const enMap = new Map(ensaiosProg.map((e) => [e.id, e]));
     const amMap = new Map(amostrasProg.map((a) => [a.id, a]));
@@ -62,50 +73,49 @@ export function OsGanttMini({
       const tp = en ? tpMap.get(en.tipo_ensaio_id ?? "") : undefined;
       const eq = prog.equipamento_id ? eqMap.get(prog.equipamento_id) : undefined;
 
-      const inicioReal = parseDate(prog.data_inicio_real);
-      const fimReal = parseDate(prog.data_fim_real);
-      const inicioPrev = parseDate(prog.data_inicio);
-      const fimPrev = parseDate(prog.data_fim);
+      const previstoInicio = parseDate(prog.data_inicio);
+      const previstoFim = parseDate(prog.data_fim) ?? previstoInicio;
+      const realInicio = parseDate(prog.data_inicio_real);
+      const realFim = parseDate(prog.data_fim_real) ?? realInicio;
 
-      const inicio = inicioReal ?? inicioPrev;
-      const fim = fimReal ?? fimPrev ?? inicio;
-      if (!inicio || !fim) continue;
+      if (!previstoInicio && !realInicio) continue;
 
       out.push({
         id: prog.id,
         label: `${am.codigo_amostra || am.identificacao || "AM"} · ${tp?.nome || "Ensaio"}`,
         equipamento: eq?.nome || "Sem equipamento",
         status: prog.status || "pendente",
-        inicio,
-        fim: fim < inicio ? inicio : fim,
-        real: Boolean(inicioReal && fimReal),
+        previstoInicio,
+        previstoFim: previstoFim && previstoInicio && previstoFim < previstoInicio ? previstoInicio : previstoFim,
+        realInicio,
+        realFim: realFim && realInicio && realFim < realInicio ? realInicio : realFim,
       });
     }
-    return out.sort((a, b) => a.inicio.getTime() - b.inicio.getTime());
+    return out.sort((a, b) => (a.previstoInicio ?? a.realInicio!).getTime() - (b.previstoInicio ?? b.realInicio!).getTime());
   }, [osNumero, progs, ensaiosProg, amostrasProg, tiposProg, equipsProg]);
 
   const hoje = useMemo(() => startOfDay(new Date()), []);
 
-  const { rangeStart, totalDays, diasMarcadores } = useMemo(() => {
-    let min = rows.length > 0 ? rows[0].inicio : hoje;
-    let max = rows.length > 0 ? rows[0].fim : addDays(hoje, 14);
+  const { rangeStart, totalDays } = useMemo(() => {
+    let min = hoje;
+    let max = addDays(hoje, 14);
     for (const r of rows) {
-      if (r.inicio < min) min = r.inicio;
-      if (r.fim > max) max = r.fim;
+      const starts = [r.previstoInicio, r.realInicio].filter(Boolean) as Date[];
+      const ends = [r.previstoFim, r.realFim].filter(Boolean) as Date[];
+      for (const d of starts) if (d < min) min = d;
+      for (const d of ends) if (d > max) max = d;
     }
-    if (hoje < min) min = hoje;
-    if (hoje > max) max = hoje;
     const start = addDays(min, -2);
     const end = addDays(max, 3);
-    const total = Math.max(1, differenceInCalendarDays(end, start));
-    const marcos: { pct: number; label: string; hoje: boolean }[] = [];
-    for (let d = 0; d <= total; d += 7) {
-      marcos.push({ pct: (d / total) * 100, label: fmt(addDays(start, d)), hoje: false });
-    }
-    return { rangeStart: start, totalDays: total, diasMarcadores: marcos };
+    return { rangeStart: start, totalDays: Math.max(1, differenceInCalendarDays(end, start)) };
   }, [rows, hoje]);
 
-  const hojePct = (differenceInCalendarDays(hoje, rangeStart) / totalDays) * 100;
+  const diasMarcadores = useMemo(() => {
+    const passo = expandido ? 1 : Math.max(1, Math.round(totalDays / 12));
+    const marcos: { d: number; label: string }[] = [];
+    for (let d = 0; d <= totalDays; d += passo) marcos.push({ d, label: fmt(addDays(rangeStart, d)) });
+    return marcos;
+  }, [rangeStart, totalDays, expandido]);
 
   const equipamentosUnicos = useMemo(() => Array.from(new Set(rows.map((r) => r.equipamento))), [rows]);
 
@@ -113,61 +123,105 @@ export function OsGanttMini({
     return <div className="text-sm text-muted-foreground py-2">Nenhum item de programação (bancada) encontrado pra essa OS.</div>;
   }
 
+  const trackWidth = expandido ? totalDays * DAY_PX : undefined;
+  const pct = (d: number) => (expandido ? d * DAY_PX : (d / totalDays) * 100);
+  const unit = expandido ? "px" : "%";
+  const hojeOffset = differenceInCalendarDays(hoje, rangeStart);
+
   return (
-    <div className="space-y-0">
-      <div className="flex text-[10px] text-muted-foreground">
-        <div className="w-44 shrink-0" />
-        <div className="w-24 shrink-0" />
-        <div className="relative flex-1 h-5 border-b">
-          {diasMarcadores.map((m, i) => (
-            <div key={i} className="absolute top-0 border-l border-border/70 pl-1 h-full" style={{ left: `${m.pct}%` }}>
-              {m.label}
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="text-[11px] text-muted-foreground">{rows.length} ite{rows.length === 1 ? "m" : "ns"} de programação</div>
+        <Button size="sm" variant="outline" className="h-6 text-[10px] gap-1 px-2" onClick={() => setExpandido((v) => !v)}>
+          {expandido ? <><Minimize2 className="h-3 w-3" /> Consolidar</> : <><Maximize2 className="h-3 w-3" /> Ver tudo</>}
+        </Button>
+      </div>
+
+      <div className={expandido ? "overflow-x-auto" : ""}>
+        <div style={expandido ? { width: trackWidth ? trackWidth + 176 : undefined } : undefined}>
+          <div className="flex text-[10px] text-muted-foreground">
+            <div className="w-40 shrink-0" />
+            <div className="w-24 shrink-0" />
+            <div className="relative flex-1 h-5 border-b" style={expandido ? { width: trackWidth } : undefined}>
+              {diasMarcadores.map((m, i) => (
+                <div key={i} className="absolute top-0 border-l border-border/70 pl-1 h-full" style={{ [expandido ? "left" : "left"]: `${pct(m.d)}${unit}` }}>
+                  {m.label}
+                </div>
+              ))}
+              <div className="absolute top-0 border-l-2 border-primary h-full" style={{ left: `${pct(hojeOffset)}${unit}` }} />
             </div>
-          ))}
-          <div className="absolute top-0 border-l-2 border-primary h-full" style={{ left: `${hojePct}%` }} />
+          </div>
+
+          {rows.map((r) => {
+            const cor = equipColor(r.equipamento);
+            const temAmbos = !!(r.previstoInicio && r.realInicio);
+            const delta = temAmbos ? differenceInCalendarDays(r.realInicio!, r.previstoInicio!) : null;
+            const deltaLabel =
+              delta === null ? null : delta > 0 ? `${delta}d de atraso` : delta < 0 ? `${Math.abs(delta)}d adiantado` : "no prazo previsto";
+            const deltaColor = delta === null ? "" : delta > 0 ? "text-rose-600" : delta < 0 ? "text-emerald-600" : "text-muted-foreground";
+
+            return (
+              <div key={r.id} className="flex items-center gap-0 py-2 border-b border-border/40 last:border-0">
+                <div className="w-40 shrink-0 text-xs text-foreground truncate pr-2 font-medium" title={r.label}>{r.label}</div>
+                <div className="w-24 shrink-0 flex items-center gap-1.5 text-[10px] text-muted-foreground truncate pr-2">
+                  <span className="inline-block h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: cor.border }} />
+                  <span className="truncate" title={r.equipamento}>{r.equipamento}</span>
+                </div>
+                <div className="relative flex-1" style={{ height: 26, width: expandido ? trackWidth : undefined }}>
+                  {r.previstoInicio && r.previstoFim && (
+                    <div
+                      className="absolute top-0.5 h-2.5 rounded"
+                      style={{
+                        left: `${pct(differenceInCalendarDays(r.previstoInicio, rangeStart))}${unit}`,
+                        width: `${Math.max(expandido ? 3 : 1, pct(Math.max(1, differenceInCalendarDays(r.previstoFim, r.previstoInicio) + 1)))}${unit}`,
+                        border: `1.5px dashed ${cor.border}`,
+                        backgroundColor: "transparent",
+                      }}
+                      title={`Previsto: ${fmt(r.previstoInicio)} – ${fmt(r.previstoFim)}`}
+                    />
+                  )}
+                  {r.realInicio && r.realFim && (
+                    <div
+                      className="absolute bottom-0.5 h-2.5 rounded"
+                      style={{
+                        left: `${pct(differenceInCalendarDays(r.realInicio, rangeStart))}${unit}`,
+                        width: `${Math.max(expandido ? 3 : 1, pct(Math.max(1, differenceInCalendarDays(r.realFim, r.realInicio) + 1)))}${unit}`,
+                        backgroundColor: cor.bg,
+                        border: `1.5px solid ${cor.border}`,
+                      }}
+                      title={`Real: ${fmt(r.realInicio)} – ${fmt(r.realFim)}`}
+                    />
+                  )}
+                  <div
+                    className="absolute top-1/2 -translate-y-1/2 text-[10px] whitespace-nowrap"
+                    style={{
+                      left: `calc(${pct(differenceInCalendarDays((r.realFim ?? r.previstoFim)!, rangeStart))}${unit} + 8px)`,
+                    }}
+                  >
+                    <span style={{ color: cor.text }} className="font-semibold">
+                      {r.realInicio ? fmt(r.realInicio) : fmt(r.previstoInicio!)}
+                      {(r.realFim ?? r.previstoFim) && (r.realFim ?? r.previstoFim)!.getTime() !== (r.realInicio ?? r.previstoInicio)!.getTime()
+                        ? ` – ${fmt((r.realFim ?? r.previstoFim)!)}`
+                        : ""}
+                    </span>
+                    {deltaLabel && <span className={`ml-1.5 font-medium ${deltaColor}`}>({deltaLabel})</span>}
+                    {!temAmbos && !r.realInicio && <span className="ml-1.5 text-muted-foreground">(previsto)</span>}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
-      {rows.map((r) => {
-        const startPct = (differenceInCalendarDays(r.inicio, rangeStart) / totalDays) * 100;
-        const widthPct = Math.max(1.2, (differenceInCalendarDays(r.fim, r.inicio) / totalDays) * 100 || 1.2);
-        const cor = equipColor(r.equipamento);
-        const duracaoDias = Math.max(1, differenceInCalendarDays(r.fim, r.inicio) + 1);
-        const dataLabel = r.fim.getTime() === r.inicio.getTime() ? fmt(r.inicio) : `${fmt(r.inicio)} – ${fmt(r.fim)}`;
-        return (
-          <div key={r.id} className="flex items-center gap-0 py-1.5 border-b border-border/40 last:border-0">
-            <div className="w-44 shrink-0 text-xs text-foreground truncate pr-2 font-medium" title={r.label}>{r.label}</div>
-            <div className="w-24 shrink-0 flex items-center gap-1.5 text-[10px] text-muted-foreground truncate pr-2">
-              <span className="inline-block h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: cor.border }} />
-              <span className="truncate" title={r.equipamento}>{r.equipamento}</span>
-            </div>
-            <div className="relative flex-1 h-7">
-              <div
-                className="absolute inset-y-1.5 rounded"
-                style={{
-                  left: `${startPct}%`,
-                  width: `${widthPct}%`,
-                  backgroundColor: cor.bg,
-                  border: `1.5px ${r.real ? "solid" : "dashed"} ${cor.border}`,
-                }}
-              />
-              <div
-                className="absolute top-1/2 -translate-y-1/2 text-[10px] font-semibold whitespace-nowrap"
-                style={{ left: `calc(${startPct + widthPct}% + 6px)`, color: cor.text }}
-              >
-                {dataLabel} <span className="text-muted-foreground font-normal">({duracaoDias}d{r.real ? " · real" : " · previsto"})</span>
-              </div>
-            </div>
-          </div>
-        );
-      })}
-
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-3 text-[10px] text-muted-foreground">
-        <span className="flex items-center gap-1"><span className="inline-block w-3 h-2.5 rounded border-[1.5px] border-solid border-foreground/40 bg-muted" /> Executado (real)</span>
-        <span className="flex items-center gap-1"><span className="inline-block w-3 h-2.5 rounded border-[1.5px] border-dashed border-foreground/40 bg-muted" /> Previsto (ainda não executado)</span>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-[10px] text-muted-foreground">
+        <span className="flex items-center gap-1"><span className="inline-block w-3 h-2 rounded border-[1.5px] border-solid border-foreground/40 bg-muted" /> Real</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-3 h-2 rounded border-[1.5px] border-dashed border-foreground/40" /> Previsto</span>
         <span className="flex items-center gap-1"><span className="inline-block w-0.5 h-3 bg-primary" /> Hoje</span>
+        <span className="text-rose-600">■ Atraso</span>
+        <span className="text-emerald-600">■ Adiantado</span>
         {equipamentosUnicos.length > 0 && (
-          <span className="flex items-center gap-2">
+          <span className="flex items-center gap-2 flex-wrap">
             {equipamentosUnicos.map((eq) => (
               <span key={eq} className="flex items-center gap-1">
                 <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: equipColor(eq).border }} /> {eq}

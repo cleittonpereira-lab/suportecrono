@@ -8,12 +8,22 @@ import { useMutation } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Send, Paperclip, Loader2, X, FileText, FileSpreadsheet, File as FileIcon, Download } from "lucide-react";
+import { Send, Paperclip, Loader2, X, FileText, FileSpreadsheet, File as FileIcon, Download, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { postOsChatMessage, type ChatMessage } from "@/lib/os-hub.functions";
+import { postOsChatMessage, excluirOsChatMessage, type ChatMessage } from "@/lib/os-hub.functions";
 import { fileToCompressedDataUrl } from "@/features/lab/photos";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -83,6 +93,7 @@ export function OsChatPanel({
 }) {
   const { user } = useAuth();
   const postFn = useServerFn(postOsChatMessage);
+  const deleteFn = useServerFn(excluirOsChatMessage);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [text, setText] = useState("");
@@ -90,6 +101,7 @@ export function OsChatPanel({
   const [processingFile, setProcessingFile] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [pdfViewer, setPdfViewer] = useState<{ url: string; name: string } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<ChatMessage | null>(null);
 
   const postMutation = useMutation({
     mutationFn: (vars: { text?: string; fileDataUrl?: string; fileName?: string }) =>
@@ -97,6 +109,15 @@ export function OsChatPanel({
     onSuccess: () => {
       setText("");
       setPendingFile(null);
+      onPosted();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (messageId: string) => deleteFn({ data: { osNumero, messageId } }),
+    onSuccess: () => {
+      setDeleteConfirm(null);
       onPosted();
     },
     onError: (e: Error) => toast.error(e.message),
@@ -139,7 +160,17 @@ export function OsChatPanel({
             const mine = m.authorId === user?.id;
             const att = attachmentOf(m);
             return (
-              <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+              <div key={m.id} className={`group flex items-end gap-1 ${mine ? "justify-end" : "justify-start"}`}>
+                {mine && (
+                  <button
+                    type="button"
+                    onClick={() => setDeleteConfirm(m)}
+                    title="Excluir mensagem"
+                    className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive shrink-0 mb-1"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
                 <div className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${mine ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
                   <div className={`text-[11px] font-semibold mb-0.5 ${mine ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
                     {m.authorName}
@@ -234,6 +265,26 @@ export function OsChatPanel({
           {pdfViewer && <iframe src={pdfViewer.url} title={pdfViewer.name} className="flex-1 w-full rounded border" />}
         </DialogContent>
       </Dialog>
+
+      {/* Confirmação: excluir mensagem */}
+      <AlertDialog open={!!deleteConfirm} onOpenChange={(o) => !o && setDeleteConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir mensagem?</AlertDialogTitle>
+            <AlertDialogDescription>Essa ação não pode ser desfeita.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleteMutation.isPending}
+              onClick={() => deleteConfirm && deleteMutation.mutate(deleteConfirm.id)}
+            >
+              {deleteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Excluir"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

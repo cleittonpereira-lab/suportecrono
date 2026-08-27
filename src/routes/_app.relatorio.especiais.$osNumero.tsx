@@ -23,6 +23,12 @@ import {
   Loader2,
   CheckCircle2,
   CalendarRange,
+  ChevronDown,
+  ChevronRight,
+  Truck,
+  ClipboardCheck,
+  PlayCircle,
+  Hourglass,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -54,12 +60,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useCadastroByOs } from "@/hooks/use-cadastro-by-os";
 import { useOsGroups, abrirEnsaioNaCentral, type EnsaioItemOS } from "@/features/lab/hooks/use-os-groups";
 import { ENSAIO_LABEL } from "@/features/lab/types";
-import { normOs } from "@/lib/schedule-utils";
+import { normOs, splitSetores, splitEscopo } from "@/lib/schedule-utils";
+import { useSchedule } from "@/hooks/use-schedule";
 import { listEmissoes } from "@/lib/emissoes.functions";
 import { fetchSharedChegadaState } from "@/lib/chegada-amostras.functions";
 import { getOsHub, atualizarDataAcordada, arquivarOs, desarquivarOs } from "@/lib/os-hub.functions";
 import { OsChatPanel } from "@/features/lab/components/OsChatPanel";
 import { OsGanttMini } from "@/features/lab/components/OsGanttMini";
+import { useOsEntregas, EntregasTable } from "@/components/os-entregas-panel";
+import { SetorBadges } from "@/components/setor-badges";
+import { SondButton } from "@/components/sond-button";
 
 export const Route = createFileRoute("/_app/relatorio/especiais/$osNumero")({
   ssr: false,
@@ -92,16 +102,36 @@ const STATUS_COLOR: Record<EnsaioItemOS["status"], string> = {
   concluido_externo: "bg-teal-500/15 text-teal-700 dark:text-teal-400 border-teal-500/30",
 };
 
-function SectionCard({ icon: Icon, title, right, children }: { icon: React.ComponentType<{ className?: string }>; title: React.ReactNode; right?: React.ReactNode; children: React.ReactNode }) {
+function SectionCard({
+  icon: Icon,
+  title,
+  right,
+  children,
+  defaultOpen = true,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: React.ReactNode;
+  right?: React.ReactNode;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
     <Card>
       <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
-        <CardTitle className="text-sm flex items-center gap-2">
-          <Icon className="h-4 w-4 text-primary" /> {title}
-        </CardTitle>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex items-center gap-2 cursor-pointer text-left"
+        >
+          {open ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Icon className="h-4 w-4 text-primary" /> {title}
+          </CardTitle>
+        </button>
         {right}
       </CardHeader>
-      <CardContent>{children}</CardContent>
+      {open && <CardContent>{children}</CardContent>}
     </Card>
   );
 }
@@ -132,6 +162,29 @@ function OsEspecialHubPage() {
     return true;
   });
   const tiposDisponiveis = Array.from(new Set(ensaios.map((e) => e.tipo)));
+
+  const kpi = useMemo(() => {
+    const programados = ensaios.filter((e) => e.status === "programado").length;
+    const executados = ensaios.length - programados;
+    return { total: ensaios.length, programados, executados };
+  }, [ensaios]);
+
+  const { data: scheduleData } = useSchedule();
+  const { passadas: entregasPassadas, futuras: entregasFuturas, isLoading: entregasLoading } = useOsEntregas({ os: osNumero });
+
+  const { setoresUnificados, escoposUnificados } = useMemo(() => {
+    const setores = new Set<string>();
+    const escopoTags = new Set<string>();
+    const escopoExtras = new Set<string>();
+    for (const r of scheduleData?.rows ?? []) {
+      if (normOs(r.os) !== normOs(osNumero)) continue;
+      for (const s of splitSetores(r.setor)) setores.add(s);
+      const { tags, extras } = splitEscopo(r.escopo);
+      for (const t of tags) escopoTags.add(t);
+      for (const e of extras) if (e.trim()) escopoExtras.add(e.trim());
+    }
+    return { setoresUnificados: Array.from(setores), escoposUnificados: [...Array.from(escopoTags), ...Array.from(escopoExtras)] };
+  }, [scheduleData, osNumero]);
 
   const { data: hub, refetch: refetchHub } = useQuery({
     queryKey: ["os-hub", osNumero],
@@ -236,15 +289,43 @@ function OsEspecialHubPage() {
             </Badge>
           )}
         </div>
-        {hub?.arquivada ? (
-          <Button variant="outline" size="sm" className="gap-1.5 shrink-0" onClick={handleDesarquivar}>
-            <ArchiveRestore className="h-4 w-4" /> Reativar OS
-          </Button>
-        ) : (
-          <Button variant="outline" size="sm" className="gap-1.5 shrink-0" onClick={() => setArchiveConfirmOpen(true)}>
-            <Archive className="h-4 w-4" /> Arquivar OS
-          </Button>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          <SondButton os={osNumero} variant="button" />
+          {hub?.arquivada ? (
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={handleDesarquivar}>
+              <ArchiveRestore className="h-4 w-4" /> Reativar OS
+            </Button>
+          ) : (
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setArchiveConfirmOpen(true)}>
+              <Archive className="h-4 w-4" /> Arquivar OS
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Barra de KPIs rápidos */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="rounded-lg border bg-card p-3 flex items-center gap-2.5">
+          <ClipboardCheck className="h-5 w-5 text-primary shrink-0" />
+          <div>
+            <div className="text-lg font-bold tabular-nums leading-none">{kpi.total}</div>
+            <div className="text-[10px] text-muted-foreground uppercase tracking-wide mt-0.5">Ensaios Programados</div>
+          </div>
+        </div>
+        <div className="rounded-lg border bg-card p-3 flex items-center gap-2.5">
+          <PlayCircle className="h-5 w-5 text-sky-600 shrink-0" />
+          <div>
+            <div className="text-lg font-bold tabular-nums leading-none">{kpi.executados}</div>
+            <div className="text-[10px] text-muted-foreground uppercase tracking-wide mt-0.5">Ensaios Executados</div>
+          </div>
+        </div>
+        <div className="rounded-lg border bg-card p-3 flex items-center gap-2.5">
+          <Hourglass className="h-5 w-5 text-amber-600 shrink-0" />
+          <div>
+            <div className="text-lg font-bold tabular-nums leading-none">{kpi.programados}</div>
+            <div className="text-[10px] text-muted-foreground uppercase tracking-wide mt-0.5">Programações Pendentes</div>
+          </div>
+        </div>
       </div>
 
       {/* Layout linear: conteúdo da OS rolando à esquerda, chat fixo à direita */}
@@ -305,6 +386,39 @@ function OsEspecialHubPage() {
                     {t.relacaoAmostras && <div className="text-muted-foreground">Relação: {t.relacaoAmostras}</div>}
                   </div>
                 ))}
+              </div>
+            )}
+          </SectionCard>
+
+          <SectionCard icon={Truck} title={`Entregas & Cronograma (${entregasPassadas.length + entregasFuturas.length})`}>
+            {(setoresUnificados.length > 0 || escoposUnificados.length > 0) && (
+              <div className="mb-3 pb-3 border-b space-y-1.5">
+                {setoresUnificados.length > 0 && (
+                  <div className="flex items-center gap-1.5 flex-wrap text-xs">
+                    <span className="text-muted-foreground shrink-0">Setores:</span>
+                    <SetorBadges setor={setoresUnificados.join(" / ")} size="xs" />
+                  </div>
+                )}
+                {escoposUnificados.length > 0 && (
+                  <div className="flex items-center gap-1.5 flex-wrap text-xs">
+                    <span className="text-muted-foreground shrink-0">Escopo:</span>
+                    {escoposUnificados.map((e) => (
+                      <Badge key={e} variant="outline" className="text-[10px]">{e}</Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {entregasLoading ? (
+              <div className="text-sm text-muted-foreground py-2">Carregando entregas...</div>
+            ) : entregasPassadas.length + entregasFuturas.length === 0 ? (
+              <div className="text-sm text-muted-foreground py-2">Nenhuma entrega registrada pra essa OS.</div>
+            ) : (
+              <div className="space-y-4">
+                <EntregasTable title={`Realizadas / Atrasadas (${entregasPassadas.length})`} rows={entregasPassadas} />
+                {entregasFuturas.length > 0 && (
+                  <EntregasTable title={`Futuras (${entregasFuturas.length})`} rows={entregasFuturas} highlight />
+                )}
               </div>
             )}
           </SectionCard>
