@@ -29,7 +29,9 @@ export type ChatMessage = {
   authorName: string;
   authorAvatar?: string | null;
   text?: string | null;
+  /** @deprecated mantido só pra ler mensagens antigas — novas mensagens usam `attachment`. */
   photoUrl?: string | null;
+  attachment?: { url: string; name: string; mimeType: string } | null;
   createdAt: string;
 };
 
@@ -118,21 +120,31 @@ export const desarquivarOs = createServerFn({ method: "POST" })
 const PostChatInput = z.object({
   osNumero: z.string().min(1),
   text: z.string().optional(),
-  photoDataUrl: z.string().optional(),
+  fileDataUrl: z.string().optional(),
+  fileName: z.string().optional(),
 });
+
+function mimeFromDataUrl(dataUrl: string): string {
+  const m = /^data:([^;]+);base64,/.exec(dataUrl);
+  return m?.[1] || "application/octet-stream";
+}
 
 export const postOsChatMessage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) => PostChatInput.parse(i))
   .handler(async ({ context, data }) => {
-    if (!data.text?.trim() && !data.photoDataUrl) {
-      throw new Error("Mensagem vazia — escreva um texto ou anexe uma foto.");
+    if (!data.text?.trim() && !data.fileDataUrl) {
+      throw new Error("Mensagem vazia — escreva um texto ou anexe um arquivo.");
     }
 
-    let photoUrl: string | undefined;
-    if (data.photoDataUrl) {
-      const uploaded = await uploadPhoto({ data: { dataUrl: data.photoDataUrl, namePrefix: `chat_${osKey(data.osNumero)}` } });
-      photoUrl = uploaded.url;
+    let attachment: ChatMessage["attachment"] = null;
+    if (data.fileDataUrl) {
+      const uploaded = await uploadPhoto({ data: { dataUrl: data.fileDataUrl, namePrefix: `chat_${osKey(data.osNumero)}` } });
+      attachment = {
+        url: uploaded.url,
+        name: data.fileName || "arquivo",
+        mimeType: mimeFromDataUrl(data.fileDataUrl),
+      };
     }
 
     const folderId = await ensureFolderPath(FOLDER_OS_HUB);
@@ -145,7 +157,7 @@ export const postOsChatMessage = createServerFn({ method: "POST" })
       authorName: displayName(context.claims),
       authorAvatar: (context.claims?.user_metadata as any)?.avatar_url ?? null,
       text: data.text?.trim() || null,
-      photoUrl: photoUrl ?? null,
+      attachment,
       createdAt: new Date().toISOString(),
     };
     hub.messages.push(message);
