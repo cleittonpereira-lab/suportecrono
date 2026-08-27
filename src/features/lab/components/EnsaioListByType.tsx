@@ -175,7 +175,8 @@ export function EnsaioListByType({ tipo }: { tipo: EnsaioTipo }) {
               (m === "triaxial-cid" || nomeEnsaio.toLowerCase().includes("tri"))) ||
             (tipo === "triaxial-uu" && /\buu\b|\btri\.?\s*uu\b/i.test(nomeEnsaio)) ||
             (tipo === "triaxial-ciu" && /\bciu\b|\btri\.?\s*ciu\b/i.test(nomeEnsaio)) ||
-            (tipo === "mesp-a" && (m === "mesp-a" || nomeEnsaio.toLowerCase().includes("mesp")));
+            (tipo === "mesp-a" && (m === "mesp-a" || nomeEnsaio.toLowerCase().includes("mesp"))) ||
+            (tipo === "asf-dap" && (m === "asf-dap" || nomeEnsaio.toLowerCase().includes("densidade aparente")));
 
         if (!match) return null;
 
@@ -217,6 +218,7 @@ export function EnsaioListByType({ tipo }: { tipo: EnsaioTipo }) {
       if (tipo === "triaxial-uu") return /\buu\b|\btri\.?\s*uu\b/i.test(r.ensaio ?? "") || r.tipo_ensaio === "triaxial-uu";
       if (tipo === "triaxial-ciu") return /\bciu\b|\btri\.?\s*ciu\b/i.test(r.ensaio ?? "") || r.tipo_ensaio === "triaxial-ciu";
       if (tipo === "mesp-a") return m === "mesp-a" || r.tipo_ensaio === "mesp-a";
+      if (tipo === "asf-dap") return m === "asf-dap" || r.tipo_ensaio === "asf-dap";
       return false;
     });
   }, [pendencias, tipo]);

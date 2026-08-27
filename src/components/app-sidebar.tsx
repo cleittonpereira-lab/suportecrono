@@ -17,7 +17,6 @@ import {
   FileText,
   Beaker,
   FlaskConical,
-  Layers,
   PackagePlus,
   type LucideIcon,
 } from "lucide-react";
@@ -90,13 +89,14 @@ const sections: readonly NavSection[] = [
   {
     label: "RELATÓRIO",
     items: [
-      { title: "Visão geral", url: "/relatorio", icon: FileText },
-      { title: "Central de Relatórios & SLAs", url: "/relatorio/pendentes", icon: ClipboardList },
+      { title: "Central de Relatórios", url: "/relatorio/pendentes", icon: ClipboardList },
       { title: "Cisalhamento Direto", url: "/relatorio/cisalhamento-direto", icon: Beaker },
       { title: "Adensamento", url: "/relatorio/adensamento", icon: Beaker },
       { title: "Triaxial CID", url: "/relatorio/triaxial-cid", icon: FlaskConical },
-      { title: "M.ESP.A Natural", url: "/relatorio/mesp-a-natural", icon: FlaskConical },
-      { title: "OS / Amostras", url: "/relatorio/os", icon: Layers },
+      { title: "M.ESP.A Natural", url: "/relatorio/mesp-a", icon: FlaskConical },
+      { title: "ASF.DAP (Densidade Aparente)", url: "/relatorio/asf-dap", icon: Beaker },
+      { title: "Módulo de Resiliência", url: "/relatorio/modulo-resiliencia", icon: FlaskConical },
+      { title: "Umidade Natural", url: "/relatorio/umidade-natural", icon: Beaker },
       { title: "Modelos Relatórios", url: "/modelos-relatorios", icon: FileText },
     ],
   },

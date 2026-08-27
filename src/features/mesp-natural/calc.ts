@@ -149,8 +149,20 @@ export function isCisalhamentoDiretoTag(raw: string | null | undefined): boolean
   );
 }
 
+/** true se o ensaio for Densidade Aparente de misturas asfálticas (ASF.DAP). */
+export function isAsfDapEnsaioTag(raw: string | null | undefined): boolean {
+  const t = (raw ?? "").toLowerCase().replace(/\s+/g, "");
+  if (!t) return false;
+  return (
+    t.includes("asf.dap") ||
+    t.includes("asf-dap") ||
+    t.includes("asfdap") ||
+    t.includes("densidadeaparente")
+  );
+}
+
 /** Metodologias com processamento/relatório disponíveis hoje. */
-export type SupportedMethodology = "mesp-a" | "triaxial-cid" | "adensamento" | "cisalhamento-direto";
+export type SupportedMethodology = "mesp-a" | "triaxial-cid" | "adensamento" | "cisalhamento-direto" | "asf-dap";
 
 export function detectMethodology(
   ensaio: string | null | undefined,
@@ -161,6 +173,7 @@ export function detectMethodology(
   if (candidates.some((c) => isMespANaturalTag(c))) return "mesp-a";
   if (candidates.some((c) => isTriaxialCidTag(c))) return "triaxial-cid";
   if (candidates.some((c) => isAdensamentoTag(c))) return "adensamento";
+  if (candidates.some((c) => isAsfDapEnsaioTag(c))) return "asf-dap";
   return null;
 }
 
@@ -170,5 +183,6 @@ export function methodologyRoute(m: SupportedMethodology): string {
     case "mesp-a": return "/relatorio/mesp-a";
     case "triaxial-cid": return "/relatorio/triaxial-cid";
     case "adensamento": return "/relatorio/adensamento";
+    case "asf-dap": return "/relatorio/asf-dap";
   }
 }

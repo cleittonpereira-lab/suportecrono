@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useNavigate } from "@tanstack/react-router";
@@ -33,6 +33,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -87,8 +88,13 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useCadastroByOs } from "@/hooks/use-cadastro-by-os";
+import { useAuth } from "@/hooks/use-auth";
 import { EmissoesInner } from "@/components/emissoes-inner";
+import { OsReportsView } from "@/features/lab/components/OsReportsView";
+import { EnsaiosEspeciaisView } from "@/features/lab/components/EnsaiosEspeciaisView";
 import { evaluateSla, formatHours, type SlaStatus } from "@/lib/sla-calc";
+import { supabase } from "@/integrations/supabase/client";
+import { listEmissoes } from "@/lib/emissoes.functions";
 
 export const Route = createFileRoute("/_app/relatorio/pendentes")({
   ssr: false,
@@ -156,6 +162,42 @@ function CentralRelatoriosPage() {
   const [busca, setBusca] = useState("");
   const [viewMode, setViewMode] = useState<"kanban" | "table">("kanban");
   const [ganttFilter, setGanttFilter] = useState<"all" | "concluido" | "execucao" | "planejado">("concluido");
+  const [soMeus, setSoMeus] = useState(false);
+  const [statusFiltro, setStatusFiltro] = useState<"all" | PendenciaDigitacao["status"]>("all");
+  const [tipoFiltro, setTipoFiltro] = useState<"all" | SupportedMethodology>("all");
+
+  const { user } = useAuth();
+
+  const [queueCounts, setQueueCounts] = useState<{ verif: number; aprov: number } | null>(null);
+  const [canSeeQueues, setCanSeeQueues] = useState(false);
+  const listEmissoesFn = useServerFn(listEmissoes);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const { data } = await supabase.auth.getUser();
+      const uid = data.user?.id;
+      if (!uid) return;
+      const [{ data: adm }, { data: ver }] = await Promise.all([
+        supabase.rpc("has_role", { _user_id: uid, _role: "admin" }),
+        supabase.rpc("has_role", { _user_id: uid, _role: "verificador" }),
+      ]);
+      if (cancelled) return;
+      const allowed = Boolean(adm) || Boolean(ver);
+      setCanSeeQueues(allowed);
+      if (!allowed) return;
+      try {
+        const [v, a] = await Promise.all([
+          listEmissoesFn({ data: { workflowStatuses: ["aguardando_verificacao"] } }),
+          listEmissoesFn({ data: { workflowStatuses: ["aguardando_aprovacao"] } }),
+        ]);
+        if (!cancelled) setQueueCounts({ verif: v.length, aprov: a.length });
+      } catch {}
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [listEmissoesFn]);
 
   // Modais
   const [avulsoOpen, setAvulsoOpen] = useState(false);
@@ -319,20 +361,24 @@ function CentralRelatoriosPage() {
     });
   }, [progs, amostrasProg, ensaiosProg, tiposProg, equipsProg]);
 
-  // Filtro de busca global
+  // Filtro de busca global + status/tipo/"só meus"
   const filteredRows = useMemo(() => {
     const q = busca.trim().toLowerCase();
-    if (!q) return allPendencias;
-    return allPendencias.filter(
-      (r) =>
+    return allPendencias.filter((r) => {
+      if (soMeus && user?.id && r.digitador_user_id !== user.id && r.operador_user_id !== user.id) return false;
+      if (statusFiltro !== "all" && r.status !== statusFiltro) return false;
+      if (tipoFiltro !== "all" && detectMethodology(r.ensaio, r.tipo_ensaio) !== tipoFiltro) return false;
+      if (!q) return true;
+      return (
         r.os.toLowerCase().includes(q) ||
         (r.amostra ?? "").toLowerCase().includes(q) ||
         r.ensaio.toLowerCase().includes(q) ||
         (r.tipo_ensaio ?? "").toLowerCase().includes(q) ||
         (r.operador_nome ?? "").toLowerCase().includes(q) ||
-        (r.digitador_nome ?? "").toLowerCase().includes(q),
-    );
-  }, [allPendencias, busca]);
+        (r.digitador_nome ?? "").toLowerCase().includes(q)
+      );
+    });
+  }, [allPendencias, busca, soMeus, statusFiltro, tipoFiltro, user]);
 
   const filteredGantt = useMemo(() => {
     const q = busca.trim().toLowerCase();
@@ -408,16 +454,7 @@ function CentralRelatoriosPage() {
 
   // Roteamento inteligente para os editores de laudo
   function abrirDigitacao(r: PendenciaDigitacao) {
-    const metodo = detectMethodology(r.ensaio, r.tipo_ensaio);
-    const tipo =
-      metodo === "cisalhamento-direto"
-        ? "cisalhamento-direto"
-        : metodo === "mesp-a"
-          ? "mesp-a"
-          : metodo === "adensamento"
-            ? "adensamento"
-            : "triaxial-cid";
-
+    const tipo = detectMethodology(r.ensaio, r.tipo_ensaio) ?? "triaxial-cid";
     abrirPorTipo(tipo, r.os, r.amostra ?? "", undefined, undefined, r.id, r.ensaio);
   }
 
@@ -719,7 +756,82 @@ function CentralRelatoriosPage() {
             className="pl-9 text-xs"
           />
         </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={statusFiltro} onValueChange={(v) => setStatusFiltro(v as typeof statusFiltro)}>
+            <SelectTrigger className="h-8 w-[170px] text-xs">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos os status</SelectItem>
+              {(Object.keys(STATUS_LABEL) as PendenciaDigitacao["status"][]).map((s) => (
+                <SelectItem key={s} value={s}>{STATUS_LABEL[s]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={tipoFiltro} onValueChange={(v) => setTipoFiltro(v as typeof tipoFiltro)}>
+            <SelectTrigger className="h-8 w-[170px] text-xs">
+              <SelectValue placeholder="Tipo de ensaio" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos os ensaios</SelectItem>
+              {(["cisalhamento-direto", "adensamento", "triaxial-cid", "mesp-a", "asf-dap"] as SupportedMethodology[]).map((t) => (
+                <SelectItem key={t} value={t}>{ENSAIO_LABEL[t] ?? t}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground pl-1 cursor-pointer select-none">
+            <Switch checked={soMeus} onCheckedChange={setSoMeus} />
+            Só meus
+          </label>
+        </div>
       </div>
+
+      {/* Filas de aprovação — verificador/admin */}
+      {canSeeQueues && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Card
+            role="button"
+            tabIndex={0}
+            onClick={() => navigate({ to: "/relatorio/emissoes" })}
+            className="cursor-pointer transition-colors hover:border-primary/60"
+          >
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="flex items-center gap-2 text-sm font-medium">
+                <ShieldCheck className="h-4 w-4 text-primary" /> Aguardando verificação
+              </CardTitle>
+              <ArrowRight className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="font-display text-2xl font-semibold tabular-nums">
+                {queueCounts === null ? "—" : queueCounts.verif}
+              </div>
+              <div className="text-[11px] text-muted-foreground">Central de Emissões</div>
+            </CardContent>
+          </Card>
+          <Card
+            role="button"
+            tabIndex={0}
+            onClick={() => navigate({ to: "/relatorio/emissoes" })}
+            className="cursor-pointer transition-colors hover:border-primary/60"
+          >
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="flex items-center gap-2 text-sm font-medium">
+                <Stamp className="h-4 w-4 text-primary" /> Aguardando aprovação
+              </CardTitle>
+              <ArrowRight className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="font-display text-2xl font-semibold tabular-nums">
+                {queueCounts === null ? "—" : queueCounts.aprov}
+              </div>
+              <div className="text-[11px] text-muted-foreground">Central de Emissões</div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Tabs Principais da Central */}
       <Tabs
@@ -743,6 +855,14 @@ function CentralRelatoriosPage() {
           <TabsTrigger value="emissoes-historico" className="gap-1.5 text-xs">
             <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
             Histórico de Emissões ({counts.concluidos})
+          </TabsTrigger>
+          <TabsTrigger value="por-os" className="gap-1.5 text-xs">
+            <Building className="h-3.5 w-3.5 text-orange-600" />
+            Por OS
+          </TabsTrigger>
+          <TabsTrigger value="ensaios-especiais" className="gap-1.5 text-xs">
+            <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+            Ensaios Especiais
           </TabsTrigger>
         </TabsList>
 
@@ -1101,6 +1221,7 @@ function CentralRelatoriosPage() {
                         actionLabel="Continuar Digitação"
                         actionIcon={Play}
                         onExterno={() => setExternoModal(r)}
+                        onDelete={() => setDeleteConfirm(r)}
                       />
                     ))}
                 </div>
@@ -1128,6 +1249,7 @@ function CentralRelatoriosPage() {
                         actionIcon={ShieldCheck}
                         secondaryAction={() => setStatusMutation.mutate({ id: r.id, status: "verificado" })}
                         secondaryLabel="Aprovar Verificação"
+                        onDelete={() => setDeleteConfirm(r)}
                       />
                     ))}
                 </div>
@@ -1155,6 +1277,7 @@ function CentralRelatoriosPage() {
                         actionIcon={Stamp}
                         secondaryAction={() => setStatusMutation.mutate({ id: r.id, status: "aprovado" })}
                         secondaryLabel="Aprovar Final"
+                        onDelete={() => setDeleteConfirm(r)}
                       />
                     ))}
                 </div>
@@ -1219,9 +1342,19 @@ function CentralRelatoriosPage() {
                       <TableCell className="text-xs text-muted-foreground">{r.verificador_nome || "—"}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{r.aprovador_nome || "—"}</TableCell>
                       <TableCell className="text-right">
-                        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => abrirDigitacao(r)}>
-                          Abrir Laudo
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => abrirDigitacao(r)}>
+                            Abrir Laudo
+                          </Button>
+                          <button
+                            type="button"
+                            onClick={() => setDeleteConfirm(r)}
+                            title="Excluir pendência"
+                            className="text-muted-foreground hover:text-destructive transition-colors cursor-pointer p-1"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -1366,6 +1499,20 @@ function CentralRelatoriosPage() {
            ========================================================================= */}
         <TabsContent value="emissoes-historico">
           <EmissoesInner />
+        </TabsContent>
+
+        {/* =========================================================================
+            ABA 5: POR OS (VISÃO AGRUPADA, DOWNLOADS E ARQUIVAMENTO EM LOTE)
+           ========================================================================= */}
+        <TabsContent value="por-os">
+          <OsReportsView />
+        </TabsContent>
+
+        {/* =========================================================================
+            ABA 6: ENSAIOS ESPECIAIS (CISALHAMENTO / TRIAXIAIS / ADENSAMENTO)
+           ========================================================================= */}
+        <TabsContent value="ensaios-especiais">
+          <EnsaiosEspeciaisView />
         </TabsContent>
       </Tabs>
 
@@ -1556,6 +1703,38 @@ function CentralRelatoriosPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={Boolean(deleteConfirm)} onOpenChange={(o) => !o && setDeleteConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir pendência de digitação?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteConfirm && (
+                <>
+                  OS <strong>{deleteConfirm.os}</strong> · Amostra{" "}
+                  <strong>{deleteConfirm.amostra || "Amostra Geral"}</strong> ·{" "}
+                  <strong>{deleteConfirm.ensaio}</strong>
+                  <br />
+                  Isso remove a pendência da Central de Relatórios — se houver dados digitados,
+                  eles não serão apagados, apenas o card de acompanhamento. Não pode ser desfeito.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={removeMutation.isPending}
+              onClick={() => {
+                if (deleteConfirm) removeMutation.mutate(deleteConfirm.id);
+              }}
+            >
+              {removeMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Excluir"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -1571,6 +1750,7 @@ function KanbanCard({
   secondaryAction,
   secondaryLabel,
   onExterno,
+  onDelete,
 }: {
   item: PendenciaDigitacao;
   onAction: () => void;
@@ -1579,6 +1759,7 @@ function KanbanCard({
   secondaryAction?: () => void;
   secondaryLabel?: string;
   onExterno?: () => void;
+  onDelete?: () => void;
 }) {
   const payload = (item.payload as Record<string, any>) || {};
   const sla = evaluateSla({
@@ -1605,9 +1786,21 @@ function KanbanCard({
             {item.amostra || "Amostra Geral"}
           </div>
         </div>
-        <Badge variant="outline" className={`${SLA_BADGE_COLOR[sla.overallStatus]} text-[9px] px-1 py-0`}>
-          {SLA_LABEL[sla.overallStatus]}
-        </Badge>
+        <div className="flex items-center gap-1 shrink-0">
+          <Badge variant="outline" className={`${SLA_BADGE_COLOR[sla.overallStatus]} text-[9px] px-1 py-0`}>
+            {SLA_LABEL[sla.overallStatus]}
+          </Badge>
+          {onDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              title="Excluir pendência"
+              className="text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="text-xs font-semibold text-primary">{item.ensaio}</div>

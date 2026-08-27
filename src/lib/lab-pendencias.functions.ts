@@ -127,9 +127,18 @@ export const listPendenciasDigitacao = createServerFn({ method: "GET" })
       const rows = await Promise.all(
         files.map((f) => readDriveJson<PendenciaDigitacao>(f.name, folderId)),
       );
-      return rows
-        .filter((r): r is PendenciaDigitacao => r !== null)
-        .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+      // O nome do arquivo é determinístico por (os, amostra, ensaio), mas o
+      // Drive não impede dois arquivos com o mesmo nome na mesma pasta — uma
+      // condição de corrida (dois scans quase simultâneos) pode criar dois
+      // arquivos com o mesmo `id` lógico. Mantém só o mais recente de cada
+      // `id` pra nunca mostrar "pendência duplicada" na tela.
+      const byId = new Map<string, PendenciaDigitacao>();
+      for (const r of rows) {
+        if (!r) continue;
+        const prev = byId.get(r.id);
+        if (!prev || prev.updated_at < r.updated_at) byId.set(r.id, r);
+      }
+      return Array.from(byId.values()).sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
     } catch (err) {
       console.warn("[listPendenciasDigitacao] Falha:", err);
       return [];
@@ -272,7 +281,13 @@ export const removerPendenciaDigitacao = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => DeleteInput.parse(i))
   .handler(async ({ data }) => {
     const folderId = await ensureFolderPath(FOLDER_PENDENCIAS);
-    const fileId = await findFileInFolder(`${data.id}.json`, folderId);
-    if (fileId) await deleteDriveFile(fileId);
+    // Uma condição de corrida na criação pode ter deixado mais de um arquivo
+    // com o mesmo nome na pasta (ver listPendenciasDigitacao) — apaga todos,
+    // não só o primeiro encontrado.
+    for (let i = 0; i < 10; i++) {
+      const fileId = await findFileInFolder(`${data.id}.json`, folderId);
+      if (!fileId) break;
+      await deleteDriveFile(fileId);
+    }
     return { ok: true };
   });

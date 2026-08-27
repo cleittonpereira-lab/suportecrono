@@ -236,6 +236,24 @@ export function joinEscopo(tags: EscopoTag[], extras: string[] = []): string {
   return [...tags, ...extras.map((e) => e.trim()).filter(Boolean)].join(" / ");
 }
 
+// OSs de "Ensaios Especiais": mesma regra usada em Programação · Central
+// (src/routes/_app.programacao.central.tsx) — por escopo (Cisalhamento /
+// Triaxiais Mec. Solos / Adensamento) OU pela tag de setor "Especiais".
+const ESCOPOS_ESPECIAIS = new Set<EscopoTag>(["Cisalhamento", "Triaxiais Mec. Solos", "Adensamento"]);
+
+export function classifyEspeciaisOs(rows: ScheduleRow[]): Set<string> {
+  const s = new Set<string>();
+  for (const r of rows) {
+    if (!r.os) continue;
+    const { tags } = splitEscopo(r.escopo);
+    if (tags.some((t) => ESCOPOS_ESPECIAIS.has(t))) s.add(r.os);
+  }
+  for (const r of rows) {
+    if (r.os && !s.has(r.os) && splitSetores(r.setor).includes("Especiais")) s.add(r.os);
+  }
+  return s;
+}
+
 // -------- Tipo de entrega (Parcial / Final) salvo na coluna P --------
 // Formato: "<escopo>||Parcial 2"  ou  "<escopo>||Final"  ou  "<escopo>"
 export type TipoEntrega = "Parcial" | "Final" | "Revisão";
