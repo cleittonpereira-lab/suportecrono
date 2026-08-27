@@ -22,6 +22,7 @@ import {
   ExternalLink,
   Loader2,
   CheckCircle2,
+  CalendarRange,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -58,6 +59,7 @@ import { listEmissoes } from "@/lib/emissoes.functions";
 import { fetchSharedChegadaState } from "@/lib/chegada-amostras.functions";
 import { getOsHub, atualizarDataAcordada, arquivarOs, desarquivarOs } from "@/lib/os-hub.functions";
 import { OsChatPanel } from "@/features/lab/components/OsChatPanel";
+import { OsGanttMini } from "@/features/lab/components/OsGanttMini";
 
 export const Route = createFileRoute("/_app/relatorio/especiais/$osNumero")({
   ssr: false,
@@ -109,7 +111,7 @@ function OsEspecialHubPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const cadastro = useCadastroByOs();
-  const { osGroups, amostrasProg, ensaiosProg, progs, equipsProg, currentUserName } = useOsGroups();
+  const { osGroups, amostrasProg, ensaiosProg, progs, tiposProg, equipsProg, currentUserName } = useOsGroups();
 
   const getOsHubFn = useServerFn(getOsHub);
   const atualizarDataFn = useServerFn(atualizarDataAcordada);
@@ -305,6 +307,17 @@ function OsEspecialHubPage() {
                 ))}
               </div>
             )}
+          </SectionCard>
+
+          <SectionCard icon={CalendarRange} title="Gantt da OS (planejado × real)">
+            <OsGanttMini
+              osNumero={osNumero}
+              progs={progs}
+              ensaiosProg={ensaiosProg}
+              amostrasProg={amostrasProg}
+              tiposProg={tiposProg}
+              equipsProg={equipsProg}
+            />
           </SectionCard>
 
           <SectionCard
