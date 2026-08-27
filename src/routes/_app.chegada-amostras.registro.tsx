@@ -4,6 +4,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import {
   PackagePlus,
@@ -64,6 +65,7 @@ export function ChegadaAmostrasRegistroPage() {
   const [recebidoPor, setRecebidoPor] = useState<string[]>([]);
   const [sup, setSup] = useState("");
   const [amostras, setAmostras] = useState<AmostraItem[]>(() => [novaAmostraVazia()]);
+  const [observacoes, setObservacoes] = useState("");
   const [assinaturaCliente, setAssinaturaCliente] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -111,6 +113,7 @@ export function ChegadaAmostrasRegistroPage() {
     setRecebidoPor([]);
     setSup("");
     setAmostras([novaAmostraVazia()]);
+    setObservacoes("");
     setAssinaturaCliente(null);
     setIsSuccess(false);
     setRegisteredSummary(null);
@@ -151,6 +154,7 @@ export function ChegadaAmostrasRegistroPage() {
         images,
         amostras,
         assinaturaCliente: assinatura,
+        observacoes,
         priority: "media", // Prioridade padrão inicial para triagem administrativa
         criadoPor: currentUserName,
         origem: "colaborador",
@@ -175,6 +179,7 @@ export function ChegadaAmostrasRegistroPage() {
       setRecebidoPor([]);
       setSup("");
       setAmostras([novaAmostraVazia()]);
+      setObservacoes("");
       setAssinaturaCliente(null);
     } catch (err: any) {
       toast.error("Erro ao registrar chegada: " + (err?.message || err));
@@ -372,6 +377,21 @@ export function ChegadaAmostrasRegistroPage() {
                   onChange={setAmostras}
                   tipoOptions={tipoOptions}
                   onAddTipoOption={handleAddTipoOption}
+                />
+              </div>
+
+              {/* Observações */}
+              <div className="space-y-1.5">
+                <Label htmlFor="observacoes" className="text-xs font-semibold text-foreground flex items-center justify-between">
+                  <span>Observações</span>
+                  <span className="text-[10px] text-muted-foreground font-normal">Opcional</span>
+                </Label>
+                <Textarea
+                  id="observacoes"
+                  value={observacoes}
+                  onChange={(e) => setObservacoes(e.target.value)}
+                  placeholder="Alguma observação sobre a entrega (avarias, condição do material, etc.)"
+                  className="text-xs min-h-[70px] bg-background shadow-2xs leading-relaxed"
                 />
               </div>
 

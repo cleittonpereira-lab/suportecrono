@@ -81,6 +81,8 @@ export interface ChegadaTask {
    */
   amostras?: AmostraItem[];
   assinaturaCliente?: AssinaturaCapturada | null;
+  /** Observações gerais do registro (opcional) — texto livre, ex.: condição do material, avarias, etc. */
+  observacoes?: string;
 }
 
 /** Deriva os campos antigos (tipoAmostra/relacaoAmostras/images) a partir da
@@ -417,6 +419,9 @@ export async function createChegadaRegistroAsync(
     sup: data.sup || "",
     priority: data.priority || "media",
     images: Array.isArray(data.images) ? data.images : [],
+    amostras: Array.isArray(data.amostras) ? data.amostras : undefined,
+    assinaturaCliente: data.assinaturaCliente ?? null,
+    observacoes: data.observacoes || "",
     criadoPor: data.criadoPor || "Colaborador",
     criadoEm: data.criadoEm || formatNow(),
     origem: data.origem || "colaborador",
@@ -477,6 +482,9 @@ export function createChegadaRegistro(
     sup: data.sup || "",
     priority: data.priority || "media",
     images: Array.isArray(data.images) ? data.images : [],
+    amostras: Array.isArray(data.amostras) ? data.amostras : undefined,
+    assinaturaCliente: data.assinaturaCliente ?? null,
+    observacoes: data.observacoes || "",
     criadoPor: data.criadoPor || "Colaborador",
     criadoEm: data.criadoEm || formatNow(),
     origem: data.origem || "colaborador",

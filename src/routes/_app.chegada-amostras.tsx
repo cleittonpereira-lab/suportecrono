@@ -163,6 +163,7 @@ function ChegadaAmostras() {
     recebidoPor: [] as string[],
     amostras: [novaAmostraVazia()] as AmostraItem[],
     assinaturaCliente: null as string | null,
+    observacoes: "",
     sup: "",
     priority: "media" as "baixa" | "media" | "alta",
   });
@@ -262,6 +263,7 @@ function ChegadaAmostras() {
       recebidoPor: [],
       amostras: [novaAmostraVazia()],
       assinaturaCliente: null,
+      observacoes: "",
       sup: "",
       priority: "media",
     });
@@ -298,6 +300,7 @@ function ChegadaAmostras() {
       images,
       amostras: formData.amostras,
       assinaturaCliente,
+      observacoes: formData.observacoes,
     };
 
     if (selectedTask) {
@@ -378,6 +381,7 @@ function ChegadaAmostras() {
       recebidoPor: task.recebidoPor,
       amostras: task.amostras && task.amostras.length > 0 ? task.amostras : [synthAmostraFromLegacy(task)],
       assinaturaCliente: null,
+      observacoes: task.observacoes || "",
       sup: task.sup || "",
       priority: task.priority,
     });
@@ -420,6 +424,7 @@ function ChegadaAmostras() {
         images: task.images || [],
         amostras: task.amostras,
         assinaturaCliente: task.assinaturaCliente,
+        observacoes: task.observacoes,
       };
       setPdfReceipt(receipt);
 
@@ -432,7 +437,10 @@ function ChegadaAmostras() {
         blob,
         filename,
         `Comprovante de recebimento ${receipt.numeroControle} — ${receipt.osCliente}`,
-        true
+        // Este é o painel administrativo (uso em computador) — sempre baixa
+        // direto em vez de abrir o menu de compartilhamento do sistema
+        // operacional (que alguns navegadores desktop também oferecem).
+        false
       );
       if (result === "shared") {
         toast.success("Comprovante pronto para compartilhar!", { id: tid });
@@ -887,6 +895,18 @@ function ChegadaAmostras() {
               />
             </div>
 
+            {/* Observações */}
+            <div className="space-y-1.5">
+              <Label htmlFor="observacoes" className="text-xs font-semibold">Observações</Label>
+              <Textarea
+                id="observacoes"
+                value={formData.observacoes}
+                onChange={(e) => setFormData((prev) => ({ ...prev, observacoes: e.target.value }))}
+                className="min-h-[60px] text-xs bg-background leading-relaxed"
+                placeholder="Alguma observação sobre a entrega (avarias, condição do material, etc.)"
+              />
+            </div>
+
             {/* Assinatura do Cliente */}
             <div className="space-y-2 pt-2 border-t">
               <Label className="text-xs font-semibold">Assinatura de Recebimento</Label>
@@ -1111,14 +1131,39 @@ function ChegadaAmostras() {
                 </div>
               )}
 
-              <div className="p-3 bg-background rounded-md border space-y-1">
+              <div className="p-3 bg-background rounded-md border space-y-1.5">
                 <span className="text-[10px] uppercase font-semibold text-muted-foreground block">
-                  Relação das Amostras
+                  Amostras
                 </span>
-                <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed">
-                  {selectedTask.relacaoAmostras}
-                </p>
+                {selectedTask.amostras && selectedTask.amostras.length > 0 ? (
+                  <div className="space-y-1.5 pt-0.5">
+                    {selectedTask.amostras.map((a, i) => (
+                      <div
+                        key={a.id || i}
+                        className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs border-b border-border/40 pb-1.5 last:border-0 last:pb-0"
+                      >
+                        <span className="font-semibold text-foreground">
+                          {i + 1}. {a.tipo || "—"}
+                        </span>
+                        {a.identificacao && <span className="text-muted-foreground">Id.: {a.identificacao}</span>}
+                        {a.profundidade && <span className="text-muted-foreground">Prof.: {a.profundidade}</span>}
+                        {a.quantidadeVolume && <span className="text-muted-foreground">Qtd.: {a.quantidadeVolume}</span>}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed">
+                    {selectedTask.relacaoAmostras}
+                  </p>
+                )}
               </div>
+
+              {selectedTask.observacoes && (
+                <div className="p-2.5 bg-background rounded-md border space-y-1">
+                  <span className="text-[10px] uppercase font-semibold text-muted-foreground block">Observações</span>
+                  <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed">{selectedTask.observacoes}</p>
+                </div>
+              )}
 
               {/* Fotos Anexadas */}
               {selectedTask.images && selectedTask.images.length > 0 && (

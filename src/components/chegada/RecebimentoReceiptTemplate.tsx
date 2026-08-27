@@ -16,6 +16,7 @@ export interface RecebimentoReceiptData {
   /** Amostras detalhadas — quando ausente/vazio (registros antigos), sintetiza uma única a partir dos campos planos acima. */
   amostras?: AmostraItem[];
   assinaturaCliente?: AssinaturaCapturada | null;
+  observacoes?: string;
 }
 
 const PAGE_STYLE: React.CSSProperties = {
@@ -301,6 +302,18 @@ function ListaAmostras({ amostras }: { amostras: AmostraItem[] }) {
   );
 }
 
+function Observacoes({ texto }: { texto: string }) {
+  if (!texto.trim()) return null;
+  return (
+    <div className="mb-2">
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-[#141414]/60 mb-1">Observações</div>
+      <div className="rounded border border-[#141414]/20 bg-[#f9fafb] p-2 text-[10px] leading-relaxed whitespace-pre-line">
+        {texto}
+      </div>
+    </div>
+  );
+}
+
 function Assinaturas({ data }: { data: RecebimentoReceiptData }) {
   return (
     <div className="mb-1">
@@ -353,6 +366,7 @@ export function RecebimentoReceiptPage({ data, total }: { data: RecebimentoRecei
       <div className="mt-2 flex-1 overflow-hidden relative min-h-0">
         <ResumoQuantidades amostras={amostras} />
         <ListaAmostras amostras={amostras} />
+        <Observacoes texto={data.observacoes || ""} />
         <Assinaturas data={data} />
 
         {semFotos && <div className="text-[10px] text-[#141414]/50 mt-1">Nenhum registro fotográfico anexado.</div>}
