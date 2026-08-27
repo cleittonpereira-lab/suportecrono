@@ -910,7 +910,10 @@ function ChegadaAmostras() {
             {/* Assinatura do Cliente */}
             <div className="space-y-2 pt-2 border-t">
               <Label className="text-xs font-semibold">Assinatura de Recebimento</Label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* `lg:` de propósito — em `sm:` a assinatura divide a largura com a
+                  caixa da Suporte Infra assim que a tela passa de ~640px (qualquer
+                  celular na horizontal). Só divide em tablet/desktop pra cima. */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                 <div className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground flex flex-col justify-center">
                   <span className="font-semibold text-foreground mb-0.5">Suporte Infra</span>
                   <span>Assinado digitalmente, recebido no laboratório.</span>

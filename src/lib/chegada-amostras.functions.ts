@@ -3,22 +3,42 @@ import { z } from "zod";
 import type { ChegadaTask, ChegadaColumn, Option } from "./chegada-amostras-store";
 
 /**
- * Gera um número de controle legível e cronológico pro comprovante de
- * recebimento (ex.: "REC-20260826-143521"). Duplicado propositalmente de
- * `chegada-amostras-store.ts` (mesmo padrão já usado ali pra formatação de
- * data/hora) em vez de importar de lá — esse arquivo roda no servidor e
- * `chegada-amostras-store.ts` importa DESTE arquivo, então importar na
- * direção contrária criaria um ciclo de módulos.
+ * Partes de data/hora no fuso de São Paulo, a partir do instante UTC real do `Date` —
+ * essencial aqui porque este arquivo roda no servidor, cujo relógio de sistema é
+ * tipicamente UTC (ex.: a maioria das plataformas de hospedagem/funções na nuvem),
+ * não o fuso local do Brasil. Sem essa conversão explícita, `.getHours()` no servidor
+ * ficava ~3h à frente do horário real de São Paulo (bug reportado: "Hora do Registro"
+ * do comprovante saindo adiantada, enquanto data/hora das fotos — que já convertem
+ * pro fuso certo — saíam corretas). Duplicado propositalmente de
+ * `chegada-amostras-store.ts` (mesmo padrão já usado ali) em vez de importar de lá —
+ * esse arquivo roda no servidor e `chegada-amostras-store.ts` importa DESTE arquivo,
+ * então importar na direção contrária criaria um ciclo de módulos.
  */
+function getSaoPauloPartsServer(date: Date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "00";
+  return {
+    year: get("year"),
+    month: get("month"),
+    day: get("day"),
+    hour: get("hour"),
+    minute: get("minute"),
+    second: get("second"),
+  };
+}
+
 function gerarNumeroControleServer(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  const hh = String(now.getHours()).padStart(2, "0");
-  const mm = String(now.getMinutes()).padStart(2, "0");
-  const ss = String(now.getSeconds()).padStart(2, "0");
-  return `REC-${y}${m}${d}-${hh}${mm}${ss}`;
+  const p = getSaoPauloPartsServer();
+  return `REC-${p.year}${p.month}${p.day}-${p.hour}${p.minute}${p.second}`;
 }
 import { readDriveJson, writeDriveJson, DRIVE_ROOT_FOLDER_ID } from "@/lib/driveStorage";
 
@@ -145,18 +165,13 @@ export async function handleCreateSharedChegadaTask(
   data: Omit<ChegadaTask, "id" | "criadoEm"> & { id?: string; criadoEm?: string }
 ): Promise<{ success: boolean; task: ChegadaTask; fullState: SharedChegadaState }> {
   const nowIso = new Date().toISOString();
-  const now = new Date();
-  const d = String(now.getDate()).padStart(2, "0");
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const y = now.getFullYear();
-  const hr = String(now.getHours()).padStart(2, "0");
-  const min = String(now.getMinutes()).padStart(2, "0");
-  const timeStr = `${d}/${m}/${y} ${hr}:${min}`;
+  const p = getSaoPauloPartsServer();
+  const timeStr = `${p.day}/${p.month}/${p.year} ${p.hour}:${p.minute}`;
 
   const newTask: ChegadaTask = {
     id: data.id || "amostra_" + Date.now().toString(36) + "_" + Math.random().toString(36).substring(2, 7),
     osCliente: (data.osCliente || "").trim(),
-    dataChegada: data.dataChegada || `${d}/${m}/${y}`,
+    dataChegada: data.dataChegada || `${p.day}/${p.month}/${p.year}`,
     recebidoPor: Array.isArray(data.recebidoPor) ? data.recebidoPor : [],
     tipoAmostra: Array.isArray(data.tipoAmostra) ? data.tipoAmostra : [],
     relacaoAmostras: data.relacaoAmostras || "",

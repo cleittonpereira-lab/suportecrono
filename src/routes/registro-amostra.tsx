@@ -25,6 +25,7 @@ import {
   getRecebidoOptions,
   addRecebidoOption,
   formatDateToday,
+  formatTimeNow,
   createChegadaRegistroAsync,
   useChegadaRealtimeSync,
   gerarNumeroControle,
@@ -191,8 +192,7 @@ export function RegistroAmostraStandalonePage() {
         numeroControle,
       });
 
-      const now = new Date();
-      const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      const timeStr = formatTimeNow();
 
       setRegisteredSummary({
         os: osCliente,
@@ -448,7 +448,12 @@ export function RegistroAmostraStandalonePage() {
                     <PenLine className="h-3.5 w-3.5 text-primary" />
                     Assinatura de Recebimento
                   </Label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* `lg:` em vez de `sm:` de propósito — em `sm:` o campo de assinatura
+                      dividia a largura com a caixa da Suporte Infra assim que a tela
+                      passava de ~640px, o que inclui praticamente qualquer celular
+                      girado na horizontal (exatamente quando mais espaço faria falta
+                      pra assinar). Só divide em telas de tablet/desktop pra cima. */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                     <div className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground flex flex-col justify-center">
                       <span className="font-semibold text-foreground mb-0.5">Suporte Infra</span>
                       <span>Assinado digitalmente, recebido no laboratório.</span>

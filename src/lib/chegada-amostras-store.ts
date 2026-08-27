@@ -106,16 +106,38 @@ export function deriveFlatFieldsFromAmostras(amostras: AmostraItem[]): {
   return { tipoAmostra, relacaoAmostras, images };
 }
 
+/**
+ * Partes de data/hora no fuso de São Paulo, a partir do instante UTC real do `Date` —
+ * funciona certo mesmo que o relógio/fuso do dispositivo esteja mal configurado (o
+ * `Date` do JS é sempre um instante UTC por baixo; só a leitura "ingênua" via
+ * `.getHours()`/`.getMinutes()` depende do fuso que o dispositivo *acha* que está).
+ */
+function getSaoPauloParts(date: Date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "00";
+  return {
+    year: get("year"),
+    month: get("month"),
+    day: get("day"),
+    hour: get("hour"),
+    minute: get("minute"),
+    second: get("second"),
+  };
+}
+
 /** Gera um número de controle legível e cronológico pro comprovante de recebimento. */
 export function gerarNumeroControle(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  const hh = String(now.getHours()).padStart(2, "0");
-  const mm = String(now.getMinutes()).padStart(2, "0");
-  const ss = String(now.getSeconds()).padStart(2, "0");
-  return `REC-${y}${m}${d}-${hh}${mm}${ss}`;
+  const p = getSaoPauloParts();
+  return `REC-${p.year}${p.month}${p.day}-${p.hour}${p.minute}${p.second}`;
 }
 
 export const DEFAULT_COLUMNS: ChegadaColumn[] = [
@@ -240,21 +262,19 @@ export const INITIAL_TASKS: Record<string, ChegadaTask[]> = {
 
 // Helper de formatação de data e hora
 export function formatNow(): string {
-  const now = new Date();
-  const d = String(now.getDate()).padStart(2, "0");
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const y = now.getFullYear();
-  const hr = String(now.getHours()).padStart(2, "0");
-  const min = String(now.getMinutes()).padStart(2, "0");
-  return `${d}/${m}/${y} ${hr}:${min}`;
+  const p = getSaoPauloParts();
+  return `${p.day}/${p.month}/${p.year} ${p.hour}:${p.minute}`;
 }
 
 export function formatDateToday(): string {
-  const now = new Date();
-  const d = String(now.getDate()).padStart(2, "0");
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const y = now.getFullYear();
-  return `${d}/${m}/${y}`;
+  const p = getSaoPauloParts();
+  return `${p.day}/${p.month}/${p.year}`;
+}
+
+/** Só a hora atual (HH:MM) no fuso de São Paulo — usada pra "Hora do Registro" no comprovante. */
+export function formatTimeNow(): string {
+  const p = getSaoPauloParts();
+  return `${p.hour}:${p.minute}`;
 }
 
 // Columns management
