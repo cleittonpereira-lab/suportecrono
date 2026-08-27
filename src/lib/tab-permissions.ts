@@ -30,6 +30,7 @@ export type TabKey =
   | "relatorio_triaxial"
   | "relatorio_mesp_a"
   | "relatorio_emissoes"
+  | "relatorio_ensaios_especiais"
   | "chegada_amostras"
   | "relatorio_cisalhamento"
   | "admin_usuarios";
@@ -63,6 +64,7 @@ export const TAB_META: Record<TabKey, { label: string; adminOnly?: boolean }> = 
   relatorio_mesp_a: { label: "Relatório · M.ESP.A Natural" },
   relatorio_cisalhamento: { label: "Relatório · Cisalhamento Direto" },
   relatorio_emissoes: { label: "Relatório · Emissões" },
+  relatorio_ensaios_especiais: { label: "Ensaios Especiais" },
   chegada_amostras: { label: "Chegada de amostras" },
   admin_usuarios: { label: "Gestão de usuários", adminOnly: true },
 };
@@ -92,6 +94,7 @@ export function pathToTab(pathname: string): TabKey | null {
   if (pathname.startsWith("/programacao/tipos-ensaio")) return "programacao_tipos_ensaio";
   if (pathname.startsWith("/programacao")) return "programacao";
   if (pathname.startsWith("/relatorio/digitalizacao")) return "digitalizacao";
+  if (pathname.startsWith("/relatorio/especiais")) return "relatorio_ensaios_especiais";
   if (pathname.startsWith("/relatorio/os")) return "relatorio_os";
   if (pathname.startsWith("/relatorio/pendentes")) return "relatorio_pendentes";
   if (pathname.startsWith("/relatorio/adensamento")) return "relatorio_adensamento";

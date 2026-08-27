@@ -1,7 +1,7 @@
 /**
  * Hub de uma OS de Ensaio Especial — concentra identificação, recebimento de
- * amostras, programação/execução, ensaios & relatórios, emissões e o chat
- * dessa OS numa página própria (aberta a partir da aba "Ensaios Especiais").
+ * amostras, ensaios & relatórios, emissões e o chat dessa OS numa página só,
+ * em rolagem linear (sem abas), com o chat fixo ao lado.
  */
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
@@ -16,7 +16,6 @@ import {
   Archive,
   ArchiveRestore,
   Package,
-  ClipboardList,
   FlaskConical,
   Send,
   MessageSquare,
@@ -24,13 +23,11 @@ import {
   Loader2,
   CheckCircle2,
 } from "lucide-react";
-import { PageHeader } from "@/components/page-header";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -90,6 +87,20 @@ const STATUS_COLOR: Record<EnsaioItemOS["status"], string> = {
   aprovado: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30",
   concluido_externo: "bg-teal-500/15 text-teal-700 dark:text-teal-400 border-teal-500/30",
 };
+
+function SectionCard({ icon: Icon, title, right, children }: { icon: React.ComponentType<{ className?: string }>; title: React.ReactNode; right?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <Card>
+      <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <Icon className="h-4 w-4 text-primary" /> {title}
+        </CardTitle>
+        {right}
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
+  );
+}
 
 function OsEspecialHubPage() {
   const { osNumero } = Route.useParams();
@@ -192,94 +203,61 @@ function OsEspecialHubPage() {
   }
 
   return (
-    <div className="space-y-6 w-full px-4 sm:px-6 md:px-8 pb-20">
+    <div className="space-y-5 w-full px-4 sm:px-6 md:px-8 pb-20">
       <Button variant="ghost" size="sm" className="gap-1.5 -ml-2" asChild>
-        <Link to="/relatorio/pendentes" search={{ tab: "ensaios-especiais" }}>
+        <Link to="/relatorio/especiais">
           <ArrowLeft className="h-4 w-4" /> Ensaios Especiais
         </Link>
       </Button>
 
-      <PageHeader
-        eyebrow="Hub da OS · Ensaio Especial"
-        title={`OS ${osNumero}`}
-        description={cad?.tomador || group?.cliente}
-        actions={
-          hub?.arquivada ? (
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={handleDesarquivar}>
-              <ArchiveRestore className="h-4 w-4" /> Reativar OS
-            </Button>
-          ) : (
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setArchiveConfirmOpen(true)}>
-              <Archive className="h-4 w-4" /> Arquivar OS
-            </Button>
-          )
-        }
-      />
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b pb-4">
+        <div>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/80">
+            Hub da OS · Ensaio Especial
+          </div>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight mt-1">OS {osNumero}</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">{cad?.tomador || group?.cliente}</p>
+          {hub?.arquivada && (
+            <Badge variant="outline" className="mt-1.5 gap-1.5 bg-slate-500/10 text-slate-600 border-slate-500/30">
+              <Archive className="h-3 w-3" /> Arquivada em {hub.arquivadaEm ? format(new Date(hub.arquivadaEm), "dd/MM/yyyy", { locale: ptBR }) : ""} por {hub.arquivadaPor}
+            </Badge>
+          )}
+        </div>
+        {hub?.arquivada ? (
+          <Button variant="outline" size="sm" className="gap-1.5 shrink-0" onClick={handleDesarquivar}>
+            <ArchiveRestore className="h-4 w-4" /> Reativar OS
+          </Button>
+        ) : (
+          <Button variant="outline" size="sm" className="gap-1.5 shrink-0" onClick={() => setArchiveConfirmOpen(true)}>
+            <Archive className="h-4 w-4" /> Arquivar OS
+          </Button>
+        )}
+      </div>
 
-      {hub?.arquivada && (
-        <Badge variant="outline" className="gap-1.5 bg-slate-500/10 text-slate-600 border-slate-500/30">
-          <Archive className="h-3 w-3" /> OS arquivada em {hub.arquivadaEm ? format(new Date(hub.arquivadaEm), "dd/MM/yyyy", { locale: ptBR }) : ""} por {hub.arquivadaPor}
-        </Badge>
-      )}
-
-      <Tabs defaultValue="visao-geral" className="space-y-4">
-        <TabsList className="flex flex-wrap h-auto justify-start gap-1 w-full bg-muted/40 p-1 border">
-          <TabsTrigger value="visao-geral" className="gap-1.5 text-xs">
-            <Building className="h-3.5 w-3.5" /> Visão Geral
-          </TabsTrigger>
-          <TabsTrigger value="recebimento" className="gap-1.5 text-xs">
-            <Package className="h-3.5 w-3.5 text-amber-600" /> Recebimento ({recebimentos.length})
-          </TabsTrigger>
-          <TabsTrigger value="programacao" className="gap-1.5 text-xs">
-            <ClipboardList className="h-3.5 w-3.5 text-sky-600" /> Programação & Execução
-          </TabsTrigger>
-          <TabsTrigger value="ensaios" className="gap-1.5 text-xs">
-            <FlaskConical className="h-3.5 w-3.5 text-violet-600" /> Ensaios & Relatórios ({ensaios.length})
-          </TabsTrigger>
-          <TabsTrigger value="emissoes" className="gap-1.5 text-xs">
-            <Send className="h-3.5 w-3.5 text-emerald-600" /> Emissões ({emissoes.length})
-          </TabsTrigger>
-          <TabsTrigger value="chat" className="gap-1.5 text-xs">
-            <MessageSquare className="h-3.5 w-3.5 text-primary" /> Chat ({hub?.messages.length ?? 0})
-          </TabsTrigger>
-        </TabsList>
-
-        {/* VISÃO GERAL */}
-        <TabsContent value="visao-geral" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Building className="h-4 w-4 text-primary" /> Identificação
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1.5 text-sm">
+      {/* Layout linear: conteúdo da OS rolando à esquerda, chat fixo à direita */}
+      <div className="grid lg:grid-cols-[minmax(0,1fr)_380px] gap-5 items-start">
+        <div className="space-y-5 min-w-0">
+          <div className="grid gap-5 md:grid-cols-2">
+            <SectionCard icon={Building} title="Identificação">
+              <div className="space-y-1.5 text-sm">
                 <div><span className="text-muted-foreground">Cliente:</span> <span className="font-medium">{cad?.tomador || group?.cliente || "—"}</span></div>
                 <div><span className="text-muted-foreground">Obra:</span> <span className="font-medium">{cad?.obra || group?.obra || "—"}</span></div>
                 <div className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5 text-muted-foreground" /> <span className="font-medium">{cad?.local || group?.local || "—"}</span></div>
                 {cad?.sup && <div><span className="text-muted-foreground">Sup.:</span> <span className="font-medium">{cad.sup}</span></div>}
-              </CardContent>
-            </Card>
+              </div>
+            </SectionCard>
 
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <CalendarClock className="h-4 w-4 text-primary" /> Data Acordada com Cliente
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-lg font-semibold">
-                      {hub?.dataAcordadaAtual ? format(parseLocalDate(hub.dataAcordadaAtual), "dd/MM/yyyy", { locale: ptBR }) : "Não definida"}
-                    </div>
-                    {hub?.dataAcordadaOriginal && hub.dataAcordadaOriginal !== hub.dataAcordadaAtual && (
-                      <div className="text-[11px] text-muted-foreground">
-                        Data original: {format(parseLocalDate(hub.dataAcordadaOriginal), "dd/MM/yyyy", { locale: ptBR })}
-                      </div>
-                    )}
+            <SectionCard icon={CalendarClock} title="Data Acordada com Cliente" right={<Button size="sm" variant="outline" onClick={() => setDateDialogOpen(true)}>Atualizar</Button>}>
+              <div className="space-y-3">
+                <div>
+                  <div className="text-lg font-semibold">
+                    {hub?.dataAcordadaAtual ? format(parseLocalDate(hub.dataAcordadaAtual), "dd/MM/yyyy", { locale: ptBR }) : "Não definida"}
                   </div>
-                  <Button size="sm" variant="outline" onClick={() => setDateDialogOpen(true)}>Atualizar data</Button>
+                  {hub?.dataAcordadaOriginal && hub.dataAcordadaOriginal !== hub.dataAcordadaAtual && (
+                    <div className="text-[11px] text-muted-foreground">
+                      Data original: {format(parseLocalDate(hub.dataAcordadaOriginal), "dd/MM/yyyy", { locale: ptBR })}
+                    </div>
+                  )}
                 </div>
                 {hub && hub.historicoData.length > 0 && (
                   <div className="border-t pt-2 space-y-1">
@@ -294,106 +272,91 @@ function OsEspecialHubPage() {
                     ))}
                   </div>
                 )}
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        {/* RECEBIMENTO */}
-        <TabsContent value="recebimento" className="space-y-3">
-          {recebimentos.length === 0 ? (
-            <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">Nenhum registro de recebimento encontrado pra essa OS.</CardContent></Card>
-          ) : (
-            recebimentos.map((t) => (
-              <Card key={t.id}>
-                <CardContent className="p-4 space-y-1.5 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold">{t.osCliente}</span>
-                    <Badge variant="outline" className="text-[10px]">{t.dataChegada}</Badge>
-                  </div>
-                  <div className="text-xs text-muted-foreground">Recebido por: {(t.recebidoPor || []).join(", ") || "—"}</div>
-                  <div className="text-xs text-muted-foreground">Tipo: {(t.tipoAmostra || []).join(", ") || "—"}</div>
-                  {t.relacaoAmostras && <div className="text-xs text-muted-foreground">Relação: {t.relacaoAmostras}</div>}
-                  {t.numeroControle && <div className="text-[10px] text-muted-foreground font-mono">{t.numeroControle}</div>}
-                </CardContent>
-              </Card>
-            ))
-          )}
-        </TabsContent>
-
-        {/* PROGRAMAÇÃO & EXECUÇÃO */}
-        <TabsContent value="programacao" className="space-y-2">
-          {ensaios.length === 0 ? (
-            <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">Nenhum ensaio programado.</CardContent></Card>
-          ) : (
-            ensaios.map((e) => (
-              <div key={e.id} className="flex items-center justify-between gap-3 rounded-lg border bg-card p-3 text-xs">
-                <div className="min-w-0">
-                  <div className="font-semibold text-foreground truncate">{e.amostra} · {e.ensaio}</div>
-                  <div className="text-muted-foreground">{e.furo && `Furo ${e.furo} · `}{e.prof}{e.tecnico && ` · Téc. ${e.tecnico}`}</div>
-                </div>
-                <Badge variant="outline" className={`${STATUS_COLOR[e.status]} shrink-0`}>{STATUS_LABEL[e.status]}</Badge>
               </div>
-            ))
-          )}
-        </TabsContent>
+            </SectionCard>
+          </div>
 
-        {/* ENSAIOS & RELATÓRIOS */}
-        <TabsContent value="ensaios" className="space-y-2">
-          {ensaios.length === 0 ? (
-            <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">Nenhum ensaio vinculado a essa OS ainda.</CardContent></Card>
-          ) : (
-            ensaios.map((e) => (
-              <Card key={e.id}>
-                <CardContent className="p-3 flex items-center justify-between gap-3">
-                  <div className="min-w-0 text-xs">
-                    <div className="font-semibold text-sm text-foreground truncate">{e.amostra} · {e.ensaio}</div>
-                    <div className="text-muted-foreground mt-0.5">
-                      {e.digitador && `Digitador: ${e.digitador}`}
-                      {e.verificador && ` · Verificador: ${e.verificador}`}
-                      {e.aprovador && ` · Aprovador: ${e.aprovador}`}
+          <SectionCard icon={Package} title={`Recebimento de Amostras (${recebimentos.length})`}>
+            {recebimentos.length === 0 ? (
+              <div className="text-sm text-muted-foreground py-2">Nenhum registro de recebimento encontrado pra essa OS.</div>
+            ) : (
+              <div className="space-y-2">
+                {recebimentos.map((t) => (
+                  <div key={t.id} className="rounded-lg border bg-muted/20 p-3 text-xs space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold">{t.osCliente}</span>
+                      <Badge variant="outline" className="text-[10px]">{t.dataChegada}</Badge>
+                    </div>
+                    <div className="text-muted-foreground">Recebido por: {(t.recebidoPor || []).join(", ") || "—"}</div>
+                    <div className="text-muted-foreground">Tipo: {(t.tipoAmostra || []).join(", ") || "—"}</div>
+                    {t.relacaoAmostras && <div className="text-muted-foreground">Relação: {t.relacaoAmostras}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </SectionCard>
+
+          <SectionCard icon={FlaskConical} title={`Ensaios & Relatórios (${ensaios.length})`}>
+            {ensaios.length === 0 ? (
+              <div className="text-sm text-muted-foreground py-2">Nenhum ensaio vinculado a essa OS ainda.</div>
+            ) : (
+              <div className="space-y-2">
+                {ensaios.map((e) => (
+                  <div key={e.id} className="flex items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3 text-xs">
+                    <div className="min-w-0">
+                      <div className="font-semibold text-sm text-foreground truncate">{e.amostra} · {e.ensaio}</div>
+                      <div className="text-muted-foreground mt-0.5">
+                        {e.furo && `Furo ${e.furo} · `}{e.prof}
+                        {e.digitador && ` · Digitador: ${e.digitador}`}
+                        {e.verificador && ` · Verificador: ${e.verificador}`}
+                        {e.aprovador && ` · Aprovador: ${e.aprovador}`}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Badge variant="outline" className={STATUS_COLOR[e.status]}>{STATUS_LABEL[e.status]}</Badge>
+                      <Button size="sm" variant="outline" className="gap-1" onClick={() => abrirEnsaio(e)}>
+                        Abrir <ExternalLink className="h-3 w-3" />
+                      </Button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Badge variant="outline" className={STATUS_COLOR[e.status]}>{STATUS_LABEL[e.status]}</Badge>
-                    <Button size="sm" variant="outline" className="gap-1" onClick={() => abrirEnsaio(e)}>
-                      Abrir <ExternalLink className="h-3 w-3" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))
-          )}
-        </TabsContent>
-
-        {/* EMISSÕES */}
-        <TabsContent value="emissoes" className="space-y-2">
-          {emissoes.length === 0 ? (
-            <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">Nenhuma emissão registrada pra essa OS ainda.</CardContent></Card>
-          ) : (
-            emissoes.map((em) => (
-              <div key={em.scope_id} className="flex items-center justify-between gap-3 rounded-lg border bg-card p-3 text-xs">
-                <div className="min-w-0">
-                  <div className="font-semibold text-foreground truncate">{em.amostra_code} · {em.ensaio_nome || em.ensaio_tipo}</div>
-                  <div className="text-muted-foreground">
-                    {em.decided_by_name ? `Aprovado por ${em.decided_by_name}` : em.verified_by_name ? `Verificado por ${em.verified_by_name}` : "Aguardando"}
-                    {em.decided_at && ` · ${format(new Date(em.decided_at), "dd/MM/yyyy", { locale: ptBR })}`}
-                  </div>
-                </div>
-                <Badge variant="outline" className="shrink-0 gap-1">
-                  {em.status === "aprovado" && <CheckCircle2 className="h-3 w-3 text-emerald-600" />}
-                  {em.status} {em.rev != null && `· rev.${em.rev}`}
-                </Badge>
+                ))}
               </div>
-            ))
-          )}
-        </TabsContent>
+            )}
+          </SectionCard>
 
-        {/* CHAT */}
-        <TabsContent value="chat">
+          <SectionCard icon={Send} title={`Emissões (${emissoes.length})`}>
+            {emissoes.length === 0 ? (
+              <div className="text-sm text-muted-foreground py-2">Nenhuma emissão registrada pra essa OS ainda.</div>
+            ) : (
+              <div className="space-y-2">
+                {emissoes.map((em) => (
+                  <div key={em.scope_id} className="flex items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3 text-xs">
+                    <div className="min-w-0">
+                      <div className="font-semibold text-foreground truncate">{em.amostra_code} · {em.ensaio_nome || em.ensaio_tipo}</div>
+                      <div className="text-muted-foreground">
+                        {em.decided_by_name ? `Aprovado por ${em.decided_by_name}` : em.verified_by_name ? `Verificado por ${em.verified_by_name}` : "Aguardando"}
+                        {em.decided_at && ` · ${format(new Date(em.decided_at), "dd/MM/yyyy", { locale: ptBR })}`}
+                      </div>
+                    </div>
+                    <Badge variant="outline" className="shrink-0 gap-1">
+                      {em.status === "aprovado" && <CheckCircle2 className="h-3 w-3 text-emerald-600" />}
+                      {em.status} {em.rev != null && `· rev.${em.rev}`}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </SectionCard>
+        </div>
+
+        {/* Chat fixo ao lado — acompanha a rolagem da página */}
+        <div className="lg:sticky lg:top-4">
+          <div className="flex items-center gap-1.5 text-sm font-semibold mb-2">
+            <MessageSquare className="h-4 w-4 text-primary" /> Chat da OS
+          </div>
           <OsChatPanel osNumero={osNumero} messages={hub?.messages ?? []} onPosted={() => refetchHub()} />
-        </TabsContent>
-      </Tabs>
+        </div>
+      </div>
 
       {/* Dialog: atualizar data acordada */}
       <Dialog open={dateDialogOpen} onOpenChange={setDateDialogOpen}>

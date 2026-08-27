@@ -101,6 +101,12 @@ const sections: readonly NavSection[] = [
     ],
   },
   {
+    label: "ENSAIOS ESPECIAIS",
+    items: [
+      { title: "Ensaios Especiais", url: "/relatorio/especiais", icon: Sparkles },
+    ],
+  },
+  {
     label: "DIGITALIZAÇÃO",
     items: [
       { title: "Digitalização de Ensaios", url: "/relatorio/digitalizacao", icon: ScanLine },

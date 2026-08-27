@@ -102,7 +102,7 @@ const SECTIONS: readonly Section[] = [
   {
     key: "relatorio",
     label: "Relatório",
-    match: (p) => p.startsWith("/relatorio") && !p.startsWith("/relatorio/digitalizacao"),
+    match: (p) => p.startsWith("/relatorio") && !p.startsWith("/relatorio/digitalizacao") && !p.startsWith("/relatorio/especiais"),
     tabs: [
       { title: "Central de Relatórios", url: "/relatorio/pendentes", icon: ClipboardList },
       { title: "Cisalhamento Direto", url: "/relatorio/cisalhamento-direto", icon: Beaker },
@@ -112,6 +112,14 @@ const SECTIONS: readonly Section[] = [
       { title: "ASF.DAP (Densidade Aparente)", url: "/relatorio/asf-dap", icon: Beaker },
       { title: "Módulo de Resiliência", url: "/relatorio/modulo-resiliencia", icon: FlaskConical },
       { title: "Umidade Natural", url: "/relatorio/umidade-natural", icon: Beaker },
+    ],
+  },
+  {
+    key: "ensaios-especiais",
+    label: "Ensaios Especiais",
+    match: (p) => p.startsWith("/relatorio/especiais"),
+    tabs: [
+      { title: "Ensaios Especiais", url: "/relatorio/especiais", icon: Sparkles },
     ],
   },
   {

@@ -1,14 +1,15 @@
 /**
- * Aba "Ensaios Especiais" — grid de OS classificadas como especiais (mesma
- * regra de src/routes/_app.programacao.central.tsx), organizado por OS, com
- * link pra abrir o hub completo de cada uma (/relatorio/especiais/$osNumero).
+ * Lista de OS classificadas como especiais (mesma regra de
+ * src/routes/_app.programacao.central.tsx), organizada por OS, com link pra
+ * abrir o hub completo de cada uma (/relatorio/especiais/$osNumero).
  */
 import { useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQueries } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Sparkles, ArrowRight, Archive, Search } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ArrowRight, Archive, Search } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,7 +60,7 @@ export function EnsaiosEspeciaisView() {
     })),
   });
 
-  const cards = useMemo(() => {
+  const rows = useMemo(() => {
     return especiaisOsNumeros.map((osNumero, i) => {
       const group = osGroups.find((g) => normOs(g.osNumero) === normOs(osNumero));
       const hub = hubQueries[i]?.data;
@@ -79,40 +80,29 @@ export function EnsaiosEspeciaisView() {
 
   const filtered = useMemo(() => {
     const q = busca.trim().toLowerCase();
-    return cards.filter((c) => {
-      if (!mostrarArquivadas && c.arquivada) return false;
+    return rows.filter((r) => {
+      if (!mostrarArquivadas && r.arquivada) return false;
       if (!q) return true;
-      return c.osNumero.toLowerCase().includes(q) || c.cliente.toLowerCase().includes(q) || c.obra.toLowerCase().includes(q);
+      return r.osNumero.toLowerCase().includes(q) || r.cliente.toLowerCase().includes(q) || r.obra.toLowerCase().includes(q);
     });
-  }, [cards, busca, mostrarArquivadas]);
+  }, [rows, busca, mostrarArquivadas]);
 
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h2 className="font-display text-lg font-semibold tracking-tight flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-amber-500" /> Ensaios Especiais
-          </h2>
-          <p className="text-xs text-muted-foreground">
-            Cisalhamento, Triaxiais e Adensamento — mesma classificação usada em Programação · Central.
-          </p>
+        <div className="relative w-full sm:max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Filtrar por OS, cliente ou obra..."
+            className="pl-9 text-xs"
+          />
         </div>
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
-            <Switch checked={mostrarArquivadas} onCheckedChange={setMostrarArquivadas} />
-            Mostrar arquivadas
-          </label>
-        </div>
-      </div>
-
-      <div className="relative w-full sm:max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          value={busca}
-          onChange={(e) => setBusca(e.target.value)}
-          placeholder="Filtrar por OS, cliente ou obra..."
-          className="pl-9 text-xs"
-        />
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none shrink-0">
+          <Switch checked={mostrarArquivadas} onCheckedChange={setMostrarArquivadas} />
+          Mostrar arquivadas
+        </label>
       </div>
 
       {filtered.length === 0 ? (
@@ -122,37 +112,49 @@ export function EnsaiosEspeciaisView() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((c) => (
-            <Card key={c.osNumero} className="hover:border-primary/50 transition-colors">
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between gap-2">
-                  <CardTitle className="text-sm">OS {c.osNumero}</CardTitle>
-                  {c.arquivada && (
-                    <Badge variant="outline" className="text-[9px] gap-1">
-                      <Archive className="h-2.5 w-2.5" /> Arquivada
-                    </Badge>
-                  )}
-                </div>
-                <div className="text-xs text-muted-foreground truncate">{c.cliente}</div>
-                {c.obra && <div className="text-[11px] text-muted-foreground truncate">{c.obra}</div>}
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">Ensaios</span>
-                  <span className="font-semibold tabular-nums">{c.concluidos}/{c.totalEnsaios} concluídos</span>
-                </div>
-                <DeadlineBadge dataAcordadaAtual={c.dataAcordadaAtual} />
-                <Button
-                  size="sm"
-                  className="w-full gap-1.5"
-                  onClick={() => navigate({ to: "/relatorio/especiais/$osNumero", params: { osNumero: c.osNumero } })}
+        <div className="rounded-lg border bg-card overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/50">
+                <TableHead className="w-28">OS</TableHead>
+                <TableHead>Cliente / Obra</TableHead>
+                <TableHead className="w-40">Ensaios</TableHead>
+                <TableHead className="w-44">Prazo</TableHead>
+                <TableHead className="w-32 text-right">Ação</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filtered.map((r) => (
+                <TableRow
+                  key={r.osNumero}
+                  className="hover:bg-muted/30 cursor-pointer"
+                  onClick={() => navigate({ to: "/relatorio/especiais/$osNumero", params: { osNumero: r.osNumero } })}
                 >
-                  Abrir OS <ArrowRight className="h-3.5 w-3.5" />
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
+                  <TableCell className="font-bold text-xs text-foreground">
+                    <div className="flex items-center gap-1.5">
+                      {r.osNumero}
+                      {r.arquivada && <Archive className="h-3 w-3 text-muted-foreground" />}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="text-xs font-medium text-foreground truncate">{r.cliente}</div>
+                    {r.obra && <div className="text-[11px] text-muted-foreground truncate">{r.obra}</div>}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground tabular-nums">
+                    {r.concluidos}/{r.totalEnsaios} concluídos
+                  </TableCell>
+                  <TableCell>
+                    <DeadlineBadge dataAcordadaAtual={r.dataAcordadaAtual} />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1">
+                      Abrir <ArrowRight className="h-3 w-3" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </div>
       )}
     </div>

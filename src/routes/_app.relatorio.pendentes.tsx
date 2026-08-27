@@ -91,7 +91,6 @@ import { useCadastroByOs } from "@/hooks/use-cadastro-by-os";
 import { useAuth } from "@/hooks/use-auth";
 import { EmissoesInner } from "@/components/emissoes-inner";
 import { OsReportsView } from "@/features/lab/components/OsReportsView";
-import { EnsaiosEspeciaisView } from "@/features/lab/components/EnsaiosEspeciaisView";
 import { evaluateSla, formatHours, type SlaStatus } from "@/lib/sla-calc";
 import { supabase } from "@/integrations/supabase/client";
 import { listEmissoes } from "@/lib/emissoes.functions";
@@ -288,7 +287,27 @@ function CentralRelatoriosPage() {
       }
     }
 
-    return Array.from(new Set(map.values())).sort(
+    // O map acima guarda cada pendência tanto pela chave normalizada
+    // (os+amostra+metodologia) quanto pelo id bruto — isso ajuda o merge com
+    // o labStore acima a achar uma pendência já existente mesmo quando o
+    // texto do ensaio não bate exatamente. Efeito colateral: se duas
+    // pendências no servidor têm ids diferentes pro MESMO ensaio real (ex.:
+    // criadas por dois fluxos de digitalização com texto de ensaio
+    // ligeiramente diferente), as duas sobrevivem em map.values() porque
+    // cada uma também está indexada pelo próprio id. Corrige agrupando de
+    // novo pela chave normalizada e mantendo só a mais recente de cada
+    // grupo — garante uma linha por ensaio na tela mesmo que o backend
+    // tenha duplicado o registro.
+    const porChaveNormalizada = new Map<string, PendenciaDigitacao>();
+    for (const p of map.values()) {
+      const k = `${normOs(p.os)}::${normAmostra(p.amostra || "")}::${normMethod(p.ensaio || p.tipo_ensaio)}`;
+      const atual = porChaveNormalizada.get(k);
+      if (!atual || new Date(p.updated_at || p.created_at) > new Date(atual.updated_at || atual.created_at)) {
+        porChaveNormalizada.set(k, p);
+      }
+    }
+
+    return Array.from(porChaveNormalizada.values()).sort(
       (a, b) => new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime()
     );
   }, [rows, labState]);
@@ -859,10 +878,6 @@ function CentralRelatoriosPage() {
           <TabsTrigger value="por-os" className="gap-1.5 text-xs">
             <Building className="h-3.5 w-3.5 text-orange-600" />
             Por OS
-          </TabsTrigger>
-          <TabsTrigger value="ensaios-especiais" className="gap-1.5 text-xs">
-            <Sparkles className="h-3.5 w-3.5 text-amber-500" />
-            Ensaios Especiais
           </TabsTrigger>
         </TabsList>
 
@@ -1506,13 +1521,6 @@ function CentralRelatoriosPage() {
            ========================================================================= */}
         <TabsContent value="por-os">
           <OsReportsView />
-        </TabsContent>
-
-        {/* =========================================================================
-            ABA 6: ENSAIOS ESPECIAIS (CISALHAMENTO / TRIAXIAIS / ADENSAMENTO)
-           ========================================================================= */}
-        <TabsContent value="ensaios-especiais">
-          <EnsaiosEspeciaisView />
         </TabsContent>
       </Tabs>
 
