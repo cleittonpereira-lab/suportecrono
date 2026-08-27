@@ -7,11 +7,9 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQueries } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ArrowRight, Archive, Search } from "lucide-react";
+import { ArrowRight, Archive, Search, Building, FlaskConical } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useSchedule } from "@/hooks/use-schedule";
@@ -24,28 +22,26 @@ function parseLocalDate(dateOnly: string): Date {
   return new Date(y, (m || 1) - 1, d || 1);
 }
 
-function DeadlineBadge({ dataAcordadaAtual }: { dataAcordadaAtual: string | null }) {
+type PrazoInfo = { label: string; badgeClass: string; borderClass: string };
+
+function prazoInfo(dataAcordadaAtual: string | null): PrazoInfo {
   if (!dataAcordadaAtual) {
-    return <Badge variant="outline" className="text-[10px]">Sem data acordada</Badge>;
+    return { label: "Sem data acordada", badgeClass: "bg-muted text-muted-foreground border-border", borderClass: "border-l-slate-300 dark:border-l-slate-700" };
   }
   const diffDays = Math.ceil((parseLocalDate(dataAcordadaAtual).getTime() - Date.now()) / 86_400_000);
   if (diffDays < 0) {
-    return <Badge className="text-[10px] bg-rose-500/15 text-rose-700 dark:text-rose-400 border-rose-500/30">Atrasada {Math.abs(diffDays)}d</Badge>;
+    return { label: `Atrasada ${Math.abs(diffDays)}d`, badgeClass: "bg-rose-500/15 text-rose-700 dark:text-rose-400 border-rose-500/30", borderClass: "border-l-rose-500" };
   }
   if (diffDays <= 3) {
-    return <Badge className="text-[10px] bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30">Vence em {diffDays}d</Badge>;
+    return { label: `Vence em ${diffDays}d`, badgeClass: "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30", borderClass: "border-l-amber-500" };
   }
-  return <Badge className="text-[10px] bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30">No prazo · {diffDays}d</Badge>;
+  return { label: `No prazo · ${diffDays}d`, badgeClass: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30", borderClass: "border-l-emerald-500" };
 }
 
-export function EnsaiosEspeciaisView() {
-  const navigate = useNavigate();
+export function useEnsaiosEspeciaisRows() {
   const { data: scheduleData } = useSchedule();
   const { osGroups } = useOsGroups();
   const getOsHubFn = useServerFn(getOsHub);
-
-  const [busca, setBusca] = useState("");
-  const [mostrarArquivadas, setMostrarArquivadas] = useState(false);
 
   const especiaisOsNumeros = useMemo(
     () => Array.from(classifyEspeciaisOs(scheduleData?.rows ?? [])).sort(),
@@ -60,7 +56,7 @@ export function EnsaiosEspeciaisView() {
     })),
   });
 
-  const rows = useMemo(() => {
+  return useMemo(() => {
     return especiaisOsNumeros.map((osNumero, i) => {
       const group = osGroups.find((g) => normOs(g.osNumero) === normOs(osNumero));
       const hub = hubQueries[i]?.data;
@@ -77,6 +73,14 @@ export function EnsaiosEspeciaisView() {
       };
     });
   }, [especiaisOsNumeros, osGroups, hubQueries]);
+}
+
+export function EnsaiosEspeciaisView() {
+  const navigate = useNavigate();
+  const rows = useEnsaiosEspeciaisRows();
+
+  const [busca, setBusca] = useState("");
+  const [mostrarArquivadas, setMostrarArquivadas] = useState(false);
 
   const filtered = useMemo(() => {
     const q = busca.trim().toLowerCase();
@@ -112,49 +116,50 @@ export function EnsaiosEspeciaisView() {
           </CardContent>
         </Card>
       ) : (
-        <div className="rounded-lg border bg-card overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted/50">
-                <TableHead className="w-28">OS</TableHead>
-                <TableHead>Cliente / Obra</TableHead>
-                <TableHead className="w-40">Ensaios</TableHead>
-                <TableHead className="w-44">Prazo</TableHead>
-                <TableHead className="w-32 text-right">Ação</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((r) => (
-                <TableRow
-                  key={r.osNumero}
-                  className="hover:bg-muted/30 cursor-pointer"
-                  onClick={() => navigate({ to: "/relatorio/especiais/$osNumero", params: { osNumero: r.osNumero } })}
-                >
-                  <TableCell className="font-bold text-xs text-foreground">
-                    <div className="flex items-center gap-1.5">
-                      {r.osNumero}
-                      {r.arquivada && <Archive className="h-3 w-3 text-muted-foreground" />}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="text-xs font-medium text-foreground truncate">{r.cliente}</div>
-                    {r.obra && <div className="text-[11px] text-muted-foreground truncate">{r.obra}</div>}
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground tabular-nums">
-                    {r.concluidos}/{r.totalEnsaios} concluídos
-                  </TableCell>
-                  <TableCell>
-                    <DeadlineBadge dataAcordadaAtual={r.dataAcordadaAtual} />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1">
-                      Abrir <ArrowRight className="h-3 w-3" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+        <div className="space-y-2.5">
+          {filtered.map((r) => {
+            const prazo = prazoInfo(r.dataAcordadaAtual);
+            return (
+              <div
+                key={r.osNumero}
+                role="button"
+                tabIndex={0}
+                onClick={() => navigate({ to: "/relatorio/especiais/$osNumero", params: { osNumero: r.osNumero } })}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    navigate({ to: "/relatorio/especiais/$osNumero", params: { osNumero: r.osNumero } });
+                  }
+                }}
+                className={`flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-5 rounded-lg border border-l-4 ${prazo.borderClass} bg-card px-4 py-3.5 shadow-xs cursor-pointer transition-shadow hover:shadow-md hover:ring-1 hover:ring-primary/30`}
+              >
+                <div className="min-w-0 sm:w-48 shrink-0">
+                  <div className="flex items-center gap-1.5 font-bold text-base text-foreground">
+                    {r.osNumero}
+                    {r.arquivada && <Archive className="h-3.5 w-3.5 text-muted-foreground" />}
+                  </div>
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground truncate">
+                    <Building className="h-3 w-3 shrink-0" /> {r.cliente}
+                  </div>
+                </div>
+
+                <div className="min-w-0 flex-1 text-xs text-muted-foreground truncate">
+                  {r.obra || "—"}
+                </div>
+
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
+                  <FlaskConical className="h-3.5 w-3.5" />
+                  <span className="font-semibold text-foreground tabular-nums">{r.concluidos}/{r.totalEnsaios}</span> concluídos
+                </div>
+
+                <Badge variant="outline" className={`${prazo.badgeClass} shrink-0 justify-center w-32`}>{prazo.label}</Badge>
+
+                <div className="flex items-center gap-1 shrink-0 text-xs font-semibold text-primary">
+                  Abrir <ArrowRight className="h-3.5 w-3.5" />
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

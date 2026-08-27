@@ -49,8 +49,10 @@ import {
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useCadastroByOs } from "@/hooks/use-cadastro-by-os";
 import { useOsGroups, abrirEnsaioNaCentral, type EnsaioItemOS } from "@/features/lab/hooks/use-os-groups";
+import { ENSAIO_LABEL } from "@/features/lab/types";
 import { normOs } from "@/lib/schedule-utils";
 import { listEmissoes } from "@/lib/emissoes.functions";
 import { fetchSharedChegadaState } from "@/lib/chegada-amostras.functions";
@@ -116,9 +118,18 @@ function OsEspecialHubPage() {
   const listEmissoesFn = useServerFn(listEmissoes);
   const fetchChegadaFn = useServerFn(fetchSharedChegadaState);
 
+  const [statusFiltro, setStatusFiltro] = useState<"all" | EnsaioItemOS["status"]>("all");
+  const [tipoFiltro, setTipoFiltro] = useState<string>("all");
+
   const cad = cadastro.lookup(osNumero);
   const group = osGroups.find((g) => normOs(g.osNumero) === normOs(osNumero));
   const ensaios = group?.ensaios ?? [];
+  const ensaiosFiltrados = ensaios.filter((e) => {
+    if (statusFiltro !== "all" && e.status !== statusFiltro) return false;
+    if (tipoFiltro !== "all" && e.tipo !== tipoFiltro) return false;
+    return true;
+  });
+  const tiposDisponiveis = Array.from(new Set(ensaios.map((e) => e.tipo)));
 
   const { data: hub, refetch: refetchHub } = useQuery({
     queryKey: ["os-hub", osNumero],
@@ -205,7 +216,7 @@ function OsEspecialHubPage() {
   return (
     <div className="space-y-5 w-full px-4 sm:px-6 md:px-8 pb-20">
       <Button variant="ghost" size="sm" className="gap-1.5 -ml-2" asChild>
-        <Link to="/relatorio/especiais">
+        <Link to="/relatorio/especiais" search={{ tab: undefined }}>
           <ArrowLeft className="h-4 w-4" /> Ensaios Especiais
         </Link>
       </Button>
@@ -296,12 +307,45 @@ function OsEspecialHubPage() {
             )}
           </SectionCard>
 
-          <SectionCard icon={FlaskConical} title={`Ensaios & Relatórios (${ensaios.length})`}>
+          <SectionCard
+            icon={FlaskConical}
+            title={`Ensaios & Relatórios (${ensaiosFiltrados.length}/${ensaios.length})`}
+            right={
+              ensaios.length > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <Select value={statusFiltro} onValueChange={(v) => setStatusFiltro(v as typeof statusFiltro)}>
+                    <SelectTrigger className="h-7 w-[150px] text-[11px]">
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos os status</SelectItem>
+                      {(Object.keys(STATUS_LABEL) as EnsaioItemOS["status"][]).map((s) => (
+                        <SelectItem key={s} value={s}>{STATUS_LABEL[s]}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={tipoFiltro} onValueChange={setTipoFiltro}>
+                    <SelectTrigger className="h-7 w-[150px] text-[11px]">
+                      <SelectValue placeholder="Tipo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos os tipos</SelectItem>
+                      {tiposDisponiveis.map((t) => (
+                        <SelectItem key={t} value={t}>{ENSAIO_LABEL[t] ?? t}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )
+            }
+          >
             {ensaios.length === 0 ? (
               <div className="text-sm text-muted-foreground py-2">Nenhum ensaio vinculado a essa OS ainda.</div>
+            ) : ensaiosFiltrados.length === 0 ? (
+              <div className="text-sm text-muted-foreground py-2">Nenhum ensaio corresponde a esse filtro.</div>
             ) : (
               <div className="space-y-2">
-                {ensaios.map((e) => (
+                {ensaiosFiltrados.map((e) => (
                   <div key={e.id} className="flex items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3 text-xs">
                     <div className="min-w-0">
                       <div className="font-semibold text-sm text-foreground truncate">{e.amostra} · {e.ensaio}</div>
