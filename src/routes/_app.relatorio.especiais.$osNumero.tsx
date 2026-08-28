@@ -431,6 +431,8 @@ function OsEspecialHubPage() {
               amostrasProg={amostrasProg}
               tiposProg={tiposProg}
               equipsProg={equipsProg}
+              dataOriginal={hub?.dataAcordadaOriginal}
+              historicoData={hub?.historicoData}
             />
           </SectionCard>
 

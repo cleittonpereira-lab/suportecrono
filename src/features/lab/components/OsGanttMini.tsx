@@ -48,6 +48,8 @@ export function OsGanttMini({
   amostrasProg,
   tiposProg,
   equipsProg,
+  dataOriginal,
+  historicoData,
 }: {
   osNumero: string;
   progs: any[];
@@ -55,6 +57,10 @@ export function OsGanttMini({
   amostrasProg: any[];
   tiposProg: any[];
   equipsProg: any[];
+  /** Data originalmente acordada com o cliente (linha tracejada vermelha) */
+  dataOriginal?: string | null;
+  /** Histórico de reprogramações (linhas tracejadas âmbar) */
+  historicoData?: Array<{ data: string; alteradoPor?: string; alteradoEm?: string }>;
 }) {
   const [expandido, setExpandido] = useState(false);
 
@@ -128,6 +134,26 @@ export function OsGanttMini({
   const unit = expandido ? "px" : "%";
   const hojeOffset = differenceInCalendarDays(hoje, rangeStart);
 
+  const parseDateSafe = (v?: string | null) => {
+    if (!v) return null;
+    const d = parseISO(v);
+    return isValid(d) ? d : null;
+  };
+
+  const dataOriginalParsed = parseDateSafe(dataOriginal);
+  const dataOriginalOffset = dataOriginalParsed ? differenceInCalendarDays(dataOriginalParsed, rangeStart) : null;
+
+  const reprogramacoesParsed = useMemo(() => {
+    return (historicoData || [])
+      .map((h, idx) => ({
+        idx: idx + 1,
+        date: parseDateSafe(h.data),
+        alteradoPor: h.alteradoPor,
+        alteradoEm: h.alteradoEm,
+      }))
+      .filter((h): h is { idx: number; date: Date; alteradoPor?: string; alteradoEm?: string } => h.date !== null);
+  }, [historicoData]);
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
@@ -142,13 +168,37 @@ export function OsGanttMini({
           <div className="flex text-[10px] text-muted-foreground">
             <div className="w-40 shrink-0" />
             <div className="w-24 shrink-0" />
-            <div className="relative flex-1 h-5 border-b" style={expandido ? { width: trackWidth } : undefined}>
+            <div className="relative flex-1 h-6 border-b" style={expandido ? { width: trackWidth } : undefined}>
               {diasMarcadores.map((m, i) => (
-                <div key={i} className="absolute top-0 border-l border-border/70 pl-1 h-full" style={{ [expandido ? "left" : "left"]: `${pct(m.d)}${unit}` }}>
+                <div key={i} className="absolute top-0 border-l border-border/70 pl-1 h-full" style={{ left: `${pct(m.d)}${unit}` }}>
                   {m.label}
                 </div>
               ))}
-              <div className="absolute top-0 border-l-2 border-primary h-full" style={{ left: `${pct(hojeOffset)}${unit}` }} />
+              <div className="absolute top-0 border-l-2 border-primary h-full z-10" style={{ left: `${pct(hojeOffset)}${unit}` }}>
+                <span className="absolute -top-3 -translate-x-1/2 bg-primary text-primary-foreground text-[8px] px-1 rounded font-semibold whitespace-nowrap">Hoje</span>
+              </div>
+
+              {/* Marcador de Data Original no cabeçalho */}
+              {dataOriginalOffset !== null && dataOriginalOffset >= 0 && dataOriginalOffset <= totalDays && (
+                <div className="absolute top-0 border-l-2 border-rose-500 h-full z-20" style={{ left: `${pct(dataOriginalOffset)}${unit}` }}>
+                  <span className="absolute -top-3.5 -translate-x-1/2 bg-rose-500 text-white text-[9px] px-1 rounded font-bold whitespace-nowrap shadow-sm">
+                    Orig: {fmt(dataOriginalParsed!)}
+                  </span>
+                </div>
+              )}
+
+              {/* Marcadores de Reprogramações no cabeçalho */}
+              {reprogramacoesParsed.map((rep) => {
+                const repOffset = differenceInCalendarDays(rep.date, rangeStart);
+                if (repOffset < 0 || repOffset > totalDays) return null;
+                return (
+                  <div key={rep.idx} className="absolute top-0 border-l-2 border-amber-500 h-full z-20" style={{ left: `${pct(repOffset)}${unit}` }}>
+                    <span className="absolute -top-3.5 -translate-x-1/2 bg-amber-500 text-white text-[9px] px-1 rounded font-bold whitespace-nowrap shadow-sm">
+                      Reprog {rep.idx}: {fmt(rep.date)}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -168,6 +218,26 @@ export function OsGanttMini({
                   <span className="truncate" title={r.equipamento}>{r.equipamento}</span>
                 </div>
                 <div className="relative flex-1" style={{ height: 26, width: expandido ? trackWidth : undefined }}>
+                  {/* Linha vertical de Data Original (Vermelha) */}
+                  {dataOriginalOffset !== null && dataOriginalOffset >= 0 && dataOriginalOffset <= totalDays && (
+                    <div
+                      className="absolute top-0 bottom-0 w-px bg-rose-500/70 z-10 pointer-events-none"
+                      style={{ left: `${pct(dataOriginalOffset)}${unit}` }}
+                    />
+                  )}
+
+                  {/* Linhas verticais de Datas Reprogramadas (Âmbar) */}
+                  {reprogramacoesParsed.map((rep) => {
+                    const repOffset = differenceInCalendarDays(rep.date, rangeStart);
+                    if (repOffset < 0 || repOffset > totalDays) return null;
+                    return (
+                      <div
+                        key={rep.idx}
+                        className="absolute top-0 bottom-0 w-px bg-amber-500/70 z-10 pointer-events-none"
+                        style={{ left: `${pct(repOffset)}${unit}` }}
+                      />
+                    );
+                  })}
                   {r.previstoInicio && r.previstoFim && (
                     <div
                       className="absolute top-0.5 h-2.5 rounded"
@@ -218,6 +288,8 @@ export function OsGanttMini({
         <span className="flex items-center gap-1"><span className="inline-block w-3 h-2 rounded border-[1.5px] border-solid border-foreground/40 bg-muted" /> Real</span>
         <span className="flex items-center gap-1"><span className="inline-block w-3 h-2 rounded border-[1.5px] border-dashed border-foreground/40" /> Previsto</span>
         <span className="flex items-center gap-1"><span className="inline-block w-0.5 h-3 bg-primary" /> Hoje</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-px h-3 bg-rose-500" /> <span className="text-rose-600">Data Original</span></span>
+        <span className="flex items-center gap-1"><span className="inline-block w-px h-3 bg-amber-500" /> <span className="text-amber-600">Reprogramações</span></span>
         <span className="text-rose-600">■ Atraso</span>
         <span className="text-emerald-600">■ Adiantado</span>
         {equipamentosUnicos.length > 0 && (
