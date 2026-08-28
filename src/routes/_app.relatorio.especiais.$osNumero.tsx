@@ -38,6 +38,13 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Carousel, CarouselContent, CarouselItem, CarouselPrevious, CarouselNext } from "@/components/ui/carousel";
+import { Image as ImageComponent } from "@/components/ui/image";
   DialogDescription,
   DialogFooter,
   DialogHeader,
@@ -152,6 +159,20 @@ function OsEspecialHubPage() {
 
   const [statusFiltro, setStatusFiltro] = useState<"all" | EnsaioItemOS["status"]>("all");
   const [tipoFiltro, setTipoFiltro] = useState<string>("all");
+  const [recebimentoDialogOpen, setRecebimentoDialogOpen] = useState(false);
+  const [selectedRecebimento, setSelectedRecebimento] = useState<{
+    data: string;
+    responsavel: string;
+    observacoes: string;
+    amostras: Array<{
+      id: string;
+      identificacao: string;
+      tipo: string;
+      profundidade: string;
+      quantidade: string;
+      fotos: Array<{ url: string }>;
+    }>;
+  } | null>(null);
 
   const cad = cadastro.lookup(osNumero);
   const group = osGroups.find((g) => normOs(g.osNumero) === normOs(osNumero));
@@ -379,7 +400,27 @@ function OsEspecialHubPage() {
                   <div key={t.id} className="rounded-lg border bg-muted/20 p-3 text-xs space-y-1">
                     <div className="flex items-center justify-between">
                       <span className="font-semibold">{t.osCliente}</span>
-                      <Badge variant="outline" className="text-[10px]">{t.dataChegada}</Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-[10px]">{t.dataChegada}</Badge>
+                        <DialogTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="xs"
+                            className="h-6 text-[10px] px-1.5"
+                            onClick={() => {
+                              setSelectedRecebimento({
+                                data: t.dataChegada,
+                                responsavel: (t.recebidoPor || []).join(", "),
+                                observacoes: t.observacoes || "—",
+                                amostras: t.amostras || []
+                              });
+                              setRecebimentoDialogOpen(true);
+                            }}
+                          >
+                            Ver Detalhes
+                          </Button>
+                        </DialogTrigger>
+                      </div>
                     </div>
                     <div className="text-muted-foreground">Recebido por: {(t.recebidoPor || []).join(", ") || "—"}</div>
                     <div className="text-muted-foreground">Tipo: {(t.tipoAmostra || []).join(", ") || "—"}</div>
@@ -550,6 +591,79 @@ function OsEspecialHubPage() {
               {savingDate ? <Loader2 className="h-4 w-4 animate-spin" /> : "Salvar"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: detalhes do recebimento */}
+      <Dialog open={recebimentoDialogOpen} onOpenChange={setRecebimentoDialogOpen}>
+        <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Detalhes do Recebimento</DialogTitle>
+            <DialogDescription>
+              Data: {selectedRecebimento?.data} · Responsável: {selectedRecebimento?.responsavel}
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedRecebimento?.observacoes && (
+            <div className="py-2">
+              <h4 className="font-medium mb-1">Observações:</h4>
+              <p className="text-sm text-muted-foreground">{selectedRecebimento.observacoes}</p>
+            </div>
+          )}
+
+          <div className="space-y-4 py-2">
+            <h4 className="font-medium">Amostras Recebidas ({selectedRecebimento?.amostras.length})</h4>
+
+            {selectedRecebimento?.amostras.map((amostra, index) => (
+              <div key={amostra.id} className="border rounded-lg p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <h5 className="font-medium">Amostra {index + 1}</h5>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Identificação:</span>
+                    <span className="font-medium ml-1">{amostra.identificacao || '—'}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Tipo:</span>
+                    <span className="font-medium ml-1">{amostra.tipo || '—'}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Profundidade:</span>
+                    <span className="font-medium ml-1">{amostra.profundidade || '—'}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Quantidade/Volume:</span>
+                    <span className="font-medium ml-1">{amostra.quantidade || '—'}</span>
+                  </div>
+                </div>
+
+                {amostra.fotos && amostra.fotos.length > 0 && (
+                  <div className="space-y-2">
+                    <h5 className="font-medium text-sm">Fotos ({amostra.fotos.length})</h5>
+                    <Carousel className="w-full max-w-xs mx-auto">
+                      <CarouselContent>
+                        {amostra.fotos.map((foto, i) => (
+                          <CarouselItem key={i} className="basis-1/2">
+                            <ImageComponent
+                              src={foto.url}
+                              alt={`Foto ${i + 1} da amostra`}
+                              className="aspect-square object-cover rounded-md"
+                              width={200}
+                              height={200}
+                            />
+                          </CarouselItem>
+                        ))}
+                      </CarouselContent>
+                      <CarouselPrevious />
+                      <CarouselNext />
+                    </Carousel>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </DialogContent>
       </Dialog>
 
