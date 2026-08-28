@@ -38,13 +38,6 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Carousel, CarouselContent, CarouselItem, CarouselPrevious, CarouselNext } from "@/components/ui/carousel";
-import { Image as ImageComponent } from "@/components/ui/image";
   DialogDescription,
   DialogFooter,
   DialogHeader,
@@ -71,6 +64,7 @@ import { normOs, splitSetores, splitEscopo } from "@/lib/schedule-utils";
 import { useSchedule } from "@/hooks/use-schedule";
 import { listEmissoes } from "@/lib/emissoes.functions";
 import { fetchSharedChegadaState } from "@/lib/chegada-amostras.functions";
+import type { ChegadaTask } from "@/lib/chegada-amostras-store";
 import { getOsHub, atualizarDataAcordada, arquivarOs, desarquivarOs } from "@/lib/os-hub.functions";
 import { OsChatPanel } from "@/features/lab/components/OsChatPanel";
 import { OsGanttMini } from "@/features/lab/components/OsGanttMini";
@@ -160,19 +154,8 @@ function OsEspecialHubPage() {
   const [statusFiltro, setStatusFiltro] = useState<"all" | EnsaioItemOS["status"]>("all");
   const [tipoFiltro, setTipoFiltro] = useState<string>("all");
   const [recebimentoDialogOpen, setRecebimentoDialogOpen] = useState(false);
-  const [selectedRecebimento, setSelectedRecebimento] = useState<{
-    data: string;
-    responsavel: string;
-    observacoes: string;
-    amostras: Array<{
-      id: string;
-      identificacao: string;
-      tipo: string;
-      profundidade: string;
-      quantidade: string;
-      fotos: Array<{ url: string }>;
-    }>;
-  } | null>(null);
+  const [selectedRecebimento, setSelectedRecebimento] = useState<ChegadaTask | null>(null);
+
 
   const cad = cadastro.lookup(osNumero);
   const group = osGroups.find((g) => normOs(g.osNumero) === normOs(osNumero));
@@ -402,24 +385,17 @@ function OsEspecialHubPage() {
                       <span className="font-semibold">{t.osCliente}</span>
                       <div className="flex items-center gap-2">
                         <Badge variant="outline" className="text-[10px]">{t.dataChegada}</Badge>
-                        <DialogTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="xs"
-                            className="h-6 text-[10px] px-1.5"
-                            onClick={() => {
-                              setSelectedRecebimento({
-                                data: t.dataChegada,
-                                responsavel: (t.recebidoPor || []).join(", "),
-                                observacoes: t.observacoes || "—",
-                                amostras: t.amostras || []
-                              });
-                              setRecebimentoDialogOpen(true);
-                            }}
-                          >
-                            Ver Detalhes
-                          </Button>
-                        </DialogTrigger>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-1.5 text-[10px]"
+                          onClick={() => {
+                            setSelectedRecebimento(t);
+                            setRecebimentoDialogOpen(true);
+                          }}
+                        >
+                          Ver detalhes
+                        </Button>
                       </div>
                     </div>
                     <div className="text-muted-foreground">Recebido por: {(t.recebidoPor || []).join(", ") || "—"}</div>
@@ -600,7 +576,7 @@ function OsEspecialHubPage() {
           <DialogHeader>
             <DialogTitle>Detalhes do Recebimento</DialogTitle>
             <DialogDescription>
-              Data: {selectedRecebimento?.data} · Responsável: {selectedRecebimento?.responsavel}
+              Data: {selectedRecebimento?.dataChegada ?? "—"} · Recebido por: {selectedRecebimento?.recebidoPor?.join(", ") || "—"}
             </DialogDescription>
           </DialogHeader>
 
@@ -612,9 +588,9 @@ function OsEspecialHubPage() {
           )}
 
           <div className="space-y-4 py-2">
-            <h4 className="font-medium">Amostras Recebidas ({selectedRecebimento?.amostras.length})</h4>
+            <h4 className="font-medium">Amostras recebidas ({selectedRecebimento?.amostras?.length ?? 0})</h4>
 
-            {selectedRecebimento?.amostras.map((amostra, index) => (
+            {selectedRecebimento?.amostras?.map((amostra, index) => (
               <div key={amostra.id} className="border rounded-lg p-3 space-y-2">
                 <div className="flex items-center justify-between">
                   <h5 className="font-medium">Amostra {index + 1}</h5>
@@ -635,30 +611,17 @@ function OsEspecialHubPage() {
                   </div>
                   <div>
                     <span className="text-muted-foreground">Quantidade/Volume:</span>
-                    <span className="font-medium ml-1">{amostra.quantidade || '—'}</span>
+                    <span className="font-medium ml-1">{amostra.quantidadeVolume || '—'}</span>
                   </div>
                 </div>
 
-                {amostra.fotos && amostra.fotos.length > 0 && (
-                  <div className="space-y-2">
-                    <h5 className="font-medium text-sm">Fotos ({amostra.fotos.length})</h5>
-                    <Carousel className="w-full max-w-xs mx-auto">
-                      <CarouselContent>
-                        {amostra.fotos.map((foto, i) => (
-                          <CarouselItem key={i} className="basis-1/2">
-                            <ImageComponent
-                              src={foto.url}
-                              alt={`Foto ${i + 1} da amostra`}
-                              className="aspect-square object-cover rounded-md"
-                              width={200}
-                              height={200}
-                            />
-                          </CarouselItem>
-                        ))}
-                      </CarouselContent>
-                      <CarouselPrevious />
-                      <CarouselNext />
-                    </Carousel>
+                {amostra.fotos.length > 0 && (
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {amostra.fotos.map((foto, i) => (
+                      <a key={foto.url} href={foto.url} target="_blank" rel="noreferrer" title="Abrir foto em tamanho maior">
+                        <img src={foto.url} alt={`Foto ${i + 1} da amostra ${amostra.identificacao || index + 1}`} className="aspect-square w-full rounded-md border object-cover" />
+                      </a>
+                    ))}
                   </div>
                 )}
               </div>
