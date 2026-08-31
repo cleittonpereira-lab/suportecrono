@@ -1,5 +1,4 @@
-import fs from "fs";
-import path from "path";
+import { readDriveJson, writeDriveJson } from "./driveStorage";
 
 export interface ProgramacaoData {
   Amostras: Record<string, string>[];
@@ -9,8 +8,7 @@ export interface ProgramacaoData {
   Equipamentos: Record<string, string>[];
 }
 
-const DATA_DIR = path.join(process.cwd(), ".data");
-const FILE_PATH = path.join(DATA_DIR, "programacao_db.json");
+const DRIVE_FILENAME = "programacao_db.json";
 
 const TIPOS: Record<string, string>[] = [
   { id: "te-adensamento", nome: "Ensaio de Adensamento (Edômetro)", cor_gantt: "#3b82f6", equipamentos_ids: "eq-ad-01,eq-ad-02" },
@@ -188,30 +186,22 @@ function getInitialData(): ProgramacaoData {
   };
 }
 
-export function readStore(): ProgramacaoData {
+export async function readStore(): Promise<ProgramacaoData> {
   try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    if (fs.existsSync(FILE_PATH)) {
-      const content = fs.readFileSync(FILE_PATH, "utf-8");
-      return JSON.parse(content) as ProgramacaoData;
-    }
+    const data = await readDriveJson<ProgramacaoData>(DRIVE_FILENAME);
+    if (data) return data;
   } catch (err) {
-    console.error("Error reading programacao_db.json:", err);
+    console.error("Error reading programacao_db.json from Drive:", err);
   }
   const initial = getInitialData();
-  writeStore(initial);
+  await writeStore(initial);
   return initial;
 }
 
-export function writeStore(data: ProgramacaoData): void {
+export async function writeStore(data: ProgramacaoData): Promise<void> {
   try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    fs.writeFileSync(FILE_PATH, JSON.stringify(data, null, 2), "utf-8");
+    await writeDriveJson(DRIVE_FILENAME, data);
   } catch (err) {
-    console.error("Error writing programacao_db.json:", err);
+    console.error("Error writing programacao_db.json to Drive:", err);
   }
 }

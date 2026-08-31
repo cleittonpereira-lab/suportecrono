@@ -1,5 +1,4 @@
-import fs from "fs";
-import path from "path";
+import { readDriveJson, writeDriveJson } from "./driveStorage";
 
 export interface ScheduleEdit {
   rowIndex?: number;
@@ -23,31 +22,22 @@ export interface ScheduleStoreData {
   entreguesRows: ScheduleEdit[];
 }
 
-const DATA_DIR = path.join(process.cwd(), ".data");
-const FILE_PATH = path.join(DATA_DIR, "schedule_edits.json");
+const DRIVE_FILENAME = "schedule_edits.json";
 
-export function readScheduleStore(): ScheduleStoreData {
+export async function readScheduleStore(): Promise<ScheduleStoreData> {
   try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    if (fs.existsSync(FILE_PATH)) {
-      const content = fs.readFileSync(FILE_PATH, "utf-8");
-      return JSON.parse(content) as ScheduleStoreData;
-    }
+    const data = await readDriveJson<ScheduleStoreData>(DRIVE_FILENAME);
+    if (data) return data;
   } catch (err) {
-    console.error("Error reading schedule_edits.json:", err);
+    console.error("Error reading schedule_edits.json from Drive:", err);
   }
   return { edits: {}, newRows: [], entreguesRows: [] };
 }
 
-export function writeScheduleStore(data: ScheduleStoreData): void {
+export async function writeScheduleStore(data: ScheduleStoreData): Promise<void> {
   try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    fs.writeFileSync(FILE_PATH, JSON.stringify(data, null, 2), "utf-8");
+    await writeDriveJson(DRIVE_FILENAME, data);
   } catch (err) {
-    console.error("Error writing schedule_edits.json:", err);
+    console.error("Error writing schedule_edits.json to Drive:", err);
   }
 }

@@ -109,8 +109,8 @@ async function getAllValues(sheet: string): Promise<Record<string, string>[]> {
     }
   }
 
-  // 3. Usar o armazenamento local persistente (JSON) - instantâneo
-  const store = readStore();
+  // 3. Usar o armazenamento persistente no Drive (JSON) - instantâneo
+  const store = await readStore();
   const key = sheet as keyof ProgramacaoData;
   return store[key] || [];
 }
@@ -130,12 +130,12 @@ export const insertRow = createServerFn({ method: "POST" })
     const now = new Date().toISOString();
     const enriched = { ...data.row, id, created_at: now, updated_at: now } as Record<string, string>;
 
-    // 1. Gravar no armazenamento local persistente imediatamente
-    const store = readStore();
+    // 1. Gravar no armazenamento persistente no Drive imediatamente
+    const store = await readStore();
     const key = data.sheet as keyof ProgramacaoData;
     if (!store[key]) store[key] = [];
     store[key].push(enriched);
-    writeStore(store);
+    await writeStore(store);
 
     // 2. Sincronizar na API remota do Google — aguardado e com erro propagado
     // (não mascarado como sucesso), para que quem chamou perceba a falha e
@@ -157,14 +157,14 @@ export const insertRow = createServerFn({ method: "POST" })
 export const updateRow = createServerFn({ method: "POST" })
   .inputValidator((d: { sheet: string; id: string; patch: Record<string, unknown> }) => d)
   .handler(async ({ data }) => {
-    // 1. Gravar no armazenamento local imediatamente
-    const store = readStore();
+    // 1. Gravar no armazenamento persistente no Drive imediatamente
+    const store = await readStore();
     const key = data.sheet as keyof ProgramacaoData;
     if (store[key]) {
       const idx = store[key].findIndex((r) => r.id === data.id);
       if (idx !== -1) {
         store[key][idx] = { ...store[key][idx], ...data.patch, updated_at: new Date().toISOString() } as Record<string, string>;
-        writeStore(store);
+        await writeStore(store);
       }
     }
 
@@ -196,12 +196,12 @@ export const updateRow = createServerFn({ method: "POST" })
 export const deleteRow = createServerFn({ method: "POST" })
   .inputValidator((d: { sheet: string; id: string }) => d)
   .handler(async ({ data }) => {
-    // 1. Deletar no armazenamento local imediatamente
-    const store = readStore();
+    // 1. Deletar no armazenamento persistente no Drive imediatamente
+    const store = await readStore();
     const key = data.sheet as keyof ProgramacaoData;
     if (store[key]) {
       store[key] = store[key].filter((r) => r.id !== data.id);
-      writeStore(store);
+      await writeStore(store);
     }
 
     // 2. Deletar na API remota do Google — aguardado e com erro propagado

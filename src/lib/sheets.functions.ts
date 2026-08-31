@@ -133,7 +133,7 @@ export const fetchSchedule = createServerFn({ method: "GET" }).handler(
     }
 
     let finalRows = parsed;
-    const store = readScheduleStore();
+    const store = await readScheduleStore();
     finalRows = parsed
       .filter((r) => {
         const edit = store.edits[String(r.rowIndex)] || store.edits[r.os];
@@ -245,8 +245,8 @@ export const fetchEntregues = createServerFn({ method: "GET" }).handler(
       }
     }
 
-    // Mescla itens movidos para entregues no armazenamento local
-    const store = readScheduleStore();
+    // Mescla itens movidos para entregues no armazenamento persistente no Drive
+    const store = await readScheduleStore();
     store.entreguesRows.forEach((r) => {
       parsed.push({
         delta: r.volumeComp || "",
