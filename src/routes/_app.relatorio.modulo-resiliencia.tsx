@@ -34,7 +34,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { toPng } from "html-to-image";
-import { jsPDF } from "jspdf";
 import {
   listVersions,
   saveVersion,
@@ -433,6 +432,7 @@ export function MRPage() {
   };
 
   const buildReportPdfBlob = async (): Promise<Blob> => {
+    if (import.meta.env.SSR) throw new Error("buildReportPdfBlob só roda no navegador");
     const el = reportRef.current;
     if (!el) throw new Error("Container do relatório não encontrado.");
 
@@ -465,6 +465,7 @@ export function MRPage() {
       const pages = Array.from(el.querySelectorAll<HTMLElement>(".printable-report"));
       if (pages.length === 0) throw new Error("Nenhuma página do relatório encontrada.");
 
+      const { jsPDF } = await import("jspdf");
       const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
       const W = 210, H = 297;
 

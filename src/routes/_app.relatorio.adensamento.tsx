@@ -673,6 +673,7 @@ export function AdensamentoPage() {
 
   // Salvar Versao e Google Drive com geracao real de PDF
   const handleSaveVersion = async (opts?: { skipVerification?: boolean }) => {
+    if (import.meta.env.SSR) return;
     const targetStatus = opts?.skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao";
     // "Digitado por" passa a refletir quem realmente concluiu e enviou a
     // digitação agora — antes ficava travado na primeira pessoa que tinha
@@ -1110,6 +1111,7 @@ export function AdensamentoPage() {
   };
 
   const handleExportPDF = async () => {
+    if (import.meta.env.SSR) return;
     if (isExportingPDF) return;
     setIsExportingPDF(true);
     toast.loading("Gerando relatório PDF...", { id: "pdf" });

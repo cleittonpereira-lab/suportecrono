@@ -574,6 +574,7 @@ export function ScannerCard({ onIdentified }: { onIdentified: (id: Identificacao
   }
 
   async function startScanner() {
+    if (import.meta.env.SSR) return;
     if (startingCamera || scanning) return;
     setStartingCamera(true);
     setScanError(null);
@@ -752,6 +753,7 @@ export function ScannerCard({ onIdentified }: { onIdentified: (id: Identificacao
   }
 
   async function handlePhoto(file: File) {
+    if (import.meta.env.SSR) return;
     if (readingPhoto) return;
     setReadingPhoto(true);
     setScanError(null);

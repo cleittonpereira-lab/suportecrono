@@ -1,5 +1,3 @@
-import ExcelJS from "exceljs";
-import { jsPDF } from "jspdf";
 
 export interface ReportItemMeta {
   os: string;
@@ -93,6 +91,8 @@ export function formatReportFilename(params: {
  * dados da OS/Obra/Local, identificação da amostra e memorial de ensaio.
  */
 export async function generateOfficialPdfBlob(meta: ReportItemMeta): Promise<Blob> {
+  if (import.meta.env.SSR) throw new Error("generateOfficialPdfBlob só roda no navegador");
+  const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({
     orientation: "portrait",
     unit: "mm",
@@ -268,6 +268,8 @@ export async function generateOfficialPdfBlob(meta: ReportItemMeta): Promise<Blo
  * parâmetros físicos, tabelas de leituras e formatação profissional Suporte INFRA.
  */
 export async function generateOfficialExcelBuffer(meta: ReportItemMeta): Promise<ArrayBuffer> {
+  if (import.meta.env.SSR) throw new Error("generateOfficialExcelBuffer só roda no navegador");
+  const ExcelJS = (await import("exceljs")).default;
   const wb = new ExcelJS.Workbook();
   wb.creator = "Suporte INFRA - Laboratório";
   wb.created = new Date();

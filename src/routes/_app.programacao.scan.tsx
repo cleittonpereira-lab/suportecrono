@@ -134,6 +134,7 @@ function ScanPage() {
 
   // Enumerate cameras once (desktop support: choose webcam)
   useEffect(() => {
+    if (import.meta.env.SSR) return;
     (async () => {
       try {
         const mod = await import("html5-qrcode");
@@ -150,6 +151,7 @@ function ScanPage() {
   }, []);
 
   async function startScanner() {
+    if (import.meta.env.SSR) return;
     setScanError(null);
     try {
       const mod = await import("html5-qrcode");

@@ -1,5 +1,4 @@
 import { toPng } from "html-to-image";
-import { jsPDF } from "jspdf";
 
 /** Rejeita se `promise` não resolver em `timeoutMs` — usado pra nunca deixar a geração travada pra sempre. */
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
@@ -109,6 +108,7 @@ export async function rasterizeToPdfBlob(
   el: HTMLElement,
   onPhotoProgress?: (done: number, total: number) => void,
 ): Promise<Blob> {
+  if (import.meta.env.SSR) throw new Error("rasterizeToPdfBlob só roda no navegador");
   const prevStyle = {
     position: el.style.position,
     top: el.style.top,
@@ -145,6 +145,7 @@ export async function rasterizeToPdfBlob(
     // PDF em vez de ficar em branco silenciosamente.
     restorePhotoSrcs = await preloadPhotosInElement(el, onPhotoProgress);
 
+    const { jsPDF } = await import("jspdf");
     const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
     for (let i = 0; i < pages.length; i++) {
       // A lib espera um requestAnimationFrame internamente pra terminar de

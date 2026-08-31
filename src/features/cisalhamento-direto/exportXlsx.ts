@@ -1,4 +1,4 @@
-import ExcelJS from "exceljs";
+import type ExcelJS from "exceljs";
 import type { CDSample, CDSpecimen, CDSpecimenResults, CDEnvelopeResult } from "./types";
 import { averageMoisturePct } from "./domain/calc";
 import type { Photo } from "@/features/lab/types";
@@ -352,7 +352,9 @@ export async function buildCDRawDataXlsxWorkbook({
   approvals = [],
   versions = [],
 }: ExportCDParams): Promise<ExcelJS.Workbook> {
-  const wb = new ExcelJS.Workbook();
+  if (import.meta.env.SSR) throw new Error("buildCDRawDataXlsxWorkbook só roda no navegador");
+  const ExcelJSRuntime = (await import("exceljs")).default;
+  const wb = new ExcelJSRuntime.Workbook();
   wb.creator = "Suporte INFRA";
   wb.lastModifiedBy = sample.operator || "Suporte INFRA";
   wb.created = new Date();

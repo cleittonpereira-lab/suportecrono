@@ -80,6 +80,7 @@ export function CDImportDialog({
 
   // Leitura e parse de arquivos TXT/CSV/XLSX
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (import.meta.env.SSR) return;
     const file = e.target.files?.[0];
     if (!file) return;
 

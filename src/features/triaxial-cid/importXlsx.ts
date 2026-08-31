@@ -11,7 +11,6 @@
  * linha em branco ou nova seção. O número do ensaio é extraído do nome do
  * arquivo (sem extensão).
  */
-import * as XLSX from "xlsx";
 import type { ConsolidationReading, ShearReading } from "./types";
 
 export interface ImportedRawData {
@@ -318,7 +317,9 @@ function findSection(grid: Grid, marker: string): number {
  * encontrados, junto com as etapas de cada um. Não extrai dados numéricos —
  * apenas o inventário para o usuário escolher qual NT importar.
  */
-export function listOwnTecTests(buffer: ArrayBuffer): OwnTecTestSummary[] {
+export async function listOwnTecTests(buffer: ArrayBuffer): Promise<OwnTecTestSummary[]> {
+  if (import.meta.env.SSR) throw new Error("listOwnTecTests só roda no navegador");
+  const XLSX = await import("xlsx");
   const wb = XLSX.read(buffer, { type: "array" });
   const all: OwnTecTestSummary[] = [];
   for (const sheetName of wb.SheetNames) {
@@ -340,11 +341,13 @@ export function listOwnTecTests(buffer: ArrayBuffer): OwnTecTestSummary[] {
   });
 }
 
-export function parseOwnTecXlsx(
+export async function parseOwnTecXlsx(
   buffer: ArrayBuffer,
   filename: string,
   opts: { selectedNT?: string } = {},
-): ImportedRawData {
+): Promise<ImportedRawData> {
+  if (import.meta.env.SSR) throw new Error("parseOwnTecXlsx só roda no navegador");
+  const XLSX = await import("xlsx");
   const wb = XLSX.read(buffer, { type: "array" });
   const consolidation: ConsolidationReading[] = [];
   const shear: ShearReading[] = [];
@@ -356,7 +359,7 @@ export function parseOwnTecXlsx(
   let sectionDrained = false;
 
   // Inventário para decidir se precisa perguntar ao usuário.
-  const inventory = listOwnTecTests(buffer);
+  const inventory = await listOwnTecTests(buffer);
   if (inventory.length > 1 && !opts.selectedNT) {
     throw new MultipleOwnTecTestsError(inventory);
   }

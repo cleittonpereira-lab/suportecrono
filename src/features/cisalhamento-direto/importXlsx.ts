@@ -1,4 +1,3 @@
-import * as XLSX from "xlsx";
 import type { CDReading } from "./types";
 
 export interface ParsedCDXlsx {
@@ -14,7 +13,9 @@ export interface ParsedCDXlsx {
   shear: CDReading[];
 }
 
-export function parseCDXlsx(buffer: ArrayBuffer, filename: string): ParsedCDXlsx {
+export async function parseCDXlsx(buffer: ArrayBuffer, filename: string): Promise<ParsedCDXlsx> {
+  if (import.meta.env.SSR) throw new Error("parseCDXlsx só roda no navegador");
+  const XLSX = await import("xlsx");
   const wb = XLSX.read(buffer, { type: "array" });
   const sheetName = wb.SheetNames[0];
   const ws = wb.Sheets[sheetName];

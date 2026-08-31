@@ -1,6 +1,5 @@
 import { useMemo, useRef, useState, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import * as XLSX from "xlsx";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -39,7 +38,9 @@ function normTag(s: string) {
   return s.trim().toUpperCase();
 }
 
-function parseFile(file: File): Promise<ParsedRow[]> {
+async function parseFile(file: File): Promise<ParsedRow[]> {
+  if (!import.meta.env.SSR) {
+  const XLSX = await import("xlsx");
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(reader.error);
@@ -135,6 +136,8 @@ function parseFile(file: File): Promise<ParsedRow[]> {
     };
     reader.readAsArrayBuffer(file);
   });
+  }
+  throw new Error("parseFile só roda no navegador");
 }
 
 export function ImportEnsaiosDialog({

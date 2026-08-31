@@ -42,7 +42,6 @@ import { toast } from "sonner";
 import { ReportPage, type ReportNorm } from "@/components/report/ReportShell";
 import { SampleEditDialog } from "@/components/SampleEditDialog";
 import { toPng } from "html-to-image";
-import { jsPDF } from "jspdf";
 import {
   listVersions,
   saveVersion,
@@ -717,11 +716,13 @@ export function TriaxialCidPage() {
    * Renderiza o PDF do relatório e devolve como Blob (para salvar como versão).
    */
   const buildReportPdfBlob = async (): Promise<Blob> => {
+    if (import.meta.env.SSR) throw new Error("buildReportPdfBlob só roda no navegador");
     if (!reportRef.current) throw new Error("Relatório não montado.");
     const pages = Array.from(
       reportRef.current.querySelectorAll<HTMLElement>(".printable-report"),
     );
     if (pages.length === 0) throw new Error("Nenhuma página do relatório encontrada.");
+    const { jsPDF } = await import("jspdf");
     const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
     const W = 210, H = 297;
     for (let i = 0; i < pages.length; i++) {
@@ -1787,7 +1788,7 @@ export function TriaxialCidPage() {
                             const { parseOwnTecXlsx } = await import(
                               "@/features/triaxial-cid/importXlsx"
                             );
-                            const data = parseOwnTecXlsx(buf, file.name, { selectedNT });
+                            const data = await parseOwnTecXlsx(buf, file.name, { selectedNT });
                             if (!data.consolidation.length && !data.shear.length) {
                               toast.error("Nenhum dado reconhecido no arquivo.");
                               return;

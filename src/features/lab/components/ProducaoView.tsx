@@ -6,7 +6,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import * as XLSX from "xlsx";
 import { format, startOfDay, startOfWeek, startOfMonth, endOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
@@ -89,7 +88,9 @@ export function ProducaoView() {
 
   const totalGeral = porOperador.reduce((a, r) => a + r.total, 0);
 
-  function handleExportar() {
+  async function handleExportar() {
+    if (import.meta.env.SSR) return;
+    const XLSX = await import("xlsx");
     const rows = porOperador.map((r) => ({
       Operador: r.operador,
       Digitados: r.digitado,

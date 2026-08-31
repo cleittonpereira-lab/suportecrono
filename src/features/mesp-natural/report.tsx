@@ -215,6 +215,7 @@ export async function generateMEspAPdf(container: HTMLElement, filename: string)
  * para aprovação (mesmo padrão do Triaxial CID).
  */
 export async function renderMEspAPdfBlob(container: HTMLElement): Promise<Blob> {
+  if (import.meta.env.SSR) throw new Error("renderMEspAPdfBlob só roda no navegador");
   const [{ toCanvas }, { default: jsPDF }] = await Promise.all([
     import("html-to-image"),
     import("jspdf"),

@@ -1,4 +1,4 @@
-import ExcelJS from "exceljs";
+import type ExcelJS from "exceljs";
 import type {
   OedSampleProps,
   OedStage,
@@ -48,7 +48,9 @@ export async function buildOedometerXlsxWorkbook({
   params,
   photos = [],
 }: ExportOedParams): Promise<ExcelJS.Workbook> {
-  const wb = new ExcelJS.Workbook();
+  if (import.meta.env.SSR) throw new Error("buildOedometerXlsxWorkbook só roda no navegador");
+  const ExcelJSRuntime = (await import("exceljs")).default;
+  const wb = new ExcelJSRuntime.Workbook();
   wb.creator = "Suporte Solo & Rochas — Sistema Integrado de Ensaios";
   wb.lastModifiedBy = sample.operator || "Laboratório Geotécnico";
   wb.created = new Date();

@@ -3,26 +3,29 @@
  * (amostras a coletar) — mesmo padrão de src/components/import-ensaios-dialog.tsx
  * (XLSX.read via FileReader, busca de coluna tolerante a variação de nome).
  */
-import * as XLSX from "xlsx";
 import type { AmostraColetada, AmostraAColetar, CategoriaAmostra } from "@/lib/sample-collection.functions";
 
-function readSheetRows(file: File): Promise<Record<string, unknown>[]> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(reader.error);
-    reader.onload = () => {
-      try {
-        const data = new Uint8Array(reader.result as ArrayBuffer);
-        const wb = XLSX.read(data, { type: "array" });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: "", raw: false });
-        resolve(json);
-      } catch (err) {
-        reject(err);
-      }
-    };
-    reader.readAsArrayBuffer(file);
-  });
+async function readSheetRows(file: File): Promise<Record<string, unknown>[]> {
+  if (!import.meta.env.SSR) {
+    const XLSX = await import("xlsx");
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(reader.error);
+      reader.onload = () => {
+        try {
+          const data = new Uint8Array(reader.result as ArrayBuffer);
+          const wb = XLSX.read(data, { type: "array" });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: "", raw: false });
+          resolve(json);
+        } catch (err) {
+          reject(err);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    });
+  }
+  throw new Error("readSheetRows só roda no navegador");
 }
 
 function pick(row: Record<string, unknown>, keys: string[]): string {
