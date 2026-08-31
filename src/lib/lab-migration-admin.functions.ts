@@ -22,6 +22,12 @@ export const testDriveRoundTrip = createServerFn({ method: "GET" })
     const steps: string[] = [];
     steps.push(`hasDriveCredentials() [conector Lovable]: ${hasDriveCredentials()}`);
     steps.push(`isGoogleAuthConfigured() [conta de servico direta]: ${isGoogleAuthConfigured()}`);
+    {
+      const envKeys = typeof process !== "undefined" && process.env ? Object.keys(process.env) : [];
+      steps.push(`[DIAG] process.env keys (${envKeys.length}): ${envKeys.join(", ") || "(vazio)"}`);
+      const metaEnvKeys = typeof import.meta !== "undefined" && (import.meta as any).env ? Object.keys((import.meta as any).env) : [];
+      steps.push(`[DIAG] import.meta.env keys (${metaEnvKeys.length}): ${metaEnvKeys.join(", ") || "(vazio)"}`);
+    }
     if (isGoogleAuthConfigured()) {
       try {
         const token = await getGoogleAccessToken(["https://www.googleapis.com/auth/drive"]);
