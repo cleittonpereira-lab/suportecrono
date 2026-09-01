@@ -13,6 +13,8 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { WorkflowFarol } from "@/features/lab/components/WorkflowFarol";
 import { SyncStatusBadge } from "@/components/SyncStatusBadge";
 import { DraftHistoryButton } from "@/components/DraftActivityInfo";
+import { useIsDirty, useIsSavingInFlight } from "@/lib/save-in-flight";
+import { SaveNowButton, type DraftFlushResult } from "@/components/report/SaveNowButton";
 import { User, FileEdit, ShieldCheck } from "lucide-react";
 
 /** Linha de badges: normas técnicas + status do fluxo + sincronização + histórico. */
@@ -21,20 +23,28 @@ export function EnsaioBadgesRow({
   status,
   lastSavedAt,
   history,
+  onFlushDraft,
 }: {
   norms: string[];
   status: string;
   lastSavedAt?: string | null;
   history?: React.ComponentProps<typeof DraftHistoryButton>["history"];
+  /** Rascunho compartilhado da feature (ex.: `flushDraft` de `draftStore.ts`) — liga o botão "Salvar". */
+  onFlushDraft?: () => Promise<DraftFlushResult | void>;
 }) {
+  const dirty = useIsDirty();
+  const savingInFlight = useIsSavingInFlight();
+  const syncState = dirty || savingInFlight ? "saving" : "synced";
+
   return (
     <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
       {norms.map((n) => (
         <Badge key={n} variant="outline">{n}</Badge>
       ))}
       <WorkflowFarol status={status} />
-      <SyncStatusBadge state="synced" lastSavedAt={lastSavedAt} />
+      <SyncStatusBadge state={syncState} lastSavedAt={lastSavedAt} />
       {history !== undefined && <DraftHistoryButton history={history} />}
+      {onFlushDraft && <SaveNowButton onFlushDraft={onFlushDraft} />}
     </div>
   );
 }

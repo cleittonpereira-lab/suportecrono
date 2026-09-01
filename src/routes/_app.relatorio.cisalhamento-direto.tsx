@@ -90,7 +90,9 @@ import type {
   CDAxisCfg,
 } from "@/features/cisalhamento-direto/types";
 import { SEED_CD_SAMPLE, makeEmptyCDSpecimen } from "@/features/cisalhamento-direto/seed";
-import { loadDraft, saveDraft, fetchRemoteDraft } from "@/features/cisalhamento-direto/draftStore";
+import { loadDraft, saveDraft, fetchRemoteDraft, flushDraft } from "@/features/cisalhamento-direto/draftStore";
+import { SaveNowButton } from "@/components/report/SaveNowButton";
+import { useIsDirty, useIsSavingInFlight } from "@/lib/save-in-flight";
 import { processSpecimen, fitEnvelope } from "@/features/cisalhamento-direto/domain/calc";
 import { cn } from "@/lib/utils";
 import { EnsaioListByType } from "@/features/lab/components/EnsaioListByType";
@@ -204,6 +206,8 @@ export function CDPage() {
       ? buildScopeId(ctx.os.id, ctx.amostra.id, ctx.ensaio.id)
       : (ctx?.ensaio?.id ?? "local");
   const draftActivity = useDraftActivity(scopeId);
+  const isDirty = useIsDirty();
+  const isSavingInFlight = useIsSavingInFlight();
 
   const draftRef = useRef<ReturnType<typeof loadDraft>>(null);
   if (draftRef.current === null) draftRef.current = loadDraft(scopeId);
@@ -1034,8 +1038,9 @@ export function CDPage() {
                     return "digitacao";
                   })()
                 } />
-                <SyncStatusBadge state="synced" lastSavedAt={draftActivity.lastSavedAt} />
+                <SyncStatusBadge state={isDirty || isSavingInFlight ? "saving" : "synced"} lastSavedAt={draftActivity.lastSavedAt} />
                 <DraftHistoryButton history={draftActivity.history} />
+                <SaveNowButton onFlushDraft={() => flushDraft(scopeId, { id: user?.id, name: displayName })} />
               </div>
               <h1 className="mt-1 text-xl font-bold tracking-tight">
                 {getReportTitle(sample.testCondition)}

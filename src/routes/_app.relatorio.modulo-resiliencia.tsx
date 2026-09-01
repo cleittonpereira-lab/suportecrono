@@ -38,9 +38,12 @@ import {
   listVersions,
   saveVersion,
   nextRev,
+  deleteVersion,
+  downloadVersion,
   type ReportVersion,
 } from "@/features/modulo-resiliencia/report-versions";
 import { syncRevision, fetchDriveStatus } from "@/features/modulo-resiliencia/driveSync";
+import { ReportVersionsPanel } from "@/components/report/ReportVersionsPanel";
 import {
   listApprovals,
   requestApproval,
@@ -59,7 +62,7 @@ import { EnsaioBadgesRow, EnsaioTitleBlock, AmostraSummaryCard, ResponsaveisBar 
 import type { ModuloResilienciaSample, StressState } from "@/features/modulo-resiliencia/types";
 import { seedModuloResilienciaSample, seedStressStates } from "@/features/modulo-resiliencia/types";
 import { thetaOf, tauOctOf, mrOf, fitCompositeModel, predictMR } from "@/features/modulo-resiliencia/calc";
-import { loadDraft, saveDraft, fetchRemoteDraft } from "@/features/modulo-resiliencia/draftStore";
+import { loadDraft, saveDraft, fetchRemoteDraft, flushDraft } from "@/features/modulo-resiliencia/draftStore";
 
 const fmt = (n: number | null | undefined, d = 2) =>
   n == null || !isFinite(n) ? "—" : n.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -260,7 +263,9 @@ export function MRPage() {
   const ctx = useOptionalLabEnsaio();
   const { lookup } = useCadastroByOs();
   const cad = ctx?.os?.numero ? lookup(ctx.os.numero) : undefined;
-  const { displayName, user } = useAuth();
+  const { displayName, user, role } = useAuth();
+  const isAdmin = role === "admin" || user?.email?.includes("cleitton") || user?.id === "cleitton-admin-local";
+  const isVerificador = role === "verificador" || role === "gestor" || isAdmin;
   const currentUserName = displayName || user?.email?.split("@")[0] || "Cleitton Pereira";
 
   const scopeId =
@@ -333,6 +338,8 @@ export function MRPage() {
   const [approvals, setApprovals] = useState<ApprovalRow[]>([]);
   const [versions, setVersions] = useState<ReportVersion[]>([]);
   const [driveFolderUrl, setDriveFolderUrl] = useState<string | null>(null);
+  const [driveStatus, setDriveStatus] = useState<Awaited<ReturnType<typeof fetchDriveStatus>> | null>(null);
+  const [driveBusy, setDriveBusy] = useState(false);
   const [wfStatus, setWfStatus] = useState(() => (ctx?.ensaio as any)?.status || "digitacao");
   const [remoteLoaded, setRemoteLoaded] = useState(false);
 
@@ -372,10 +379,74 @@ export function MRPage() {
     }
   };
 
+  const refreshDriveStatus = async () => {
+    try {
+      const s = await fetchDriveStatus(scopeId);
+      setDriveStatus(s);
+      const okPdf = s.entries.find((e) => e.kind === "pdf" && e.status === "ok" && e.folder_id);
+      if (okPdf?.folder_id) {
+        setDriveFolderUrl(`https://drive.google.com/drive/folders/${okPdf.folder_id.replace(/\/relatorios$/, "")}`);
+      }
+    } catch (err) {
+      console.warn("drive status", err);
+    }
+  };
+
+  const handleSyncAll = async () => {
+    if (versions.length === 0) {
+      toast.info("Salve pelo menos uma versão para sincronizar.");
+      return;
+    }
+    setDriveBusy(true);
+    const tid = toast.loading("Reenviando última revisão ao Drive…");
+    try {
+      const last = versions[0];
+      const fotos = (ctx?.photos ?? [])
+        .map((p) => {
+          const m = /^data:(.*?);base64,(.*)$/.exec(p.dataUrl);
+          const mimeType = m?.[1] || "image/jpeg";
+          const b64 = m?.[2] || "";
+          const ext = mimeType.split("/")[1] || "jpg";
+          return { cpId: "geral", filename: `${p.kind}_${p.id}.${ext}`, mimeType, base64: b64 };
+        })
+        .filter((f) => f.base64.length > 0);
+      const result = await syncRevision({
+        scopeId,
+        rev: last.rev,
+        pdfBlob: last.pdfBlob,
+        pdfFilename: last.filename,
+        sample,
+        photos: ctx?.photos || [],
+        ctxOs: ctx?.os,
+        ctxAmostra: ctx?.amostra,
+        ctxEnsaio: { tipo: "modulo-resiliencia", nome: sample.reportNumber },
+        fotos,
+      });
+      if (result?.folderUrl) setDriveFolderUrl(result.folderUrl);
+      await refreshDriveStatus();
+      toast.success("Reenvio concluído ✓", { id: tid });
+    } catch (err) {
+      toast.error("Falha no reenvio: " + (err instanceof Error ? err.message : String(err)), { id: tid });
+    } finally {
+      setDriveBusy(false);
+    }
+  };
+
+  const handleDeleteVersion = async (id: string) => {
+    if (!confirm("Excluir esta revisão? Esta ação não pode ser desfeita.")) return;
+    try {
+      await deleteVersion(id);
+      await refreshVersions();
+      toast.success("Revisão excluída");
+    } catch (err) {
+      toast.error("Falha ao excluir: " + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
   useEffect(() => {
     refreshVersions();
     refreshApprovals();
-    fetchDriveStatus(scopeId).catch(() => {});
+    refreshDriveStatus();
     fetchRemoteDraft(scopeId, {
       osNum: ctx?.os?.numero,
       amCode: ctx?.amostra?.reportNumber || ctx?.amostra?.code,
@@ -724,6 +795,7 @@ export function MRPage() {
                 status={rawSt}
                 lastSavedAt={draftActivity.lastSavedAt}
                 history={draftActivity.history}
+                onFlushDraft={() => flushDraft(scopeId, { id: user?.id, name: displayName })}
               />
               <EnsaioTitleBlock
                 title="Módulo de Resiliência de Solos"
@@ -738,26 +810,28 @@ export function MRPage() {
                 <Badge variant="outline" className="border-violet-500/50 bg-violet-500/10 text-violet-800 dark:text-violet-300 font-semibold px-3 py-1.5 text-xs">
                   ✓ Aguardando Verificação
                 </Badge>
-                <Button
-                  size="sm"
-                  onClick={async () => {
-                    setSaveBusy(true);
-                    const tid = toast.loading("Enviando para aprovação RT…");
-                    try {
-                      await verifyApproval({ data: { scopeId, rev, decision: "verificado" } });
-                      await refreshApprovals();
-                      toast.success("Enviado para aprovação RT ✓", { id: tid });
-                    } catch (err) {
-                      toast.error("Falha: " + (err instanceof Error ? err.message : String(err)), { id: tid });
-                    } finally {
-                      setSaveBusy(false);
-                    }
-                  }}
-                  disabled={saveBusy}
-                  className="gap-2 bg-violet-600 hover:bg-violet-700 text-white font-semibold text-xs"
-                >
-                  <ShieldCheck className="h-4 w-4" /> Verificar Laudo
-                </Button>
+                {isVerificador && (
+                  <Button
+                    size="sm"
+                    onClick={async () => {
+                      setSaveBusy(true);
+                      const tid = toast.loading("Enviando para aprovação RT…");
+                      try {
+                        await verifyApproval({ data: { scopeId, rev, decision: "verificado" } });
+                        await refreshApprovals();
+                        toast.success("Enviado para aprovação RT ✓", { id: tid });
+                      } catch (err) {
+                        toast.error("Falha: " + (err instanceof Error ? err.message : String(err)), { id: tid });
+                      } finally {
+                        setSaveBusy(false);
+                      }
+                    }}
+                    disabled={saveBusy}
+                    className="gap-2 bg-violet-600 hover:bg-violet-700 text-white font-semibold text-xs"
+                  >
+                    <ShieldCheck className="h-4 w-4" /> Verificar Laudo
+                  </Button>
+                )}
                 <Button variant="outline" size="sm" onClick={() => handleSaveVersion()} disabled={saveBusy} className="text-xs">
                   Atualizar / Gerar Nova Prévia
                 </Button>
@@ -769,13 +843,15 @@ export function MRPage() {
                 <Badge variant="outline" className="border-indigo-500/50 bg-indigo-500/10 text-indigo-800 dark:text-indigo-300 font-semibold px-3 py-1.5 text-xs">
                   ✓ Aguardando Aprovação RT
                 </Badge>
-                <Button
-                  size="sm"
-                  onClick={() => setDecideOpen({ rev, stage: "approve", decision: "aprovado" })}
-                  className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs"
-                >
-                  <CheckCircle2 className="h-4 w-4" /> Aprovar Laudo Oficial
-                </Button>
+                {isAdmin && (
+                  <Button
+                    size="sm"
+                    onClick={() => setDecideOpen({ rev, stage: "approve", decision: "aprovado" })}
+                    className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs"
+                  >
+                    <CheckCircle2 className="h-4 w-4" /> Aprovar Laudo Oficial
+                  </Button>
+                )}
               </div>
             )}
 
@@ -1006,6 +1082,24 @@ export function MRPage() {
             </CardContent>
           )}
         </Card>
+
+        <div className="mb-4">
+          <ReportVersionsPanel
+            scopeId={scopeId}
+            versions={versions}
+            approvals={approvals}
+            onRefreshApprovals={refreshApprovals}
+            isAdmin={isAdmin}
+            isVerificador={isVerificador}
+            driveFolderUrl={driveFolderUrl}
+            driveStatus={driveStatus}
+            driveBusy={driveBusy}
+            onSyncAll={handleSyncAll}
+            onOpenReport={() => setReportOpen(true)}
+            onDownloadVersion={downloadVersion}
+            onDeleteVersion={handleDeleteVersion}
+          />
+        </div>
 
         {/* RELATÓRIO — cópia sempre montada para rasterização offscreen */}
         <div

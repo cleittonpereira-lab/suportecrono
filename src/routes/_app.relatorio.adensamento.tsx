@@ -134,7 +134,8 @@ import { OedImportDialog } from "@/features/oedometer/components/OedImportDialog
 import { exportOedometerXlsx } from "@/features/oedometer/exportXlsx";
 import { syncOedometerRevisionToDrive } from "@/features/oedometer/driveSync";
 import { saveOedReportVersion, listOedReportVersions } from "@/features/oedometer/report-versions";
-import { saveOedDraft, loadOedDraft, fetchRemoteOedDraft } from "@/features/oedometer/draftStore";
+import { saveOedDraft, loadOedDraft, fetchRemoteOedDraft, flushOedDraft } from "@/features/oedometer/draftStore";
+import { SaveNowButton } from "@/components/report/SaveNowButton";
 import { beginSave, endSave } from "@/lib/save-in-flight";
 import { useDraftActivity } from "@/hooks/use-draft-activity";
 import { EditingPresenceBanner, DraftHistoryButton } from "@/components/DraftActivityInfo";
@@ -1223,6 +1224,7 @@ export function AdensamentoPage() {
               <Badge variant="outline">ABNT NBR 16853 / ASTM D2435</Badge>
               <SyncStatusBadge state={isSavingDraft ? "saving" : "synced"} lastSavedAt={draftActivity.lastSavedAt} />
               <DraftHistoryButton history={draftActivity.history} />
+              <SaveNowButton onFlushDraft={() => flushOedDraft(scopeId, { id: user?.id, name: displayName })} />
               {prefilledFromDigitalizacao && (
                 <Badge variant="outline" className="border-sky-500/40 bg-sky-500/10 text-sky-800 dark:text-sky-300 text-xs">
                   Pré-preenchido da digitalização de campo

@@ -20,7 +20,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import type { Amostra, Ensaio, EnsaioTipo, LabState, OS, Photo } from "./types";
 import { loadLabTree, upsertOSFn, upsertAmostraFn, upsertEnsaioFn, deleteOSFn, deleteAmostraFn, deleteEnsaioFn } from "@/lib/lab-entities.functions";
 import { loadLabStateFromDrive } from "@/lib/labState.functions";
-import { trackSave } from "@/lib/save-in-flight";
+import { trackSave, markDirty as markDirtyGlobal, markClean as markCleanGlobal, waitUntilSaved } from "@/lib/save-in-flight";
 import type { LabEnsaioSnapshot } from "@/lib/lab-ensaios.functions";
 
 const STORAGE_KEY = "lab://os-store/v1";
@@ -119,32 +119,62 @@ const dirtyIds = new Set<string>();
 function markDirty(id: string) {
   dirtyIds.add(id);
   updateSavingStatus();
+  // Avisa o sinalizador global (src/lib/save-in-flight.ts) — é o que já
+  // ativa, em todo o app, o aviso de "sair sem salvar?" ao fechar/recarregar
+  // a aba (useBlockExitWhileSaving/<ExitSaveDialog/> em routes/__root.tsx).
+  // Sem isso, esse sinalizador nunca soube de edições de OS/amostra/ensaio
+  // (só do rascunho compartilhado), e um recarregamento no meio da janela
+  // de debounce descartava a gravação em silêncio.
+  markDirtyGlobal();
 }
 function clearDirty(id: string) {
   dirtyIds.delete(id);
   updateSavingStatus();
+  if (dirtyIds.size === 0) markCleanGlobal();
 }
 function updateSavingStatus() {
   setStatus(dirtyIds.size > 0 ? "salvando" : "salvo");
 }
 
 const saveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+// Guarda a função de gravação de cada entidade com timer pendente, pra
+// `flushPendingSaves` poder rodá-la na hora em vez de esperar o debounce.
+const pendingRuns = new Map<string, () => Promise<void>>();
+
+function runEntitySave(id: string, run: () => Promise<void>) {
+  void trackSave(run)
+    .then(() => clearDirty(id))
+    .catch((err) => {
+      console.warn(`[lab/store] Falha ao salvar ${id}, tentando novamente:`, err);
+      // Mantém dirty e tenta de novo em breve — não perde a mudança local.
+      setTimeout(() => scheduleEntitySave(id, run), 3000);
+    });
+}
 
 function scheduleEntitySave(id: string, run: () => Promise<void>) {
   markDirty(id);
   const existing = saveTimers.get(id);
   if (existing) clearTimeout(existing);
+  pendingRuns.set(id, run);
   const timer = setTimeout(() => {
     saveTimers.delete(id);
-    void trackSave(run)
-      .then(() => clearDirty(id))
-      .catch((err) => {
-        console.warn(`[lab/store] Falha ao salvar ${id}, tentando novamente:`, err);
-        // Mantém dirty e tenta de novo em breve — não perde a mudança local.
-        setTimeout(() => scheduleEntitySave(id, run), 3000);
-      });
+    pendingRuns.delete(id);
+    runEntitySave(id, run);
   }, REMOTE_SAVE_DEBOUNCE_MS);
   saveTimers.set(id, timer);
+}
+
+/** Roda agora, sem esperar o debounce, toda gravação de entidade pendente — e aguarda o que já estiver em voo. */
+async function flushPendingSaves(): Promise<void> {
+  const entries = [...pendingRuns.entries()];
+  for (const [id] of entries) {
+    const timer = saveTimers.get(id);
+    if (timer) clearTimeout(timer);
+    saveTimers.delete(id);
+    pendingRuns.delete(id);
+  }
+  entries.forEach(([id, run]) => runEntitySave(id, run));
+  await waitUntilSaved();
 }
 
 function scheduleSaveOS(os: OS) {
@@ -435,18 +465,8 @@ export const labStore = {
   refreshFromRemote(): Promise<void> {
     return refreshFromRemote();
   },
-  async forceSaveNow(): Promise<void> {
-    // Dispara imediatamente qualquer gravação pendente (debounce) em voo.
-    const ids = [...saveTimers.keys()];
-    for (const id of ids) {
-      const timer = saveTimers.get(id);
-      if (timer) clearTimeout(timer);
-      saveTimers.delete(id);
-    }
-    // As funções agendadas já foram perdidas ao limpar o timer; o próximo
-    // refresh/merge preserva o que está dirty até a próxima mutação
-    // reagendar. Isso é usado raramente (nenhuma tela crítica depende de
-    // flush síncrono hoje) — mantido só por compatibilidade de API.
+  forceSaveNow(): Promise<void> {
+    return flushPendingSaves();
   },
 
   // ---------- Mutações de OS ----------

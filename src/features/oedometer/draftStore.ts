@@ -75,6 +75,43 @@ export function loadOedDraft(scopeId: string): any | null {
   }
 }
 
+/** Roda agora o salvamento do rascunho pendente (sem esperar o debounce) — usado pelo botão "Salvar". */
+export async function flushOedDraft(
+  scopeId: string,
+  actor?: { id?: string; name?: string },
+): Promise<{ conflict?: boolean; success?: boolean; error?: string }> {
+  const timer = saveTimers.get(scopeId);
+  if (timer) {
+    clearTimeout(timer);
+    saveTimers.delete(scopeId);
+  }
+  const raw = typeof window !== "undefined" && typeof localStorage !== "undefined" ? localStorage.getItem(`${DRAFT_PREFIX}${scopeId}`) : null;
+  const payload = raw ? JSON.parse(raw) : null;
+  if (!payload) return { success: true };
+  const expectedRev = knownRevs.get(scopeId);
+  try {
+    const res = await trackSave(() =>
+      saveSharedDraft({ data: { scopeId, payload, expectedRev, changedBy: actor?.id, changedByName: actor?.name } }),
+    );
+    if (res.conflict) {
+      if (res.currentRev) {
+        knownRevs.set(scopeId, res.currentRev);
+        persistRev(scopeId, res.currentRev);
+      }
+      markClean();
+      return { conflict: true };
+    }
+    if (res.success && res.rev) {
+      knownRevs.set(scopeId, res.rev);
+      persistRev(scopeId, res.rev);
+    }
+    markClean();
+    return { success: true };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 export async function fetchRemoteOedDraft(
   scopeId: string,
   opts?: { osNum?: string; amCode?: string; ensaioTipo?: string },

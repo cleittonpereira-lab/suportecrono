@@ -82,7 +82,9 @@ import type {
   SpecimenResults,
 } from "@/features/triaxial-cid/types";
 import { SEED_SAMPLE, EMPTY_SPECIMENS } from "@/features/triaxial-cid/seed";
-import { loadDraft, saveDraft, fetchRemoteTriaxialDraft } from "@/features/triaxial-cid/draftStore";
+import { loadDraft, saveDraft, fetchRemoteTriaxialDraft, flushDraft } from "@/features/triaxial-cid/draftStore";
+import { SaveNowButton } from "@/components/report/SaveNowButton";
+import { useIsDirty, useIsSavingInFlight } from "@/lib/save-in-flight";
 import { beginSave, endSave } from "@/lib/save-in-flight";
 import { useDraftActivity } from "@/hooks/use-draft-activity";
 import { EditingPresenceBanner, DraftHistoryButton } from "@/components/DraftActivityInfo";
@@ -244,6 +246,8 @@ export function TriaxialCidPage() {
       ? buildScopeId(ctx.os.id, ctx.amostra.id, ctx.ensaio.id)
       : (ctx?.ensaio?.id ?? "local");
   const draftActivity = useDraftActivity(scopeId);
+  const isDirty = useIsDirty();
+  const isSavingInFlight = useIsSavingInFlight();
   // Rascunho persistido em localStorage (por escopo), carregado uma única vez no mount.
   const draftRef = useRef<ReturnType<typeof loadDraft>>(null);
   if (draftRef.current === null) {
@@ -1120,8 +1124,9 @@ export function TriaxialCidPage() {
                   return "digitacao";
                 })()
               } />
-                <SyncStatusBadge state="synced" lastSavedAt={draftActivity.lastSavedAt} />
+                <SyncStatusBadge state={isDirty || isSavingInFlight ? "saving" : "synced"} lastSavedAt={draftActivity.lastSavedAt} />
                 <DraftHistoryButton history={draftActivity.history} />
+                <SaveNowButton onFlushDraft={() => flushDraft(scopeId, { id: user?.id, name: displayName })} />
             </div>
             <h2 className="mt-2 text-xl font-semibold">
               Ensaio Triaxial {isUU ? "UU" : isCIU ? (sample.condition === "saturado" ? "CIUsat" : "CIUnat") : sample.condition === "saturado" ? "CIDsat" : "CIDnat"}
