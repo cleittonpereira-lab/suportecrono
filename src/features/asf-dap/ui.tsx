@@ -513,26 +513,25 @@ export function AsfDapWorkspace({
                     )}
                   </>
                 ) : (
-                  <>
-                    <FieldNum label="A · massa seca ao ar [g]" value={cp.A} onChange={(v) => updateCp(i, { A: v })} onCommit={saveToServer} />
-                    <div>
-                      <Label className="text-xs">Alturas (paquímetro) [cm]</Label>
-                      <div className="grid grid-cols-4 gap-2">
-                        {cp.alturas.map((v, idx) => (
-                          <FieldNum key={idx} label={`H${idx + 1}`} value={v} onChange={(nv) => updateCpAltura(i, idx, nv)} onCommit={saveToServer} />
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <Label className="text-xs">Diâmetros (paquímetro) [cm]</Label>
-                      <div className="grid grid-cols-4 gap-2">
-                        {cp.diametros.map((v, idx) => (
-                          <FieldNum key={idx} label={`D${idx + 1}`} value={v} onChange={(nv) => updateCpDiametro(i, idx, nv)} onCommit={saveToServer} />
-                        ))}
-                      </div>
-                    </div>
-                  </>
+                  <FieldNum label="A · massa seca ao ar [g]" value={cp.A} onChange={(v) => updateCp(i, { A: v })} onCommit={saveToServer} />
                 )}
+
+                <div className="pt-1 border-t mt-2">
+                  <Label className="text-xs">Alturas (paquímetro) [cm]</Label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {cp.alturas.map((v, idx) => (
+                      <FieldNum key={idx} label={`H${idx + 1}`} value={v} onChange={(nv) => updateCpAltura(i, idx, nv)} onCommit={saveToServer} />
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-xs">Diâmetros (paquímetro) [cm]</Label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {cp.diametros.map((v, idx) => (
+                      <FieldNum key={idx} label={`D${idx + 1}`} value={v} onChange={(nv) => updateCpDiametro(i, idx, nv)} onCommit={saveToServer} />
+                    ))}
+                  </div>
+                </div>
 
                 <FieldNum
                   label="Gmm — cruzamento de vazios (opcional)"
