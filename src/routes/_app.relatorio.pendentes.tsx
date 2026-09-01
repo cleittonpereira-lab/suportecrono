@@ -92,7 +92,6 @@ import { useAuth } from "@/hooks/use-auth";
 import { EmissoesInner } from "@/components/emissoes-inner";
 import { OsReportsView } from "@/features/lab/components/OsReportsView";
 import { evaluateSla, formatHours, type SlaStatus } from "@/lib/sla-calc";
-import { supabase } from "@/integrations/supabase/client";
 import { listEmissoes } from "@/lib/emissoes.functions";
 
 export const Route = createFileRoute("/_app/relatorio/pendentes")({
@@ -165,26 +164,16 @@ function CentralRelatoriosPage() {
   const [statusFiltro, setStatusFiltro] = useState<"all" | PendenciaDigitacao["status"]>("all");
   const [tipoFiltro, setTipoFiltro] = useState<"all" | SupportedMethodology>("all");
 
-  const { user } = useAuth();
+  const { user, role, profile } = useAuth();
+  const canSeeQueues = role === "admin" || profile?.labRole === "verificador";
 
   const [queueCounts, setQueueCounts] = useState<{ verif: number; aprov: number } | null>(null);
-  const [canSeeQueues, setCanSeeQueues] = useState(false);
   const listEmissoesFn = useServerFn(listEmissoes);
 
   useEffect(() => {
+    if (!canSeeQueues) return;
     let cancelled = false;
     void (async () => {
-      const { data } = await supabase.auth.getUser();
-      const uid = data.user?.id;
-      if (!uid) return;
-      const [{ data: adm }, { data: ver }] = await Promise.all([
-        supabase.rpc("has_role", { _user_id: uid, _role: "admin" }),
-        supabase.rpc("has_role", { _user_id: uid, _role: "verificador" }),
-      ]);
-      if (cancelled) return;
-      const allowed = Boolean(adm) || Boolean(ver);
-      setCanSeeQueues(allowed);
-      if (!allowed) return;
       try {
         const [v, a] = await Promise.all([
           listEmissoesFn({ data: { workflowStatuses: ["aguardando_verificacao"] } }),
@@ -196,7 +185,7 @@ function CentralRelatoriosPage() {
     return () => {
       cancelled = true;
     };
-  }, [listEmissoesFn]);
+  }, [listEmissoesFn, canSeeQueues]);
 
   // Modais
   const [avulsoOpen, setAvulsoOpen] = useState(false);

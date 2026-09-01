@@ -3,7 +3,6 @@ import { PageHeader } from "@/components/page-header";
 import { useAuth } from "@/hooks/use-auth";
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -36,16 +35,22 @@ import { toast } from "sonner";
 import { Shield, CheckCircle2, Ban, Settings2, Loader2, UserRound, UserPlus, AtSign, KeyRound, Pencil, Mail, RefreshCw } from "lucide-react";
 import { useServerFn } from "@tanstack/react-start";
 import {
+  listAdminUsers,
+  setUserStatus,
+  setUserAppRole,
+  setUserCargo,
   setUserLabRole,
   setUserTitulo,
   setUserUsername,
-  inviteAppUser,
-  listAuthMeta,
-  setUserPassword,
   setUserNome,
   setUserEmail,
+  setUserPassword,
+  setUserTabPermissions,
+  setGuestTabPermissions,
+  inviteAppUser,
   syncAndActivateUsers,
 } from "@/lib/lab-adminUsers.functions";
+import type { PublicUser, UserRole, UserStatus } from "@/lib/user-store.server";
 
 export const Route = createFileRoute("/_app/admin/usuarios")({
   head: () => ({
@@ -65,8 +70,8 @@ type Row = {
   titulo: string | null;
   username: string | null;
   labRole: "aprovador" | "verificador" | "digitador" | "nenhum";
-  status: "pendente" | "ativo" | "bloqueado";
-  roles: string[];
+  status: UserStatus;
+  role: UserRole;
   tabs: string[];
   isGuest?: boolean;
   emailConfirmedAt?: string | null;
@@ -84,44 +89,26 @@ function AdminUsuariosPage() {
     if (!loading && role !== "admin") nav({ to: "/", replace: true });
   }, [role, loading, nav]);
 
+  const listAdminUsersFn = useServerFn(listAdminUsers);
+
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ["admin-users"],
     enabled: role === "admin",
     queryFn: async (): Promise<Row[]> => {
-      const [{ data: profiles }, { data: roles }, { data: tabs }, { data: guestTabs }, authMeta] = await Promise.all([
-        supabase.from("profiles").select("*").order("created_at", { ascending: false }),
-        supabase.from("user_roles").select("user_id, role"),
-        supabase.from("tab_permissions").select("user_id, tab_key"),
-        supabase.from("guest_permissions").select("tab_key"),
-        listAuthMetaFn().catch(() => [] as Array<{ id: string; emailConfirmedAt: string | null; lastSignInAt: string | null }>),
-      ]);
-      const metaByUser = new Map<string, { emailConfirmedAt: string | null; lastSignInAt: string | null }>();
-      (authMeta ?? []).forEach((m: any) => metaByUser.set(m.id, { emailConfirmedAt: m.emailConfirmedAt, lastSignInAt: m.lastSignInAt }));
-      const rolesByUser = new Map<string, string[]>();
-      (roles ?? []).forEach((r: { user_id: string; role: string }) => {
-        const l = rolesByUser.get(r.user_id) ?? [];
-        l.push(r.role);
-        rolesByUser.set(r.user_id, l);
-      });
-      const tabsByUser = new Map<string, string[]>();
-      (tabs ?? []).forEach((t: { user_id: string; tab_key: string }) => {
-        const l = tabsByUser.get(t.user_id) ?? [];
-        l.push(t.tab_key);
-        tabsByUser.set(t.user_id, l);
-      });
-      const userRows: Row[] = (profiles ?? []).map((p: any) => ({
-        id: p.id,
-        email: p.email,
-        nome: p.nome,
-        cargo: p.cargo,
-        titulo: p.titulo ?? null,
-        username: p.username ?? null,
-        labRole: (p.lab_report_role ?? "nenhum") as Row["labRole"],
-        status: p.status,
-        roles: rolesByUser.get(p.id) ?? [],
-        tabs: tabsByUser.get(p.id) ?? [],
-        emailConfirmedAt: metaByUser.get(p.id)?.emailConfirmedAt ?? null,
-        lastSignInAt: metaByUser.get(p.id)?.lastSignInAt ?? null,
+      const { users, guestTabs } = await listAdminUsersFn();
+      const userRows: Row[] = (users as PublicUser[]).map((u) => ({
+        id: u.id,
+        email: u.email,
+        nome: u.nome,
+        cargo: u.cargo,
+        titulo: u.titulo,
+        username: u.username,
+        labRole: u.labRole,
+        status: u.status,
+        role: u.role,
+        tabs: u.tabs,
+        emailConfirmedAt: u.emailConfirmedAt,
+        lastSignInAt: u.lastSignInAt,
       }));
       const guestRow: Row = {
         id: GUEST_ROW_ID,
@@ -132,19 +119,18 @@ function AdminUsuariosPage() {
         username: null,
         labRole: "nenhum",
         status: "ativo",
-        roles: ["convidado"],
-        tabs: (guestTabs ?? []).map((t: { tab_key: string }) => t.tab_key),
+        role: "usuario",
+        tabs: guestTabs,
         isGuest: true,
       };
       return [guestRow, ...userRows];
     },
   });
 
+  const setStatusFn = useServerFn(setUserStatus);
   const setStatus = useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: Row["status"] }) => {
-      const { error } = await supabase.from("profiles").update({ status }).eq("id", id);
-      if (error) throw error;
-    },
+    mutationFn: ({ id, status }: { id: string; status: Row["status"] }) =>
+      setStatusFn({ data: { userId: id, status } }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-users"] });
       toast.success("Status atualizado.");
@@ -152,13 +138,10 @@ function AdminUsuariosPage() {
     onError: (e: any) => toast.error(e.message),
   });
 
+  const setAppRoleFn = useServerFn(setUserAppRole);
   const setRole = useMutation({
-    mutationFn: async ({ id, role }: { id: string; role: "admin" | "gestor" | "usuario" }) => {
-      // remove todos e insere o novo
-      await supabase.from("user_roles").delete().eq("user_id", id);
-      const { error } = await supabase.from("user_roles").insert({ user_id: id, role });
-      if (error) throw error;
-    },
+    mutationFn: ({ id, role }: { id: string; role: UserRole }) =>
+      setAppRoleFn({ data: { userId: id, role } }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-users"] });
       toast.success("Papel atualizado.");
@@ -166,11 +149,10 @@ function AdminUsuariosPage() {
     onError: (e: any) => toast.error(e.message),
   });
 
+  const setCargoFn = useServerFn(setUserCargo);
   const setCargo = useMutation({
-    mutationFn: async ({ id, cargo }: { id: string; cargo: string }) => {
-      const { error } = await supabase.from("profiles").update({ cargo: cargo || null }).eq("id", id);
-      if (error) throw error;
-    },
+    mutationFn: ({ id, cargo }: { id: string; cargo: string }) =>
+      setCargoFn({ data: { userId: id, cargo } }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-users"] });
       toast.success("Cargo atualizado.");
@@ -182,7 +164,6 @@ function AdminUsuariosPage() {
   const setTituloFn = useServerFn(setUserTitulo);
   const setUsernameFn = useServerFn(setUserUsername);
   const inviteFn = useServerFn(inviteAppUser);
-  const listAuthMetaFn = useServerFn(listAuthMeta);
   const setPasswordFn = useServerFn(setUserPassword);
   const setNomeFn = useServerFn(setUserNome);
   const setEmailFn = useServerFn(setUserEmail);
@@ -245,11 +226,13 @@ function AdminUsuariosPage() {
   });
 
   const invite = useMutation({
-    mutationFn: (input: { email: string; nome: string; username: string; role: "admin" | "gestor" | "usuario" }) =>
+    mutationFn: (input: { email: string; nome: string; username: string; role: UserRole }) =>
       inviteFn({ data: input }),
-    onSuccess: () => {
+    onSuccess: (res: any) => {
       qc.invalidateQueries({ queryKey: ["admin-users"] });
-      toast.success("Convite enviado por e-mail.");
+      toast.success(`Conta criada! Senha temporária: ${res.tempPassword} — informe ao usuário.`, {
+        duration: 20000,
+      });
       setInviteOpen(false);
     },
     onError: (e: any) => toast.error(e.message),
@@ -364,11 +347,6 @@ function AdminUsuariosPage() {
                         </TableRow>
                       );
                     }
-                    const curRole = r.roles.includes("admin")
-                      ? "admin"
-                      : r.roles.includes("gestor")
-                      ? "gestor"
-                      : "usuario";
                     return (
                       <TableRow key={r.id}>
                         <TableCell>
@@ -390,8 +368,8 @@ function AdminUsuariosPage() {
                         </TableCell>
                         <TableCell>
           <Select
-                            value={curRole}
-                            onValueChange={(v: string) => setRole.mutate({ id: r.id, role: v as "admin" | "gestor" | "usuario" })}
+                            value={r.role}
+                            onValueChange={(v: string) => setRole.mutate({ id: r.id, role: v as UserRole })}
                           >
                             <SelectTrigger className="w-32 h-8"><SelectValue /></SelectTrigger>
                             <SelectContent>
@@ -549,15 +527,15 @@ function StatusBadge({
   // status = pendente → refina pelo estado do convite
   if (!emailConfirmedAt) {
     return (
-      <Badge className="bg-sky-500/15 text-sky-700 dark:text-sky-400 border-sky-500/30" title="O usuário ainda não abriu o e-mail de convite.">
-        Convite enviado
+      <Badge className="bg-sky-500/15 text-sky-700 dark:text-sky-400 border-sky-500/30" title="O usuário ainda não confirmou o cadastro.">
+        Aguardando aprovação
       </Badge>
     );
   }
   if (!lastSignInAt) {
     return (
-      <Badge className="bg-violet-500/15 text-violet-700 dark:text-violet-400 border-violet-500/30" title="E-mail validado, aguardando aprovação do administrador.">
-        E-mail validado · aguardando aprovação
+      <Badge className="bg-violet-500/15 text-violet-700 dark:text-violet-400 border-violet-500/30" title="Cadastro criado, aguardando aprovação do administrador.">
+        Aguardando aprovação
       </Badge>
     );
   }
@@ -630,13 +608,13 @@ function InviteDialog({
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  onInvite: (i: { email: string; nome: string; username: string; role: "admin" | "gestor" | "usuario" }) => void;
+  onInvite: (i: { email: string; nome: string; username: string; role: UserRole }) => void;
   submitting: boolean;
 }) {
   const [email, setEmail] = useState("");
   const [nome, setNome] = useState("");
   const [username, setUsername] = useState("");
-  const [role, setRole] = useState<"admin" | "gestor" | "usuario">("usuario");
+  const [role, setRole] = useState<UserRole>("usuario");
 
   useEffect(() => {
     if (!open) {
@@ -654,8 +632,8 @@ function InviteDialog({
         <DialogHeader>
           <DialogTitle>Convidar novo usuário</DialogTitle>
           <DialogDescription>
-            Enviaremos um e-mail para <b>@suportesolos.com.br</b> com um link para o usuário
-            definir a própria senha.
+            Cria a conta na hora com uma senha temporária — você informa a senha ao
+            usuário (mostrada aqui depois de criar).
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
@@ -720,7 +698,7 @@ function InviteDialog({
               })
             }
           >
-            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Enviar convite"}
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Criar conta"}
           </Button>
         </div>
       </DialogContent>
@@ -732,6 +710,8 @@ function PermsDialog({ row, onClose }: { row: Row | null; onClose: () => void })
   const qc = useQueryClient();
   const [selected, setSelected] = useState<Set<TabKey>>(new Set());
   const [useDefault, setUseDefault] = useState(true);
+  const setUserTabsFn = useServerFn(setUserTabPermissions);
+  const setGuestTabsFn = useServerFn(setGuestTabPermissions);
 
   useEffect(() => {
     if (row) {
@@ -743,20 +723,11 @@ function PermsDialog({ row, onClose }: { row: Row | null; onClose: () => void })
   const save = useMutation({
     mutationFn: async () => {
       if (!row) return;
+      const tabs = useDefault ? [] : Array.from(selected);
       if (row.isGuest) {
-        await supabase.from("guest_permissions").delete().neq("tab_key", "__none__");
-        if (!useDefault && selected.size > 0) {
-          const rows = Array.from(selected).map((tab_key) => ({ tab_key }));
-          const { error } = await supabase.from("guest_permissions").insert(rows);
-          if (error) throw error;
-        }
+        await setGuestTabsFn({ data: { tabs } });
       } else {
-        await supabase.from("tab_permissions").delete().eq("user_id", row.id);
-        if (!useDefault && selected.size > 0) {
-          const rows = Array.from(selected).map((tab_key) => ({ user_id: row.id, tab_key }));
-          const { error } = await supabase.from("tab_permissions").insert(rows);
-          if (error) throw error;
-        }
+        await setUserTabsFn({ data: { userId: row.id, tabs } });
       }
     },
     onSuccess: () => {

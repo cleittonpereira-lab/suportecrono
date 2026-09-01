@@ -126,7 +126,23 @@ export async function ensureFolderPath(parts: string[]): Promise<string> {
 
 /** Lista todos os arquivos (não-pasta) dentro de uma pasta do Drive, com paginação. */
 export async function listFilesInFolder(parentId: string): Promise<{ id: string; name: string }[]> {
-  if (!hasDriveCredentials()) return [];
+  if (!hasDriveCredentials()) {
+    // Sem credenciais do Drive (dev local): `uploadBytesToDrive`/`writeDriveJson` já gravam uma
+    // cópia local prefixada por `${parentId}_` especificamente para isso — sem essa listagem,
+    // qualquer recurso que dependa de listar uma pasta (ex.: `usuarios/`, `lab-pendencias/`)
+    // fica sempre vazio localmente, mesmo com os arquivos individuais graváveis/legíveis por nome.
+    try {
+      const dir = path.join(process.cwd(), ".data");
+      if (!fs.existsSync(dir)) return [];
+      const prefix = `${getLocalPath(parentId).split(path.sep).pop()}_`;
+      return fs
+        .readdirSync(dir)
+        .filter((f) => f.startsWith(prefix) && !f.endsWith(".meta"))
+        .map((f) => ({ id: f, name: f.slice(prefix.length) }));
+    } catch {
+      return [];
+    }
+  }
   const out: { id: string; name: string }[] = [];
   let pageToken: string | undefined;
   try {

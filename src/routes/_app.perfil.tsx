@@ -3,8 +3,10 @@ import { PageHeader } from "@/components/page-header";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Camera, KeyRound, Loader2, Save, UserRound } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { useServerFn } from "@tanstack/react-start";
 import { useAuth } from "@/hooks/use-auth";
+import { uploadPhoto } from "@/lib/photo-upload.functions";
+import { setOwnAvatar, updateOwnProfile, changeOwnPassword } from "@/lib/auth.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,6 +26,10 @@ export const Route = createFileRoute("/_app/perfil")({
 
 function PerfilPage() {
   const { user, profile, role, displayName, refresh, isGuest } = useAuth();
+  const uploadPhotoFn = useServerFn(uploadPhoto);
+  const setOwnAvatarFn = useServerFn(setOwnAvatar);
+  const updateOwnProfileFn = useServerFn(updateOwnProfile);
+  const changeOwnPasswordFn = useServerFn(changeOwnPassword);
   const [nome, setNome] = useState("");
   const [cargo, setCargo] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
@@ -73,23 +79,15 @@ function PerfilPage() {
     }
     setUploading(true);
     try {
-      const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
-      const path = `${user.id}/avatar-${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage
-        .from("avatars")
-        .upload(path, file, { upsert: true, contentType: file.type });
-      if (upErr) throw upErr;
-      // signed URL de longa duração (10 anos) — bucket é privado
-      const { data: signed, error: sErr } = await supabase.storage
-        .from("avatars")
-        .createSignedUrl(path, 60 * 60 * 24 * 365 * 10);
-      if (sErr || !signed) throw sErr ?? new Error("Falha ao gerar URL do avatar");
-      const { error: pErr } = await supabase
-        .from("profiles")
-        .update({ avatar_url: signed.signedUrl })
-        .eq("id", user.id);
-      if (pErr) throw pErr;
-      setAvatarUrl(signed.signedUrl);
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error ?? new Error("Falha ao ler o arquivo."));
+        reader.readAsDataURL(file);
+      });
+      const { fileId, url } = await uploadPhotoFn({ data: { dataUrl, namePrefix: "avatar" } });
+      await setOwnAvatarFn({ data: { avatarFileId: fileId } });
+      setAvatarUrl(url);
       await refresh();
       toast.success("Foto atualizada.");
     } catch (e) {
@@ -104,11 +102,7 @@ function PerfilPage() {
     if (!user) return;
     setSavingProfile(true);
     try {
-      const { error } = await supabase
-        .from("profiles")
-        .update({ nome: nome.trim() || null, cargo: cargo.trim() || null })
-        .eq("id", user.id);
-      if (error) throw error;
+      await updateOwnProfileFn({ data: { nome: nome.trim(), cargo: cargo.trim() } });
       await refresh();
       toast.success("Dados atualizados.");
     } catch (e) {
@@ -129,8 +123,7 @@ function PerfilPage() {
     }
     setSavingPwd(true);
     try {
-      const { error } = await supabase.auth.updateUser({ password: pwd });
-      if (error) throw error;
+      await changeOwnPasswordFn({ data: { password: pwd } });
       setPwd("");
       setPwd2("");
       toast.success("Senha alterada com sucesso.");

@@ -3,7 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { runLabStateMigration, testDriveRoundTrip, importLabStateFromClient } from "@/lib/lab-migration-admin.functions";
+import { runLabStateMigration, testDriveRoundTrip, importLabStateFromClient, migrateUsersFromSupabase } from "@/lib/lab-migration-admin.functions";
 
 export const Route = createFileRoute("/admin-migrar-labstate")({
   component: AdminMigrarLabState,
@@ -13,6 +13,24 @@ function AdminMigrarLabState() {
   const migrateFn = useServerFn(runLabStateMigration);
   const testDriveFn = useServerFn(testDriveRoundTrip);
   const importFn = useServerFn(importLabStateFromClient);
+  const migrateUsersFn = useServerFn(migrateUsersFromSupabase);
+  const [migratingUsers, setMigratingUsers] = useState(false);
+  const [usersResult, setUsersResult] = useState<Awaited<ReturnType<typeof migrateUsersFromSupabase>> | null>(null);
+  const [usersError, setUsersError] = useState<string | null>(null);
+
+  async function runUsersMigration() {
+    setMigratingUsers(true);
+    setUsersError(null);
+    setUsersResult(null);
+    try {
+      const res = await migrateUsersFn({ data: { secret: "suportecrono-migrate-2026-lab-tables" } });
+      setUsersResult(res);
+    } catch (err) {
+      setUsersError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setMigratingUsers(false);
+    }
+  }
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<Awaited<ReturnType<typeof importLabStateFromClient>> | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
@@ -114,6 +132,29 @@ function AdminMigrarLabState() {
                 {importResult.errors.length > 0 && (
                   <ul className="list-disc pl-5 max-h-64 overflow-auto">
                     {importResult.errors.map((e, i) => (
+                      <li key={i} className="text-xs text-muted-foreground">{e}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="pt-4 border-t space-y-2">
+            <p className="text-sm font-medium">Migrar usuários do Supabase pro Drive</p>
+            <p className="text-xs text-muted-foreground">
+              Traz nome/cargo/papel/permissões de cada conta que ainda estiver no Supabase. Não copia
+              senha — cada conta migrada precisa de senha nova, definida em Gestão de usuários.
+            </p>
+            <Button onClick={runUsersMigration} disabled={migratingUsers} variant="secondary">
+              {migratingUsers ? "Migrando..." : "Migrar usuários"}
+            </Button>
+            {usersError && <p className="text-sm text-destructive">Erro: {usersError}</p>}
+            {usersResult && (
+              <div className="text-sm space-y-2">
+                <p className="font-medium">{usersResult.message}</p>
+                {usersResult.errors.length > 0 && (
+                  <ul className="list-disc pl-5 max-h-64 overflow-auto">
+                    {usersResult.errors.map((e, i) => (
                       <li key={i} className="text-xs text-muted-foreground">{e}</li>
                     ))}
                   </ul>

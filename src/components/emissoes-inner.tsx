@@ -9,7 +9,7 @@ import {
   addApprovalComment,
   type ApprovalCommentRow,
 } from "@/lib/approvals.functions";
-import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/use-auth";
 import { getRevisionPdfBase64 } from "@/lib/driveSync.functions";
 import { getLabEnsaioSnapshot, type LabEnsaioSnapshot } from "@/lib/lab-ensaios.functions";
 import { EnsaioTag } from "@/features/lab/components/EnsaioTag";
@@ -120,10 +120,11 @@ export function EmissoesInner({
   useEffect(() => {
     if (singleTab) setTab(singleTab);
   }, [singleTab]);
+  const { role, profile } = useAuth();
+  const isAdmin = role === "admin";
+  const isVerificador = isAdmin || profile?.labRole === "verificador";
   const [rows, setRows] = useState<EmissaoRow[]>([]);
   const [loading, setLoading] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [isVerificador, setIsVerificador] = useState(false);
   const [decideOpen, setDecideOpen] = useState<{
     stage: "verify" | "approve";
     decision: "ok" | "reject";
@@ -136,25 +137,6 @@ export function EmissoesInner({
   const listFn = useServerFn(listEmissoes);
   const verifyFn = useServerFn(verifyApproval);
   const decideFn = useServerFn(decideApproval);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const { data } = await supabase.auth.getUser();
-      const uid = data.user?.id;
-      if (!uid) return;
-      const [{ data: adm }, { data: ver }] = await Promise.all([
-        supabase.rpc("has_role", { _user_id: uid, _role: "admin" }),
-        supabase.rpc("has_role", { _user_id: uid, _role: "verificador" }),
-      ]);
-      if (cancelled) return;
-      setIsAdmin(Boolean(adm));
-      setIsVerificador(Boolean(ver));
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const reload = useCallback(async () => {
     setLoading(true);

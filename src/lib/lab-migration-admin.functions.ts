@@ -22,12 +22,6 @@ export const testDriveRoundTrip = createServerFn({ method: "GET" })
     const steps: string[] = [];
     steps.push(`hasDriveCredentials() [conector Lovable]: ${hasDriveCredentials()}`);
     steps.push(`isGoogleAuthConfigured() [conta de servico direta]: ${isGoogleAuthConfigured()}`);
-    {
-      const envKeys = typeof process !== "undefined" && process.env ? Object.keys(process.env) : [];
-      steps.push(`[DIAG] process.env keys (${envKeys.length}): ${envKeys.join(", ") || "(vazio)"}`);
-      const metaEnvKeys = typeof import.meta !== "undefined" && (import.meta as any).env ? Object.keys((import.meta as any).env) : [];
-      steps.push(`[DIAG] import.meta.env keys (${metaEnvKeys.length}): ${metaEnvKeys.join(", ") || "(vazio)"}`);
-    }
     if (isGoogleAuthConfigured()) {
       try {
         const token = await getGoogleAccessToken(["https://www.googleapis.com/auth/drive"]);
@@ -316,5 +310,129 @@ export const runLabStateMigration = createServerFn({ method: "GET" })
       amostras: amCount,
       ensaios: enCount,
       errors,
+    };
+  });
+
+/**
+ * Traz os usuários que ainda estiverem no Supabase (profiles/user_roles/
+ * tab_permissions/guest_permissions) pro Drive — preserva nome/cargo/papel/
+ * permissões, mas NÃO copia senha (hash do Supabase não é recuperável):
+ * cada conta migrada fica sem senha até o admin definir uma nova pelo botão
+ * "Senha" em Gestão de usuários. Supabase é instável, então tenta de novo
+ * algumas vezes por tabela — tolerável porque roda uma vez só.
+ */
+async function withRetry<T>(fn: () => Promise<T>, label: string, attempts = 4): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
+    }
+  }
+  throw new Error(`Falha em ${label} após ${attempts} tentativas: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`);
+}
+
+export const migrateUsersFromSupabase = createServerFn({ method: "GET" })
+  .validator((v: unknown) => Input.parse(v))
+  .handler(async ({ data }) => {
+    if (data.secret !== "suportecrono-migrate-2026-lab-tables") {
+      throw new Error("unauthorized");
+    }
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { createUser, getUserByEmail, updateUser, setGuestTabs } = await import("@/lib/user-store.server");
+
+    const profiles = await withRetry(async () => {
+      const { data: rows, error } = await supabaseAdmin.from("profiles").select("*");
+      if (error) throw new Error(error.message);
+      return (rows ?? []) as any[];
+    }, "profiles");
+
+    const userRoles = await withRetry(async () => {
+      const { data: rows, error } = await supabaseAdmin.from("user_roles").select("user_id, role");
+      if (error) throw new Error(error.message);
+      return (rows ?? []) as { user_id: string; role: string }[];
+    }, "user_roles");
+
+    const tabPerms = await withRetry(async () => {
+      const { data: rows, error } = await supabaseAdmin.from("tab_permissions").select("user_id, tab_key");
+      if (error) throw new Error(error.message);
+      return (rows ?? []) as { user_id: string; tab_key: string }[];
+    }, "tab_permissions");
+
+    let guestTabsList: string[] = [];
+    try {
+      guestTabsList = await withRetry(async () => {
+        const { data: rows, error } = await supabaseAdmin.from("guest_permissions").select("tab_key");
+        if (error) throw new Error(error.message);
+        return (rows ?? []).map((r: { tab_key: string }) => r.tab_key);
+      }, "guest_permissions");
+    } catch {
+      // opcional — não trava a migração de usuários se essa tabela falhar
+    }
+
+    const rolesByUser = new Map<string, string[]>();
+    for (const r of userRoles) {
+      const l = rolesByUser.get(r.user_id) ?? [];
+      l.push(r.role);
+      rolesByUser.set(r.user_id, l);
+    }
+    const tabsByUser = new Map<string, string[]>();
+    for (const t of tabPerms) {
+      const l = tabsByUser.get(t.user_id) ?? [];
+      l.push(t.tab_key);
+      tabsByUser.set(t.user_id, l);
+    }
+
+    let migrated = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+    for (const p of profiles) {
+      try {
+        if (!p.email) {
+          skipped++;
+          continue;
+        }
+        const existing = await getUserByEmail(p.email);
+        if (existing) {
+          skipped++;
+          continue;
+        }
+        const roles = rolesByUser.get(p.id) ?? [];
+        const role: "admin" | "gestor" | "usuario" = roles.includes("admin")
+          ? "admin"
+          : roles.includes("gestor")
+          ? "gestor"
+          : "usuario";
+        const created = await createUser({
+          email: p.email,
+          nome: p.nome || p.email.split("@")[0],
+          username: p.username || null,
+          cargo: p.cargo || null,
+          role,
+          status: p.status === "bloqueado" || p.status === "pendente" ? p.status : "ativo",
+        });
+        await updateUser(created.id, {
+          titulo: p.titulo || null,
+          labRole: p.lab_report_role || "nenhum",
+          tabs: tabsByUser.get(p.id) ?? [],
+        });
+        migrated++;
+      } catch (err) {
+        errors.push(`${p.email || p.id}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    if (guestTabsList.length > 0) {
+      await setGuestTabs(guestTabsList);
+    }
+
+    return {
+      ok: true,
+      migrated,
+      skipped,
+      errors,
+      message: `${migrated} usuário(s) migrado(s) do Supabase pro Drive — cada um precisa de senha nova (botão "Senha" em Gestão de usuários). ${skipped} já existiam ou sem e-mail.`,
     };
   });
