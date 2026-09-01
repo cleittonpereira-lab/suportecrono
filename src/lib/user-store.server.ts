@@ -59,7 +59,8 @@ function fileName(id: string): string {
 
 // ---- senha (node:crypto — já usado com sucesso neste deploy Cloudflare em google-auth.server.ts) ----
 
-const PBKDF2_ITERATIONS = 120_000;
+// Cloudflare Workers (nodejs_compat) recusa PBKDF2 com mais de 100_000 iterações.
+const PBKDF2_ITERATIONS = 100_000;
 
 export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16);
