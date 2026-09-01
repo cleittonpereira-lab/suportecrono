@@ -143,6 +143,8 @@ function ASFDapReportPage({
   const avgGmb = avg(results.map((r) => r.gmb));
   const avgMea = avg(results.map((r) => r.mea));
   const avgVv = avg(results.map((r) => r.vv));
+  const avgAltura = avg(sample.corposDeProva.map((cp) => avg(cp.alturas)));
+  const avgDiametro = avg(sample.corposDeProva.map((cp) => avg(cp.diametros)));
   const anyNeedsFilme = results.some((r) => r.needsFilme);
   return (
     <ReportPage
@@ -229,6 +231,8 @@ function ASFDapReportPage({
           <table className="w-full border-collapse">
             <thead>
               <tr className="bg-[#141414]/5 text-[8.5px] font-semibold">
+                <td className="border border-[#141414] px-1 py-0.5 text-center">Altura média (cm)</td>
+                <td className="border border-[#141414] px-1 py-0.5 text-center">Diâmetro médio (cm)</td>
                 <td className="border border-[#141414] px-1 py-0.5 text-center">Água abs. média (%)</td>
                 <td className="border border-[#141414] px-1 py-0.5 text-center">Gmb médio</td>
                 <td className="border border-[#141414] px-1 py-0.5 text-center">MEa médio (g/cm³)</td>
@@ -237,6 +241,8 @@ function ASFDapReportPage({
             </thead>
             <tbody>
               <tr>
+                <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(avgAltura, 2)}</td>
+                <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(avgDiametro, 2)}</td>
                 <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(avgPct, 1)}</td>
                 <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(avgGmb, 4)}</td>
                 <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(avgMea, 4)}</td>
