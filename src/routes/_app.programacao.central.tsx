@@ -157,6 +157,12 @@ const EF_KANBAN: Record<EfStatus, { col: string; bar: string; card: string; dot:
   },
 };
 
+const TIPO_AMOSTRA_OPTIONS = [
+  "CBUQ Moldado em Laboratório - Marshall",
+  "CBUQ Extraído no Campo",
+  "CBUQ Moldado em Laboratório Terceiro (Interessado) - Marshall",
+];
+
 const PRIO_LABEL = { baixa: "Baixa", media: "Média", alta: "Alta", urgente: "Urgente" } as const;
 const PRIO_COLOR: Record<Amostra["prioridade"], string> = {
   baixa: "bg-muted text-muted-foreground",
@@ -2369,6 +2375,29 @@ function AmostraForm({
             value={form.descricao ?? ""}
             onChange={(e) => set("descricao", e.target.value || null)}
           />
+        </div>
+        <div className="col-span-2">
+          <Label>Tipo</Label>
+          <Select
+            value={form.tipo && TIPO_AMOSTRA_OPTIONS.includes(form.tipo) ? form.tipo : "outro"}
+            onValueChange={(v) => set("tipo", v === "outro" ? "" : v)}
+          >
+            <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+            <SelectContent>
+              {TIPO_AMOSTRA_OPTIONS.map((o) => (
+                <SelectItem key={o} value={o}>{o}</SelectItem>
+              ))}
+              <SelectItem value="outro">Outro (digitar)</SelectItem>
+            </SelectContent>
+          </Select>
+          {(!form.tipo || !TIPO_AMOSTRA_OPTIONS.includes(form.tipo)) && (
+            <Input
+              className="mt-1"
+              placeholder="Digite o tipo da amostra"
+              value={form.tipo ?? ""}
+              onChange={(e) => set("tipo", e.target.value || null)}
+            />
+          )}
         </div>
         <div>
           <Label>Tomador</Label>
