@@ -18,7 +18,8 @@ export type EnsaioTipo =
   | "mesp-a"             // Massa Específica Aparente Natural (NBR 16867:2020)
   | "modulo-resiliencia" // Módulo de Resiliência de solos (DNIT 134/2018-ME)
   | "umidade-natural"    // Teor de Umidade Natural (NBR 6457)
-  | "asf-dap";           // Densidade Aparente de misturas asfálticas (DNIT 428/2022-ME)
+  | "asf-dap"            // Densidade Aparente de misturas asfálticas (DNIT 428/2022-ME)
+  | "perm-v";            // Permeabilidade a Carga Variável — Método B (ABNT NBR 14545:2021)
 
 export type EnsaioStatus =
   | "rascunho"
@@ -134,6 +135,7 @@ export const ENSAIO_LABEL: Record<EnsaioTipo, string> = {
   "modulo-resiliencia": "Módulo de Resiliência (DNIT 134)",
   "umidade-natural": "Umidade Natural (NBR 6457)",
   "asf-dap": "Densidade Aparente — ASF.DAP (DNIT 428/2022-ME)",
+  "perm-v": "Permeabilidade a Carga Variável — PERM.V (ABNT NBR 14545)",
 };
 
 export const ENSAIO_DISPONIVEL: EnsaioTipo[] = [
@@ -147,6 +149,7 @@ export const ENSAIO_DISPONIVEL: EnsaioTipo[] = [
   "modulo-resiliencia",
   "umidade-natural",
   "asf-dap",
+  "perm-v",
 ];
 
 /**
@@ -214,5 +217,10 @@ export const ENSAIO_TAG: Record<EnsaioTipo, EnsaioTagInfo> = {
     code: "ASF.DAP",
     className:
       "bg-cyan-500/15 text-cyan-700 border-cyan-500/40 dark:text-cyan-300",
+  },
+  "perm-v": {
+    code: "PERM.V",
+    className:
+      "bg-blue-500/15 text-blue-700 border-blue-500/40 dark:text-blue-300",
   },
 };

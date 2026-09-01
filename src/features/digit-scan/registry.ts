@@ -13,6 +13,8 @@
  */
 import { isAsfDapTag } from "@/features/asf-dap/calc";
 import { dispatchAsfDap } from "@/features/asf-dap/ui";
+import { isPermVTag } from "@/features/perm-v/calc";
+import { dispatchPermV } from "@/features/perm-v/ui";
 
 export type DigitScanPlugin = {
   /** Chave estável — normalmente o `codigo` cadastrado em Tipos de Ensaio. */
@@ -38,6 +40,13 @@ export const DIGIT_SCAN_REGISTRY: DigitScanPlugin[] = [
     match: isAsfDapTag,
     route: "/relatorio/digitalizacao/asf-dap",
     dispatch: dispatchAsfDap,
+  },
+  {
+    key: "PERM.V",
+    label: "Permeabilidade a Carga Variável (PERM.V)",
+    match: isPermVTag,
+    route: "/relatorio/digitalizacao/perm-v",
+    dispatch: dispatchPermV,
   },
 ];
 

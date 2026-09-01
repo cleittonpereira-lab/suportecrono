@@ -26,6 +26,7 @@ export function normMethod(val: string | null | undefined): string {
   if (!val) return "";
   const s = String(val).toLowerCase();
   if (s.includes("asf.dap") || s.includes("asf-dap") || s.includes("asfdap") || s.includes("densidade aparente")) return "asf-dap";
+  if (s.includes("perm.v") || s.includes("perm-v") || s.includes("permv") || s.includes("permeabilidade")) return "perm-v";
   if (s.includes("cisalhamento") || s.includes("cd")) return "cisalhamento-direto";
   if (s.includes("adensamento") || s.includes("oed") || s.includes("adens")) return "adensamento";
   if (s.includes("triaxial") || s.includes("tri")) return "triaxial-cid";

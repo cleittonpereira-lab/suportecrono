@@ -17,6 +17,7 @@ import { MEspAEnsaioEditor } from "@/features/mesp-natural/editor";
 import { MRPage as MRPageInner } from "@/routes/_app.relatorio.modulo-resiliencia";
 import { UNPage as UNPageInner } from "@/routes/_app.relatorio.umidade-natural";
 import { ASFPage as AsfDapPageInner } from "@/routes/_app.relatorio.asf-dap";
+import { PermVPage as PermVPageInner } from "@/routes/_app.relatorio.perm-v";
 
 export const Route = createFileRoute(
   "/_app/relatorio/os/$osId/amostra/$amostraId/ensaio/$ensaioId",
@@ -66,6 +67,7 @@ function EnsaioEditor() {
     if (id.includes("tri") || id.includes("cid")) return "triaxial-cid";
     if (id.includes("mesp")) return "mesp-a";
     if (id.includes("asf") || id.includes("dap")) return "asf-dap";
+    if (id.includes("perm")) return "perm-v";
     return "cisalhamento-direto";
   }
 
@@ -280,6 +282,9 @@ function pickEditor(tipo: string): React.FC {
   }
   if (norm.includes("asf") || norm.includes("dap")) {
     return AsfDapPageInner as unknown as React.FC;
+  }
+  if (norm.includes("perm")) {
+    return PermVPageInner as unknown as React.FC;
   }
   if (norm.includes("mesp") || norm.includes("m.esp")) {
     return MEspAEnsaioEditor as unknown as React.FC;

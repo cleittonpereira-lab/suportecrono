@@ -28,6 +28,7 @@ import {
   FileText,
   Beaker,
   ScanLine,
+  Droplets,
   type LucideIcon,
 } from "lucide-react";
 
@@ -110,6 +111,7 @@ const SECTIONS: readonly Section[] = [
       { title: "Triaxial CID", url: "/relatorio/triaxial-cid", icon: FlaskConical },
       { title: "M.ESP.A Natural", url: "/relatorio/mesp-a", icon: FlaskConical },
       { title: "ASF.DAP (Densidade Aparente)", url: "/relatorio/asf-dap", icon: Beaker },
+      { title: "Permeabilidade Carga Variável (PERM.V)", url: "/relatorio/perm-v", icon: Droplets },
       { title: "Módulo de Resiliência", url: "/relatorio/modulo-resiliencia", icon: FlaskConical },
       { title: "Umidade Natural", url: "/relatorio/umidade-natural", icon: Beaker },
     ],

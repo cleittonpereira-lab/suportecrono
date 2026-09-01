@@ -787,6 +787,7 @@ function CentralRelatoriosPage() {
               {(["cisalhamento-direto", "adensamento", "triaxial-cid", "mesp-a", "asf-dap"] as SupportedMethodology[]).map((t) => (
                 <SelectItem key={t} value={t}>{ENSAIO_LABEL[t] ?? t}</SelectItem>
               ))}
+              <SelectItem value="perm-v">{ENSAIO_LABEL["perm-v"]}</SelectItem>
             </SelectContent>
           </Select>
 
