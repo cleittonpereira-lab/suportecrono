@@ -28,9 +28,9 @@ import {
   listPendenciasDigitacao,
   type PendenciaDigitacao,
 } from "@/lib/lab-pendencias.functions";
-import { areaBureta, cargaHidraulica } from "./calc";
-import type { PermVCalibracao, PermVCalibracaoModo, PermVLeitura } from "./types";
-import { newPermVLeitura } from "./types";
+import { areaBureta, cargaHidraulica, capsulaUmidadePct } from "./calc";
+import type { PermVCalibracao, PermVCalibracaoModo, PermVCapsula, PermVLeitura } from "./types";
+import { newPermVLeitura, newPermVCapsula } from "./types";
 
 // -------- Tipos do payload de campo (PERM.V) --------
 export interface PermVPhoto {
@@ -56,10 +56,11 @@ export interface PermVFieldPayload {
   naturezaAgua: string;
   gradienteHidraulico: number | null;
   massaUmida: number | null;
-  teorUmidadeInicial: number | null;
+  capsulas: PermVCapsula[];
   massaEspecificaGraos: number | null;
   diametroInicial: number | null;
   alturaInicial: number | null;
+  cargaHidraulicaInicial: number | null;
   calibracao: PermVCalibracao;
   leituras: PermVLeitura[];
   fotos: PermVPhoto[];
@@ -82,10 +83,11 @@ export function emptyPermVPayload(ident: PermVFieldPayload["ident"]): PermVField
     naturezaAgua: "Destilada / deairada",
     gradienteHidraulico: null,
     massaUmida: null,
-    teorUmidadeInicial: null,
+    capsulas: [newPermVCapsula(), newPermVCapsula(), newPermVCapsula()],
     massaEspecificaGraos: null,
     diametroInicial: null,
     alturaInicial: null,
+    cargaHidraulicaInicial: null,
     calibracao: emptyCalibracao(),
     leituras: [newPermVLeitura(), newPermVLeitura(), newPermVLeitura(), newPermVLeitura()],
     fotos: [],
@@ -218,6 +220,14 @@ export function PermVWorkspace({
     setData((d) => ({ ...d, calibracao: { ...d.calibracao, ...p } }));
     queueMicrotask(saveToServer);
   }
+  function updateCapsula(i: number, p: Partial<PermVCapsula>) {
+    setData((d) => {
+      const capsulas = d.capsulas.slice();
+      capsulas[i] = { ...capsulas[i], ...p };
+      return { ...d, capsulas };
+    });
+    queueMicrotask(saveToServer);
+  }
   function updateLeitura(i: number, p: Partial<PermVLeitura>) {
     setData((d) => {
       const leituras = d.leituras.slice();
@@ -348,15 +358,77 @@ export function PermVWorkspace({
           <CardDescription className="text-xs">§ 8.1 da norma — usados para índice de vazios e volume de vazios.</CardDescription>
         </CardHeader>
         <CardContent className="grid grid-cols-2 gap-3">
-          <FieldNum label="Massa úmida — Mu (g)" value={data.massaUmida} onChange={(v) => setData((d) => ({ ...d, massaUmida: v }))} onCommit={saveToServer} />
-          <FieldNum label="Teor de umidade inicial — w (%)" value={data.teorUmidadeInicial} onChange={(v) => setData((d) => ({ ...d, teorUmidadeInicial: v }))} onCommit={saveToServer} />
+          <FieldNum label="Massa úmida do CP — Mu (g)" value={data.massaUmida} onChange={(v) => setData((d) => ({ ...d, massaUmida: v }))} onCommit={saveToServer} />
           <FieldNum label="Massa específica dos grãos — ρs (g/cm³)" value={data.massaEspecificaGraos} onChange={(v) => setData((d) => ({ ...d, massaEspecificaGraos: v }))} onCommit={saveToServer} />
           <FieldNum label="Diâmetro inicial do CP (cm)" value={data.diametroInicial} onChange={(v) => setData((d) => ({ ...d, diametroInicial: v }))} onCommit={saveToServer} />
-          <FieldNum label="Altura inicial do CP até a carga (cm)" value={data.alturaInicial} onChange={(v) => setData((d) => ({ ...d, alturaInicial: v }))} onCommit={saveToServer} />
+          <FieldNum label="Altura inicial do corpo de prova — H (cm)" value={data.alturaInicial} onChange={(v) => setData((d) => ({ ...d, alturaInicial: v }))} onCommit={saveToServer} />
           <FieldNum label="Gradiente hidráulico (2 a 15)" value={data.gradienteHidraulico} onChange={(v) => setData((d) => ({ ...d, gradienteHidraulico: v }))} onCommit={saveToServer} />
+          <FieldNum label="Carga hidráulica inicial — H₀ (cm)" value={data.cargaHidraulicaInicial} onChange={(v) => setData((d) => ({ ...d, cargaHidraulicaInicial: v }))} onCommit={saveToServer} />
           <div className="col-span-2">
             <FieldText label="Natureza da água" value={data.naturezaAgua} onChange={(v) => setData((d) => ({ ...d, naturezaAgua: v }))} onCommit={saveToServer} />
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Cápsulas de umidade (teor de umidade inicial — w)</CardTitle>
+          <CardDescription className="text-xs">3 determinações, mesmo padrão do Triaxial CID.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <table className="w-full border-collapse text-xs">
+            <thead className="bg-muted/40 text-muted-foreground">
+              <tr>
+                <th className="border p-1.5 text-left">Determinação</th>
+                {data.capsulas.map((_, i) => (
+                  <th key={i} className="border p-1.5 text-center w-24">Cápsula {i + 1}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="border p-1.5 font-medium">Nº Cápsula</td>
+                {data.capsulas.map((c, i) => (
+                  <td key={i} className="border p-1">
+                    <Input className="h-7 text-xs text-center" value={c.numero ?? ""} onChange={(e) => updateCapsula(i, { numero: e.target.value })} placeholder={`#${i + 1}`} />
+                  </td>
+                ))}
+              </tr>
+              <tr>
+                <td className="border p-1.5 font-medium">Tara (g)</td>
+                {data.capsulas.map((c, i) => (
+                  <td key={i} className="border p-1">
+                    <Input type="number" className="h-7 text-xs text-center" value={c.tara} onChange={(e) => updateCapsula(i, { tara: Number(e.target.value.replace(",", ".")) || 0 })} />
+                  </td>
+                ))}
+              </tr>
+              <tr>
+                <td className="border p-1.5 font-medium">Solo Úmido + Tara (g)</td>
+                {data.capsulas.map((c, i) => (
+                  <td key={i} className="border p-1">
+                    <Input type="number" className="h-7 text-xs text-center" value={c.wet} onChange={(e) => updateCapsula(i, { wet: Number(e.target.value.replace(",", ".")) || 0 })} />
+                  </td>
+                ))}
+              </tr>
+              <tr>
+                <td className="border p-1.5 font-medium">Solo Seco + Tara (g)</td>
+                {data.capsulas.map((c, i) => (
+                  <td key={i} className="border p-1">
+                    <Input type="number" className="h-7 text-xs text-center" value={c.dry} onChange={(e) => updateCapsula(i, { dry: Number(e.target.value.replace(",", ".")) || 0 })} />
+                  </td>
+                ))}
+              </tr>
+              <tr className="bg-muted/30">
+                <td className="border p-1.5 font-medium">Umidade (%)</td>
+                {data.capsulas.map((c, i) => {
+                  const w = capsulaUmidadePct(c);
+                  return (
+                    <td key={i} className="border p-1.5 text-center font-semibold">{w != null ? w.toFixed(2) : "—"}</td>
+                  );
+                })}
+              </tr>
+            </tbody>
+          </table>
         </CardContent>
       </Card>
 
@@ -446,7 +518,7 @@ export function PermVWorkspace({
               </TableHeader>
               <TableBody>
                 {data.leituras.map((l, i) => {
-                  const h = l.leituraBruta != null ? cargaHidraulica(l.leituraBruta, data.calibracao) : null;
+                  const h = l.leituraBruta != null ? cargaHidraulica(l.leituraBruta, data.calibracao, data.cargaHidraulicaInicial) : null;
                   return (
                     <TableRow key={l.id}>
                       <TableCell>
@@ -588,10 +660,11 @@ export function PermVPendenciaEditor({ pendenciaId, onBack }: { pendenciaId: str
     naturezaAgua: initial.naturezaAgua ?? "Destilada / deairada",
     gradienteHidraulico: initial.gradienteHidraulico ?? null,
     massaUmida: initial.massaUmida ?? null,
-    teorUmidadeInicial: initial.teorUmidadeInicial ?? null,
+    capsulas: Array.isArray(initial.capsulas) && initial.capsulas.length ? initial.capsulas : [newPermVCapsula(), newPermVCapsula(), newPermVCapsula()],
     massaEspecificaGraos: initial.massaEspecificaGraos ?? null,
     diametroInicial: initial.diametroInicial ?? null,
     alturaInicial: initial.alturaInicial ?? null,
+    cargaHidraulicaInicial: initial.cargaHidraulicaInicial ?? null,
     calibracao: initial.calibracao ?? emptyCalibracao(),
     leituras: Array.isArray(initial.leituras) && initial.leituras.length ? initial.leituras : [newPermVLeitura(), newPermVLeitura(), newPermVLeitura(), newPermVLeitura()],
     fotos: Array.isArray(initial.fotos) ? initial.fotos : [],

@@ -2,7 +2,23 @@
  * Cálculos de Permeabilidade a Carga Variável — Método B, ABNT NBR
  * 14545:2021 (§ 8). Fórmulas e Tabela 1 transcritas diretamente da norma.
  */
-import type { PermVCalibracao, PermVLeitura, PermVSample } from "./types";
+import type { PermVCalibracao, PermVCapsula, PermVLeitura, PermVSample } from "./types";
+
+/** Umidade de uma cápsula (%). w = (úmido−seco)/(seco−tara) · 100, mesmo cálculo de Umidade Natural/Triaxial. */
+export function capsulaUmidadePct(c: PermVCapsula): number | null {
+  const ms = c.dry - c.tara;
+  const mw = c.wet - c.dry;
+  if (!(ms > 0)) return null;
+  const w = (mw / ms) * 100;
+  return Number.isFinite(w) ? w : null;
+}
+
+/** Teor de umidade inicial médio (%) — média das cápsulas válidas. */
+export function teorUmidadeMedio(capsulas: PermVCapsula[]): number | null {
+  const valid = capsulas.map(capsulaUmidadePct).filter((v): v is number => v != null);
+  if (!valid.length) return null;
+  return valid.reduce((a, b) => a + b, 0) / valid.length;
+}
 
 /** Reconhece a tag/descrição do QR ou do cadastro de Tipos de Ensaio como PERM.V. */
 export function isPermVTag(raw: string | null | undefined): boolean {
@@ -67,12 +83,19 @@ export function areaBureta(cal: PermVCalibracao): number | null {
   return null;
 }
 
-/** Converte a leitura bruta da bureta em carga hidráulica h (cm), conforme a calibração. */
-export function cargaHidraulica(leituraBruta: number, cal: PermVCalibracao): number | null {
+/**
+ * Converte a leitura bruta da bureta em carga hidráulica h (cm).
+ *
+ * Modo "volume": a leitura é cumulativa a partir de 0 (água que já saiu da
+ * bureta) — a carga cai conforme a água sai, então h = H₀ − leitura/a (a
+ * leitura convertida pra cm de altura). Modo "comprimento": a régua ao lado
+ * da bureta já mostra a carga direto, sem precisar de H₀.
+ */
+export function cargaHidraulica(leituraBruta: number, cal: PermVCalibracao, cargaInicial: number | null): number | null {
   if (cal.modo === "comprimento") return leituraBruta;
   const a = areaBureta(cal);
-  if (a == null) return null;
-  const h = leituraBruta / a;
+  if (a == null || cargaInicial == null) return null;
+  const h = cargaInicial - leituraBruta / a;
   return Number.isFinite(h) ? h : null;
 }
 
@@ -146,10 +169,11 @@ export function calcDeterminacao(
   cal: PermVCalibracao,
   H: number | null,
   A: number | null,
+  cargaInicial: number | null,
 ): PermVDeterminacao {
   const a = areaBureta(cal);
-  const h1 = anterior.leituraBruta != null ? cargaHidraulica(anterior.leituraBruta, cal) : null;
-  const h2 = atual.leituraBruta != null ? cargaHidraulica(atual.leituraBruta, cal) : null;
+  const h1 = anterior.leituraBruta != null ? cargaHidraulica(anterior.leituraBruta, cal, cargaInicial) : null;
+  const h2 = atual.leituraBruta != null ? cargaHidraulica(atual.leituraBruta, cal, cargaInicial) : null;
   const deltaT =
     anterior.tSegundos != null && atual.tSegundos != null ? atual.tSegundos - anterior.tSegundos : null;
 
@@ -182,7 +206,7 @@ export function calcDeterminacoes(sample: PermVSample): PermVDeterminacao[] {
     .sort((x, y) => (x.tSegundos ?? 0) - (y.tSegundos ?? 0));
   const out: PermVDeterminacao[] = [];
   for (let i = 1; i < ordenadas.length; i++) {
-    out.push(calcDeterminacao(ordenadas[i - 1], ordenadas[i], sample.calibracao, H, A));
+    out.push(calcDeterminacao(ordenadas[i - 1], ordenadas[i], sample.calibracao, H, A, sample.cargaHidraulicaInicial));
   }
   return out;
 }

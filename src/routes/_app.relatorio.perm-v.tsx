@@ -43,11 +43,12 @@ import { labStore } from "@/features/lab/store";
 import { EnsaioListByType } from "@/features/lab/components/EnsaioListByType";
 import { ReportPage, type ReportSample } from "@/components/report/ReportShell";
 import { EnsaioBadgesRow, EnsaioTitleBlock, AmostraSummaryCard, ResponsaveisBar } from "@/components/report/EnsaioReportHeader";
-import type { PermVSample, PermVCalibracaoModo } from "@/features/perm-v/types";
-import { seedPermVSample, newPermVLeitura } from "@/features/perm-v/types";
+import type { PermVSample, PermVCalibracaoModo, PermVCapsula } from "@/features/perm-v/types";
+import { seedPermVSample, newPermVLeitura, newPermVCapsula } from "@/features/perm-v/types";
 import {
   massaSeca, volumeCp, massaEspecificaAparenteSeca, indiceDeVazios, grauDeSaturacao,
-  areaBureta, cargaHidraulica, calcDeterminacoes, volumeAcumulado, volumeDeVazios, k20Medio, fmtK,
+  areaBureta, cargaHidraulica, capsulaUmidadePct, teorUmidadeMedio,
+  calcDeterminacoes, volumeAcumulado, volumeDeVazios, k20Medio, fmtK,
 } from "@/features/perm-v/calc";
 import { loadDraft, saveDraft, fetchRemoteDraft, flushDraft } from "@/features/perm-v/draftStore";
 import { listPendenciasDigitacao } from "@/lib/lab-pendencias.functions";
@@ -112,15 +113,16 @@ function PermVReportPage({
   const volAcum = useMemo(() => volumeAcumulado(determinacoes), [determinacoes]);
   const k20med = k20Medio(determinacoes);
 
-  const ms = sample.massaUmida != null && sample.teorUmidadeInicial != null
-    ? massaSeca(sample.massaUmida, sample.teorUmidadeInicial) : null;
+  const teorUmidade = teorUmidadeMedio(sample.capsulas);
+  const ms = sample.massaUmida != null && teorUmidade != null
+    ? massaSeca(sample.massaUmida, teorUmidade) : null;
   const vcp = sample.diametroInicial != null && sample.alturaInicial != null
     ? volumeCp(sample.diametroInicial, sample.alturaInicial) : null;
   const rhoD = ms != null && vcp != null ? massaEspecificaAparenteSeca(ms, vcp) : null;
   const ei = sample.massaEspecificaGraos != null && rhoD != null
     ? indiceDeVazios(sample.massaEspecificaGraos, rhoD) : null;
-  const sr = sample.massaEspecificaGraos != null && sample.teorUmidadeInicial != null && ei != null
-    ? grauDeSaturacao(sample.massaEspecificaGraos, sample.teorUmidadeInicial, ei) : null;
+  const sr = sample.massaEspecificaGraos != null && teorUmidade != null && ei != null
+    ? grauDeSaturacao(sample.massaEspecificaGraos, teorUmidade, ei) : null;
   const vv = vcp != null && ei != null ? volumeDeVazios(vcp, ei) : null;
 
   const chartData = determinacoes.map((d, i) => ({
@@ -513,10 +515,11 @@ export function PermVPage() {
           naturezaAgua: fp.naturezaAgua || prev.naturezaAgua,
           gradienteHidraulico: fp.gradienteHidraulico ?? prev.gradienteHidraulico,
           massaUmida: fp.massaUmida ?? prev.massaUmida,
-          teorUmidadeInicial: fp.teorUmidadeInicial ?? prev.teorUmidadeInicial,
+          capsulas: Array.isArray(fp.capsulas) && fp.capsulas.length ? fp.capsulas.map((c) => ({ ...c })) : prev.capsulas,
           massaEspecificaGraos: fp.massaEspecificaGraos ?? prev.massaEspecificaGraos,
           diametroInicial: fp.diametroInicial ?? prev.diametroInicial,
           alturaInicial: fp.alturaInicial ?? prev.alturaInicial,
+          cargaHidraulicaInicial: fp.cargaHidraulicaInicial ?? prev.cargaHidraulicaInicial,
           calibracao: fp.calibracao ?? prev.calibracao,
           leituras: fp.leituras.map((l) => ({ ...l })),
         }));
@@ -542,6 +545,8 @@ export function PermVPage() {
     setSample((s) => ({ ...s, [k]: v }));
   const updateCalibracao = (patch: Partial<PermVSample["calibracao"]>) =>
     setSample((s) => ({ ...s, calibracao: { ...s.calibracao, ...patch } }));
+  const updateCapsula = (idx: number, patch: Partial<PermVCapsula>) =>
+    setSample((s) => ({ ...s, capsulas: s.capsulas.map((c, i) => (i === idx ? { ...c, ...patch } : c)) }));
   const updateLeitura = (idx: number, patch: Partial<PermVSample["leituras"][number]>) =>
     setSample((s) => ({ ...s, leituras: s.leituras.map((l, i) => (i === idx ? { ...l, ...patch } : l)) }));
   const addLeitura = () => setSample((s) => ({ ...s, leituras: [...s.leituras, newPermVLeitura()] }));
@@ -922,15 +927,79 @@ export function PermVPage() {
                   <CardTitle className="text-sm">Índices físicos iniciais e ensaio</CardTitle>
                 </CardHeader>
                 <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  <NumField label="Massa úmida — Mu (g)" value={sample.massaUmida} onChange={(v) => updateSample("massaUmida", v)} />
-                  <NumField label="Teor de umidade inicial — w (%)" value={sample.teorUmidadeInicial} onChange={(v) => updateSample("teorUmidadeInicial", v)} />
+                  <NumField label="Massa úmida do CP — Mu (g)" value={sample.massaUmida} onChange={(v) => updateSample("massaUmida", v)} />
                   <NumField label="Massa específica dos grãos — ρs (g/cm³)" value={sample.massaEspecificaGraos} onChange={(v) => updateSample("massaEspecificaGraos", v)} />
                   <NumField label="Diâmetro inicial do CP — D₀ (cm)" value={sample.diametroInicial} onChange={(v) => updateSample("diametroInicial", v)} />
-                  <NumField label="Altura inicial do CP até a carga — H₀ (cm)" value={sample.alturaInicial} onChange={(v) => updateSample("alturaInicial", v)} />
+                  <NumField label="Altura inicial do corpo de prova — H (cm)" value={sample.alturaInicial} onChange={(v) => updateSample("alturaInicial", v)} />
                   <NumField label="Gradiente hidráulico (2 a 15)" value={sample.gradienteHidraulico} onChange={(v) => updateSample("gradienteHidraulico", v)} />
+                  <NumField label="Carga hidráulica inicial — H₀ (cm)" value={sample.cargaHidraulicaInicial} onChange={(v) => updateSample("cargaHidraulicaInicial", v)} />
                   <div className="col-span-2">
                     <TxtField label="Natureza da água" value={sample.naturezaAgua} onChange={(v) => updateSample("naturezaAgua", v)} />
                   </div>
+                </CardContent>
+              </Card>
+
+              <Card className="mb-4">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Cápsulas de umidade (teor de umidade inicial — w)</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse text-xs">
+                      <thead className="bg-muted/40 text-muted-foreground">
+                        <tr>
+                          <td className="border p-1.5 text-left">Determinação</td>
+                          {sample.capsulas.map((_, i) => (
+                            <td key={i} className="border p-1.5 text-center w-24">Cápsula {i + 1}</td>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td className="border p-1.5 font-medium">Nº Cápsula</td>
+                          {sample.capsulas.map((c, i) => (
+                            <td key={i} className="border p-1">
+                              <Input className="h-7 text-xs text-center" value={c.numero ?? ""} onChange={(e) => updateCapsula(i, { numero: e.target.value })} placeholder={`#${i + 1}`} />
+                            </td>
+                          ))}
+                        </tr>
+                        <tr>
+                          <td className="border p-1.5 font-medium">Tara (g)</td>
+                          {sample.capsulas.map((c, i) => (
+                            <td key={i} className="border p-1">
+                              <Input type="number" className="h-7 text-xs text-center" value={c.tara} onChange={(e) => updateCapsula(i, { tara: Number(e.target.value.replace(",", ".")) || 0 })} />
+                            </td>
+                          ))}
+                        </tr>
+                        <tr>
+                          <td className="border p-1.5 font-medium">Solo Úmido + Tara (g)</td>
+                          {sample.capsulas.map((c, i) => (
+                            <td key={i} className="border p-1">
+                              <Input type="number" className="h-7 text-xs text-center" value={c.wet} onChange={(e) => updateCapsula(i, { wet: Number(e.target.value.replace(",", ".")) || 0 })} />
+                            </td>
+                          ))}
+                        </tr>
+                        <tr>
+                          <td className="border p-1.5 font-medium">Solo Seco + Tara (g)</td>
+                          {sample.capsulas.map((c, i) => (
+                            <td key={i} className="border p-1">
+                              <Input type="number" className="h-7 text-xs text-center" value={c.dry} onChange={(e) => updateCapsula(i, { dry: Number(e.target.value.replace(",", ".")) || 0 })} />
+                            </td>
+                          ))}
+                        </tr>
+                        <tr className="bg-muted/30">
+                          <td className="border p-1.5 font-medium">Umidade (%)</td>
+                          {sample.capsulas.map((c, i) => {
+                            const w = capsulaUmidadePct(c);
+                            return <td key={i} className="border p-1.5 text-center font-semibold">{w != null ? w.toFixed(2) : "—"}</td>;
+                          })}
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Teor de umidade médio: <strong className="text-foreground">{teorUmidadeMedio(sample.capsulas)?.toFixed(2) ?? "—"}%</strong>
+                  </p>
                 </CardContent>
               </Card>
 
@@ -989,7 +1058,7 @@ export function PermVPage() {
                       </TableHeader>
                       <TableBody>
                         {sample.leituras.map((l, i) => {
-                          const h = l.leituraBruta != null ? cargaHidraulica(l.leituraBruta, sample.calibracao) : null;
+                          const h = l.leituraBruta != null ? cargaHidraulica(l.leituraBruta, sample.calibracao, sample.cargaHidraulicaInicial) : null;
                           return (
                             <TableRow key={l.id}>
                               <TableCell>

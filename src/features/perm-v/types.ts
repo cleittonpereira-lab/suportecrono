@@ -22,12 +22,25 @@ export interface PermVLeitura {
   id: string;
   /** Tempo decorrido desde o início do ensaio, em segundos. */
   tSegundos: number | null;
-  /** Leitura bruta da bureta (mL se modo "volume", cm se modo "comprimento"). */
+  /**
+   * Leitura bruta da bureta (mL se modo "volume", cm se modo "comprimento").
+   * No modo "volume" é cumulativa a partir de 0 — a água que já saiu da
+   * bureta; a carga hidráulica real é obtida subtraindo isso (convertido
+   * pra cm) da carga inicial (H₀), não usando a leitura como carga direto.
+   */
   leituraBruta: number | null;
   /** Temperatura da água no instante da leitura (°C). */
   temperatura: number | null;
   /** Variação de altura do CP nesse instante, se monitorada (opcional, cm). */
   alturaCp: number | null;
+}
+
+/** Cápsula de umidade — mesmo shape usado em Umidade Natural/Triaxial. */
+export interface PermVCapsula {
+  numero?: string;
+  tara: number;  // massa da cápsula vazia [g]
+  wet: number;   // cápsula + solo úmido [g]
+  dry: number;   // cápsula + solo seco [g]
 }
 
 export interface PermVSample {
@@ -54,11 +67,14 @@ export interface PermVSample {
   gradienteHidraulico: number | null;
 
   // Índices físicos iniciais do corpo de prova (8.1)
-  massaUmida: number | null; // Mu (g)
-  teorUmidadeInicial: number | null; // w (%)
+  massaUmida: number | null; // Mu (g) — massa úmida do corpo de prova inteiro
+  capsulas: PermVCapsula[]; // determinação do teor de umidade (w) por cápsulas
   massaEspecificaGraos: number | null; // ρs (g/cm³) — opcional
   diametroInicial: number | null; // Dcp(i) (cm)
-  alturaInicial: number | null; // Hcp(i) (cm)
+  alturaInicial: number | null; // Hcp(i) (cm) — altura do CORPO DE PROVA (usada na Eq.11)
+
+  /** Carga hidráulica inicial — H₀ (cm), nível d'água na bureta no início do ensaio (leitura bruta = 0). */
+  cargaHidraulicaInicial: number | null;
 
   calibracao: PermVCalibracao;
   leituras: PermVLeitura[];
@@ -72,6 +88,10 @@ export function newPermVLeitura(): PermVLeitura {
     temperatura: null,
     alturaCp: null,
   };
+}
+
+export function newPermVCapsula(): PermVCapsula {
+  return { numero: "", tara: 0, wet: 0, dry: 0 };
 }
 
 export function seedPermVSample(partial?: Partial<PermVSample>): PermVSample {
@@ -93,10 +113,11 @@ export function seedPermVSample(partial?: Partial<PermVSample>): PermVSample {
     naturezaAgua: "Destilada / deairada",
     gradienteHidraulico: null,
     massaUmida: null,
-    teorUmidadeInicial: null,
+    capsulas: [newPermVCapsula(), newPermVCapsula(), newPermVCapsula()],
     massaEspecificaGraos: null,
     diametroInicial: null,
     alturaInicial: null,
+    cargaHidraulicaInicial: null,
     calibracao: {
       modo: "volume",
       volumeReferenciaMl: 1,
