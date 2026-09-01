@@ -101,6 +101,15 @@ const MODELOS = [
     icon: Layers,
     tag: "ASF.DAP",
   },
+  {
+    to: "/relatorio/perm-v" as const,
+    titulo: "Permeabilidade a Carga Variável (PERM.V)",
+    descricao:
+      "Modelo do relatório de permeabilidade a carga variável, Método B (bureta graduada). Espelho vivo do template oficial.",
+    norma: "ABNT NBR 14545:2021",
+    icon: Droplets,
+    tag: "PERM.V",
+  },
 ];
 
 function ModelosRelatoriosIndex() {
