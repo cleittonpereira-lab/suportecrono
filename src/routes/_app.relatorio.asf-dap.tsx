@@ -143,13 +143,18 @@ function ASFDapReportPage({
   const avgGmb = avg(results.map((r) => r.gmb));
   const avgMea = avg(results.map((r) => r.mea));
   const avgVv = avg(results.map((r) => r.vv));
+  const anyNeedsFilme = results.some((r) => r.needsFilme);
   return (
     <ReportPage
       sample={sample as unknown as ReportSample}
       page={1}
       total={1}
       title="DENSIDADE RELATIVA APARENTE E MASSA ESPECÍFICA APARENTE"
-      norms={[{ text: "DNIT 428/2022-ME — Misturas asfálticas compactadas" }]}
+      norms={[
+        {
+          text: "DNIT 428/2022-ME - Pavimentação – Misturas asfálticas – Determinação da densidade relativa aparente e da massa específica aparente de corpos de prova compactados",
+        },
+      ]}
     >
       <div className="space-y-2 text-[10px] text-[#141414]">
         <div className="border border-[#141414]">
@@ -261,9 +266,34 @@ function ASFDapReportPage({
           </div>
         )}
 
-        <div className="text-[8.5px] text-[#141414]/70 leading-tight">
-          Gmb = A/(C−B) (mistura densa) ou MEa = A/V (mistura aberta) · MEa = 0,9971 × Gmb, conforme DNIT 428/2022-ME.
-          Vazios calculados apenas quando Gmm foi informado (cruzamento informativo, §7.4).
+        <div className="border border-[#141414]">
+          <div className="rounded-t border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-center text-[9.5px] font-bold uppercase text-[#141414]">
+            Legenda
+          </div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 p-2 text-[8.5px] leading-tight">
+            {sample.tipoMistura === "densa" ? (
+              <>
+                <div><b>A</b> — massa do corpo de prova seca ao ar (g)</div>
+                <div><b>B</b> — massa do corpo de prova imersa em água (g)</div>
+                <div><b>C</b> — massa do corpo de prova saturada, superfície seca (g)</div>
+                {anyNeedsFilme && (
+                  <>
+                    <div><b>E</b> — massa do corpo de prova revestido (filme PVC), seca ao ar (g)</div>
+                    <div><b>F</b> — massa do corpo de prova revestido (filme PVC), imersa em água (g)</div>
+                  </>
+                )}
+                <div><b>Água abs.</b> — % de água absorvida (§6.1.4) — acima de 2% exige revestimento com filme PVC</div>
+              </>
+            ) : (
+              <div><b>A</b> — massa do corpo de prova seca ao ar (g) · <b>V</b> — volume do corpo de prova, obtido por paquímetro (cm³)</div>
+            )}
+            <div><b>Gmb</b> — densidade relativa aparente (bulk specific gravity), adimensional</div>
+            <div><b>MEa</b> — massa específica aparente (g/cm³) = 0,9971 × Gmb</div>
+            <div><b>Vazios (Vv)</b> — volume de vazios (%), calculado a partir do Gmm informado (§7.4)</div>
+          </div>
+          <div className="border-t border-[#141414]/40 px-2 py-1 text-[8px] text-[#141414]/70 leading-tight">
+            Gmb = A/(C−B) (mistura densa) ou MEa = A/V (mistura aberta), conforme DNIT 428/2022-ME.
+          </div>
         </div>
       </div>
     </ReportPage>
