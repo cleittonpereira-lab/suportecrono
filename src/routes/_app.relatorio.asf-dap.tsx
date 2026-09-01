@@ -11,8 +11,10 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  Download, Gauge, Eye, Send, ShieldCheck, Plus, Trash2, CheckCircle2, Calculator,
+  Download, Gauge, Send, ShieldCheck, Plus, Trash2, CheckCircle2, Calculator,
+  Beaker, History, FileText,
 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { toPng } from "html-to-image";
 import {
@@ -268,6 +270,7 @@ export function ASFPage() {
 
   const [saveBusy, setSaveBusy] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  const [tab, setTab] = useState("amostra");
 
   const [approvals, setApprovals] = useState<ApprovalRow[]>([]);
   const [versions, setVersions] = useState<ReportVersion[]>([]);
@@ -822,9 +825,6 @@ export function ASFPage() {
               </Button>
             )}
 
-            <Button variant="outline" size="sm" onClick={() => setReportOpen(true)}>
-              <Eye className="mr-1.5 h-4 w-4" /> Visualizar Relatório
-            </Button>
             <Button variant="outline" size="sm" onClick={handleGeneratePdf}>
               <Download className="mr-1.5 h-4 w-4" /> Baixar PDF
             </Button>
@@ -865,6 +865,20 @@ export function ASFPage() {
           </AmostraSummaryCard>
         </div>
 
+        {/* Abas Principais de Edição */}
+        <Tabs value={tab} onValueChange={setTab} className="flex-1 overflow-hidden flex flex-col">
+          <div className="flex items-center gap-2">
+            <TabsList className="grid flex-1 grid-cols-2">
+              <TabsTrigger value="amostra"><Beaker className="mr-1.5 h-3.5 w-3.5" />Amostra</TabsTrigger>
+              <TabsTrigger value="versoes"><History className="mr-1.5 h-3.5 w-3.5" />Versões</TabsTrigger>
+            </TabsList>
+            <Button type="button" onClick={() => setReportOpen(true)} className="gap-2 shrink-0">
+              <FileText className="h-4 w-4" /> Gerar Relatório
+            </Button>
+          </div>
+
+          <div className="flex-1 overflow-auto mt-4 pr-1">
+        <TabsContent value="amostra" className="m-0 space-y-4">
         {/* Tipo de mistura */}
         <Card className="mb-4">
           <CardHeader className="pb-2">
@@ -1017,7 +1031,9 @@ export function ASFPage() {
             </CardContent>
           </Card>
         )}
+        </TabsContent>
 
+        <TabsContent value="versoes" className="m-0 space-y-4">
         <div className="mb-4">
           <ReportVersionsPanel
             scopeId={scopeId}
@@ -1035,6 +1051,9 @@ export function ASFPage() {
             onDeleteVersion={handleDeleteVersion}
           />
         </div>
+        </TabsContent>
+          </div>
+        </Tabs>
 
         {/* RELATÓRIO — cópia sempre montada para rasterização offscreen */}
         <div
