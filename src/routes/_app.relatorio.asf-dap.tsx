@@ -127,8 +127,22 @@ function NumField({ label, value, onChange, className }: { label: string; value:
 }
 
 /** Página única do laudo: identificação (via ReportHeader) + resultados por CP. */
-function ASFDapReportPage({ sample }: { sample: AsfDapSample }) {
+function ASFDapReportPage({
+  sample,
+  photos = [],
+}: {
+  sample: AsfDapSample;
+  photos?: import("@/features/lab/types").Photo[];
+}) {
   const results = sample.corposDeProva.map((cp) => calcCp(cp, sample.tipoMistura, sample.dpa));
+  const avg = (vals: (number | null | undefined)[]) => {
+    const nums = vals.filter((v): v is number => v != null && isFinite(v));
+    return nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null;
+  };
+  const avgPct = avg(results.map((r) => r.pct));
+  const avgGmb = avg(results.map((r) => r.gmb));
+  const avgMea = avg(results.map((r) => r.mea));
+  const avgVv = avg(results.map((r) => r.vv));
   return (
     <ReportPage
       sample={sample as unknown as ReportSample}
@@ -139,14 +153,14 @@ function ASFDapReportPage({ sample }: { sample: AsfDapSample }) {
     >
       <div className="space-y-2 text-[10px] text-[#141414]">
         <div className="border border-[#141414]">
-          <div className="bg-[#141414] px-2 py-1 text-[9.5px] font-bold uppercase text-white flex items-center justify-between">
+          <div className="rounded-t border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-[9.5px] font-bold uppercase text-[#141414] flex items-center justify-between">
             <span>Resultados por Corpo de Prova</span>
             <span>Mistura: {sample.tipoMistura === "densa" ? "Densa" : "Aberta (vazios ≥ 10%)"}</span>
           </div>
           <table className="w-full border-collapse">
             <thead>
               {sample.tipoMistura === "densa" ? (
-                <tr className="bg-[#f1f1f1] text-[8.5px] font-semibold">
+                <tr className="bg-[#141414]/5 text-[8.5px] font-semibold">
                   <td className="border border-[#141414] px-1 py-0.5 text-center">CP</td>
                   <td className="border border-[#141414] px-1 py-0.5 text-center">A (g)</td>
                   <td className="border border-[#141414] px-1 py-0.5 text-center">B (g)</td>
@@ -157,7 +171,7 @@ function ASFDapReportPage({ sample }: { sample: AsfDapSample }) {
                   <td className="border border-[#141414] px-1 py-0.5 text-center">Vazios (%)</td>
                 </tr>
               ) : (
-                <tr className="bg-[#f1f1f1] text-[8.5px] font-semibold">
+                <tr className="bg-[#141414]/5 text-[8.5px] font-semibold">
                   <td className="border border-[#141414] px-1 py-0.5 text-center">CP</td>
                   <td className="border border-[#141414] px-1 py-0.5 text-center">A (g)</td>
                   <td className="border border-[#141414] px-1 py-0.5 text-center">V (cm³)</td>
@@ -200,6 +214,50 @@ function ASFDapReportPage({ sample }: { sample: AsfDapSample }) {
           <div className="border border-[#141414] px-2 py-1.5 flex items-center justify-between">
             <span className="text-[9.5px] font-semibold uppercase">Densidade do filme PVC (Dpa)</span>
             <span className="text-[11px] font-bold">{fmt(sample.dpa, 3)}</span>
+          </div>
+        )}
+
+        <div className="border border-[#141414]">
+          <div className="rounded-t border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-center text-[9.5px] font-bold uppercase text-[#141414]">
+            Médias / Índices Calculados
+          </div>
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-[#141414]/5 text-[8.5px] font-semibold">
+                <td className="border border-[#141414] px-1 py-0.5 text-center">Água abs. média (%)</td>
+                <td className="border border-[#141414] px-1 py-0.5 text-center">Gmb médio</td>
+                <td className="border border-[#141414] px-1 py-0.5 text-center">MEa médio (g/cm³)</td>
+                <td className="border border-[#141414] px-1 py-0.5 text-center">Vazios médio (%)</td>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(avgPct, 1)}</td>
+                <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(avgGmb, 4)}</td>
+                <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(avgMea, 4)}</td>
+                <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(avgVv, 1)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {photos.length > 0 && (
+          <div className="border border-[#141414]">
+            <div className="rounded-t border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-center text-[9.5px] font-bold uppercase text-[#141414]">
+              Registro Fotográfico
+            </div>
+            <div className="grid grid-cols-4 gap-1 p-1">
+              {photos.map((p) => (
+                <div key={p.id} className="aspect-square overflow-hidden rounded border border-[#141414]/40 bg-white">
+                  <img
+                    src={p.url || p.dataUrl}
+                    alt="Registro fotográfico"
+                    crossOrigin="anonymous"
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -729,7 +787,7 @@ export function ASFPage() {
           <div className="flex-1 min-h-0 overflow-auto bg-[#525659] p-8 flex justify-center">
             <div className="flex flex-col items-center gap-8 shrink-0 pb-12">
               <div className="w-[210mm] h-[297mm] shadow-2xl bg-white shrink-0 overflow-hidden">
-                <ASFDapReportPage sample={sample} />
+                <ASFDapReportPage sample={sample} photos={ctx?.photos ?? []} />
               </div>
             </div>
           </div>
@@ -970,34 +1028,33 @@ export function ASFPage() {
                       )}
                     </>
                   ) : (
-                    <>
-                      <NumField label="A · massa seca ao ar [g]" value={cp.A} onChange={(v) => updateCp(i, { A: v })} />
-                      <div>
-                        <Label className="text-[10px] text-muted-foreground">Alturas (paquímetro) [cm]</Label>
-                        <div className="flex flex-wrap gap-2">
-                          {cp.alturas.map((v, idx) => (
-                            <NumField key={idx} label={`H${idx + 1}`} value={v} onChange={(nv) => {
-                              const alturas = [...cp.alturas] as AsfDapCp["alturas"];
-                              alturas[idx] = nv;
-                              updateCp(i, { alturas });
-                            }} />
-                          ))}
-                        </div>
-                      </div>
-                      <div>
-                        <Label className="text-[10px] text-muted-foreground">Diâmetros (paquímetro) [cm]</Label>
-                        <div className="flex flex-wrap gap-2">
-                          {cp.diametros.map((v, idx) => (
-                            <NumField key={idx} label={`D${idx + 1}`} value={v} onChange={(nv) => {
-                              const diametros = [...cp.diametros] as AsfDapCp["diametros"];
-                              diametros[idx] = nv;
-                              updateCp(i, { diametros });
-                            }} />
-                          ))}
-                        </div>
-                      </div>
-                    </>
+                    <NumField label="A · massa seca ao ar [g]" value={cp.A} onChange={(v) => updateCp(i, { A: v })} />
                   )}
+
+                  <div className="pt-1 border-t mt-2">
+                    <Label className="text-[10px] text-muted-foreground">Alturas (paquímetro) [cm]</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {cp.alturas.map((v, idx) => (
+                        <NumField key={idx} label={`H${idx + 1}`} value={v} onChange={(nv) => {
+                          const alturas = [...cp.alturas] as AsfDapCp["alturas"];
+                          alturas[idx] = nv;
+                          updateCp(i, { alturas });
+                        }} />
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-[10px] text-muted-foreground">Diâmetros (paquímetro) [cm]</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {cp.diametros.map((v, idx) => (
+                        <NumField key={idx} label={`D${idx + 1}`} value={v} onChange={(nv) => {
+                          const diametros = [...cp.diametros] as AsfDapCp["diametros"];
+                          diametros[idx] = nv;
+                          updateCp(i, { diametros });
+                        }} />
+                      ))}
+                    </div>
+                  </div>
 
                   <div className="flex flex-wrap items-center gap-4 pt-1 border-t mt-2">
                     <NumField label="Gmm — cruzamento de vazios (opcional)" value={cp.gmm} onChange={(v) => updateCp(i, { gmm: v })} />
@@ -1070,7 +1127,7 @@ export function ASFPage() {
           }}
           className="print-only-report mx-auto flex flex-col items-center gap-4"
         >
-          <ASFDapReportPage sample={sample} />
+          <ASFDapReportPage sample={sample} photos={ctx?.photos ?? []} />
         </div>
         <style>{`
           @media print {
