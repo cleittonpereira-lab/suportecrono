@@ -29,6 +29,11 @@ scratch/
 .wrangler/
 .dev.vars
 
+# Ferramentas locais (estado de máquina, não faz parte do projeto)
+.claude/
+.graphify/
+supabase/.temp/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
