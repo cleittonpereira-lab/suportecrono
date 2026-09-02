@@ -160,11 +160,22 @@ export async function handleFetchSharedChegadaState(): Promise<SharedChegadaStat
   return readLocalChegadaState();
 }
 
-/** Handler puro de criação de amostra */
+/**
+ * Handler puro de criação de amostra.
+ *
+ * Corrida com outras gravações no mesmo arquivo (ex.: o quadro do admin
+ * salvando por `handleSaveSharedChegadaState` ao mesmo tempo, ou dois
+ * operadores registrando quase juntos): sem proteção, um read-modify-write
+ * puro faz a última gravação apagar a outra inteira — bug real de perda de
+ * dados (o operador via "sucesso" na tela, mas o registro nunca chegava ao
+ * quadro do admin). Diferente de `handleSaveSharedChegadaState` (que recusa
+ * e pede pro cliente repetir, correto pra edição de quadro inteiro), aqui é
+ * um append — dá pra resolver sozinho tentando de novo com o estado mais
+ * recente, sem precisar de intervenção do usuário.
+ */
 export async function handleCreateSharedChegadaTask(
   data: Omit<ChegadaTask, "id" | "criadoEm"> & { id?: string; criadoEm?: string }
 ): Promise<{ success: boolean; task: ChegadaTask; fullState: SharedChegadaState }> {
-  const nowIso = new Date().toISOString();
   const p = getSaoPauloPartsServer();
   const timeStr = `${p.day}/${p.month}/${p.year} ${p.hour}:${p.minute}`;
 
@@ -188,56 +199,71 @@ export async function handleCreateSharedChegadaTask(
     updatedAt: timeStr,
   };
 
-  const currentState = await readLocalChegadaState();
-  const columns = currentState.columns || DEFAULT_COLUMNS;
-  const currentTasks: Record<string, ChegadaTask[]> = { ...currentState.tasks };
+  const MAX_ATTEMPTS = 6;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const currentState = await readLocalChegadaState();
+    const columns = currentState.columns || DEFAULT_COLUMNS;
+    const currentTasks: Record<string, ChegadaTask[]> = { ...currentState.tasks };
 
-  columns.forEach((col) => {
-    if (!currentTasks[col.id]) {
-      currentTasks[col.id] = [];
+    columns.forEach((col) => {
+      if (!currentTasks[col.id]) {
+        currentTasks[col.id] = [];
+      }
+    });
+
+    const targetCol = currentTasks.registro !== undefined ? "registro" : columns[0].id;
+    const existingList = currentTasks[targetCol] || [];
+
+    const filteredList = existingList.filter((t) => t.id !== newTask.id);
+    currentTasks[targetCol] = [newTask, ...filteredList].sort((a, b) => {
+      if (a.priority === "alta" && b.priority !== "alta") return -1;
+      if (a.priority !== "alta" && b.priority === "alta") return 1;
+      return 0;
+    });
+
+    const tipoOptions = [...(currentState.tipoOptions || DEFAULT_TIPO_OPTIONS)];
+    for (const t of newTask.tipoAmostra) {
+      if (!tipoOptions.some((opt) => opt.value.toLowerCase() === t.toLowerCase())) {
+        tipoOptions.push({ label: t, value: t });
+      }
     }
-  });
 
-  const targetCol = currentTasks.registro !== undefined ? "registro" : columns[0].id;
-  const existingList = currentTasks[targetCol] || [];
-
-  const filteredList = existingList.filter((t) => t.id !== newTask.id);
-  currentTasks[targetCol] = [newTask, ...filteredList].sort((a, b) => {
-    if (a.priority === "alta" && b.priority !== "alta") return -1;
-    if (a.priority !== "alta" && b.priority === "alta") return 1;
-    return 0;
-  });
-
-  let tipoOptions = [...(currentState.tipoOptions || DEFAULT_TIPO_OPTIONS)];
-  for (const t of newTask.tipoAmostra) {
-    if (!tipoOptions.some((opt) => opt.value.toLowerCase() === t.toLowerCase())) {
-      tipoOptions.push({ label: t, value: t });
+    const recebidoOptions = [...(currentState.recebidoOptions || DEFAULT_RECEBIDO_OPTIONS)];
+    for (const r of newTask.recebidoPor) {
+      if (!recebidoOptions.some((opt) => opt.value.toLowerCase() === r.toLowerCase())) {
+        recebidoOptions.push({ label: r, value: r });
+      }
     }
+
+    const fullState: SharedChegadaState = {
+      columns,
+      tasks: currentTasks,
+      tipoOptions,
+      recebidoOptions,
+      updatedAt: new Date().toISOString(),
+      rev: currentState.rev + 1,
+    };
+
+    // Confere de novo, bem antes de gravar, se ninguém escreveu nesse meio
+    // tempo — se escreveu, descarta essa tentativa e recomeça com o estado
+    // fresco (em vez de sobrescrever com base numa leitura já desatualizada).
+    const verifyState = await readLocalChegadaState();
+    if (verifyState.rev !== currentState.rev) {
+      continue;
+    }
+
+    await writeLocalChegadaState(fullState);
+
+    return {
+      success: true,
+      task: newTask,
+      fullState,
+    };
   }
 
-  let recebidoOptions = [...(currentState.recebidoOptions || DEFAULT_RECEBIDO_OPTIONS)];
-  for (const r of newTask.recebidoPor) {
-    if (!recebidoOptions.some((opt) => opt.value.toLowerCase() === r.toLowerCase())) {
-      recebidoOptions.push({ label: r, value: r });
-    }
-  }
-
-  const fullState: SharedChegadaState = {
-    columns,
-    tasks: currentTasks,
-    tipoOptions,
-    recebidoOptions,
-    updatedAt: nowIso,
-    rev: currentState.rev + 1,
-  };
-
-  await writeLocalChegadaState(fullState);
-
-  return {
-    success: true,
-    task: newTask,
-    fullState,
-  };
+  throw new Error(
+    "Não foi possível registrar a chegada — muitas gravações concorrentes no momento. Tente novamente em instantes.",
+  );
 }
 
 /**
@@ -296,32 +322,44 @@ export async function handleAddSharedChegadaOption(data: {
   const clean = data.name.trim();
   if (!clean) return { success: false, options: [] };
 
-  const currentState = await readLocalChegadaState();
-  let updatedOptions: Option[] = [];
+  const MAX_ATTEMPTS = 6;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const currentState = await readLocalChegadaState();
+    let updatedOptions: Option[] = [];
 
-  if (data.type === "tipo") {
-    const currentTipo = currentState.tipoOptions || DEFAULT_TIPO_OPTIONS;
-    if (!currentTipo.some((o) => o.value.toLowerCase() === clean.toLowerCase())) {
-      updatedOptions = [...currentTipo, { label: clean, value: clean }];
+    if (data.type === "tipo") {
+      const currentTipo = currentState.tipoOptions || DEFAULT_TIPO_OPTIONS;
+      if (!currentTipo.some((o) => o.value.toLowerCase() === clean.toLowerCase())) {
+        updatedOptions = [...currentTipo, { label: clean, value: clean }];
+      } else {
+        updatedOptions = currentTipo;
+      }
+      currentState.tipoOptions = updatedOptions;
     } else {
-      updatedOptions = currentTipo;
+      const currentRec = currentState.recebidoOptions || DEFAULT_RECEBIDO_OPTIONS;
+      if (!currentRec.some((o) => o.value.toLowerCase() === clean.toLowerCase())) {
+        updatedOptions = [...currentRec, { label: clean, value: clean }];
+      } else {
+        updatedOptions = currentRec;
+      }
+      currentState.recebidoOptions = updatedOptions;
     }
-    currentState.tipoOptions = updatedOptions;
-  } else {
-    const currentRec = currentState.recebidoOptions || DEFAULT_RECEBIDO_OPTIONS;
-    if (!currentRec.some((o) => o.value.toLowerCase() === clean.toLowerCase())) {
-      updatedOptions = [...currentRec, { label: clean, value: clean }];
-    } else {
-      updatedOptions = currentRec;
+
+    currentState.updatedAt = new Date().toISOString();
+    currentState.rev = currentState.rev + 1;
+
+    // Mesma proteção de `handleCreateSharedChegadaTask` — confere de novo
+    // antes de gravar, pra não apagar uma gravação concorrente.
+    const verifyState = await readLocalChegadaState();
+    if (verifyState.rev !== currentState.rev - 1) {
+      continue;
     }
-    currentState.recebidoOptions = updatedOptions;
+
+    await writeLocalChegadaState(currentState);
+    return { success: true, options: updatedOptions };
   }
 
-  currentState.updatedAt = new Date().toISOString();
-  currentState.rev = currentState.rev + 1;
-  await writeLocalChegadaState(currentState);
-
-  return { success: true, options: updatedOptions };
+  throw new Error("Não foi possível salvar a opção — muitas gravações concorrentes no momento. Tente novamente.");
 }
 
 // Server Functions exportadas para o TanStack Start / SSR
