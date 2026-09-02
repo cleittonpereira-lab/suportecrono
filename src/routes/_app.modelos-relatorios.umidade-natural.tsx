@@ -30,7 +30,7 @@ const PHANTOM_CTX: Omit<LabEnsaioContextValue, "photos" | "addPhoto" | "removePh
     workNumber: "OBRA-MODELO",
     local: "Local Modelo",
     operator: "Operador Modelo",
-    technicalResp: "Responsável Modelo",
+    technicalResp: "Engº Maurício Malanconi - CREA: 5063078630",
     revision: "00",
     amostras: [],
   },
