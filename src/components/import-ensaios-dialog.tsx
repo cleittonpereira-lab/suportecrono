@@ -13,14 +13,62 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Upload, FileSpreadsheet, X, ChevronDown, ChevronRight } from "lucide-react";
+import { Upload, FileSpreadsheet, X, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 import { insertRow, ensureColumns } from "@/lib/programacao.functions";
+import { ENSAIO_TAG, ENSAIO_LABEL, type EnsaioTipo } from "@/features/lab/types";
 
 const SHEET_AMOSTRAS = "Amostras";
 const SHEET_ENSAIOS = "Ensaios";
 const SHEET_TIPOS = "Tipos de Ensaio";
 
 type Tipo = { id: string; nome: string };
+
+/**
+ * Códigos canônicos de ensaio usados no resto do app (etiquetas/QR, ver
+ * ENSAIO_TAG). Ordenados do código mais específico pro mais genérico, para
+ * que "TRI.CIDsat" não seja engolido por um "TRI" mais curto, por exemplo.
+ */
+const CANONICAL_TAGS: { code: string; tipo: EnsaioTipo }[] = (
+  Object.entries(ENSAIO_TAG) as [EnsaioTipo, { code: string }][]
+)
+  .map(([tipo, info]) => ({ code: info.code.toUpperCase(), tipo }))
+  .sort((a, b) => b.code.length - a.code.length);
+
+/**
+ * Resolve uma tag crua da planilha (ex.: "CD3.NAT", "COMP.EN.5") para um
+ * Tipo de Ensaio já cadastrado, tentando nessa ordem:
+ * 1. Nome/código já cadastrado batendo exatamente com a tag.
+ * 2. Código canônico do app (ENSAIO_TAG) — por igualdade ou prefixo, já que
+ *    etiquetas de campo costumam vir com sufixos (nº de CPs, condição etc.)
+ *    coladas no código, ex. "CD3.NAT" = CD + "3" (CPs) + ".NAT" (natural).
+ * Se nada bater, retorna null — quem chama decide se cadastra um tipo novo
+ * ad-hoc (não faz isso silenciosamente, para não gerar "tipos" lixo do nada).
+ */
+function resolveTipoTag(tag: string, tipos: Tipo[]): Tipo | null {
+  const cleanTag = tag.trim().toUpperCase();
+  if (!cleanTag) return null;
+
+  const exact = tipos.find(
+    (t) =>
+      t.nome.trim().toUpperCase() === cleanTag ||
+      (t as any).codigo?.trim().toUpperCase() === cleanTag,
+  );
+  if (exact) return exact;
+
+  const canonical = CANONICAL_TAGS.find(
+    (c) => cleanTag === c.code || cleanTag.startsWith(c.code),
+  );
+  if (canonical) {
+    const label = ENSAIO_LABEL[canonical.tipo].toUpperCase();
+    const found = tipos.find(
+      (t) =>
+        t.nome.trim().toUpperCase() === label ||
+        (t as any).codigo?.trim().toUpperCase() === canonical.code,
+    );
+    if (found) return found;
+  }
+  return null;
+}
 
 interface ParsedRow {
   key: string; // unique
@@ -299,13 +347,9 @@ export function ImportEnsaiosDialog({
 
       const ensureTipo = async (tag: string): Promise<string> => {
         const cleanTag = tag.trim().toUpperCase();
-        // 1. Procura por nome exato ou código
-        let found = tipos.find(
-          (t) =>
-            t.nome.trim().toUpperCase() === cleanTag ||
-            (t as any).codigo?.trim().toUpperCase() === cleanTag,
-        );
-        // 2. Procura por aliases comuns (CD -> Cisalhamento, AD -> Adensamento, TR -> Triaxial, etc.)
+        // 1. Nome/código exato, ou código canônico do app (ENSAIO_TAG)
+        let found: Tipo | undefined = resolveTipoTag(tag, tipos) ?? undefined;
+        // 2. Aliases por substring (fallback pra tags fora do padrão do app)
         if (!found) {
           if (cleanTag.includes("CD") || cleanTag.includes("CISALHA")) {
             found = tipos.find((t) => t.nome.toLowerCase().includes("cisalha"));
@@ -602,6 +646,14 @@ export function ImportEnsaiosDialog({
                           >
                             <Checkbox checked={on} className="h-3 w-3" onCheckedChange={() => {}} />
                             <span className="font-mono">{r.tag}</span>
+                            {!resolveTipoTag(r.tag, tipos) && (
+                              <span
+                                className="inline-flex items-center gap-0.5 text-[9px] text-amber-600"
+                                title="Nenhum tipo de ensaio cadastrado bate com essa tag — será criado um tipo novo ao importar"
+                              >
+                                <Sparkles className="h-2.5 w-2.5" /> novo tipo
+                              </span>
+                            )}
                           </button>
                         );
                       })}

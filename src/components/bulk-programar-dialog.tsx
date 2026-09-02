@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { insertRow, updateRow, listRows } from "@/lib/programacao.functions";
+import { insertRow, updateRow, listRows, ensureColumns } from "@/lib/programacao.functions";
 import { optimizeSchedule } from "@/lib/ai-optimize.functions";
 
 import {
@@ -59,11 +59,13 @@ import {
 
 
 /* ---------------------------------- Tipos ---------------------------------- */
+type Prioridade = "baixa" | "media" | "alta" | "urgente";
 type Amostra = {
   id: string;
   os_numero: string;
   codigo_amostra: string | null;
   tomador?: string | null;
+  prioridade?: Prioridade | null;
 };
 type Ensaio = {
   id: string;
@@ -73,7 +75,19 @@ type Ensaio = {
   prazo: string | null;
   observacoes?: string | null;
   detalhes_tecnicos?: string | null;
+  prioridade?: Prioridade | null;
 };
+
+const PRIO_ORDER: Record<Prioridade, number> = { urgente: 0, alta: 1, media: 2, baixa: 3 };
+const PRIO_LABEL: Record<Prioridade, string> = { urgente: "Urgente", alta: "Alta", media: "Média", baixa: "Baixa" };
+const PRIO_COLOR: Record<Prioridade, string> = {
+  urgente: "bg-red-500/15 text-red-700 dark:text-red-300",
+  alta: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+  media: "bg-sky-500/15 text-sky-700 dark:text-sky-300",
+  baixa: "bg-muted text-muted-foreground",
+};
+const prioOf = (e: Ensaio, a: Amostra | null | undefined): Prioridade =>
+  e.prioridade || a?.prioridade || "media";
 type TipoEnsaio = {
   id: string;
   nome: string;
@@ -104,6 +118,14 @@ type PlanItem = {
   parentEnsaioId?: string;
   incluirFds?: boolean;
   equipExcluidos?: string[];
+  /**
+   * Ensaio predecessor (finish-to-start), quando definido pelo usuário na
+   * prévia. Só tem efeito se o predecessor também estiver neste lote e
+   * aparecer ANTES na ordem do array — quem depende começa só depois do
+   * predecessor terminar (+1 dia útil). Vira `predecessor_id` da
+   * Programação criada, no mesmo esquema já usado na Planilha (MS Project).
+   */
+  predecessorEnsaioId?: string | null;
 };
 
 type OverridesByTipo = Record<string, { fds: boolean; excludes: string[] }>;
@@ -130,6 +152,10 @@ const diffDays = (a: string, b: string) => {
   const db = new Date(b + "T00:00:00").getTime();
   return Math.round((da - db) / 86_400_000);
 };
+/** Dia seguinte (calendário) a uma data ISO — usado pra achar o início mínimo de um sucessor (finish-to-start). */
+const dayAfterIso = (iso: string) =>
+  new Date(new Date(iso + "T00:00:00").getTime() + 86_400_000).toISOString().slice(0, 10);
+const maxIso = (a: string, b: string) => (a > b ? a : b);
 
 /* -------------------------- Componente principal -------------------------- */
 export function BulkProgramarDialog({
@@ -158,6 +184,7 @@ export function BulkProgramarDialog({
   const qc = useQueryClient();
   const insertFn = useServerFn(insertRow);
   const updateFn = useServerFn(updateRow);
+  const ensureColumnsFn = useServerFn(ensureColumns);
   const optimizeFn = useServerFn(optimizeSchedule);
   const equipMut = useMutation({
     mutationFn: () => listRows({ data: { sheet: "Equipamentos" } }),
@@ -403,15 +430,15 @@ export function BulkProgramarDialog({
       ensaiosPorOs.set(os, arr);
     }
 
-    // Ordenação da fila
+    // Ordenação da fila — prioridade da amostra/ensaio sempre entra primeiro,
+    // não importa o modo de ordenação escolhido: urgente/alta furam a fila.
     const sorted = [...selecionados].sort((a, b) => {
       const aa = amostraById.get(a.amostra_id);
       const bb = amostraById.get(b.amostra_id);
-      
-      // Se forem da mesma OS, respeita o Start Date da OS se existir
-      if (aa?.os_numero === bb?.os_numero && aa?.os_numero) {
-        // Dentro da mesma OS, a ordem secundária pode ser por tipo ou prazo
-      }
+
+      const pa = PRIO_ORDER[prioOf(a, aa)];
+      const pb = PRIO_ORDER[prioOf(b, bb)];
+      if (pa !== pb) return pa - pb;
 
       if (ordem === "prazo" || modo === "otimizada") {
         const pa =
@@ -613,6 +640,7 @@ export function BulkProgramarDialog({
           dur: durOf(e.tipo_ensaio_id),
           deadline,
           alvo: os ? alvoDaOs(os) : null,
+          prioridade: prioOf(e, a),
         };
       });
       const equips = equipamentos.map((eq) => ({
@@ -663,10 +691,19 @@ export function BulkProgramarDialog({
   const aplicar = useMutation({
     mutationFn: async () => {
       if (!plano) return 0;
+      await ensureColumnsFn({ data: { sheet: SHEET_PROGS, columns: ["predecessor_id"] } }).catch(() => {});
+      // ensaioId -> id da Programação recém-criada, pra ligar quem tem
+      // predecessor dentro do próprio lote. `plano` já precisa estar na
+      // ordem "predecessor antes do dependente" (mesma ordem usada pra
+      // calcular as datas em rebuildPlanDates), então um único loop resolve.
+      const progIdByEnsaio = new Map<string, string>();
       let ok = 0;
       for (const item of plano) {
         const obs = obsBulk.trim() || null;
-        await insertFn({
+        const predecessorId = item.predecessorEnsaioId
+          ? progIdByEnsaio.get(item.predecessorEnsaioId) ?? ""
+          : "";
+        const res: any = await insertFn({
           data: {
             sheet: SHEET_PROGS,
             row: {
@@ -680,9 +717,11 @@ export function BulkProgramarDialog({
               progresso: 0,
               observacoes: obs,
               incluir_fds: item.incluirFds ?? incluirFds,
+              predecessor_id: predecessorId,
             },
           },
         });
+        if (res?.id) progIdByEnsaio.set(item.ensaioId, res.id);
         if (obs) {
           try {
             await updateFn({
@@ -719,6 +758,18 @@ export function BulkProgramarDialog({
       return rebuildPlanDates(next);
     });
     toast.success("Ensaios trocados");
+  };
+
+  /** Define/remove o predecessor (finish-to-start) de um item da prévia. */
+  const setPlanItemPredecessor = (idx: number, predecessorEnsaioId: string | null) => {
+    setPlano((prev) => {
+      if (!prev) return prev;
+      const next = prev.slice();
+      const cur = next[idx];
+      if (!cur) return prev;
+      next[idx] = { ...cur, predecessorEnsaioId };
+      return rebuildPlanDates(next);
+    });
   };
 
   /** Reordena o item na lista (subir/descer na ordem de execução da prévia). */
@@ -765,12 +816,17 @@ export function BulkProgramarDialog({
     const equipmentLoads = seedEquipmentLoads();
     const enById = new Map(ensaios.map(e => [e.id, e]));
     const baseStart = nextBusinessDayIso(startDate, incluirFds);
+    // Fim já calculado de cada ensaio deste lote, na ordem em que aparecem no
+    // array — usado pra empurrar o início de quem tem predecessor dentro do
+    // próprio lote (finish-to-start). Só funciona pra quem já foi processado,
+    // então o predecessor precisa estar ANTES na lista (ver seletor na prévia).
+    const fimByEnsaioId = new Map<string, string>();
     return arr.map((item) => {
       const en = enById.get(item.ensaioId);
       const a = en ? amostraById.get(en.amostra_id) : null;
       const osStart = a?.os_numero ? startDatesByOs[a.os_numero] : null;
       const typeStart = en ? startDatesByTipo[en.tipo_ensaio_id] : null;
-      
+
       let startAdj = baseStart;
       if (startMode === "custom") {
         if (osStart) {
@@ -784,11 +840,18 @@ export function BulkProgramarDialog({
       const eqOverride = item.equipId ? overrides[item.equipId] : null;
       const useFds = eqOverride?.fds ?? item.incluirFds ?? incluirFds;
 
+      const predFim = item.predecessorEnsaioId ? fimByEnsaioId.get(item.predecessorEnsaioId) : null;
+      if (predFim) {
+        startAdj = maxIso(startAdj, nextBusinessDayIso(dayAfterIso(predFim), useFds));
+      }
+
       if (!item.equipId) {
+        const fim = endIsoFromDur(startAdj, dur, useFds);
+        fimByEnsaioId.set(item.ensaioId, fim);
         return {
           ...item,
           inicio: startAdj,
-          fim: endIsoFromDur(startAdj, dur, useFds),
+          fim,
           incluirFds: useFds
         };
       }
@@ -797,6 +860,7 @@ export function BulkProgramarDialog({
       const allocated = allocateWorkloadOnDays(dayLoads, inicioLivre, dur, useFds);
       const inicio = allocated.inicio;
       const fim = allocated.fim;
+      fimByEnsaioId.set(item.ensaioId, fim);
       return { ...item, inicio, fim, incluirFds: useFds };
     });
   };
@@ -1412,6 +1476,10 @@ export function BulkProgramarDialog({
                 <span className="text-muted-foreground">
                   Alvo = terminar até 3 dias úteis antes do prazo da OS.
                 </span>
+                <span className="text-muted-foreground">
+                  · Prioridade sempre fura a fila. Pra marcar um predecessor, ele precisa aparecer
+                  antes na lista (setas ↑↓ na coluna Ordem).
+                </span>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
                 <Stat label="Ensaios" value={plano.length} />
@@ -1432,10 +1500,12 @@ export function BulkProgramarDialog({
                   <thead className="sticky top-0 bg-muted/60 backdrop-blur">
                     <tr className="text-left">
                       <th className="px-2 py-1.5 font-medium w-16">Ordem</th>
+                      <th className="px-2 py-1.5 font-medium">Prior.</th>
                       <th className="px-2 py-1.5 font-medium">OS</th>
                       <th className="px-2 py-1.5 font-medium">Amostra</th>
                       <th className="px-2 py-1.5 font-medium">Ensaio</th>
                       <th className="px-2 py-1.5 font-medium min-w-[180px]">Equipamento</th>
+                      <th className="px-2 py-1.5 font-medium min-w-[160px]">Predecessor</th>
                       <th className="px-2 py-1.5 font-medium">Início</th>
                       <th className="px-2 py-1.5 font-medium">Fim</th>
                       <th className="px-2 py-1.5 font-medium w-20">Dur.</th>
@@ -1488,6 +1558,16 @@ export function BulkProgramarDialog({
                             </div>
                           </td>
 
+                          <td className="px-2 py-1">
+                            {(() => {
+                              const prio: Prioridade = (e?.prioridade || a?.prioridade || "media") as Prioridade;
+                              return (
+                                <Badge className={`text-[9px] px-1 py-0 h-4 ${PRIO_COLOR[prio]}`}>
+                                  {PRIO_LABEL[prio]}
+                                </Badge>
+                              );
+                            })()}
+                          </td>
 
                           <td className="px-2 py-1 font-medium">{os}</td>
                           <td className="px-2 py-1">{a?.codigo_amostra || "—"}</td>
@@ -1530,6 +1610,32 @@ export function BulkProgramarDialog({
                             {item.motivo && (
                               <div className="text-[10px] text-amber-600 mt-0.5">{item.motivo}</div>
                             )}
+                          </td>
+                          <td className="px-2 py-1">
+                            <Select
+                              value={item.predecessorEnsaioId ?? "__none__"}
+                              onValueChange={(v) =>
+                                setPlanItemPredecessor(idx, v === "__none__" ? null : v)
+                              }
+                            >
+                              <SelectTrigger className="h-7 text-xs">
+                                <SelectValue placeholder="—" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none__">— nenhum —</SelectItem>
+                                {plano.map((other, j) => {
+                                  if (j === idx || j > idx) return null; // só quem já vem antes na lista
+                                  const oe = ensaios.find((x) => x.id === other.ensaioId);
+                                  const oa = oe ? amostraById.get(oe.amostra_id) : null;
+                                  const ot = oe ? tipoById.get(oe.tipo_ensaio_id) : null;
+                                  return (
+                                    <SelectItem key={other.ensaioId} value={other.ensaioId}>
+                                      #{j + 1} {oa?.codigo_amostra || "—"} · {ot?.nome || "—"}
+                                    </SelectItem>
+                                  );
+                                })}
+                              </SelectContent>
+                            </Select>
                           </td>
                           <td className="px-2 py-1">{fmtBr(item.inicio)}</td>
                           <td className="px-2 py-1">{fmtBr(item.fim)}</td>

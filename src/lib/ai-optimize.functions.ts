@@ -12,6 +12,7 @@ const TarefaSchema = z.object({
   dur: z.number(),
   deadline: z.string().nullable(),      // YYYY-MM-DD ou null
   alvo: z.string().nullable(),          // deadline - 3 úteis
+  prioridade: z.enum(["baixa", "media", "alta", "urgente"]).default("media"),
 });
 
 const EquipSchema = z.object({
@@ -32,8 +33,13 @@ export const optimizeSchedule = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const key = process.env.LOVABLE_API_KEY || process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY;
     if (!key) {
-      // Retorna alocação determinística nos equipamentos compatíveis
-      const plan = data.tarefas.map((t, i) => {
+      // Sem chave de IA: alocação determinística nos equipamentos compatíveis,
+      // com urgente/alta furando a fila (mesma prioridade da cascata normal).
+      const PRIO_ORDER: Record<string, number> = { urgente: 0, alta: 1, media: 2, baixa: 3 };
+      const ordenadas = [...data.tarefas].sort(
+        (a, b) => (PRIO_ORDER[a.prioridade] ?? 2) - (PRIO_ORDER[b.prioridade] ?? 2),
+      );
+      const plan = ordenadas.map((t, i) => {
         const equipId = t.equiposCompat[0] || data.equipamentos[i % data.equipamentos.length]?.id || null;
         return {
           ensaioId: t.ensaioId,
@@ -52,7 +58,7 @@ export const optimizeSchedule = createServerFn({ method: "POST" })
 - cada ensaio SÓ pode ir em equipamento que esteja em "equiposCompat" (ids). Se lista vazia, qualquer equipamento serve.
 - cada equipamento tem capacidade diária 1,0. Duração fracionária consome fração do dia: 0,25 = 25% do dia, então até 4 ensaios de 0,25 podem ser alocados no mesmo equipamento e na mesma data; 0,5 permite até 2 por dia.
 - objetivo: terminar o ensaio até "alvo" (que já é deadline - 3 dias úteis). Se impossível, minimizar atraso vs deadline.
-- priorizar OS mais urgentes; usar disponibilidade "disponivelA" de cada equipamento como piso.
+- priorizar por "prioridade" do ensaio primeiro (urgente > alta > media > baixa) — um ensaio urgente/alta deve furar a fila e pegar o horário mais cedo disponível, mesmo que outro tenha prazo mais próximo. Só depois disso, priorizar OS mais urgentes; usar disponibilidade "disponivelA" de cada equipamento como piso.
 - durações vêm em dias e aceitam fracionário; NÃO arredonde 0,25/0,5/0,75 para 1 dia exclusivo, some as frações até completar 1,0 de carga diária.
 - se incluirFds=false, IGNORE sábados, domingos e feriados (não conte no cronograma).
 - retorne APENAS JSON no formato: {"plan":[{"ensaioId":"...","equipId":"...","inicio":"YYYY-MM-DD","fim":"YYYY-MM-DD"}]}

@@ -2157,6 +2157,7 @@ ${bodyHtml}
           os_numero: a.os_numero,
           codigo_amostra: a.codigo_amostra,
           tomador: a.tomador || osInfoIndex.get(a.os_numero)?.tomador || null,
+          prioridade: a.prioridade,
         }))}
         ensaios={ensaios}
         tipos={tipos}
