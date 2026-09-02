@@ -102,7 +102,7 @@ const MODELOS = [
     tag: "ASF.DAP",
   },
   {
-    to: "/relatorio/perm-v" as const,
+    to: "/modelos-relatorios/perm-v" as const,
     titulo: "Permeabilidade a Carga Variável (PERM.V)",
     descricao:
       "Modelo do relatório de permeabilidade a carga variável, Método B (bureta graduada). Espelho vivo do template oficial.",
