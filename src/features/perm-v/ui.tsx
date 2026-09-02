@@ -29,8 +29,9 @@ import {
   type PendenciaDigitacao,
 } from "@/lib/lab-pendencias.functions";
 import { areaBureta, cargaHidraulica, capsulaUmidadePct } from "./calc";
-import type { PermVCalibracao, PermVCalibracaoModo, PermVCapsula, PermVLeitura } from "./types";
+import type { PermVBureta, PermVCalibracao, PermVCalibracaoModo, PermVCapsula, PermVLeitura } from "./types";
 import { newPermVLeitura, newPermVCapsula } from "./types";
+import { listBuretas, saveBureta } from "./buretaPresets";
 
 // -------- Tipos do payload de campo (PERM.V) --------
 export interface PermVPhoto {
@@ -74,6 +75,7 @@ function emptyCalibracao(): PermVCalibracao {
     alturaReferenciaCm: 1,
     areaBuretaCm2: null,
     diametroInternoBuretaMm: null,
+    curva: [],
   };
 }
 
@@ -220,6 +222,24 @@ export function PermVWorkspace({
     setData((d) => ({ ...d, calibracao: { ...d.calibracao, ...p } }));
     queueMicrotask(saveToServer);
   }
+  function updateCurvaPonto(i: number, p: Partial<{ leitura: number; alturaAcumuladaCm: number }>) {
+    setData((d) => ({
+      ...d,
+      calibracao: { ...d.calibracao, curva: d.calibracao.curva.map((pt, idx) => (idx === i ? { ...pt, ...p } : pt)) },
+    }));
+  }
+  function addCurvaPonto() {
+    setData((d) => ({
+      ...d,
+      calibracao: { ...d.calibracao, curva: [...d.calibracao.curva, { leitura: d.calibracao.curva.length, alturaAcumuladaCm: 0 }] },
+    }));
+    queueMicrotask(saveToServer);
+  }
+  function removeCurvaPonto(i: number) {
+    setData((d) => ({ ...d, calibracao: { ...d.calibracao, curva: d.calibracao.curva.filter((_, idx) => idx !== i) } }));
+    queueMicrotask(saveToServer);
+  }
+  const [buretasSalvas, setBuretasSalvas] = useState<PermVBureta[]>(() => listBuretas());
   function updateCapsula(i: number, p: Partial<PermVCapsula>) {
     setData((d) => {
       const capsulas = d.capsulas.slice();
@@ -450,7 +470,8 @@ export function PermVWorkspace({
             >
               <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="volume">Volume (mL) — precisa correlacionar</SelectItem>
+                <SelectItem value="volume">Volume (mL), seção uniforme — proporção fixa</SelectItem>
+                <SelectItem value="curva">Volume (mL), com curva de calibração cadastrada</SelectItem>
                 <SelectItem value="comprimento">Comprimento (cm) — leitura já é a carga</SelectItem>
               </SelectContent>
             </Select>
@@ -470,7 +491,7 @@ export function PermVWorkspace({
                 onCommit={saveToServer}
               />
             </div>
-          ) : (
+          ) : data.calibracao.modo === "comprimento" ? (
             <div className="grid grid-cols-2 gap-3">
               <FieldNum
                 label="Área interna da bureta — a (cm²)"
@@ -485,9 +506,98 @@ export function PermVWorkspace({
                 onCommit={saveToServer}
               />
             </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs">Bureta cadastrada</Label>
+                  <Select
+                    value=""
+                    onValueChange={(id) => {
+                      const b = buretasSalvas.find((x) => x.id === id);
+                      if (b) {
+                        patchCalibracao({ buretaNome: b.nome, curva: b.curva.map((p) => ({ ...p })) });
+                        queueMicrotask(saveToServer);
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="mt-1"><SelectValue placeholder="Carregar bureta salva…" /></SelectTrigger>
+                    <SelectContent>
+                      {buretasSalvas.length === 0 && (
+                        <div className="px-2 py-1.5 text-xs text-muted-foreground">Nenhuma bureta cadastrada ainda</div>
+                      )}
+                      {buretasSalvas.map((b) => (
+                        <SelectItem key={b.id} value={b.id}>{b.nome} ({b.curva.length} pontos)</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <FieldText label="Nome desta bureta" value={data.calibracao.buretaNome ?? ""} onChange={(v) => patchCalibracao({ buretaNome: v })} onCommit={saveToServer} />
+              </div>
+
+              <div className="overflow-x-auto rounded-md border">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/40">
+                    <tr>
+                      <th className="p-1.5 text-left">Leitura (mL)</th>
+                      <th className="p-1.5 text-left">Altura acumulada (cm)</th>
+                      <th className="w-10" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.calibracao.curva.map((p, i) => (
+                      <tr key={i} className="border-t">
+                        <td className="p-1">
+                          <Input type="number" className="h-7 text-xs" value={p.leitura}
+                            onChange={(e) => updateCurvaPonto(i, { leitura: Number(e.target.value.replace(",", ".")) || 0 })}
+                            onBlur={saveToServer} />
+                        </td>
+                        <td className="p-1">
+                          <Input type="number" className="h-7 text-xs" value={p.alturaAcumuladaCm}
+                            onChange={(e) => updateCurvaPonto(i, { alturaAcumuladaCm: Number(e.target.value.replace(",", ".")) || 0 })}
+                            onBlur={saveToServer} />
+                        </td>
+                        <td className="p-1">
+                          <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => removeCurvaPonto(i)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Ex.: leitura 0 → 0 cm; leitura 1 → 1,007 cm (10,07mm); leitura 2 → 2,063 cm (+10,56mm)… altura acumulada desde a leitura 0, medida com régua.
+              </p>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={addCurvaPonto}>
+                  <Plus className="h-3.5 w-3.5 mr-1" /> Ponto
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!data.calibracao.buretaNome || data.calibracao.curva.length < 2}
+                  onClick={() => {
+                    const bureta: PermVBureta = {
+                      id: `bureta_${Math.random().toString(36).slice(2, 9)}`,
+                      nome: data.calibracao.buretaNome!,
+                      curva: data.calibracao.curva.map((p) => ({ ...p })),
+                    };
+                    saveBureta(bureta);
+                    setBuretasSalvas(listBuretas());
+                    toast.success(`Bureta "${bureta.nome}" cadastrada.`);
+                  }}
+                >
+                  Salvar esta bureta
+                </Button>
+              </div>
+            </div>
           )}
           <p className="text-xs text-muted-foreground">
-            Área calibrada (a): <strong className="text-foreground">{a != null ? a.toFixed(4) : "—"} cm²</strong>
+            {data.calibracao.modo === "curva"
+              ? `Curva de calibração: ${data.calibracao.curva.length} ponto(s) cadastrado(s).`
+              : <>Área calibrada (a): <strong className="text-foreground">{a != null ? a.toFixed(4) : "—"} cm²</strong></>}
           </p>
         </CardContent>
       </Card>
@@ -665,7 +775,7 @@ export function PermVPendenciaEditor({ pendenciaId, onBack }: { pendenciaId: str
     diametroInicial: initial.diametroInicial ?? null,
     alturaInicial: initial.alturaInicial ?? null,
     cargaHidraulicaInicial: initial.cargaHidraulicaInicial ?? null,
-    calibracao: initial.calibracao ?? emptyCalibracao(),
+    calibracao: { ...emptyCalibracao(), ...(initial.calibracao ?? {}) },
     leituras: Array.isArray(initial.leituras) && initial.leituras.length ? initial.leituras : [newPermVLeitura(), newPermVLeitura(), newPermVLeitura(), newPermVLeitura()],
     fotos: Array.isArray(initial.fotos) ? initial.fotos : [],
     obs: initial.obs ?? "",

@@ -2,7 +2,7 @@
  * Cálculos de Permeabilidade a Carga Variável — Método B, ABNT NBR
  * 14545:2021 (§ 8). Fórmulas e Tabela 1 transcritas diretamente da norma.
  */
-import type { PermVCalibracao, PermVCapsula, PermVLeitura, PermVSample } from "./types";
+import type { PermVBuretaPonto, PermVCalibracao, PermVCapsula, PermVLeitura, PermVSample } from "./types";
 
 /** Umidade de uma cápsula (%). w = (úmido−seco)/(seco−tara) · 100, mesmo cálculo de Umidade Natural/Triaxial. */
 export function capsulaUmidadePct(c: PermVCapsula): number | null {
@@ -65,7 +65,7 @@ export function grauDeSaturacao(rhoS: number, teorUmidade: number, ei: number): 
   return Number.isFinite(sr) ? sr : null;
 }
 
-/** Área interna da bureta (a, cm²), a partir da calibração informada. */
+/** Área interna da bureta (a, cm²), a partir da calibração informada. Não se aplica ao modo "curva" (ver `areaBuretaSegmento`). */
 export function areaBureta(cal: PermVCalibracao): number | null {
   if (cal.modo === "volume") {
     if (cal.volumeReferenciaMl != null && cal.alturaReferenciaCm != null && cal.alturaReferenciaCm > 0) {
@@ -74,6 +74,7 @@ export function areaBureta(cal: PermVCalibracao): number | null {
     }
     return null;
   }
+  if (cal.modo === "curva") return null;
   if (cal.areaBuretaCm2 != null && cal.areaBuretaCm2 > 0) return cal.areaBuretaCm2;
   if (cal.diametroInternoBuretaMm != null) {
     const dCm = cal.diametroInternoBuretaMm / 10;
@@ -81,6 +82,50 @@ export function areaBureta(cal: PermVCalibracao): number | null {
     return Number.isFinite(a) && a > 0 ? a : null;
   }
   return null;
+}
+
+/** Interpola a curva de calibração (leitura -> altura acumulada, cm) — linear entre os dois pontos vizinhos, extrapola nas pontas. */
+export function interpolarCurvaBureta(curva: PermVBuretaPonto[], leitura: number): number | null {
+  if (curva.length < 2) return null;
+  const sorted = [...curva].sort((a, b) => a.leitura - b.leitura);
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+  let p0 = first, p1 = sorted[1];
+  if (leitura <= first.leitura) {
+    p0 = sorted[0]; p1 = sorted[1];
+  } else if (leitura >= last.leitura) {
+    p0 = sorted[sorted.length - 2]; p1 = sorted[sorted.length - 1];
+  } else {
+    for (let i = 0; i < sorted.length - 1; i++) {
+      if (leitura >= sorted[i].leitura && leitura <= sorted[i + 1].leitura) {
+        p0 = sorted[i]; p1 = sorted[i + 1];
+        break;
+      }
+    }
+  }
+  if (p1.leitura === p0.leitura) return p0.alturaAcumuladaCm;
+  const t = (leitura - p0.leitura) / (p1.leitura - p0.leitura);
+  const h = p0.alturaAcumuladaCm + t * (p1.alturaAcumuladaCm - p0.alturaAcumuladaCm);
+  return Number.isFinite(h) ? h : null;
+}
+
+/**
+ * Área efetiva da bureta (a, cm²) entre duas leituras específicas — igual à
+ * `areaBureta` para os modos "volume"/"comprimento" (área constante), mas no
+ * modo "curva" é derivada localmente do trecho da curva entre as duas
+ * leituras (mL percolado / cm de altura naquele trecho), já que a bureta
+ * pode não ter seção perfeitamente uniforme.
+ */
+export function areaBuretaSegmento(cal: PermVCalibracao, leituraAnterior: number, leituraAtual: number): number | null {
+  if (cal.modo !== "curva") return areaBureta(cal);
+  const h1 = interpolarCurvaBureta(cal.curva, leituraAnterior);
+  const h2 = interpolarCurvaBureta(cal.curva, leituraAtual);
+  if (h1 == null || h2 == null) return null;
+  const deltaLeitura = Math.abs(leituraAtual - leituraAnterior);
+  const deltaAltura = Math.abs(h2 - h1);
+  if (!(deltaAltura > 0)) return null;
+  const a = deltaLeitura / deltaAltura;
+  return Number.isFinite(a) && a > 0 ? a : null;
 }
 
 /**
@@ -93,8 +138,15 @@ export function areaBureta(cal: PermVCalibracao): number | null {
  */
 export function cargaHidraulica(leituraBruta: number, cal: PermVCalibracao, cargaInicial: number | null): number | null {
   if (cal.modo === "comprimento") return leituraBruta;
+  if (cargaInicial == null) return null;
+  if (cal.modo === "curva") {
+    const alturaInterp = interpolarCurvaBureta(cal.curva, leituraBruta);
+    if (alturaInterp == null) return null;
+    const h = cargaInicial - alturaInterp;
+    return Number.isFinite(h) ? h : null;
+  }
   const a = areaBureta(cal);
-  if (a == null || cargaInicial == null) return null;
+  if (a == null) return null;
   const h = cargaInicial - leituraBruta / a;
   return Number.isFinite(h) ? h : null;
 }
@@ -171,7 +223,9 @@ export function calcDeterminacao(
   A: number | null,
   cargaInicial: number | null,
 ): PermVDeterminacao {
-  const a = areaBureta(cal);
+  const a = anterior.leituraBruta != null && atual.leituraBruta != null
+    ? areaBuretaSegmento(cal, anterior.leituraBruta, atual.leituraBruta)
+    : null;
   const h1 = anterior.leituraBruta != null ? cargaHidraulica(anterior.leituraBruta, cal, cargaInicial) : null;
   const h2 = atual.leituraBruta != null ? cargaHidraulica(atual.leituraBruta, cal, cargaInicial) : null;
   const deltaT =
@@ -191,7 +245,7 @@ export function calcDeterminacao(
   let volumePercoladoCm3: number | null = null;
   if (anterior.leituraBruta != null && atual.leituraBruta != null) {
     const deltaLeitura = Math.abs(atual.leituraBruta - anterior.leituraBruta);
-    volumePercoladoCm3 = cal.modo === "volume" ? deltaLeitura : a != null ? deltaLeitura * a : null;
+    volumePercoladoCm3 = cal.modo === "volume" || cal.modo === "curva" ? deltaLeitura : a != null ? deltaLeitura * a : null;
   }
 
   return { leituraInicial: anterior, leituraFinal: atual, deltaT, h1, h2, k, k20, rt, temperaturaMedia: tMedia, volumePercoladoCm3 };
@@ -249,4 +303,39 @@ export function fmtK(k: number | null): string {
   };
   const expStr = String(exp).split("").map((c) => superscripts[c] ?? c).join("");
   return `${mantRounded.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} × 10${expStr}`;
+}
+
+/**
+ * Faixas de permeabilidade (k, cm/s) segundo A. Casagrande e R. E. Fadum —
+ * referência clássica de geotecnia para classificar o solo pelo coeficiente
+ * de permeabilidade obtido. Da direita (menos permeável) pra esquerda.
+ */
+export interface PermFaixa {
+  nome: string;
+  expMin: number; // 10^expMin (cm/s)
+  expMax: number; // 10^expMax (cm/s)
+}
+export const PERM_FAIXAS: PermFaixa[] = [
+  { nome: "Argila", expMin: -8, expMax: -6 },
+  { nome: "Areias muito finas e siltes, mistura de ambos e argila", expMin: -6, expMax: -2 },
+  { nome: "Areia", expMin: -2, expMax: 1 },
+  { nome: "Pedregulho", expMin: 1, expMax: 2 },
+];
+
+/** Nome da faixa (Casagrande/Fadum) em que o coeficiente de permeabilidade k cai. */
+export function classificarPermeabilidade(k: number | null): string | null {
+  if (k == null || !(k > 0)) return null;
+  const exp = Math.log10(k);
+  for (const f of PERM_FAIXAS) {
+    if (exp >= f.expMin && exp < f.expMax) return f.nome;
+  }
+  return exp < PERM_FAIXAS[0].expMin ? PERM_FAIXAS[0].nome : PERM_FAIXAS[PERM_FAIXAS.length - 1].nome;
+}
+
+/** Posição (0 a 1, da esquerda/10² pra direita/10⁻⁸) de k na escala log da faixa de classificação — para desenhar o marcador no gráfico. */
+export function posicaoNaFaixaPermeabilidade(k: number | null): number | null {
+  if (k == null || !(k > 0)) return null;
+  const MIN_EXP = -8, MAX_EXP = 2;
+  const exp = Math.min(Math.max(Math.log10(k), MIN_EXP), MAX_EXP);
+  return (MAX_EXP - exp) / (MAX_EXP - MIN_EXP);
 }

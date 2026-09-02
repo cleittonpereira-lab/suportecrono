@@ -6,7 +6,13 @@
  * bureta; se a bureta for graduada em volume, a leitura é convertida pra
  * carga hidráulica via a calibração (item 4.2.2 da norma).
  */
-export type PermVCalibracaoModo = "volume" | "comprimento";
+export type PermVCalibracaoModo = "volume" | "comprimento" | "curva";
+
+/** Um ponto da curva de calibração: leitura da bureta -> altura acumulada (cm) desde a leitura 0. */
+export interface PermVBuretaPonto {
+  leitura: number;
+  alturaAcumuladaCm: number;
+}
 
 export interface PermVCalibracao {
   modo: PermVCalibracaoModo;
@@ -16,6 +22,16 @@ export interface PermVCalibracao {
   /** modo "comprimento": área interna da bureta (a), informada direto ou via diâmetro. */
   areaBuretaCm2: number | null;
   diametroInternoBuretaMm: number | null;
+  /** modo "curva": nome da bureta cadastrada + pontos (leitura -> altura acumulada), interpolados linearmente. */
+  buretaNome?: string;
+  curva: PermVBuretaPonto[];
+}
+
+/** Bureta cadastrada (preset local, reaproveitável entre ensaios). */
+export interface PermVBureta {
+  id: string;
+  nome: string;
+  curva: PermVBuretaPonto[];
 }
 
 export interface PermVLeitura {
@@ -61,6 +77,12 @@ export interface PermVSample {
   os: string;
   granulometricDescription: string;
   equipment?: string;
+
+  // Condição da amostra (mesmo padrão do Triaxial CID/Cisalhamento Direto)
+  sampleType?: string; // Bloco indeformado, Tubo Shelby, etc. (quando indeformada)
+  sampleState?: "indeformada" | "compactada" | "recompactada" | "deformada";
+  compactionEnergy?: "PN" | "PI" | "PM";
+  compactionDegreePct?: number;
 
   // Natureza da água / gradiente (item 7.3.1 e 9.e da norma)
   naturezaAgua: string;
@@ -124,6 +146,7 @@ export function seedPermVSample(partial?: Partial<PermVSample>): PermVSample {
       alturaReferenciaCm: 1,
       areaBuretaCm2: null,
       diametroInternoBuretaMm: null,
+      curva: [],
     },
     leituras: [newPermVLeitura(), newPermVLeitura(), newPermVLeitura(), newPermVLeitura()],
     ...partial,

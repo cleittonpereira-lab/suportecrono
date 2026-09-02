@@ -8,7 +8,7 @@ import {
 } from "recharts";
 import { useCadastroByOs } from "@/hooks/use-cadastro-by-os";
 import { useAuth } from "@/hooks/use-auth";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -42,13 +42,16 @@ import { useOptionalLabEnsaio } from "@/features/lab/context";
 import { labStore } from "@/features/lab/store";
 import { EnsaioListByType } from "@/features/lab/components/EnsaioListByType";
 import { ReportPage, type ReportSample } from "@/components/report/ReportShell";
-import { EnsaioBadgesRow, EnsaioTitleBlock, AmostraSummaryCard, ResponsaveisBar } from "@/components/report/EnsaioReportHeader";
-import type { PermVSample, PermVCalibracaoModo, PermVCapsula } from "@/features/perm-v/types";
+import { EnsaioBadgesRow, EnsaioTitleBlock, ResponsaveisBar } from "@/components/report/EnsaioReportHeader";
+import { SampleEditDialog } from "@/components/SampleEditDialog";
+import type { PermVSample, PermVCalibracaoModo, PermVCapsula, PermVBureta } from "@/features/perm-v/types";
 import { seedPermVSample, newPermVLeitura, newPermVCapsula } from "@/features/perm-v/types";
+import { listBuretas, saveBureta } from "@/features/perm-v/buretaPresets";
 import {
   massaSeca, volumeCp, massaEspecificaAparenteSeca, indiceDeVazios, grauDeSaturacao,
   areaBureta, cargaHidraulica, capsulaUmidadePct, teorUmidadeMedio,
   calcDeterminacoes, volumeAcumulado, volumeDeVazios, k20Medio, fmtK,
+  classificarPermeabilidade, posicaoNaFaixaPermeabilidade, PERM_FAIXAS,
 } from "@/features/perm-v/calc";
 import { loadDraft, saveDraft, fetchRemoteDraft, flushDraft } from "@/features/perm-v/draftStore";
 import { listPendenciasDigitacao } from "@/lib/lab-pendencias.functions";
@@ -221,6 +224,35 @@ function PermVReportPage({
           <span className="text-[12px] font-bold">{fmtK(k20med)} cm/s</span>
         </div>
 
+        {/* Classificação pela faixa de permeabilidade (A. Casagrande e R. E. Fadum) */}
+        <div className="border border-[#141414]">
+          <div className="rounded-t border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-center text-[9px] font-bold uppercase text-[#141414]">
+            Faixa de Permeabilidade (A. Casagrande e R. E. Fadum) — {classificarPermeabilidade(k20med) ?? "—"}
+          </div>
+          <div className="p-2">
+            <div className="relative h-6 w-full flex overflow-hidden rounded-sm border border-[#141414]/50">
+              {[...PERM_FAIXAS].reverse().map((f) => (
+                <div
+                  key={f.nome}
+                  className="h-full border-r border-[#141414]/30 last:border-r-0 flex items-center justify-center text-[6.5px] font-semibold text-[#141414] px-0.5 text-center leading-tight"
+                  style={{ width: `${((f.expMax - f.expMin) / 10) * 100}%`, background: "#e5e7eb" }}
+                >
+                  {f.nome}
+                </div>
+              ))}
+              {posicaoNaFaixaPermeabilidade(k20med) != null && (
+                <div
+                  className="absolute top-[-3px] h-[calc(100%+6px)] w-[2px] bg-[#dc2626]"
+                  style={{ left: `${(posicaoNaFaixaPermeabilidade(k20med) as number) * 100}%` }}
+                />
+              )}
+            </div>
+            <div className="mt-1 flex justify-between text-[7px] text-[#141414]/70 font-mono">
+              <span>10²</span><span>10⁻²</span><span>10⁻⁴</span><span>10⁻⁶</span><span>10⁻⁸ cm/s</span>
+            </div>
+          </div>
+        </div>
+
         {/* Gráfico 1 — exigido pela norma (item 9.h): k20 × volume de água percolado acumulado */}
         <div className="border border-[#141414]">
           <div className="rounded-t border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-center text-[9px] font-bold uppercase text-[#141414]">
@@ -351,7 +383,9 @@ export function PermVPage() {
   }, [ctx?.os?.id, ctx?.amostra?.id]);
 
   const [sample, setSample] = useState<PermVSample>(() =>
-    draft?.sample ? { ...initialSample, ...draft.sample } : initialSample,
+    draft?.sample
+      ? { ...initialSample, ...draft.sample, calibracao: { ...initialSample.calibracao, ...draft.sample.calibracao } }
+      : initialSample,
   );
 
   useEffect(() => {
@@ -364,6 +398,7 @@ export function PermVPage() {
   const [saveBusy, setSaveBusy] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [tab, setTab] = useState("amostra");
+  const [sampleEditOpen, setSampleEditOpen] = useState(false);
 
   const [approvals, setApprovals] = useState<ApprovalRow[]>([]);
   const [versions, setVersions] = useState<ReportVersion[]>([]);
@@ -520,7 +555,7 @@ export function PermVPage() {
           diametroInicial: fp.diametroInicial ?? prev.diametroInicial,
           alturaInicial: fp.alturaInicial ?? prev.alturaInicial,
           cargaHidraulicaInicial: fp.cargaHidraulicaInicial ?? prev.cargaHidraulicaInicial,
-          calibracao: fp.calibracao ?? prev.calibracao,
+          calibracao: fp.calibracao ? { ...prev.calibracao, ...fp.calibracao } : prev.calibracao,
           leituras: fp.leituras.map((l) => ({ ...l })),
         }));
         toast.success("Dados pré-preenchidos da digitalização de campo — confira antes de continuar.");
@@ -547,6 +582,19 @@ export function PermVPage() {
     setSample((s) => ({ ...s, calibracao: { ...s.calibracao, ...patch } }));
   const updateCapsula = (idx: number, patch: Partial<PermVCapsula>) =>
     setSample((s) => ({ ...s, capsulas: s.capsulas.map((c, i) => (i === idx ? { ...c, ...patch } : c)) }));
+  const updateCurvaPonto = (idx: number, patch: Partial<{ leitura: number; alturaAcumuladaCm: number }>) =>
+    setSample((s) => ({
+      ...s,
+      calibracao: { ...s.calibracao, curva: s.calibracao.curva.map((p, i) => (i === idx ? { ...p, ...patch } : p)) },
+    }));
+  const addCurvaPonto = () =>
+    setSample((s) => ({
+      ...s,
+      calibracao: { ...s.calibracao, curva: [...s.calibracao.curva, { leitura: s.calibracao.curva.length, alturaAcumuladaCm: 0 }] },
+    }));
+  const removeCurvaPonto = (idx: number) =>
+    setSample((s) => ({ ...s, calibracao: { ...s.calibracao, curva: s.calibracao.curva.filter((_, i) => i !== idx) } }));
+  const [buretasSalvas, setBuretasSalvas] = useState<PermVBureta[]>(() => listBuretas());
   const updateLeitura = (idx: number, patch: Partial<PermVSample["leituras"][number]>) =>
     setSample((s) => ({ ...s, leituras: s.leituras.map((l, i) => (i === idx ? { ...l, ...patch } : l)) }));
   const addLeitura = () => setSample((s) => ({ ...s, leituras: [...s.leituras, newPermVLeitura()] }));
@@ -882,30 +930,101 @@ export function PermVPage() {
           currentUserId={user?.id}
         />
 
-        <div className="mt-3">
-          <AmostraSummaryCard
-            reportNumber={sample.reportNumber}
-            osNumero={sample.os}
-            subtitle={`${sample.client || "—"} · Furo ${sample.borehole || "—"} · Prof. ${sample.depth || "—"}`}
-          >
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <TxtField label="Cliente" value={sample.client} onChange={(v) => updateSample("client", v)} />
-              <TxtField label="Obra" value={sample.workNumber} onChange={(v) => updateSample("workNumber", v)} />
-              <TxtField label="O.S." value={sample.os} onChange={(v) => updateSample("os", v)} />
-              <TxtField label="Amostra" value={sample.reportNumber} onChange={(v) => updateSample("reportNumber", v)} />
-              <TxtField label="Furo" value={sample.borehole} onChange={(v) => updateSample("borehole", v)} />
-              <TxtField label="Profundidade" value={sample.depth} onChange={(v) => updateSample("depth", v)} />
-              <TxtField label="Local" value={sample.local} onChange={(v) => updateSample("local", v)} />
-              <TxtField label="Código" value={sample.code} onChange={(v) => updateSample("code", v)} />
-              <div className="col-span-2 md:col-span-2">
-                <TxtField label="Descrição Tátil-Visual" value={sample.description} onChange={(v) => updateSample("description", v)} />
+        <Card className="mb-4 border-primary/30 bg-primary/5">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-sm">
+                  Amostra {sample.reportNumber || "—"} · OS {sample.os}
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  {sample.client || "—"} · Furo {sample.borehole || "—"} · Prof. {sample.depth || "—"}
+                </CardDescription>
               </div>
-              <div className="col-span-2 md:col-span-2">
-                <TxtField label="Descrição Granulométrica" value={sample.granulometricDescription} onChange={(v) => updateSample("granulometricDescription", v)} />
+              <button
+                type="button"
+                onClick={() => setSampleEditOpen(true)}
+                className="text-xs text-primary hover:underline font-semibold cursor-pointer shrink-0"
+              >
+                editar amostra →
+              </button>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="grid gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
+              <div>
+                <div className="text-muted-foreground">Condição da amostra</div>
+                <div className="font-medium">
+                  {sample.sampleState === "compactada"
+                    ? `Compactada${sample.compactionEnergy ? ` · ${sample.compactionEnergy}` : ""}${
+                        typeof sample.compactionDegreePct === "number" ? ` · GC ${sample.compactionDegreePct}%` : ""
+                      }`
+                    : sample.sampleState === "recompactada"
+                      ? "Recompactada"
+                      : sample.sampleState === "deformada"
+                        ? "Deformada"
+                        : sample.sampleState === "indeformada"
+                          ? `Indeformada${sample.sampleType ? ` · ${sample.sampleType}` : ""}`
+                          : "—"}
+                </div>
+              </div>
+              <div>
+                <div className="text-muted-foreground">Equipamento</div>
+                <div className="font-medium">{sample.equipment || "—"}</div>
+              </div>
+              <div>
+                <div className="text-muted-foreground">Natureza da água</div>
+                <div className="font-medium">{sample.naturezaAgua || "—"}</div>
+              </div>
+              <div>
+                <div className="text-muted-foreground">Gradiente hidráulico</div>
+                <div className="font-medium">{sample.gradienteHidraulico ?? "—"}</div>
               </div>
             </div>
-          </AmostraSummaryCard>
-        </div>
+          </CardContent>
+        </Card>
+
+        <SampleEditDialog
+          open={sampleEditOpen}
+          onOpenChange={setSampleEditOpen}
+          data={{
+            osId: ctx?.os?.id,
+            amostraId: ctx?.amostra?.id,
+            osNumero: sample.os,
+            client: sample.client,
+            workNumber: sample.workNumber,
+            local: sample.local,
+            technicalResp: sample.technicalResp,
+            revision: String(sample.revision ?? "0"),
+            reportNumber: sample.reportNumber,
+            code: sample.code,
+            borehole: sample.borehole,
+            depth: sample.depth,
+            sampleType: sample.sampleType,
+            sampleState: sample.sampleState,
+            description: sample.description,
+            granulometricDescription: sample.granulometricDescription,
+            equipment: sample.equipment,
+          }}
+          onSave={(updated) => {
+            setSample((prev) => ({
+              ...prev,
+              client: updated.client || prev.client,
+              workNumber: updated.workNumber || prev.workNumber,
+              local: updated.local || prev.local,
+              technicalResp: updated.technicalResp || prev.technicalResp,
+              reportNumber: updated.reportNumber || prev.reportNumber,
+              code: updated.code || prev.code,
+              borehole: updated.borehole || prev.borehole,
+              depth: updated.depth || prev.depth,
+              description: updated.description || prev.description,
+              granulometricDescription: updated.granulometricDescription || prev.granulometricDescription,
+              sampleType: updated.sampleType || prev.sampleType,
+              sampleState: (updated.sampleState as PermVSample["sampleState"]) || prev.sampleState,
+              equipment: updated.equipment || prev.equipment,
+            }));
+          }}
+        />
 
         <div className="mb-3" />
 
@@ -936,6 +1055,37 @@ export function PermVPage() {
                   <div className="col-span-2">
                     <TxtField label="Natureza da água" value={sample.naturezaAgua} onChange={(v) => updateSample("naturezaAgua", v)} />
                   </div>
+                  {sample.sampleState === "compactada" && (
+                    <div className="col-span-full grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <Label className="text-xs">Energia de Compactação</Label>
+                        <Select
+                          value={sample.compactionEnergy ?? ""}
+                          onValueChange={(v) => updateSample("compactionEnergy", v as PermVSample["compactionEnergy"])}
+                        >
+                          <SelectTrigger className="h-8 text-xs mt-1">
+                            <SelectValue placeholder="Selecione a energia…" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="PN">Proctor Normal (PN)</SelectItem>
+                            <SelectItem value="PI">Proctor Intermediário (PI)</SelectItem>
+                            <SelectItem value="PM">Proctor Modificado (PM)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-xs">Grau de Compactação Alvo (GC %)</Label>
+                        <Input
+                          type="number"
+                          step={0.1}
+                          value={sample.compactionDegreePct ?? ""}
+                          onChange={(e) => updateSample("compactionDegreePct", e.target.value ? parseFloat(e.target.value) : undefined)}
+                          placeholder="Ex.: 95 %"
+                          className="h-8 text-xs mt-1"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 
@@ -1013,7 +1163,8 @@ export function PermVPage() {
                     <Select value={sample.calibracao.modo} onValueChange={(v) => updateCalibracao({ modo: v as PermVCalibracaoModo })}>
                       <SelectTrigger className="h-9 mt-1"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="volume">Volume (mL) — precisa correlacionar</SelectItem>
+                        <SelectItem value="volume">Volume (mL), seção uniforme — proporção fixa</SelectItem>
+                        <SelectItem value="curva">Volume (mL), com curva de calibração cadastrada</SelectItem>
                         <SelectItem value="comprimento">Comprimento (cm) — leitura já é a carga</SelectItem>
                       </SelectContent>
                     </Select>
@@ -1023,14 +1174,99 @@ export function PermVPage() {
                       <NumField label="Cada quantos mL..." value={sample.calibracao.volumeReferenciaMl} onChange={(v) => updateCalibracao({ volumeReferenciaMl: v })} />
                       <NumField label="...correspondem a quantos cm" value={sample.calibracao.alturaReferenciaCm} onChange={(v) => updateCalibracao({ alturaReferenciaCm: v })} />
                     </div>
-                  ) : (
+                  ) : sample.calibracao.modo === "comprimento" ? (
                     <div className="grid grid-cols-2 gap-3">
                       <NumField label="Área interna da bureta — a (cm²)" value={sample.calibracao.areaBuretaCm2} onChange={(v) => updateCalibracao({ areaBuretaCm2: v })} />
                       <NumField label="...ou diâmetro interno (mm)" value={sample.calibracao.diametroInternoBuretaMm} onChange={(v) => updateCalibracao({ diametroInternoBuretaMm: v })} />
                     </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <Label className="text-xs">Bureta cadastrada</Label>
+                          <Select
+                            value=""
+                            onValueChange={(id) => {
+                              const b = buretasSalvas.find((x) => x.id === id);
+                              if (b) updateCalibracao({ buretaNome: b.nome, curva: b.curva.map((p) => ({ ...p })) });
+                            }}
+                          >
+                            <SelectTrigger className="h-9 mt-1"><SelectValue placeholder="Carregar bureta salva…" /></SelectTrigger>
+                            <SelectContent>
+                              {buretasSalvas.length === 0 && (
+                                <div className="px-2 py-1.5 text-xs text-muted-foreground">Nenhuma bureta cadastrada ainda</div>
+                              )}
+                              {buretasSalvas.map((b) => (
+                                <SelectItem key={b.id} value={b.id}>{b.nome} ({b.curva.length} pontos)</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <TxtField label="Nome desta bureta" value={sample.calibracao.buretaNome ?? ""} onChange={(v) => updateCalibracao({ buretaNome: v })} />
+                      </div>
+
+                      <div className="overflow-x-auto rounded-md border">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="bg-muted/50">
+                              <TableHead className="w-24">Leitura (mL)</TableHead>
+                              <TableHead className="w-32">Altura acumulada (cm)</TableHead>
+                              <TableHead className="w-10" />
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {sample.calibracao.curva.map((p, i) => (
+                              <TableRow key={i}>
+                                <TableCell>
+                                  <Input type="number" className="h-7 text-xs" value={p.leitura}
+                                    onChange={(e) => updateCurvaPonto(i, { leitura: Number(e.target.value.replace(",", ".")) || 0 })} />
+                                </TableCell>
+                                <TableCell>
+                                  <Input type="number" className="h-7 text-xs" value={p.alturaAcumuladaCm}
+                                    onChange={(e) => updateCurvaPonto(i, { alturaAcumuladaCm: Number(e.target.value.replace(",", ".")) || 0 })} />
+                                </TableCell>
+                                <TableCell>
+                                  <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => removeCurvaPonto(i)}>
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Ex.: leitura 0 → 0 cm; leitura 1 → 1,007 cm; leitura 2 → 2,063 cm (10,07mm + 10,56mm)…
+                        cada linha é a altura acumulada desde a leitura 0, medida com régua.
+                      </p>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" onClick={addCurvaPonto}>
+                          <Plus className="h-3.5 w-3.5 mr-1" /> Ponto
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={!sample.calibracao.buretaNome || sample.calibracao.curva.length < 2}
+                          onClick={() => {
+                            const bureta: PermVBureta = {
+                              id: `bureta_${Math.random().toString(36).slice(2, 9)}`,
+                              nome: sample.calibracao.buretaNome!,
+                              curva: sample.calibracao.curva.map((p) => ({ ...p })),
+                            };
+                            saveBureta(bureta);
+                            setBuretasSalvas(listBuretas());
+                            toast.success(`Bureta "${bureta.nome}" cadastrada.`);
+                          }}
+                        >
+                          Salvar esta bureta
+                        </Button>
+                      </div>
+                    </div>
                   )}
                   <p className="text-xs text-muted-foreground">
-                    Área calibrada (a): <strong className="text-foreground">{a != null ? a.toFixed(4) : "—"} cm²</strong>
+                    {sample.calibracao.modo === "curva"
+                      ? `Curva de calibração: ${sample.calibracao.curva.length} ponto(s) cadastrado(s).`
+                      : <>Área calibrada (a): <strong className="text-foreground">{a != null ? a.toFixed(4) : "—"} cm²</strong></>}
                   </p>
                 </CardContent>
               </Card>
