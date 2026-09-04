@@ -2,6 +2,8 @@
  * Digitalização de Compressão Simples — solo (NBR 12770), rocha (NBR
  * 15845-5) e dosagem/solo-cimento (NBR 12025). Coleta de dados de campo na
  * bancada, logo após a leitura do QR. Mesmo padrão de `perm-v/ui.tsx`.
+ * Suporta mais de um corpo de prova (CP01, CP02...) — Gs fica em nível de
+ * amostra (propriedade do material), o resto é por CP.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -13,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Save, CheckCircle2, Plus, Trash2, Gauge,
   ImagePlus, Camera, Upload,
@@ -25,8 +28,8 @@ import {
   type PendenciaDigitacao,
 } from "@/lib/lab-pendencias.functions";
 import { capsulaUmidadePct, parseCompressaoSimplesTag } from "./calc";
-import type { CsAmostraTipo, CsCapsula, CsCargaUnidade, CsCurvaPonto, CsResultadoModo } from "./types";
-import { newCsCapsula } from "./types";
+import type { CsAmostraTipo, CsCapsula, CsCargaUnidade, CsCorpoDeProva, CsCurvaPonto, CsResultadoModo } from "./types";
+import { newCsCapsula, newCsCorpoDeProva } from "./types";
 import { CsCurveImportDialog } from "./components/CsCurveImportDialog";
 
 // -------- Tipos do payload de campo (Compressão Simples) --------
@@ -54,14 +57,8 @@ export interface CsFieldPayload {
   amostraTipo: CsAmostraTipo;
   resultadoModo: CsResultadoModo;
   idadeCuraDias: number | null;
-  alturas: number[];
-  diametros: number[];
-  massaInicial: number | null;
-  capsulas: CsCapsula[];
   massaEspecificaGraos: number | null;
-  picoCarga: number | null;
-  picoCargaUnidade: CsCargaUnidade;
-  curva: CsCurvaPonto[];
+  corposDeProva: CsCorpoDeProva[];
   fotos: CsPhoto[];
   obs: string;
 }
@@ -76,14 +73,8 @@ export function emptyCsPayload(
     amostraTipo,
     resultadoModo: "simplificado",
     idadeCuraDias,
-    alturas: [0, 0, 0, 0],
-    diametros: [0, 0, 0, 0],
-    massaInicial: null,
-    capsulas: [newCsCapsula(), newCsCapsula(), newCsCapsula()],
     massaEspecificaGraos: 2.65,
-    picoCarga: null,
-    picoCargaUnidade: "kN",
-    curva: [],
+    corposDeProva: [newCsCorpoDeProva("CP01")],
     fotos: [],
     obs: "",
   };
@@ -102,7 +93,7 @@ function loadLocal(ident: CsFieldPayload["ident"]): CsFieldPayload | null {
     const raw = window.localStorage.getItem(draftKey(ident));
     if (!raw) return null;
     const p = JSON.parse(raw) as CsFieldPayload;
-    if (!p?.ident || !Array.isArray(p?.alturas)) return null;
+    if (!p?.ident || !Array.isArray(p?.corposDeProva)) return null;
     return p;
   } catch { return null; }
 }
@@ -167,6 +158,7 @@ export function CompressaoSimplesWorkspace({
 }) {
   const [data, setData] = useState<CsFieldPayload>(initial);
   const [pid, setPid] = useState<string | null>(pendenciaId);
+  const [activeCp, setActiveCp] = useState(0);
   const [curveDialogOpen, setCurveDialogOpen] = useState(false);
   const criarFn = useServerFn(criarPendenciaDigitacao);
   const atualizarFn = useServerFn(atualizarPendenciaDigitacao);
@@ -217,20 +209,45 @@ export function CompressaoSimplesWorkspace({
   }, []);
 
   useEffect(() => { persistLocal(data); }, [data]);
+  useEffect(() => {
+    if (activeCp >= data.corposDeProva.length) setActiveCp(Math.max(0, data.corposDeProva.length - 1));
+  }, [data.corposDeProva.length, activeCp]);
 
+  const cp = data.corposDeProva[activeCp] ?? data.corposDeProva[0];
+
+  function updateCp(patch: Partial<CsCorpoDeProva>) {
+    setData((d) => ({
+      ...d,
+      corposDeProva: d.corposDeProva.map((c, i) => (i === activeCp ? { ...c, ...patch } : c)),
+    }));
+  }
   function updateCapsula(i: number, p: Partial<CsCapsula>) {
-    setData((d) => {
-      const capsulas = d.capsulas.slice();
-      capsulas[i] = { ...capsulas[i], ...p };
-      return { ...d, capsulas };
-    });
+    setData((d) => ({
+      ...d,
+      corposDeProva: d.corposDeProva.map((c, idx) => {
+        if (idx !== activeCp) return c;
+        const capsulas = c.capsulas.slice();
+        capsulas[i] = { ...capsulas[i], ...p };
+        return { ...c, capsulas };
+      }),
+    }));
     queueMicrotask(saveToServer);
   }
   function updateAltura(i: number, v: number) {
-    setData((d) => { const alturas = d.alturas.slice(); alturas[i] = v; return { ...d, alturas }; });
+    const alturas = cp.alturas.slice(); alturas[i] = v; updateCp({ alturas });
   }
   function updateDiametro(i: number, v: number) {
-    setData((d) => { const diametros = d.diametros.slice(); diametros[i] = v; return { ...d, diametros }; });
+    const diametros = cp.diametros.slice(); diametros[i] = v; updateCp({ diametros });
+  }
+  function addCp() {
+    setData((d) => ({ ...d, corposDeProva: [...d.corposDeProva, newCsCorpoDeProva(`CP${String(d.corposDeProva.length + 1).padStart(2, "0")}`)] }));
+    setActiveCp(data.corposDeProva.length);
+    queueMicrotask(saveToServer);
+  }
+  function removeCp(idx: number) {
+    if (data.corposDeProva.length <= 1) { toast.error("Deve haver ao menos um CP"); return; }
+    setData((d) => ({ ...d, corposDeProva: d.corposDeProva.filter((_, i) => i !== idx) }));
+    queueMicrotask(saveToServer);
   }
 
   async function handlePhotos(fase: "antes" | "depois", files: FileList | null) {
@@ -304,6 +321,8 @@ export function CompressaoSimplesWorkspace({
   const fotosAntes = data.fotos.filter((p) => p.fase === "antes");
   const fotosDepois = data.fotos.filter((p) => p.fase === "depois");
 
+  if (!cp) return null;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
@@ -350,17 +369,36 @@ export function CompressaoSimplesWorkspace({
           {isDosagem && (
             <FieldNum label="Idade de cura (dias)" value={data.idadeCuraDias} onChange={(v) => setData((d) => ({ ...d, idadeCuraDias: v }))} onCommit={saveToServer} />
           )}
+          {comIndicesFisicos && (
+            <FieldNum label="Massa específica dos grãos — Gs (g/cm³)" value={data.massaEspecificaGraos} onChange={(v) => setData((d) => ({ ...d, massaEspecificaGraos: v }))} onCommit={saveToServer} />
+          )}
         </CardContent>
       </Card>
 
+      <div className="flex items-center gap-2">
+        <Tabs value={String(activeCp)} onValueChange={(v) => setActiveCp(Number(v))} className="flex-1">
+          <TabsList className="flex-wrap h-auto">
+            {data.corposDeProva.map((c, i) => (
+              <TabsTrigger key={c.id} value={String(i)} className="text-xs">{c.label}</TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+        <Button size="sm" variant="outline" onClick={addCp}><Plus className="h-3.5 w-3.5 mr-1" /> CP</Button>
+        {data.corposDeProva.length > 1 && (
+          <Button size="sm" variant="ghost" className="text-destructive" onClick={() => removeCp(activeCp)}>
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>
+
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Corpo de prova — dimensões e massa</CardTitle>
+          <CardTitle className="text-base">{cp.label} — dimensões e massa</CardTitle>
           <CardDescription className="text-xs">4 leituras de altura e 4 de diâmetro (cm).</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid grid-cols-4 gap-2">
-            {data.alturas.map((v, i) => (
+            {cp.alturas.map((v, i) => (
               <div key={i}>
                 <Label className="text-[10px]">Altura {i + 1} (cm)</Label>
                 <Input type="number" inputMode="decimal" className="h-8 text-xs" value={v || ""} onFocus={(e) => e.currentTarget.select()} onBlur={saveToServer}
@@ -369,7 +407,7 @@ export function CompressaoSimplesWorkspace({
             ))}
           </div>
           <div className="grid grid-cols-4 gap-2">
-            {data.diametros.map((v, i) => (
+            {cp.diametros.map((v, i) => (
               <div key={i}>
                 <Label className="text-[10px]">Diâmetro {i + 1} (cm)</Label>
                 <Input type="number" inputMode="decimal" className="h-8 text-xs" value={v || ""} onFocus={(e) => e.currentTarget.select()} onBlur={saveToServer}
@@ -377,19 +415,14 @@ export function CompressaoSimplesWorkspace({
               </div>
             ))}
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <FieldNum label="Massa do corpo de prova (g)" value={data.massaInicial} onChange={(v) => setData((d) => ({ ...d, massaInicial: v }))} onCommit={saveToServer} />
-            {comIndicesFisicos && (
-              <FieldNum label="Massa específica dos grãos — Gs (g/cm³)" value={data.massaEspecificaGraos} onChange={(v) => setData((d) => ({ ...d, massaEspecificaGraos: v }))} onCommit={saveToServer} />
-            )}
-          </div>
+          <FieldNum label="Massa do corpo de prova (g)" value={cp.massaInicial} onChange={(v) => updateCp({ massaInicial: v })} onCommit={saveToServer} />
         </CardContent>
       </Card>
 
       {comIndicesFisicos && (
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Cápsulas de umidade</CardTitle>
+            <CardTitle className="text-base">{cp.label} — cápsulas de umidade</CardTitle>
             <CardDescription className="text-xs">3 determinações, mesmo padrão do Triaxial CID/PERM.V.</CardDescription>
           </CardHeader>
           <CardContent>
@@ -397,37 +430,37 @@ export function CompressaoSimplesWorkspace({
               <thead className="bg-muted/40 text-muted-foreground">
                 <tr>
                   <th className="border p-1.5 text-left">Determinação</th>
-                  {data.capsulas.map((_, i) => <th key={i} className="border p-1.5 text-center w-24">Cápsula {i + 1}</th>)}
+                  {cp.capsulas.map((_, i) => <th key={i} className="border p-1.5 text-center w-24">Cápsula {i + 1}</th>)}
                 </tr>
               </thead>
               <tbody>
                 <tr>
                   <td className="border p-1.5 font-medium">Nº Cápsula</td>
-                  {data.capsulas.map((c, i) => (
+                  {cp.capsulas.map((c, i) => (
                     <td key={i} className="border p-1"><Input className="h-7 text-xs text-center" value={c.numero ?? ""} onChange={(e) => updateCapsula(i, { numero: e.target.value })} placeholder={`#${i + 1}`} /></td>
                   ))}
                 </tr>
                 <tr>
                   <td className="border p-1.5 font-medium">Tara (g)</td>
-                  {data.capsulas.map((c, i) => (
+                  {cp.capsulas.map((c, i) => (
                     <td key={i} className="border p-1"><Input type="number" className="h-7 text-xs text-center" value={c.tara} onChange={(e) => updateCapsula(i, { tara: Number(e.target.value.replace(",", ".")) || 0 })} /></td>
                   ))}
                 </tr>
                 <tr>
                   <td className="border p-1.5 font-medium">Solo Úmido + Tara (g)</td>
-                  {data.capsulas.map((c, i) => (
+                  {cp.capsulas.map((c, i) => (
                     <td key={i} className="border p-1"><Input type="number" className="h-7 text-xs text-center" value={c.wet} onChange={(e) => updateCapsula(i, { wet: Number(e.target.value.replace(",", ".")) || 0 })} /></td>
                   ))}
                 </tr>
                 <tr>
                   <td className="border p-1.5 font-medium">Solo Seco + Tara (g)</td>
-                  {data.capsulas.map((c, i) => (
+                  {cp.capsulas.map((c, i) => (
                     <td key={i} className="border p-1"><Input type="number" className="h-7 text-xs text-center" value={c.dry} onChange={(e) => updateCapsula(i, { dry: Number(e.target.value.replace(",", ".")) || 0 })} /></td>
                   ))}
                 </tr>
                 <tr className="bg-muted/30">
                   <td className="border p-1.5 font-medium">Umidade (%)</td>
-                  {data.capsulas.map((c, i) => { const w = capsulaUmidadePct(c); return <td key={i} className="border p-1.5 text-center font-semibold">{w != null ? w.toFixed(2) : "—"}</td>; })}
+                  {cp.capsulas.map((c, i) => { const w = capsulaUmidadePct(c); return <td key={i} className="border p-1.5 text-center font-semibold">{w != null ? w.toFixed(2) : "—"}</td>; })}
                 </tr>
               </tbody>
             </table>
@@ -437,7 +470,7 @@ export function CompressaoSimplesWorkspace({
 
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Ruptura</CardTitle>
+          <CardTitle className="text-base">{cp.label} — ruptura</CardTitle>
           <CardDescription className="text-xs">
             {isCompleto ? "Pico da curva importada abaixo." : "Pico de carga na ruptura."}
           </CardDescription>
@@ -445,10 +478,10 @@ export function CompressaoSimplesWorkspace({
         <CardContent className="space-y-3">
           {!isCompleto && (
             <div className="grid grid-cols-2 gap-3">
-              <FieldNum label="Pico de carga na ruptura" value={data.picoCarga} onChange={(v) => setData((d) => ({ ...d, picoCarga: v }))} onCommit={saveToServer} />
+              <FieldNum label="Pico de carga na ruptura" value={cp.picoCarga} onChange={(v) => updateCp({ picoCarga: v })} onCommit={saveToServer} />
               <div>
                 <Label className="text-xs">Unidade</Label>
-                <Select value={data.picoCargaUnidade} onValueChange={(v) => { setData((d) => ({ ...d, picoCargaUnidade: v as CsCargaUnidade })); queueMicrotask(saveToServer); }}>
+                <Select value={cp.picoCargaUnidade} onValueChange={(v) => { updateCp({ picoCargaUnidade: v as CsCargaUnidade }); queueMicrotask(saveToServer); }}>
                   <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="N">Newtons (N)</SelectItem>
@@ -462,15 +495,15 @@ export function CompressaoSimplesWorkspace({
           {isCompleto && (
             <div className="space-y-2">
               <Button size="sm" variant="outline" onClick={() => setCurveDialogOpen(true)}>
-                <Upload className="h-3.5 w-3.5 mr-1" /> {data.curva.length > 0 ? "Reimportar curva" : "Importar curva"}
+                <Upload className="h-3.5 w-3.5 mr-1" /> {cp.curva.length > 0 ? "Reimportar curva" : "Importar curva"}
               </Button>
               <p className="text-xs text-muted-foreground">
-                {data.curva.length > 0 ? `${data.curva.length} pontos importados.` : "Nenhuma curva importada ainda."}
+                {cp.curva.length > 0 ? `${cp.curva.length} pontos importados.` : "Nenhuma curva importada ainda."}
               </p>
               <CsCurveImportDialog
                 open={curveDialogOpen}
                 onOpenChange={setCurveDialogOpen}
-                onImport={(pontos) => { setData((d) => ({ ...d, curva: pontos })); queueMicrotask(saveToServer); }}
+                onImport={(pontos: CsCurvaPonto[]) => { updateCp({ curva: pontos }); queueMicrotask(saveToServer); }}
               />
             </div>
           )}
@@ -539,14 +572,10 @@ export function CompressaoSimplesPendenciaEditor({ pendenciaId, onBack }: { pend
     amostraTipo: initial.amostraTipo ?? "solo",
     resultadoModo: initial.resultadoModo ?? "simplificado",
     idadeCuraDias: initial.idadeCuraDias ?? null,
-    alturas: Array.isArray(initial.alturas) && initial.alturas.length === 4 ? initial.alturas : [0, 0, 0, 0],
-    diametros: Array.isArray(initial.diametros) && initial.diametros.length === 4 ? initial.diametros : [0, 0, 0, 0],
-    massaInicial: initial.massaInicial ?? null,
-    capsulas: Array.isArray(initial.capsulas) && initial.capsulas.length ? initial.capsulas : [newCsCapsula(), newCsCapsula(), newCsCapsula()],
     massaEspecificaGraos: initial.massaEspecificaGraos ?? 2.65,
-    picoCarga: initial.picoCarga ?? null,
-    picoCargaUnidade: initial.picoCargaUnidade ?? "kN",
-    curva: Array.isArray(initial.curva) ? initial.curva : [],
+    corposDeProva: Array.isArray(initial.corposDeProva) && initial.corposDeProva.length
+      ? initial.corposDeProva
+      : [newCsCorpoDeProva("CP01")],
     fotos: Array.isArray(initial.fotos) ? initial.fotos : [],
     obs: initial.obs ?? "",
   };

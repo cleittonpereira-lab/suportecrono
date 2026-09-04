@@ -19,7 +19,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Download, Gauge, Send, ShieldCheck, CheckCircle2,
-  Beaker, History, FileText, Upload,
+  Beaker, History, FileText, Upload, Plus, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { toPng } from "html-to-image";
@@ -44,13 +44,11 @@ import { ReportPage, type ReportSample, type ReportNorm } from "@/components/rep
 import { EnsaioBadgesRow, EnsaioTitleBlock, ResponsaveisBar } from "@/components/report/EnsaioReportHeader";
 import { SampleEditDialog } from "@/components/SampleEditDialog";
 import type {
-  CompressaoSimplesSample, CsAmostraTipo, CsCapsula, CsResultadoModo,
+  CompressaoSimplesSample, CsAmostraTipo, CsCapsula, CsCorpoDeProva, CsResultadoModo,
 } from "@/features/compressao-simples/types";
-import { seedCompressaoSimplesSample, newCsCapsula } from "@/features/compressao-simples/types";
+import { seedCompressaoSimplesSample, newCsCorpoDeProva } from "@/features/compressao-simples/types";
 import {
-  avg, areaCp, volumeCp, massaEspecificaNatural, massaEspecificaSeca,
-  indiceDeVazios, porosidade, grauDeSaturacao, cargaParaN, tensaoKPa, kpaParaMpa,
-  curvaTensaoDeformacao, picoDaCurva, capsulaUmidadePct, teorUmidadeMedio,
+  capsulaUmidadePct, teorUmidadeMedio, calcCorpoDeProva, mediaCps,
 } from "@/features/compressao-simples/calc";
 import { CsCurveImportDialog } from "@/features/compressao-simples/components/CsCurveImportDialog";
 import { loadDraft, saveDraft, fetchRemoteDraft, flushDraft } from "@/features/compressao-simples/draftStore";
@@ -114,37 +112,20 @@ function NumField({ label, value, onChange, className }: { label: string; value:
   );
 }
 
-/** Cálculo consolidado do ensaio (dimensões, índices físicos e resultado) — usado no editor e no relatório. */
-function useCsCalc(sample: CompressaoSimplesSample) {
+/** Calcula o resultado de todos os CPs + a média entre eles (se houver mais de um). */
+function useCsResults(sample: CompressaoSimplesSample) {
   return useMemo(() => {
     const comIndices = sample.amostraTipo !== "rocha";
-    const alturaMedia = avg(sample.alturas);
-    const diametroMedia = avg(sample.diametros);
-    const area = areaCp(diametroMedia);
-    const volume = volumeCp(area, alturaMedia);
-    const gamaNat = massaEspecificaNatural(sample.massaInicial, volume);
-    const w = comIndices ? teorUmidadeMedio(sample.capsulas) : null;
-    const gamaD = comIndices ? massaEspecificaSeca(gamaNat, w) : null;
-    const ei = comIndices ? indiceDeVazios(sample.massaEspecificaGraos, gamaD) : null;
-    const n = porosidade(ei);
-    const sr = comIndices ? grauDeSaturacao(w, sample.massaEspecificaGraos, ei) : null;
-
     const isCompleto = comIndices && sample.resultadoModo === "completo";
-    const curvaPontos = isCompleto ? curvaTensaoDeformacao(sample.curva, area, alturaMedia) : [];
-    let quKPa: number | null;
-    if (isCompleto) {
-      quKPa = picoDaCurva(curvaPontos)?.tensaoKPa ?? null;
-    } else {
-      quKPa = tensaoKPa(cargaParaN(sample.picoCarga, sample.picoCargaUnidade), area);
-    }
-    const quMPa = kpaParaMpa(quKPa);
-    const picoIdx = curvaPontos.length ? picoDaCurva(curvaPontos) : null;
-
-    return { comIndices, isCompleto, alturaMedia, diametroMedia, area, volume, gamaNat, w, gamaD, ei, n, sr, curvaPontos, quKPa, quMPa, picoPct: picoIdx?.deformacaoPct ?? null };
+    const results = sample.corposDeProva.map((cp) =>
+      calcCorpoDeProva(cp, { comIndices, gs: sample.massaEspecificaGraos, isCompleto }),
+    );
+    const media = results.length > 1 ? mediaCps(results) : null;
+    return { comIndices, isCompleto, results, media };
   }, [sample]);
 }
 
-/** Página única do laudo: identificação + CP + índices físicos (se aplicável) + resultado. */
+/** Página única do laudo: identificação + CP(s) + índices físicos (se aplicável) + resultado. */
 function CompressaoSimplesReportPage({
   sample,
   photos = [],
@@ -152,7 +133,7 @@ function CompressaoSimplesReportPage({
   sample: CompressaoSimplesSample;
   photos?: import("@/features/lab/types").Photo[];
 }) {
-  const c = useCsCalc(sample);
+  const { comIndices, isCompleto, results, media } = useCsResults(sample);
   const fotosAntes = photos.filter((p) => p.kind === "moldagem");
   const fotosDepois = photos.filter((p) => p.kind === "ruptura");
 
@@ -167,36 +148,56 @@ function CompressaoSimplesReportPage({
       <div className="space-y-2 text-[10px] text-[#141414]">
         <div className="border border-[#141414]">
           <div className="rounded-t border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-center text-[9.5px] font-bold uppercase text-[#141414]">
-            Corpo de Prova
+            Corpo(s) de Prova
             {sample.amostraTipo === "dosagem" && sample.idadeCuraDias != null ? ` — Idade de cura: ${sample.idadeCuraDias} dias` : ""}
           </div>
           <table className="w-full border-collapse">
             <thead>
               <tr className="bg-[#141414]/5 text-[8.5px] font-semibold">
+                <td className="border border-[#141414] px-1 py-0.5 text-center">CP</td>
                 <td className="border border-[#141414] px-1 py-0.5 text-center">D médio (cm)</td>
                 <td className="border border-[#141414] px-1 py-0.5 text-center">H médio (cm)</td>
                 <td className="border border-[#141414] px-1 py-0.5 text-center">Área (cm²)</td>
                 <td className="border border-[#141414] px-1 py-0.5 text-center">Volume (cm³)</td>
                 <td className="border border-[#141414] px-1 py-0.5 text-center">Massa (g)</td>
                 <td className="border border-[#141414] px-1 py-0.5 text-center">γnat (g/cm³)</td>
-                {c.comIndices && <td className="border border-[#141414] px-1 py-0.5 text-center">γd (g/cm³)</td>}
+                {comIndices && <td className="border border-[#141414] px-1 py-0.5 text-center">γd (g/cm³)</td>}
+                {comIndices && <td className="border border-[#141414] px-1 py-0.5 text-center">w (%)</td>}
+                <td className="border border-[#141414] px-1 py-0.5 text-center">qu (kPa)</td>
+                <td className="border border-[#141414] px-1 py-0.5 text-center">qu (MPa)</td>
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(c.diametroMedia, 2)}</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(c.alturaMedia, 2)}</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(c.area, 2)}</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(c.volume, 2)}</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(sample.massaInicial, 1)}</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(c.gamaNat, 3)}</td>
-                {c.comIndices && <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(c.gamaD, 3)}</td>}
-              </tr>
+              {results.map((r, i) => (
+                <tr key={r.id}>
+                  <td className="border border-[#141414] px-1 py-0.5 text-center font-semibold">{r.label}</td>
+                  <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(r.diametroMedia, 2)}</td>
+                  <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(r.alturaMedia, 2)}</td>
+                  <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(r.area, 2)}</td>
+                  <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(r.volume, 2)}</td>
+                  <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(sample.corposDeProva[i]?.massaInicial, 1)}</td>
+                  <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(r.gamaNat, 3)}</td>
+                  {comIndices && <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(r.gamaD, 3)}</td>}
+                  {comIndices && <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(r.w, 2)}</td>}
+                  <td className="border border-[#141414] px-1 py-0.5 text-center font-semibold">{fmt(r.quKPa, 0)}</td>
+                  <td className="border border-[#141414] px-1 py-0.5 text-center font-semibold">{fmt(r.quMPa, 3)}</td>
+                </tr>
+              ))}
+              {media && (
+                <tr className="bg-[#141414]/10">
+                  <td className="border border-[#141414] px-1 py-0.5 text-center font-bold" colSpan={comIndices ? 8 : 6}>
+                    Média ({results.length} CPs)
+                  </td>
+                  {comIndices && <td className="border border-[#141414] px-1 py-0.5 text-center font-bold">{fmt(media.w, 2)}</td>}
+                  <td className="border border-[#141414] px-1 py-0.5 text-center font-bold">{fmt(media.quKPa, 0)}</td>
+                  <td className="border border-[#141414] px-1 py-0.5 text-center font-bold">{fmt(media.quMPa, 3)}</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
 
-        {c.comIndices && (
+        {comIndices && (
           <div className="border border-[#141414]">
             <div className="rounded-t border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-center text-[9.5px] font-bold uppercase text-[#141414]">
               Índices Físicos
@@ -204,7 +205,7 @@ function CompressaoSimplesReportPage({
             <table className="w-full border-collapse">
               <thead>
                 <tr className="bg-[#141414]/5 text-[8.5px] font-semibold">
-                  <td className="border border-[#141414] px-1 py-0.5 text-center">w (%)</td>
+                  <td className="border border-[#141414] px-1 py-0.5 text-center">CP</td>
                   <td className="border border-[#141414] px-1 py-0.5 text-center">Gs (g/cm³)</td>
                   <td className="border border-[#141414] px-1 py-0.5 text-center">e</td>
                   <td className="border border-[#141414] px-1 py-0.5 text-center">n (%)</td>
@@ -212,45 +213,56 @@ function CompressaoSimplesReportPage({
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(c.w, 2)}</td>
-                  <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(sample.massaEspecificaGraos, 2)}</td>
-                  <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(c.ei, 3)}</td>
-                  <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(c.n, 1)}</td>
-                  <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(c.sr, 1)}</td>
-                </tr>
+                {results.map((r) => (
+                  <tr key={r.id}>
+                    <td className="border border-[#141414] px-1 py-0.5 text-center font-semibold">{r.label}</td>
+                    <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(sample.massaEspecificaGraos, 2)}</td>
+                    <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(r.ei, 3)}</td>
+                    <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(r.n, 1)}</td>
+                    <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(r.sr, 1)}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         )}
 
         <div className="border border-[#141414] px-2 py-1.5 flex items-center justify-between">
-          <span className="text-[9.5px] font-semibold uppercase">Resistência à Compressão Simples — qu</span>
-          <span className="text-[13px] font-bold">{fmt(c.quKPa, 0)} kPa &nbsp;·&nbsp; {fmt(c.quMPa, 3)} MPa</span>
+          <span className="text-[9.5px] font-semibold uppercase">
+            Resistência à Compressão Simples — qu {media ? "(média)" : ""}
+          </span>
+          <span className="text-[13px] font-bold">
+            {fmt(media ? media.quKPa : results[0]?.quKPa, 0)} kPa &nbsp;·&nbsp; {fmt(media ? media.quMPa : results[0]?.quMPa, 3)} MPa
+          </span>
         </div>
 
-        {c.isCompleto && (
+        {isCompleto && (
           <div className="border border-[#141414]">
             <div className="rounded-t border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-center text-[9px] font-bold uppercase text-[#141414]">
               Curva Tensão × Deformação Axial
             </div>
-            <div className="h-[150px] p-1">
-              <ResponsiveContainer>
-                <ComposedChart data={c.curvaPontos} margin={{ top: 4, right: 12, bottom: 16, left: 8 }}>
-                  <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" />
-                  <XAxis dataKey="deformacaoPct" type="number" tick={{ fontSize: 8 }}>
-                    <RLabel value="Deformação axial (%)" position="insideBottom" offset={-8} fontSize={8} />
-                  </XAxis>
-                  <YAxis dataKey="tensaoKPa" tick={{ fontSize: 8 }} width={45}>
-                    <RLabel value="Tensão (kPa)" angle={-90} position="insideLeft" offset={-4} fontSize={8} />
-                  </YAxis>
-                  <Tooltip formatter={(v: number) => `${fmt(v, 1)} kPa`} labelFormatter={(v) => `ε = ${fmt(v as number, 2)}%`} />
-                  <Line dataKey="tensaoKPa" stroke="#2563eb" type="monotone" dot={false} strokeWidth={1.5} isAnimationActive={false} />
-                  {c.picoPct != null && c.quKPa != null && (
-                    <ReferenceDot x={c.picoPct} y={c.quKPa} r={3.5} fill="#dc2626" stroke="none" />
-                  )}
-                </ComposedChart>
-              </ResponsiveContainer>
+            <div className={`grid ${results.length > 1 ? "grid-cols-2" : "grid-cols-1"} gap-1 p-1`}>
+              {results.map((r) => (
+                <div key={r.id} className="h-[130px]">
+                  <div className="text-center text-[8px] font-semibold text-[#141414]/70">{r.label}</div>
+                  <ResponsiveContainer width="100%" height="90%">
+                    <ComposedChart data={r.curvaPontos} margin={{ top: 4, right: 12, bottom: 16, left: 8 }}>
+                      <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" />
+                      <XAxis dataKey="deformacaoPct" type="number" tick={{ fontSize: 8 }}>
+                        <RLabel value="Deformação (%)" position="insideBottom" offset={-8} fontSize={8} />
+                      </XAxis>
+                      <YAxis dataKey="tensaoKPa" tick={{ fontSize: 8 }} width={45}>
+                        <RLabel value="Tensão (kPa)" angle={-90} position="insideLeft" offset={-4} fontSize={8} />
+                      </YAxis>
+                      <Tooltip formatter={(v: number) => `${fmt(v, 1)} kPa`} labelFormatter={(v) => `ε = ${fmt(v as number, 2)}%`} />
+                      <Line dataKey="tensaoKPa" stroke="#2563eb" type="monotone" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+                      {r.picoPct != null && r.quKPa != null && (
+                        <ReferenceDot x={r.picoPct} y={r.quKPa} r={3.5} fill="#dc2626" stroke="none" />
+                      )}
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -294,14 +306,15 @@ function CompressaoSimplesReportPage({
           <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 p-2 text-[8.5px] leading-tight">
             <div><b>qu</b> — resistência à compressão simples (carga de pico / área inicial)</div>
             <div><b>γnat, γd</b> — massa específica aparente natural e seca (g/cm³)</div>
-            {c.comIndices && <div><b>w</b> — teor de umidade (%)</div>}
-            {c.comIndices && <div><b>Gs, e, n, SR</b> — massa específica dos grãos, índice de vazios, porosidade e grau de saturação</div>}
+            {comIndices && <div><b>w</b> — teor de umidade (%)</div>}
+            {comIndices && <div><b>Gs, e, n, SR</b> — massa específica dos grãos, índice de vazios, porosidade e grau de saturação</div>}
           </div>
           <div className="border-t border-[#141414]/40 px-2 py-1 text-[8px] text-[#141414]/70 leading-tight">
             qu = Pico de carga / Área inicial do corpo de prova, sem correção de área.
             {sample.amostraTipo === "solo" && " Conforme ABNT NBR 12770."}
             {sample.amostraTipo === "rocha" && " Conforme ABNT NBR 15845-5, cf. ASTM D7012 (Método C) / ISRM."}
             {sample.amostraTipo === "dosagem" && " Conforme ABNT NBR 12025."}
+            {results.length > 1 && " Resultado final = média dos CPs rompidos."}
           </div>
         </div>
       </div>
@@ -367,6 +380,7 @@ export function CompressaoSimplesPage() {
   const [reportOpen, setReportOpen] = useState(false);
   const [tab, setTab] = useState("amostra");
   const [sampleEditOpen, setSampleEditOpen] = useState(false);
+  const [activeCp, setActiveCp] = useState(0);
   const [curveDialogOpen, setCurveDialogOpen] = useState(false);
 
   const [approvals, setApprovals] = useState<ApprovalRow[]>([]);
@@ -467,12 +481,12 @@ export function CompressaoSimplesPage() {
   }, [scopeId]);
 
   // Pré-preenchimento a partir da digitalização de campo — só na primeira
-  // carga e só se ainda não houver dimensões preenchidas, pra não sobrescrever
+  // carga e só se ainda não houver CPs preenchidos, pra não sobrescrever
   // edição manual já feita no escritório.
   useEffect(() => {
     if (!remoteLoaded || prefillCheckedRef.current || !ctx) return;
     prefillCheckedRef.current = true;
-    const jaTemDados = sample.alturas.some((v) => v > 0) || sample.diametros.some((v) => v > 0);
+    const jaTemDados = sample.corposDeProva.some((cp) => cp.alturas.some((v) => v > 0) || cp.diametros.some((v) => v > 0));
     if (jaTemDados) return;
     let cancelled = false;
     (async () => {
@@ -490,14 +504,10 @@ export function CompressaoSimplesPage() {
           amostraTipo: fp.amostraTipo || prev.amostraTipo,
           resultadoModo: fp.resultadoModo || prev.resultadoModo,
           idadeCuraDias: fp.idadeCuraDias ?? prev.idadeCuraDias,
-          alturas: Array.isArray(fp.alturas) && fp.alturas.length === 4 ? fp.alturas : prev.alturas,
-          diametros: Array.isArray(fp.diametros) && fp.diametros.length === 4 ? fp.diametros : prev.diametros,
-          massaInicial: fp.massaInicial ?? prev.massaInicial,
-          capsulas: Array.isArray(fp.capsulas) && fp.capsulas.length ? fp.capsulas.map((c) => ({ ...c })) : prev.capsulas,
           massaEspecificaGraos: fp.massaEspecificaGraos ?? prev.massaEspecificaGraos,
-          picoCarga: fp.picoCarga ?? prev.picoCarga,
-          picoCargaUnidade: fp.picoCargaUnidade || prev.picoCargaUnidade,
-          curva: Array.isArray(fp.curva) && fp.curva.length ? fp.curva.map((p) => ({ ...p })) : prev.curva,
+          corposDeProva: Array.isArray(fp.corposDeProva) && fp.corposDeProva.length
+            ? fp.corposDeProva.map((cp) => ({ ...cp }))
+            : prev.corposDeProva,
         }));
         toast.success("Dados pré-preenchidos da digitalização de campo — confira antes de continuar.");
       } catch (err) {
@@ -517,18 +527,35 @@ export function CompressaoSimplesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remoteLoaded, scopeId, sample, ctx?.photos]);
 
+  useEffect(() => {
+    if (activeCp >= sample.corposDeProva.length) setActiveCp(Math.max(0, sample.corposDeProva.length - 1));
+  }, [sample.corposDeProva.length, activeCp]);
+
   const updateSample = <K extends keyof CompressaoSimplesSample>(k: K, v: CompressaoSimplesSample[K]) =>
     setSample((s) => ({ ...s, [k]: v }));
+  const cp = sample.corposDeProva[activeCp] ?? sample.corposDeProva[0];
+  const updateCp = (patch: Partial<CsCorpoDeProva>) =>
+    setSample((s) => ({ ...s, corposDeProva: s.corposDeProva.map((c, i) => (i === activeCp ? { ...c, ...patch } : c)) }));
   const updateCapsula = (idx: number, patch: Partial<CsCapsula>) =>
-    setSample((s) => ({ ...s, capsulas: s.capsulas.map((c, i) => (i === idx ? { ...c, ...patch } : c)) }));
-  const updateAltura = (idx: number, v: number) =>
-    setSample((s) => { const alturas = s.alturas.slice(); alturas[idx] = v; return { ...s, alturas }; });
-  const updateDiametro = (idx: number, v: number) =>
-    setSample((s) => { const diametros = s.diametros.slice(); diametros[idx] = v; return { ...s, diametros }; });
+    setSample((s) => ({
+      ...s,
+      corposDeProva: s.corposDeProva.map((c, i) => {
+        if (i !== activeCp) return c;
+        return { ...c, capsulas: c.capsulas.map((cap, j) => (j === idx ? { ...cap, ...patch } : cap)) };
+      }),
+    }));
+  const updateAltura = (idx: number, v: number) => { const alturas = cp.alturas.slice(); alturas[idx] = v; updateCp({ alturas }); };
+  const updateDiametro = (idx: number, v: number) => { const diametros = cp.diametros.slice(); diametros[idx] = v; updateCp({ diametros }); };
+  const addCp = () => {
+    setSample((s) => ({ ...s, corposDeProva: [...s.corposDeProva, newCsCorpoDeProva(`CP${String(s.corposDeProva.length + 1).padStart(2, "0")}`)] }));
+    setActiveCp(sample.corposDeProva.length);
+  };
+  const removeCp = (idx: number) => {
+    if (sample.corposDeProva.length <= 1) { toast.error("Deve haver ao menos um CP"); return; }
+    setSample((s) => ({ ...s, corposDeProva: s.corposDeProva.filter((_, i) => i !== idx) }));
+  };
 
-  const c = useCsCalc(sample);
-  const comIndices = c.comIndices;
-  const isCompleto = c.isCompleto;
+  const { comIndices, isCompleto, results, media } = useCsResults(sample);
 
   const buildReportPdfBlob = async (): Promise<Blob> => {
     if (import.meta.env.SSR) throw new Error("buildReportPdfBlob só roda no navegador");
@@ -852,8 +879,11 @@ export function CompressaoSimplesPage() {
                 </div>
               </div>
               <div><div className="text-muted-foreground">Equipamento</div><div className="font-medium">{sample.equipment || "—"}</div></div>
-              <div><div className="text-muted-foreground">qu</div><div className="font-medium">{fmt(c.quKPa, 0)} kPa · {fmt(c.quMPa, 3)} MPa</div></div>
-              <div><div className="text-muted-foreground">Área / Volume</div><div className="font-medium">{fmt(c.area, 2)} cm² · {fmt(c.volume, 1)} cm³</div></div>
+              <div>
+                <div className="text-muted-foreground">qu {media ? "(média)" : ""}</div>
+                <div className="font-medium">{fmt(media ? media.quKPa : results[0]?.quKPa, 0)} kPa · {fmt(media ? media.quMPa : results[0]?.quMPa, 3)} MPa</div>
+              </div>
+              <div><div className="text-muted-foreground">Corpos de prova</div><div className="font-medium">{sample.corposDeProva.length}</div></div>
             </div>
           </CardContent>
         </Card>
@@ -934,6 +964,9 @@ export function CompressaoSimplesPage() {
                   {sample.amostraTipo === "dosagem" && (
                     <NumField label="Idade de cura (dias)" value={sample.idadeCuraDias} onChange={(v) => updateSample("idadeCuraDias", v)} />
                   )}
+                  {comIndices && (
+                    <NumField label="Massa específica dos grãos — Gs (g/cm³)" value={sample.massaEspecificaGraos} onChange={(v) => updateSample("massaEspecificaGraos", v)} />
+                  )}
                   {sample.sampleState === "compactada" && (
                     <div className="col-span-full grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div>
@@ -958,86 +991,99 @@ export function CompressaoSimplesPage() {
                 </CardContent>
               </Card>
 
+              <div className="flex items-center gap-2 mb-4">
+                <Tabs value={String(activeCp)} onValueChange={(v) => setActiveCp(Number(v))} className="flex-1">
+                  <TabsList className="flex-wrap h-auto">
+                    {sample.corposDeProva.map((c, i) => (
+                      <TabsTrigger key={c.id} value={String(i)} className="text-xs">{c.label}</TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
+                <Button size="sm" variant="outline" onClick={addCp}><Plus className="h-3.5 w-3.5 mr-1" /> CP</Button>
+                {sample.corposDeProva.length > 1 && (
+                  <Button size="sm" variant="ghost" className="text-destructive" onClick={() => removeCp(activeCp)}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+              </div>
+
               <Card className="mb-4">
-                <CardHeader className="pb-2"><CardTitle className="text-sm">Corpo de prova — dimensões e massa</CardTitle></CardHeader>
+                <CardHeader className="pb-2"><CardTitle className="text-sm">{cp.label} — dimensões e massa</CardTitle></CardHeader>
                 <CardContent className="space-y-3">
                   <div className="grid grid-cols-4 gap-2">
-                    {sample.alturas.map((v, i) => (
+                    {cp.alturas.map((v, i) => (
                       <NumField key={i} label={`Altura ${i + 1} (cm)`} value={v || null} onChange={(nv) => updateAltura(i, nv ?? 0)} />
                     ))}
                   </div>
                   <div className="grid grid-cols-4 gap-2">
-                    {sample.diametros.map((v, i) => (
+                    {cp.diametros.map((v, i) => (
                       <NumField key={i} label={`Diâmetro ${i + 1} (cm)`} value={v || null} onChange={(nv) => updateDiametro(i, nv ?? 0)} />
                     ))}
                   </div>
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                    <NumField label="Massa do corpo de prova (g)" value={sample.massaInicial} onChange={(v) => updateSample("massaInicial", v)} />
-                    {comIndices && <NumField label="Massa específica dos grãos — Gs (g/cm³)" value={sample.massaEspecificaGraos} onChange={(v) => updateSample("massaEspecificaGraos", v)} />}
-                  </div>
+                  <NumField label="Massa do corpo de prova (g)" value={cp.massaInicial} onChange={(v) => updateCp({ massaInicial: v })} />
                 </CardContent>
               </Card>
 
               {comIndices && (
                 <Card className="mb-4">
-                  <CardHeader className="pb-2"><CardTitle className="text-sm">Cápsulas de umidade</CardTitle></CardHeader>
+                  <CardHeader className="pb-2"><CardTitle className="text-sm">{cp.label} — cápsulas de umidade</CardTitle></CardHeader>
                   <CardContent>
                     <div className="overflow-x-auto">
                       <table className="w-full border-collapse text-xs">
                         <thead className="bg-muted/40 text-muted-foreground">
                           <tr>
                             <td className="border p-1.5 text-left">Determinação</td>
-                            {sample.capsulas.map((_, i) => <td key={i} className="border p-1.5 text-center w-24">Cápsula {i + 1}</td>)}
+                            {cp.capsulas.map((_, i) => <td key={i} className="border p-1.5 text-center w-24">Cápsula {i + 1}</td>)}
                           </tr>
                         </thead>
                         <tbody>
                           <tr>
                             <td className="border p-1.5 font-medium">Nº Cápsula</td>
-                            {sample.capsulas.map((cp, i) => (
-                              <td key={i} className="border p-1"><Input className="h-7 text-xs text-center" value={cp.numero ?? ""} onChange={(e) => updateCapsula(i, { numero: e.target.value })} placeholder={`#${i + 1}`} /></td>
+                            {cp.capsulas.map((c, i) => (
+                              <td key={i} className="border p-1"><Input className="h-7 text-xs text-center" value={c.numero ?? ""} onChange={(e) => updateCapsula(i, { numero: e.target.value })} placeholder={`#${i + 1}`} /></td>
                             ))}
                           </tr>
                           <tr>
                             <td className="border p-1.5 font-medium">Tara (g)</td>
-                            {sample.capsulas.map((cp, i) => (
-                              <td key={i} className="border p-1"><Input type="number" className="h-7 text-xs text-center" value={cp.tara} onChange={(e) => updateCapsula(i, { tara: Number(e.target.value.replace(",", ".")) || 0 })} /></td>
+                            {cp.capsulas.map((c, i) => (
+                              <td key={i} className="border p-1"><Input type="number" className="h-7 text-xs text-center" value={c.tara} onChange={(e) => updateCapsula(i, { tara: Number(e.target.value.replace(",", ".")) || 0 })} /></td>
                             ))}
                           </tr>
                           <tr>
                             <td className="border p-1.5 font-medium">Solo Úmido + Tara (g)</td>
-                            {sample.capsulas.map((cp, i) => (
-                              <td key={i} className="border p-1"><Input type="number" className="h-7 text-xs text-center" value={cp.wet} onChange={(e) => updateCapsula(i, { wet: Number(e.target.value.replace(",", ".")) || 0 })} /></td>
+                            {cp.capsulas.map((c, i) => (
+                              <td key={i} className="border p-1"><Input type="number" className="h-7 text-xs text-center" value={c.wet} onChange={(e) => updateCapsula(i, { wet: Number(e.target.value.replace(",", ".")) || 0 })} /></td>
                             ))}
                           </tr>
                           <tr>
                             <td className="border p-1.5 font-medium">Solo Seco + Tara (g)</td>
-                            {sample.capsulas.map((cp, i) => (
-                              <td key={i} className="border p-1"><Input type="number" className="h-7 text-xs text-center" value={cp.dry} onChange={(e) => updateCapsula(i, { dry: Number(e.target.value.replace(",", ".")) || 0 })} /></td>
+                            {cp.capsulas.map((c, i) => (
+                              <td key={i} className="border p-1"><Input type="number" className="h-7 text-xs text-center" value={c.dry} onChange={(e) => updateCapsula(i, { dry: Number(e.target.value.replace(",", ".")) || 0 })} /></td>
                             ))}
                           </tr>
                           <tr className="bg-muted/30">
                             <td className="border p-1.5 font-medium">Umidade (%)</td>
-                            {sample.capsulas.map((cp, i) => { const w = capsulaUmidadePct(cp); return <td key={i} className="border p-1.5 text-center font-semibold">{w != null ? w.toFixed(2) : "—"}</td>; })}
+                            {cp.capsulas.map((c, i) => { const w = capsulaUmidadePct(c); return <td key={i} className="border p-1.5 text-center font-semibold">{w != null ? w.toFixed(2) : "—"}</td>; })}
                           </tr>
                         </tbody>
                       </table>
                     </div>
                     <p className="mt-2 text-xs text-muted-foreground">
-                      Teor de umidade médio: <strong className="text-foreground">{fmt(c.w, 2)}%</strong>
+                      Teor de umidade médio: <strong className="text-foreground">{fmt(teorUmidadeMedio(cp.capsulas), 2)}%</strong>
                     </p>
                   </CardContent>
                 </Card>
               )}
 
               <Card className="mb-4">
-                <CardHeader className="pb-2"><CardTitle className="text-sm">Ruptura — resultado</CardTitle></CardHeader>
+                <CardHeader className="pb-2"><CardTitle className="text-sm">{cp.label} — ruptura, resultado</CardTitle></CardHeader>
                 <CardContent className="space-y-3">
                   {!isCompleto ? (
                     <div className="grid grid-cols-2 gap-3">
-                      <NumField label="Pico de carga na ruptura" value={sample.picoCarga} onChange={(v) => updateSample("picoCarga", v)} />
+                      <NumField label="Pico de carga na ruptura" value={cp.picoCarga} onChange={(v) => updateCp({ picoCarga: v })} />
                       <div>
                         <Label className="text-xs">Unidade</Label>
-                        <Select value={sample.picoCargaUnidade} onValueChange={(v) => updateSample("picoCargaUnidade", v as CompressaoSimplesSample["picoCargaUnidade"])}>
+                        <Select value={cp.picoCargaUnidade} onValueChange={(v) => updateCp({ picoCargaUnidade: v as CompressaoSimplesSample["corposDeProva"][number]["picoCargaUnidade"] })}>
                           <SelectTrigger className="h-9 mt-1"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="N">Newtons (N)</SelectItem>
@@ -1050,21 +1096,28 @@ export function CompressaoSimplesPage() {
                   ) : (
                     <div className="space-y-2">
                       <Button size="sm" variant="outline" onClick={() => setCurveDialogOpen(true)}>
-                        <Upload className="h-3.5 w-3.5 mr-1" /> {sample.curva.length > 0 ? "Reimportar curva" : "Importar curva"}
+                        <Upload className="h-3.5 w-3.5 mr-1" /> {cp.curva.length > 0 ? "Reimportar curva" : "Importar curva"}
                       </Button>
                       <p className="text-xs text-muted-foreground">
-                        {sample.curva.length > 0 ? `${sample.curva.length} pontos importados.` : "Nenhuma curva importada ainda."}
+                        {cp.curva.length > 0 ? `${cp.curva.length} pontos importados.` : "Nenhuma curva importada ainda."}
                       </p>
                       <CsCurveImportDialog
                         open={curveDialogOpen}
                         onOpenChange={setCurveDialogOpen}
-                        onImport={(pontos) => updateSample("curva", pontos)}
+                        onImport={(pontos) => updateCp({ curva: pontos })}
                       />
                     </div>
                   )}
                   <p className="text-xs text-muted-foreground">
-                    Resultado: <strong className="text-foreground">{fmt(c.quKPa, 0)} kPa · {fmt(c.quMPa, 3)} MPa</strong>
+                    Resultado ({cp.label}): <strong className="text-foreground">
+                      {fmt(results.find((r) => r.id === cp.id)?.quKPa, 0)} kPa · {fmt(results.find((r) => r.id === cp.id)?.quMPa, 3)} MPa
+                    </strong>
                   </p>
+                  {media && (
+                    <p className="text-xs text-muted-foreground">
+                      Média de {results.length} CPs: <strong className="text-foreground">{fmt(media.quKPa, 0)} kPa · {fmt(media.quMPa, 3)} MPa</strong>
+                    </p>
+                  )}
                 </CardContent>
               </Card>
 

@@ -1,4 +1,4 @@
-import type { CsAmostraTipo, CsCapsula, CsCargaUnidade, CsCurvaPonto } from "./types";
+import type { CsAmostraTipo, CsCapsula, CsCargaUnidade, CsCorpoDeProva, CsCurvaPonto } from "./types";
 
 const KGF_PER_N = 1 / 9.80665;
 
@@ -143,4 +143,58 @@ export function picoDaCurva(
 ): { deformacaoPct: number; tensaoKPa: number } | null {
   if (!pontos.length) return null;
   return pontos.reduce((max, p) => (p.tensaoKPa > max.tensaoKPa ? p : max), pontos[0]);
+}
+
+export interface CsCpResult {
+  id: string;
+  label: string;
+  alturaMedia: number | null;
+  diametroMedia: number | null;
+  area: number | null;
+  volume: number | null;
+  gamaNat: number | null;
+  w: number | null;
+  gamaD: number | null;
+  ei: number | null;
+  n: number | null;
+  sr: number | null;
+  curvaPontos: { deformacaoPct: number; tensaoKPa: number }[];
+  picoPct: number | null;
+  quKPa: number | null;
+  quMPa: number | null;
+}
+
+/** Calcula dimensões, índices físicos e resultado de UM corpo de prova. */
+export function calcCorpoDeProva(
+  cp: CsCorpoDeProva,
+  opts: { comIndices: boolean; gs: number | null; isCompleto: boolean },
+): CsCpResult {
+  const alturaMedia = avg(cp.alturas);
+  const diametroMedia = avg(cp.diametros);
+  const area = areaCp(diametroMedia);
+  const volume = volumeCp(area, alturaMedia);
+  const gamaNat = massaEspecificaNatural(cp.massaInicial, volume);
+  const w = opts.comIndices ? teorUmidadeMedio(cp.capsulas) : null;
+  const gamaD = opts.comIndices ? massaEspecificaSeca(gamaNat, w) : null;
+  const ei = opts.comIndices ? indiceDeVazios(opts.gs, gamaD) : null;
+  const n = porosidade(ei);
+  const sr = opts.comIndices ? grauDeSaturacao(w, opts.gs, ei) : null;
+
+  const curvaPontos = opts.isCompleto ? curvaTensaoDeformacao(cp.curva, area, alturaMedia) : [];
+  const pico = opts.isCompleto ? picoDaCurva(curvaPontos) : null;
+  const quKPa = opts.isCompleto ? (pico?.tensaoKPa ?? null) : tensaoKPa(cargaParaN(cp.picoCarga, cp.picoCargaUnidade), area);
+  const quMPa = kpaParaMpa(quKPa);
+
+  return {
+    id: cp.id, label: cp.label, alturaMedia, diametroMedia, area, volume,
+    gamaNat, w, gamaD, ei, n, sr, curvaPontos, picoPct: pico?.deformacaoPct ?? null, quKPa, quMPa,
+  };
+}
+
+/** Média entre CPs (qu, γd e w) — só faz sentido mostrar quando há mais de um CP. */
+export function mediaCps(results: CsCpResult[]): { quKPa: number | null; quMPa: number | null; gamaD: number | null; w: number | null } {
+  const quKPa = avg(results.map((r) => r.quKPa));
+  const gamaD = avg(results.map((r) => r.gamaD));
+  const w = avg(results.map((r) => r.w));
+  return { quKPa, quMPa: kpaParaMpa(quKPa), gamaD, w };
 }

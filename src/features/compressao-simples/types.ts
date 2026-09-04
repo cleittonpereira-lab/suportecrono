@@ -5,6 +5,12 @@
  * mesmo formulário (índices físicos + resultado simplificado ou completo);
  * rocha não tem cápsulas de umidade nem índices físicos, só dimensões,
  * massa e carga de ruptura.
+ *
+ * Suporta mais de um corpo de prova (CP01, CP02...) — comum em dosagem,
+ * onde normalmente se rompe mais de um CP na mesma idade de cura. Cada CP
+ * tem suas próprias dimensões/massa/umidade/resultado; Gs (massa
+ * específica dos grãos) fica no nível da amostra, já que é propriedade do
+ * material e não muda de um CP pro outro da mesma amostra.
  */
 export type CsAmostraTipo = "solo" | "rocha" | "dosagem";
 export type CsResultadoModo = "simplificado" | "completo";
@@ -24,6 +30,22 @@ export interface CsCurvaPonto {
   /** Deformação axial acumulada (mm). */
   deformacaoMm: number;
   cargaN: number;
+}
+
+export interface CsCorpoDeProva {
+  id: string;
+  label: string; // "CP01", "CP02"...
+  // Dimensões — 4 leituras de altura e diâmetro (cm), massa inicial (g)
+  alturas: number[];
+  diametros: number[];
+  massaInicial: number | null;
+  // Índices físicos — só solo/dosagem
+  capsulas: CsCapsula[];
+  // Resultado
+  picoCarga: number | null;
+  picoCargaUnidade: CsCargaUnidade;
+  /** Só resultado completo (solo/dosagem). */
+  curva: CsCurvaPonto[];
 }
 
 export interface CompressaoSimplesSample {
@@ -57,25 +79,28 @@ export interface CompressaoSimplesSample {
   compactionEnergy?: "PN" | "PI" | "PM";
   compactionDegreePct?: number;
 
-  // Corpo de prova — 4 leituras de altura e diâmetro (cm), massa inicial (g)
-  alturas: number[];
-  diametros: number[];
-  massaInicial: number | null;
-
-  // Índices físicos — só solo/dosagem
-  capsulas: CsCapsula[];
-  /** Gs — massa específica dos grãos (g/cm³). "De fábrica" 2,65 (Cleitton, 2026-09-04), editável por ensaio. */
+  /** Gs — massa específica dos grãos (g/cm³), propriedade do material (não varia por CP). "De fábrica" 2,65 (Cleitton, 2026-09-04), editável por ensaio. */
   massaEspecificaGraos: number | null;
 
-  // Resultado
-  picoCarga: number | null;
-  picoCargaUnidade: CsCargaUnidade;
-  /** Só resultado completo (solo/dosagem). */
-  curva: CsCurvaPonto[];
+  corposDeProva: CsCorpoDeProva[];
 }
 
 export function newCsCapsula(): CsCapsula {
   return { numero: "", tara: 0, wet: 0, dry: 0 };
+}
+
+export function newCsCorpoDeProva(label: string): CsCorpoDeProva {
+  return {
+    id: `cp_${Math.random().toString(36).slice(2, 9)}`,
+    label,
+    alturas: [0, 0, 0, 0],
+    diametros: [0, 0, 0, 0],
+    massaInicial: null,
+    capsulas: [newCsCapsula(), newCsCapsula(), newCsCapsula()],
+    picoCarga: null,
+    picoCargaUnidade: "kN",
+    curva: [],
+  };
 }
 
 export function seedCompressaoSimplesSample(
@@ -99,14 +124,8 @@ export function seedCompressaoSimplesSample(
     amostraTipo: "solo",
     resultadoModo: "simplificado",
     idadeCuraDias: null,
-    alturas: [0, 0, 0, 0],
-    diametros: [0, 0, 0, 0],
-    massaInicial: null,
-    capsulas: [newCsCapsula(), newCsCapsula(), newCsCapsula()],
     massaEspecificaGraos: 2.65,
-    picoCarga: null,
-    picoCargaUnidade: "kN",
-    curva: [],
+    corposDeProva: [newCsCorpoDeProva("CP01")],
     ...partial,
   };
 }
