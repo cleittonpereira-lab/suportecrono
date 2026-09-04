@@ -7,6 +7,9 @@
  *   ρ_água    = 1,00 g/cm³
  */
 
+import { isPermVTag } from "@/features/perm-v/calc";
+import { isCompressaoSimplesTag } from "@/features/compressao-simples/calc";
+
 export const RHO_PARAFINA = 0.78;
 export const RHO_AGUA = 1.0;
 
@@ -162,7 +165,9 @@ export function isAsfDapEnsaioTag(raw: string | null | undefined): boolean {
 }
 
 /** Metodologias com processamento/relatório disponíveis hoje. */
-export type SupportedMethodology = "mesp-a" | "triaxial-cid" | "adensamento" | "cisalhamento-direto" | "asf-dap";
+export type SupportedMethodology =
+  | "mesp-a" | "triaxial-cid" | "adensamento" | "cisalhamento-direto" | "asf-dap"
+  | "perm-v" | "compressao-simples";
 
 export function detectMethodology(
   ensaio: string | null | undefined,
@@ -174,6 +179,12 @@ export function detectMethodology(
   if (candidates.some((c) => isTriaxialCidTag(c))) return "triaxial-cid";
   if (candidates.some((c) => isAdensamentoTag(c))) return "adensamento";
   if (candidates.some((c) => isAsfDapEnsaioTag(c))) return "asf-dap";
+  if (candidates.some((c) => isPermVTag(c))) return "perm-v";
+  if (candidates.some((c) => isCompressaoSimplesTag(c))) return "compressao-simples";
+  // isCompressaoSimplesTag só reconhece as etiquetas de campo (COMP.A/R/S) —
+  // "compressao-simples" (o valor salvo em tipo_ensaio) e o nome descritivo
+  // do ensaio também precisam bater aqui.
+  if (tipoEnsaio === "compressao-simples" || /compress/i.test(ensaio ?? "")) return "compressao-simples";
   return null;
 }
 
@@ -184,5 +195,7 @@ export function methodologyRoute(m: SupportedMethodology): string {
     case "triaxial-cid": return "/relatorio/triaxial-cid";
     case "adensamento": return "/relatorio/adensamento";
     case "asf-dap": return "/relatorio/asf-dap";
+    case "perm-v": return "/relatorio/perm-v";
+    case "compressao-simples": return "/relatorio/compressao-simples";
   }
 }

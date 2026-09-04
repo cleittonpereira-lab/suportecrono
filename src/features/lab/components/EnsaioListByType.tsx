@@ -177,7 +177,8 @@ export function EnsaioListByType({ tipo }: { tipo: EnsaioTipo }) {
             (tipo === "triaxial-ciu" && /\bciu\b|\btri\.?\s*ciu\b/i.test(nomeEnsaio)) ||
             (tipo === "mesp-a" && (m === "mesp-a" || nomeEnsaio.toLowerCase().includes("mesp"))) ||
             (tipo === "asf-dap" && (m === "asf-dap" || nomeEnsaio.toLowerCase().includes("densidade aparente"))) ||
-            (tipo === "perm-v" && nomeEnsaio.toLowerCase().includes("permeabilidade"));
+            (tipo === "perm-v" && nomeEnsaio.toLowerCase().includes("permeabilidade")) ||
+            (tipo === "compressao-simples" && nomeEnsaio.toLowerCase().includes("compress"));
 
         if (!match) return null;
 
@@ -221,6 +222,7 @@ export function EnsaioListByType({ tipo }: { tipo: EnsaioTipo }) {
       if (tipo === "mesp-a") return m === "mesp-a" || r.tipo_ensaio === "mesp-a";
       if (tipo === "asf-dap") return m === "asf-dap" || r.tipo_ensaio === "asf-dap";
       if (tipo === "perm-v") return r.tipo_ensaio === "perm-v" || /permeabilidade/i.test(r.ensaio ?? "");
+      if (tipo === "compressao-simples") return r.tipo_ensaio === "compressao-simples" || /compress/i.test(r.ensaio ?? "");
       return false;
     });
   }, [pendencias, tipo]);

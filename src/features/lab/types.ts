@@ -19,7 +19,8 @@ export type EnsaioTipo =
   | "modulo-resiliencia" // Módulo de Resiliência de solos (DNIT 134/2018-ME)
   | "umidade-natural"    // Teor de Umidade Natural (NBR 6457)
   | "asf-dap"            // Densidade Aparente de misturas asfálticas (DNIT 428/2022-ME)
-  | "perm-v";            // Permeabilidade a Carga Variável — Método B (ABNT NBR 14545:2021)
+  | "perm-v"             // Permeabilidade a Carga Variável — Método B (ABNT NBR 14545:2021)
+  | "compressao-simples"; // Compressão Simples — solo (NBR 12770), rocha (NBR 15845-5) e dosagem/solo-cimento (NBR 12025)
 
 export type EnsaioStatus =
   | "rascunho"
@@ -136,6 +137,7 @@ export const ENSAIO_LABEL: Record<EnsaioTipo, string> = {
   "umidade-natural": "Umidade Natural (NBR 6457)",
   "asf-dap": "Densidade Aparente — ASF.DAP (DNIT 428/2022-ME)",
   "perm-v": "Permeabilidade a Carga Variável — PERM.V (ABNT NBR 14545)",
+  "compressao-simples": "Compressão Simples (NBR 12770 / NBR 15845-5 / NBR 12025)",
 };
 
 export const ENSAIO_DISPONIVEL: EnsaioTipo[] = [
@@ -150,6 +152,7 @@ export const ENSAIO_DISPONIVEL: EnsaioTipo[] = [
   "umidade-natural",
   "asf-dap",
   "perm-v",
+  "compressao-simples",
 ];
 
 /**
@@ -158,7 +161,16 @@ export const ENSAIO_DISPONIVEL: EnsaioTipo[] = [
  * Classes tailwind estáticas (não interpoladas) para o compilador incluir.
  */
 export interface EnsaioTagInfo {
+  /** Código principal — usado como badge curto em listas (EnsaioTag, Tipos de Ensaio). */
   code: string;
+  /**
+   * Prefixos adicionais de etiqueta/QR reconhecidos além de `code`, para
+   * ensaios que têm mais de uma convenção de campo (ex.: Compressão
+   * Simples: COMP.A solo, COMP.R rocha, COMP.S.<dias> dosagem — "COMP.S.7"
+   * = dosagem aos 7 dias). Casamento de tag (digit-scan / import de Excel)
+   * usa `code` + `aliases`; o badge de exibição usa só `code`.
+   */
+  aliases?: string[];
   className: string;
 }
 
@@ -222,5 +234,11 @@ export const ENSAIO_TAG: Record<EnsaioTipo, EnsaioTagInfo> = {
     code: "PERM.V",
     className:
       "bg-blue-500/15 text-blue-700 border-blue-500/40 dark:text-blue-300",
+  },
+  "compressao-simples": {
+    code: "COMP.A",
+    aliases: ["COMP.R", "COMP.S"],
+    className:
+      "bg-indigo-500/15 text-indigo-700 border-indigo-500/40 dark:text-indigo-300",
   },
 };

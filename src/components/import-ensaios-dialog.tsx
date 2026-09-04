@@ -29,9 +29,9 @@ type Tipo = { id: string; nome: string };
  * que "TRI.CIDsat" não seja engolido por um "TRI" mais curto, por exemplo.
  */
 const CANONICAL_TAGS: { code: string; tipo: EnsaioTipo }[] = (
-  Object.entries(ENSAIO_TAG) as [EnsaioTipo, { code: string }][]
+  Object.entries(ENSAIO_TAG) as [EnsaioTipo, { code: string; aliases?: string[] }][]
 )
-  .map(([tipo, info]) => ({ code: info.code.toUpperCase(), tipo }))
+  .flatMap(([tipo, info]) => [info.code, ...(info.aliases ?? [])].map((code) => ({ code: code.toUpperCase(), tipo })))
   .sort((a, b) => b.code.length - a.code.length);
 
 /**

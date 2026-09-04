@@ -110,6 +110,15 @@ const MODELOS = [
     icon: Droplets,
     tag: "PERM.V",
   },
+  {
+    to: "/modelos-relatorios/compressao-simples" as const,
+    titulo: "Compressão Simples",
+    descricao:
+      "Modelo do relatório de resistência à compressão simples em solo, rocha ou dosagem/solo-cimento — resultado simplificado ou curva completa.",
+    norma: "NBR 12770 / NBR 15845-5 / NBR 12025",
+    icon: Gauge,
+    tag: "COMP",
+  },
 ];
 
 function ModelosRelatoriosIndex() {

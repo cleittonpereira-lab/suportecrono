@@ -18,6 +18,7 @@ import { MRPage as MRPageInner } from "@/routes/_app.relatorio.modulo-resilienci
 import { UNPage as UNPageInner } from "@/routes/_app.relatorio.umidade-natural";
 import { ASFPage as AsfDapPageInner } from "@/routes/_app.relatorio.asf-dap";
 import { PermVPage as PermVPageInner } from "@/routes/_app.relatorio.perm-v";
+import { CompressaoSimplesPage as CompressaoSimplesPageInner } from "@/routes/_app.relatorio.compressao-simples";
 
 export const Route = createFileRoute(
   "/_app/relatorio/os/$osId/amostra/$amostraId/ensaio/$ensaioId",
@@ -68,6 +69,7 @@ function EnsaioEditor() {
     if (id.includes("mesp")) return "mesp-a";
     if (id.includes("asf") || id.includes("dap")) return "asf-dap";
     if (id.includes("perm")) return "perm-v";
+    if (id.includes("compress") || id.includes("comp.")) return "compressao-simples";
     return "cisalhamento-direto";
   }
 
@@ -285,6 +287,9 @@ function pickEditor(tipo: string): React.FC {
   }
   if (norm.includes("perm")) {
     return PermVPageInner as unknown as React.FC;
+  }
+  if (norm.includes("compressao") || norm.includes("compressão") || norm.includes("comp.")) {
+    return CompressaoSimplesPageInner as unknown as React.FC;
   }
   if (norm.includes("mesp") || norm.includes("m.esp")) {
     return MEspAEnsaioEditor as unknown as React.FC;

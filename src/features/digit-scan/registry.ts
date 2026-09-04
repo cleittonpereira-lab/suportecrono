@@ -15,6 +15,8 @@ import { isAsfDapTag } from "@/features/asf-dap/calc";
 import { dispatchAsfDap } from "@/features/asf-dap/ui";
 import { isPermVTag } from "@/features/perm-v/calc";
 import { dispatchPermV } from "@/features/perm-v/ui";
+import { isCompressaoSimplesTag } from "@/features/compressao-simples/calc";
+import { dispatchCompressaoSimples } from "@/features/compressao-simples/ui";
 
 export type DigitScanPlugin = {
   /** Chave estável — normalmente o `codigo` cadastrado em Tipos de Ensaio. */
@@ -47,6 +49,13 @@ export const DIGIT_SCAN_REGISTRY: DigitScanPlugin[] = [
     match: isPermVTag,
     route: "/relatorio/digitalizacao/perm-v",
     dispatch: dispatchPermV,
+  },
+  {
+    key: "COMP",
+    label: "Compressão Simples (COMP.A / COMP.R / COMP.S)",
+    match: isCompressaoSimplesTag,
+    route: "/relatorio/digitalizacao/compressao-simples",
+    dispatch: dispatchCompressaoSimples,
   },
 ];
 
