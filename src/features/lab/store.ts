@@ -317,14 +317,29 @@ function reuseIfUnchanged<T>(local: T | undefined, remote: T): T {
   return remote;
 }
 
-/** Funde o snapshot do servidor com o estado local, preservando entidades com escrita pendente/em voo. */
+/**
+ * O Drive não é fortemente consistente logo após uma gravação — a busca
+ * usada por `findFileInFolder` pode devolver a versão anterior do arquivo
+ * por alguns segundos mesmo depois do `writeDriveJson` ter retornado
+ * sucesso e o `clearDirty` correspondente já ter rodado. Sem isso, o
+ * refresh periódico (a cada 8s) podia pegar essa leitura atrasada e
+ * sobrescrever uma edição local recém-salva (foto ou texto) com dado
+ * velho — ela "sumia" e só "reaparecia" no próximo ciclo, quando o Drive
+ * já tinha se atualizado. Comparar `updatedAt` cobre essa janela mesmo
+ * depois da entidade já não estar mais em `dirtyIds`.
+ */
+function isLocalNewer(local: { updatedAt: string } | undefined, remote: { updatedAt: string }): boolean {
+  return !!local && local.updatedAt > remote.updatedAt;
+}
+
+/** Funde o snapshot do servidor com o estado local, preservando entidades com escrita pendente/em voo ou mais recentes que o snapshot. */
 function mergeRemote(local: LabState, remote: LabState): LabState {
   const localOSMap = new Map(local.os.map((o) => [o.id, o]));
   const remoteOSIds = new Set(remote.os.map((o) => o.id));
 
   const mergedOS = remote.os.map((remoteO) => {
     const localO = localOSMap.get(remoteO.id);
-    const osIsDirty = dirtyIds.has(remoteO.id);
+    const osIsDirty = dirtyIds.has(remoteO.id) || isLocalNewer(localO, remoteO);
     const baseOS = osIsDirty && localO ? localO : remoteO;
 
     const localAmMap = new Map((localO?.amostras ?? []).map((a) => [a.id, a]));
@@ -332,7 +347,7 @@ function mergeRemote(local: LabState, remote: LabState): LabState {
 
     const mergedAmostras = remoteO.amostras.map((remoteA) => {
       const localA = localAmMap.get(remoteA.id);
-      const amIsDirty = dirtyIds.has(remoteA.id);
+      const amIsDirty = dirtyIds.has(remoteA.id) || isLocalNewer(localA, remoteA);
       const baseAm = amIsDirty && localA ? localA : remoteA;
 
       const localEnMap = new Map((localA?.ensaios ?? []).map((e) => [e.id, e]));
@@ -340,7 +355,7 @@ function mergeRemote(local: LabState, remote: LabState): LabState {
 
       const mergedEnsaios = remoteA.ensaios.map((remoteE) => {
         const localE = localEnMap.get(remoteE.id);
-        if (dirtyIds.has(remoteE.id) && localE) return localE;
+        if ((dirtyIds.has(remoteE.id) || isLocalNewer(localE, remoteE)) && localE) return localE;
         return reuseIfUnchanged(localE, remoteE);
       });
       // Ensaios que só existem localmente ainda (criados agora, gravação em voo).
