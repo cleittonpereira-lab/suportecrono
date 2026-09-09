@@ -808,8 +808,13 @@ export function ScannerCard({ onIdentified }: { onIdentified: (id: Identificacao
       const plugin =
         findDigitScanPlugin(payload.ensaio_tag_nome) || findDigitScanPlugin(payload.ensaio_tag_descricao);
       if (plugin) {
+        // Injeta quem está logado no aparelho que escaneou — o QR em si não
+        // carrega essa informação. Prefixo `_` deixa claro que não veio do
+        // QR, pra quem for ler o payload depois não confundir com um campo
+        // real da etiqueta.
+        const payloadComOperador = { ...payload, _operador_logado_nome: displayName || "" };
         void plugin
-          .dispatch(payload as unknown as Record<string, unknown>)
+          .dispatch(payloadComOperador as unknown as Record<string, unknown>)
           .then((result) => navigate(result as any))
           .catch((e: unknown) => {
             setScanError("Falha ao registrar: " + (e instanceof Error ? e.message : String(e)));

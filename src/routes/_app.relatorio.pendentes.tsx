@@ -337,7 +337,7 @@ function CentralRelatoriosPage() {
     const tpMap = new Map(tiposProg.map((t) => [t.id, t]));
     const eqMap = new Map(equipsProg.map((e) => [e.id, e]));
 
-    return progs.map((p) => {
+    const doProgs = progs.map((p) => {
       const e = enMap.get(p.ensaio_id ?? "");
       const a = e ? amMap.get(e.amostra_id ?? "") : undefined;
       const t = e ? tpMap.get(e.tipo_ensaio_id ?? "") : undefined;
@@ -352,7 +352,7 @@ function CentralRelatoriosPage() {
 
       return {
         id: p.id,
-        programacaoId: p.id,
+        programacaoId: p.id as string | null,
         os: a?.os_numero ?? "—",
         amostra: a?.codigo_amostra ?? a?.identificacao ?? "—",
         furo: a?.identificacao ?? "",
@@ -367,7 +367,38 @@ function CentralRelatoriosPage() {
         stage,
       };
     });
-  }, [progs, amostrasProg, ensaiosProg, tiposProg, equipsProg]);
+
+    // Sistema unificado: um ensaio sem Programação formal (equipamento/data
+    // agendados), mas com digitação ativa (QR já escaneado, "em_digitacao"),
+    // também conta como "em bancada" — alguém está de fato trabalhando nele.
+    // Evita duplicar quando o MESMO ensaio já tem Programação formal (nesse
+    // caso a pendência associada aparece via "Ações de Processamento" na
+    // linha vinda de doProgs, não precisa de uma segunda linha).
+    const jaProgramado = new Set(
+      doProgs.map((g) => `${normOs(g.os)}::${normAmostra(g.amostra)}::${normMethod(g.ensaio || g.tipoEnsaioNome)}`),
+    );
+    const doPendencias = allPendencias
+      .filter((r) => r.status === "em_digitacao")
+      .filter((r) => !jaProgramado.has(`${normOs(r.os)}::${normAmostra(r.amostra || "")}::${normMethod(r.ensaio || r.tipo_ensaio)}`))
+      .map((r) => ({
+        id: `pend_${r.id}`,
+        programacaoId: null as string | null,
+        os: r.os,
+        amostra: r.amostra ?? "—",
+        furo: "",
+        prof: "",
+        ensaio: r.ensaio,
+        tipoEnsaioNome: r.ensaio,
+        equipamento: "—",
+        inicio_real: r.created_at || null,
+        fim_real: null as string | null,
+        data_fim_prevista: null as string | null,
+        tecnico: r.digitador_nome || r.operador_nome || null,
+        stage: "execucao" as const,
+      }));
+
+    return [...doProgs, ...doPendencias];
+  }, [progs, amostrasProg, ensaiosProg, tiposProg, equipsProg, allPendencias]);
 
   // Filtro de busca global + status/tipo/"só meus"
   const filteredRows = useMemo(() => {

@@ -481,13 +481,15 @@ export function CompressaoSimplesPage() {
   }, [scopeId]);
 
   // Pré-preenchimento a partir da digitalização de campo — só na primeira
-  // carga e só se ainda não houver CPs preenchidos, pra não sobrescrever
-  // edição manual já feita no escritório.
+  // carga. CPs só entram se ainda não houver nada preenchido (pra não
+  // sobrescrever edição manual já feita no escritório), mas furo/profundidade
+  // e o nome de quem digitou são corrigidos sempre que ainda estiverem vazios
+  // ou no valor genérico padrão — inclusive corrige o registro da Amostra/
+  // Ensaio (não só o rascunho local), pra outras telas (lista, Bancada) verem
+  // certo também.
   useEffect(() => {
     if (!remoteLoaded || prefillCheckedRef.current || !ctx) return;
     prefillCheckedRef.current = true;
-    const jaTemDados = sample.corposDeProva.some((cp) => cp.alturas.some((v) => v > 0) || cp.diametros.some((v) => v > 0));
-    if (jaTemDados) return;
     let cancelled = false;
     (async () => {
       try {
@@ -499,17 +501,60 @@ export function CompressaoSimplesPage() {
         });
         const fp = pend?.payload as unknown as CsFieldPayload | undefined;
         if (cancelled || !fp) return;
-        setSample((prev) => ({
-          ...prev,
-          amostraTipo: fp.amostraTipo || prev.amostraTipo,
-          resultadoModo: fp.resultadoModo || prev.resultadoModo,
-          idadeCuraDias: fp.idadeCuraDias ?? prev.idadeCuraDias,
-          massaEspecificaGraos: fp.massaEspecificaGraos ?? prev.massaEspecificaGraos,
-          corposDeProva: Array.isArray(fp.corposDeProva) && fp.corposDeProva.length
-            ? fp.corposDeProva.map((cp) => ({ ...cp }))
-            : prev.corposDeProva,
-        }));
-        toast.success("Dados pré-preenchidos da digitalização de campo — confira antes de continuar.");
+
+        const jaTemDados = sample.corposDeProva.some((cp) => cp.alturas.some((v) => v > 0) || cp.diametros.some((v) => v > 0));
+        const furoQr = fp.ident?.furo?.trim();
+        const profQr = fp.ident?.profundidade?.trim();
+        const operadorQr = fp.ident?.operadorNome?.trim();
+        let mudou = false;
+
+        setSample((prev) => {
+          const next = { ...prev };
+          if (!jaTemDados) {
+            next.amostraTipo = fp.amostraTipo || prev.amostraTipo;
+            next.resultadoModo = fp.resultadoModo || prev.resultadoModo;
+            next.idadeCuraDias = fp.idadeCuraDias ?? prev.idadeCuraDias;
+            next.massaEspecificaGraos = fp.massaEspecificaGraos ?? prev.massaEspecificaGraos;
+            next.corposDeProva = Array.isArray(fp.corposDeProva) && fp.corposDeProva.length
+              ? fp.corposDeProva.map((cp) => ({ ...cp }))
+              : prev.corposDeProva;
+            mudou = true;
+          }
+          if (furoQr && !prev.borehole) { next.borehole = furoQr; mudou = true; }
+          if (profQr && !prev.depth) { next.depth = profQr; mudou = true; }
+          if (operadorQr && (!prev.operator || prev.operator === "Téc. Laboratório")) { next.operator = operadorQr; mudou = true; }
+          if (operadorQr && (!prev.typedBy || prev.typedBy === "Téc. Laboratório")) { next.typedBy = operadorQr; mudou = true; }
+          return mudou ? next : prev;
+        });
+
+        if (ctx.os.id && ctx.amostra.id) {
+          const amostraPatch: Record<string, string> = {};
+          if (furoQr && !ctx.amostra.borehole) amostraPatch.borehole = furoQr;
+          if (profQr && !ctx.amostra.depth) amostraPatch.depth = profQr;
+          if (Object.keys(amostraPatch).length) labStore.patchAmostra(ctx.os.id, ctx.amostra.id, amostraPatch);
+          if (operadorQr && ctx.ensaio && (!ctx.ensaio.operator || ctx.ensaio.operator === "Téc. Laboratório")) {
+            labStore.patchEnsaio(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, { operator: operadorQr });
+          }
+          // Fotos da digitação de campo vivem numa lista própria da pendência,
+          // separada da lista que o relatório usa (ctx.photos). Nunca se
+          // fundem sozinhas — então na primeira vez que o relatório é aberto
+          // (e só se ele ainda não tiver nenhuma foto própria, pra não gerar
+          // duplicata a cada carga), absorvemos as fotos de campo pra dentro
+          // de ctx.photos. Daí em diante ctx.photos é a única fonte, usada
+          // tanto pelo escritório quanto pelo relatório.
+          if ((ctx.photos ?? []).length === 0 && Array.isArray(fp.fotos) && fp.fotos.length > 0) {
+            for (const foto of fp.fotos) {
+              ctx.addPhoto({
+                dataUrl: foto.dataUrl,
+                bytes: foto.bytes,
+                kind: foto.fase === "antes" ? "moldagem" : "ruptura",
+                caption: foto.caption,
+              });
+            }
+          }
+        }
+
+        if (mudou) toast.success("Dados pré-preenchidos da digitalização de campo — confira antes de continuar.");
       } catch (err) {
         console.warn("[Compressão Simples prefill] Falha:", err);
       }

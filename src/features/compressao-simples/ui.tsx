@@ -53,6 +53,12 @@ export interface CsFieldPayload {
     contratoId?: number;
     servicoId?: number;
     ensaioTagId?: number;
+    /** Furo/sondagem, extraído do QR quando presente — a etiqueta é a fonte. */
+    furo?: string;
+    /** Profundidade (ou faixa), extraído do QR quando presente. */
+    profundidade?: string;
+    /** Nome de quem estava logado no aparelho que escaneou (não vem do QR). */
+    operadorNome?: string;
   };
   amostraTipo: CsAmostraTipo;
   resultadoModo: CsResultadoModo;
@@ -104,6 +110,23 @@ function toNumOrUndef(v: unknown): number | undefined {
   return typeof n === "number" && Number.isFinite(n) ? n : undefined;
 }
 
+/** Extrai furo/sondagem do payload do QR — mesmos apelidos de campo do mesp-natural/ui.tsx. */
+function extractFuro(p: Record<string, unknown>): string {
+  const raw = p.furo_nome ?? p.furo ?? p.sondagem_nome ?? p.sondagem ?? p.furo_numero ?? "";
+  return String(raw ?? "").trim();
+}
+/** Extrai profundidade (ou faixa) do payload do QR. */
+function extractProfundidade(p: Record<string, unknown>): string {
+  const single = p.profundidade;
+  if (single != null && String(single).trim() !== "") return String(single).trim();
+  const ini = p.profundidade_inicial ?? p.prof_ini;
+  const fim = p.profundidade_final ?? p.prof_fim;
+  if (ini != null && fim != null) return `${String(ini).trim()} – ${String(fim).trim()}`;
+  if (ini != null) return String(ini).trim();
+  if (fim != null) return String(fim).trim();
+  return "";
+}
+
 const AMOSTRA_TIPO_LABEL: Record<CsAmostraTipo, string> = {
   solo: "Solo",
   rocha: "Rocha",
@@ -132,6 +155,9 @@ export async function dispatchCompressaoSimples(
     contratoId: toNumOrUndef(payload.contrato_id),
     servicoId: toNumOrUndef(payload.servico_id),
     ensaioTagId: toNumOrUndef(payload.ensaio_tag_id),
+    furo: extractFuro(payload) || undefined,
+    profundidade: extractProfundidade(payload) || undefined,
+    operadorNome: (payload._operador_logado_nome as string | undefined)?.trim() || undefined,
   };
   const r = await criarPendenciaDigitacao({
     data: {
