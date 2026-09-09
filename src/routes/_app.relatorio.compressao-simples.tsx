@@ -788,6 +788,18 @@ export function CompressaoSimplesPage() {
   }) => {
     const freshApprovals = await listApprovals({ data: { scopeId } }).catch(() => approvals);
     setApprovals(freshApprovals);
+    // O farol do Kanban/labStore (Ensaio.status) só é resolvido pelo
+    // servidor dentro de verifyApproval/decideApproval — sem espelhar isso
+    // aqui, o Kanban só via o novo status no próximo poll de 8s do
+    // labStore (ou depois de um refresh manual), mesmo já aprovado/
+    // verificado nesta própria tela.
+    if (ctx && ctx.os && ctx.amostra && ctx.ensaio) {
+      const nextEnsaioStatus =
+        info.decision === "verificado" ? "aguardando_aprovacao"
+        : info.decision === "aprovado" ? "aprovado"
+        : "aguardando_verificacao";
+      labStore.patchEnsaio(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, { status: nextEnsaioStatus });
+    }
     if (info.decision !== "aprovado") return;
     // Dá tempo do React re-renderizar o relatório oculto com os overrides
     // (verificado/aprovado por, revisão) atualizados antes do "print".
