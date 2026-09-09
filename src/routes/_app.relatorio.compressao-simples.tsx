@@ -31,7 +31,7 @@ import { ReportVersionsPanel } from "@/components/report/ReportVersionsPanel";
 import {
   listApprovals, requestApproval, verifyApproval, decideApproval, type ApprovalRow,
 } from "@/lib/approvals.functions";
-import { getWorkflowStatuses } from "@/lib/driveSync.functions";
+import { getWorkflowStatuses, listStorageRevisions, getRevisionPdfBase64 } from "@/lib/driveSync.functions";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -416,7 +416,43 @@ export function CompressaoSimplesPage() {
   const reportRef = useRef<HTMLDivElement>(null);
   const prefillCheckedRef = useRef(false);
 
-  const refreshVersions = async () => setVersions(await listVersions(scopeId));
+  /**
+   * O IndexedDB local (report-versions.ts) é só um cache rápido — a fonte
+   * de verdade de quais versões existem é o bucket privado no servidor
+   * (listStorageRevisions). Sem essa reconciliação, abrir o mesmo
+   * relatório em outro navegador/aparelho mostrava a lista de versões
+   * vazia mesmo com os PDFs já salvos no servidor. Qualquer revisão que o
+   * servidor conhece mas este navegador ainda não tem em cache é baixada
+   * agora e guardada localmente, pra aparecer na lista e abrir/baixar sem
+   * precisar buscar de novo depois.
+   */
+  const refreshVersions = async () => {
+    const local = await listVersions(scopeId);
+    setVersions(local);
+    try {
+      const { revisions } = await listStorageRevisions({ data: { scopeId } });
+      const localRevs = new Set(local.map((v) => v.rev));
+      const missing = revisions.filter((r) => !localRevs.has(r.rev));
+      if (missing.length === 0) return;
+      await Promise.all(
+        missing.map(async (r) => {
+          try {
+            const res = await getRevisionPdfBase64({ data: { scopeId, rev: r.rev } });
+            const bin = atob(res.base64);
+            const bytes = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+            const pdfBlob = new Blob([bytes], { type: "application/pdf" });
+            await saveVersion({ scopeId, rev: r.rev, filename: r.filename, size: r.size || pdfBlob.size, pdfBlob });
+          } catch (err) {
+            console.warn(`[Compressão Simples] Falha ao trazer Versão ${r.rev} do servidor:`, err);
+          }
+        }),
+      );
+      setVersions(await listVersions(scopeId));
+    } catch (err) {
+      console.warn("[Compressão Simples] Falha ao consultar versões no servidor:", err);
+    }
+  };
 
   const refreshApprovals = async () => {
     try {
@@ -708,18 +744,23 @@ export function CompressaoSimplesPage() {
       const saved = await saveVersion({ scopeId, rev, filename, size: blob.size, pdfBlob: blob });
       await refreshVersions();
 
-      try {
-        const resDrive = await withTimeout(
-          syncRevision({
-            scopeId, rev: saved.rev, pdfBlob: blob, pdfFilename: filename, sample,
-            photos: ctx?.photos || [], ctxOs: ctx?.os, ctxAmostra: ctx?.amostra,
-            ctxEnsaio: { tipo: "compressao-simples", nome: sample.reportNumber }, fotos: fotosParaDrive(),
-          }),
-          25000,
-          "Sincronização com o Drive",
-        );
-        if (resDrive?.folderUrl) setDriveFolderUrl(resDrive.folderUrl);
-      } catch (err) { console.warn("Drive sync standby:", err); }
+      // A sincronização com o servidor (Storage + Drive) NÃO é mais
+      // best-effort aqui: uma versão só existe "de verdade" quando fica
+      // salva no servidor — se ficasse só no IndexedDB deste navegador, ela
+      // desaparecia ao abrir o mesmo relatório em outro navegador/aparelho.
+      // Se falhar, a versão fica salva localmente (não se perde), mas o
+      // envio para verificação abaixo NÃO é feito — cai no catch de fora,
+      // que avisa o usuário e ele pode tentar salvar de novo.
+      const resDrive = await withTimeout(
+        syncRevision({
+          scopeId, rev: saved.rev, pdfBlob: blob, pdfFilename: filename, sample,
+          photos: ctx?.photos || [], ctxOs: ctx?.os, ctxAmostra: ctx?.amostra,
+          ctxEnsaio: { tipo: "compressao-simples", nome: sample.reportNumber }, fotos: fotosParaDrive(),
+        }),
+        25000,
+        "Sincronização com o Drive",
+      );
+      if (resDrive?.folderUrl) setDriveFolderUrl(resDrive.folderUrl);
 
       await requestApproval({
         data: {
@@ -750,7 +791,11 @@ export function CompressaoSimplesPage() {
       );
     } catch (err) {
       console.error("Erro ao salvar versão / enviar para aprovação:", err);
-      toast.error("Erro ao salvar versão / solicitar verificação: " + (err instanceof Error ? err.message : String(err)), { id: tid });
+      toast.error(
+        "Não foi possível confirmar o salvamento no servidor (PDF pode ter ficado só neste navegador) — tente salvar novamente: "
+          + (err instanceof Error ? err.message : String(err)),
+        { id: tid, duration: 10000 },
+      );
     } finally { setSaveBusy(false); }
   };
 
@@ -822,6 +867,10 @@ export function CompressaoSimplesPage() {
           );
         } catch (err) {
           console.warn("Drive sync (regeração pós-aprovação) standby:", err);
+          toast.error(
+            "Laudo aprovado, mas o PDF com a assinatura ainda não foi confirmado no servidor — use \"Sincronizar com Drive\" pra tentar de novo, senão ele fica só neste navegador.",
+            { duration: 12000 },
+          );
         }
       }
     } catch (err) {

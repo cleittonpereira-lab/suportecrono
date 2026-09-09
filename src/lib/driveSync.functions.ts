@@ -200,27 +200,28 @@ function storagePdfPath(scopeId: string, rev: number) {
   return `${safe}/Rev-${String(rev).padStart(2, "0")}.pdf`;
 }
 
+/**
+ * Grava o PDF no bucket privado — fonte de verdade compartilhada entre
+ * navegadores/dispositivos para a lista de "Versões". Antes, um erro aqui
+ * era engolido (só um console.warn) e a função devolvia sucesso mesmo
+ * assim — o chamador (e o usuário) não tinha como saber que o PDF só
+ * ficou salvo localmente (IndexedDB) e sumia ao abrir em outro navegador.
+ * Agora propaga o erro de verdade.
+ */
 async function uploadPdfToStorage(scopeId: string, rev: number, bytes: Uint8Array) {
-  try {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const path = storagePdfPath(scopeId, rev);
-    const arrayBuffer = new ArrayBuffer(bytes.byteLength);
-    new Uint8Array(arrayBuffer).set(bytes);
-    const pdfBlob = new Blob([arrayBuffer], { type: "application/pdf" });
-    const { error } = await supabaseAdmin.storage
-      .from("lab-reports")
-      .upload(path, pdfBlob, {
-        contentType: "application/pdf",
-        upsert: true,
-      });
-    if (error) {
-      console.warn("Storage upload warn (non-fatal):", error.message);
-    }
-    return path;
-  } catch (err: any) {
-    console.warn("Storage upload caught (non-fatal):", err?.message || err);
-    return storagePdfPath(scopeId, rev);
-  }
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const path = storagePdfPath(scopeId, rev);
+  const arrayBuffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(arrayBuffer).set(bytes);
+  const pdfBlob = new Blob([arrayBuffer], { type: "application/pdf" });
+  const { error } = await supabaseAdmin.storage
+    .from("lab-reports")
+    .upload(path, pdfBlob, {
+      contentType: "application/pdf",
+      upsert: true,
+    });
+  if (error) throw new Error(`Falha ao salvar PDF no Storage: ${error.message}`);
+  return path;
 }
 
 async function downloadPdfFromStorage(scopeId: string, rev: number): Promise<Uint8Array | null> {
@@ -470,6 +471,47 @@ type DriveSyncEntry = {
   folder_id: string | null;
   created_at: string;
 };
+
+export type StorageRevisionEntry = { rev: number; filename: string; size: number; updatedAt: string };
+
+/**
+ * Lista as revisões (versões de PDF) que REALMENTE existem no bucket
+ * privado `lab-reports` para este ensaio — fonte de verdade compartilhada
+ * entre navegadores/dispositivos. A lista de "Versões" na tela de
+ * relatório usava só o IndexedDB do navegador (report-versions.ts), que é
+ * local por definição — abrir o mesmo relatório em outro navegador ou
+ * dispositivo mostrava a lista vazia mesmo com os PDFs já salvos no
+ * servidor. Esta função é o que a UI deve consultar para saber quais
+ * versões existem de verdade.
+ */
+const ListStorageRevisionsInput = z.object({ scopeId: z.string().min(1) });
+
+export const listStorageRevisions = createServerFn({ method: "GET" })
+  .inputValidator((input: unknown) => ListStorageRevisionsInput.parse(input))
+  .handler(async ({ data }): Promise<{ revisions: StorageRevisionEntry[] }> => {
+    try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const safe = data.scopeId.replace(/[^\w/.-]+/g, "_");
+      const { data: files, error } = await supabaseAdmin.storage.from("lab-reports").list(safe, { limit: 200 });
+      if (error || !files) return { revisions: [] };
+      const revisions: StorageRevisionEntry[] = files
+        .map((f): StorageRevisionEntry | null => {
+          const m = /^Rev-(\d+)\.pdf$/i.exec(f.name);
+          if (!m) return null;
+          return {
+            rev: Number(m[1]),
+            filename: f.name,
+            size: (f.metadata as { size?: number } | null)?.size ?? 0,
+            updatedAt: f.updated_at || f.created_at || new Date().toISOString(),
+          };
+        })
+        .filter((r): r is StorageRevisionEntry => r !== null)
+        .sort((a, b) => b.rev - a.rev);
+      return { revisions };
+    } catch {
+      return { revisions: [] };
+    }
+  });
 
 /**
  * Reconstrói o status de sync a partir dos PDFs que realmente existem na
