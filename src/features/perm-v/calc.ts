@@ -281,9 +281,27 @@ export function volumeDeVazios(v: number, e: number): number | null {
   return Number.isFinite(vv) ? vv : null;
 }
 
-/** k20 médio das determinações válidas — usar para o item 9.b do relatório. */
-export function k20Medio(determinacoes: PermVDeterminacao[]): number | null {
-  const vals = determinacoes.map((d) => d.k20).filter((v): v is number => v != null);
+/**
+ * Determinações que entram na média: as que tem k20 calculado e nao foram
+ * excluidas pelo operador. `excluidas` traz o id da leitura FINAL do par.
+ */
+export function determinacoesDaMedia(
+  determinacoes: PermVDeterminacao[],
+  excluidas: string[] = [],
+): PermVDeterminacao[] {
+  const fora = new Set(excluidas);
+  return determinacoes.filter((d) => d.k20 != null && !fora.has(d.leituraFinal.id));
+}
+
+/**
+ * k20 médio — item 9.b do relatório.
+ *
+ * Considera apenas as determinações selecionadas. As primeiras leituras, ainda
+ * em regime transiente, podem destoar em ordens de grandeza; incluí-las na
+ * média puxava o k20 do laudo para um valor que não representa o solo.
+ */
+export function k20Medio(determinacoes: PermVDeterminacao[], excluidas: string[] = []): number | null {
+  const vals = determinacoesDaMedia(determinacoes, excluidas).map((d) => d.k20 as number);
   if (!vals.length) return null;
   return vals.reduce((s, v) => s + v, 0) / vals.length;
 }

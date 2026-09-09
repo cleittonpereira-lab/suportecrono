@@ -100,6 +100,24 @@ export interface PermVSample {
 
   calibracao: PermVCalibracao;
   leituras: PermVLeitura[];
+
+  /**
+   * Observações técnicas do ensaio — vem preenchido da execução em campo
+   * (campo `obs` do PermVFieldPayload) e pode ser editado na digitação.
+   * Sai impresso no laudo.
+   */
+  observacoes: string;
+
+  /**
+   * Determinações excluídas da média de k20, identificadas pelo `id` da
+   * leitura FINAL do par (a leitura que fecha a determinação).
+   *
+   * A norma pede pelo menos 4 determinações relativamente proximas; as
+   * primeiras, ainda em regime transiente, costumam destoar por ordens de
+   * grandeza e distorcem a média. Isso deixa o operador escolher quais
+   * tempos entram, sem precisar apagar a leitura (que se perderia do laudo).
+   */
+  mediaExcluidas: string[];
 }
 
 export function newPermVLeitura(): PermVLeitura {
@@ -149,6 +167,8 @@ export function seedPermVSample(partial?: Partial<PermVSample>): PermVSample {
       curva: [],
     },
     leituras: [newPermVLeitura(), newPermVLeitura(), newPermVLeitura(), newPermVLeitura()],
+    observacoes: "",
+    mediaExcluidas: [],
     ...partial,
   };
 }

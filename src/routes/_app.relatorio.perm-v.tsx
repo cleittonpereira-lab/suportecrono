@@ -37,6 +37,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { PhotoUploader } from "@/features/lab/components/PhotoUploader";
 import { useOptionalLabEnsaio } from "@/features/lab/context";
 import { labStore } from "@/features/lab/store";
@@ -50,7 +51,7 @@ import { listBuretas, saveBureta } from "@/features/perm-v/buretaPresets";
 import {
   massaSeca, volumeCp, massaEspecificaAparenteSeca, indiceDeVazios, grauDeSaturacao,
   areaBureta, cargaHidraulica, capsulaUmidadePct, teorUmidadeMedio,
-  calcDeterminacoes, volumeAcumulado, volumeDeVazios, k20Medio, fmtK,
+  calcDeterminacoes, volumeAcumulado, volumeDeVazios, k20Medio, determinacoesDaMedia, fmtK,
   classificarPermeabilidade, posicaoNaFaixaPermeabilidade, PERM_FAIXAS,
 } from "@/features/perm-v/calc";
 import { loadDraft, saveDraft, fetchRemoteDraft, flushDraft } from "@/features/perm-v/draftStore";
@@ -114,7 +115,8 @@ function PermVReportPage({
 }) {
   const determinacoes = useMemo(() => calcDeterminacoes(sample), [sample]);
   const volAcum = useMemo(() => volumeAcumulado(determinacoes), [determinacoes]);
-  const k20med = k20Medio(determinacoes);
+  const k20med = k20Medio(determinacoes, sample.mediaExcluidas);
+  const naMedia = determinacoesDaMedia(determinacoes, sample.mediaExcluidas).length;
 
   const teorUmidade = teorUmidadeMedio(sample.capsulas);
   const ms = sample.massaUmida != null && teorUmidade != null
@@ -195,9 +197,14 @@ function PermVReportPage({
               </tr>
             </thead>
             <tbody>
-              {determinacoes.map((d, i) => (
-                <tr key={i}>
-                  <td className="border border-[#141414] px-1 py-0.5 text-center">{i + 1}</td>
+              {determinacoes.map((d, i) => {
+                const foraDaMedia = sample.mediaExcluidas.includes(d.leituraFinal.id);
+                return (
+                <tr key={i} className={foraDaMedia ? "text-[#141414]/55" : undefined}>
+                  <td className="border border-[#141414] px-1 py-0.5 text-center">
+                    {i + 1}
+                    {foraDaMedia && <sup>*</sup>}
+                  </td>
                   <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(d.deltaT, 0)}</td>
                   <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(d.h1, 2)}</td>
                   <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(d.h2, 2)}</td>
@@ -207,7 +214,8 @@ function PermVReportPage({
                   <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmtK(d.k20)}</td>
                   <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(volAcum[i], 2)}</td>
                 </tr>
-              ))}
+                );
+              })}
               {determinacoes.length === 0 && (
                 <tr>
                   <td colSpan={9} className="border border-[#141414] px-1 py-2 text-center text-muted-foreground">
@@ -220,7 +228,9 @@ function PermVReportPage({
         </div>
 
         <div className="border border-[#141414] px-2 py-1.5 flex items-center justify-between">
-          <span className="text-[9.5px] font-semibold uppercase">Coeficiente de Permeabilidade a 20°C — k20 (média de {determinacoes.length} determinações)</span>
+          <span className="text-[9.5px] font-semibold uppercase">
+            Coeficiente de Permeabilidade a 20°C — k20 (média de {naMedia} de {determinacoes.length} determinações)
+          </span>
           <span className="text-[12px] font-bold">{fmtK(k20med)} cm/s</span>
         </div>
 
@@ -252,6 +262,23 @@ function PermVReportPage({
             </div>
           </div>
         </div>
+
+        {naMedia < determinacoes.length && (
+          <p className="text-[7.5px] text-[#141414]/70">
+            * Determinação registrada, mas não considerada no cálculo do k₂₀ médio.
+          </p>
+        )}
+
+        {sample.observacoes?.trim() && (
+          <div className="border border-[#141414]">
+            <div className="border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-[9px] font-bold uppercase text-[#141414]">
+              Observações
+            </div>
+            <p className="whitespace-pre-wrap px-2 py-1 text-[8px] leading-snug text-[#141414]">
+              {sample.observacoes}
+            </p>
+          </div>
+        )}
 
         {/* Gráfico 1 — exigido pela norma (item 9.h): k20 × volume de água percolado acumulado */}
         <div className="border border-[#141414]">
@@ -557,6 +584,9 @@ export function PermVPage() {
           cargaHidraulicaInicial: fp.cargaHidraulicaInicial ?? prev.cargaHidraulicaInicial,
           calibracao: fp.calibracao ? { ...prev.calibracao, ...fp.calibracao } : prev.calibracao,
           leituras: fp.leituras.map((l) => ({ ...l })),
+          // O que o operador escreveu em campo nao era trazido para a digitacao,
+          // entao sumia do laudo. Nao sobrescreve o que ja houver digitado.
+          observacoes: prev.observacoes || fp.obs || "",
         }));
         toast.success("Dados pré-preenchidos da digitalização de campo — confira antes de continuar.");
       } catch (err) {
@@ -607,6 +637,7 @@ export function PermVPage() {
   };
 
   const determinacoes = useMemo(() => calcDeterminacoes(sample), [sample]);
+  const k20med = k20Medio(determinacoes, sample.mediaExcluidas);
   const a = useMemo(() => areaBureta(sample.calibracao), [sample.calibracao]);
 
   const buildReportPdfBlob = async (): Promise<Blob> => {
@@ -1324,6 +1355,71 @@ export function PermVPage() {
                   <p className="mt-2 text-xs text-muted-foreground">
                     {determinacoes.length} determinação(ões) calculada(s) — a norma pede pelo menos 4 relativamente próximas.
                   </p>
+
+                  {determinacoes.length > 0 && (
+                    <div className="mt-4 rounded-md border p-3">
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <Label className="text-xs font-semibold">Determinações consideradas na média de k₂₀</Label>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]"
+                            onClick={() => updateSample("mediaExcluidas", [])}>
+                            Marcar todas
+                          </Button>
+                          <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]"
+                            onClick={() => updateSample("mediaExcluidas", determinacoes.map((d) => d.leituraFinal.id))}>
+                            Desmarcar todas
+                          </Button>
+                        </div>
+                      </div>
+                      <p className="mb-2 text-[11px] text-muted-foreground">
+                        Desmarque os tempos que não devem entrar na média — normalmente as primeiras
+                        determinações, ainda em regime transiente. A leitura continua no laudo; só sai do cálculo.
+                      </p>
+                      <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
+                        {determinacoes.map((d) => {
+                          const semK = d.k20 == null;
+                          const marcada = !semK && !sample.mediaExcluidas.includes(d.leituraFinal.id);
+                          return (
+                            <label
+                              key={d.leituraFinal.id}
+                              className={`flex items-center gap-2 rounded px-2 py-1 text-xs ${semK ? "opacity-50" : "cursor-pointer hover:bg-muted/50"}`}
+                            >
+                              <Checkbox
+                                checked={marcada}
+                                disabled={semK}
+                                onCheckedChange={(c) => {
+                                  const fora = new Set<string>(sample.mediaExcluidas);
+                                  if (c) fora.delete(d.leituraFinal.id);
+                                  else fora.add(d.leituraFinal.id);
+                                  updateSample("mediaExcluidas", Array.from(fora));
+                                }}
+                              />
+                              <span className="tabular-nums">
+                                {d.leituraInicial.tSegundos ?? "—"}s → {d.leituraFinal.tSegundos ?? "—"}s
+                              </span>
+                              <span className="ml-auto tabular-nums text-muted-foreground">
+                                {semK ? "sem k₂₀" : fmtK(d.k20)}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <p className="mt-2 text-xs">
+                        Média com {determinacoesDaMedia(determinacoes, sample.mediaExcluidas).length} de{" "}
+                        {determinacoes.length}: <strong>{fmtK(k20med)} cm/s</strong>
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="mt-4">
+                    <Label className="text-xs font-semibold">Observações técnicas</Label>
+                    <Textarea
+                      className="mt-1 h-24 text-xs"
+                      placeholder="Observações do ensaio — saem impressas no laudo."
+                      value={sample.observacoes}
+                      onChange={(e) => updateSample("observacoes", e.target.value)}
+                    />
+                  </div>
                 </CardContent>
               </Card>
 
