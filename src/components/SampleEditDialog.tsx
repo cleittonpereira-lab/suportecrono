@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -72,37 +72,57 @@ export function SampleEditDialog({
     enabled: open,
   });
 
+  // `data` chega do componente pai como um objeto literal novo a cada
+  // render (não memoizado) — reinicializar o formulário sempre que `data`
+  // mudasse (como fazia antes) fazia o form ser resetado no meio da
+  // digitação a cada re-render do pai (autosave do rascunho, poll do
+  // labStore, etc.), apagando o que o usuário acabou de digitar. Agora só
+  // inicializa uma vez por abertura do diálogo — não a cada re-render.
+  const initializedForOpenRef = useRef(false);
   useEffect(() => {
-    if (open) {
-      let next = { ...data };
-      if (!next.technicalResp || next.technicalResp.includes("Maurício Silva")) {
-        next.technicalResp = "Engº Maurício Malanconi - CREA: 5063078630";
-      }
-
-      // Se faltar furo ou profundidade, resolve automaticamente a partir da tabela do Gantt
-      if (amostrasGantt.length > 0) {
-        const needle = (next.reportNumber || next.code || "").trim();
-        const matchAm =
-          amostrasGantt.find(
-            (a) =>
-              (a.codigo_amostra === needle || a.identificacao === needle || String(a.id) === needle) &&
-              (!next.osNumero || normOs(a.os_numero || "") === normOs(next.osNumero)),
-          ) ||
-          amostrasGantt.find((a) => a.codigo_amostra === needle || a.identificacao === needle || String(a.id) === needle);
-
-        if (matchAm) {
-          const parsed = parseGanttSampleData(matchAm);
-          if (!next.borehole && parsed.furo) next.borehole = parsed.furo;
-          if (!next.depth && parsed.prof) next.depth = parsed.prof;
-          if (!next.sampleType && parsed.tipo) next.sampleType = parsed.tipo;
-          if (!next.description && parsed.desc) next.description = parsed.desc;
-          if (!next.code && parsed.codigo) next.code = parsed.codigo;
-        }
-      }
-
-      setForm(next);
+    if (!open) {
+      initializedForOpenRef.current = false;
+      return;
     }
-  }, [open, data, amostrasGantt]);
+    if (initializedForOpenRef.current) return;
+    initializedForOpenRef.current = true;
+
+    let next = { ...data };
+    if (!next.technicalResp || next.technicalResp.includes("Maurício Silva")) {
+      next.technicalResp = "Engº Maurício Malanconi - CREA: 5063078630";
+    }
+    setForm(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // Se faltar furo ou profundidade, resolve automaticamente a partir da
+  // tabela do Gantt assim que ela carregar (chega async, depois da
+  // abertura) — só preenche campos ainda vazios, nunca sobrescreve o que
+  // o usuário já digitou.
+  useEffect(() => {
+    if (!open || amostrasGantt.length === 0) return;
+    setForm((prev) => {
+      const needle = (prev.reportNumber || prev.code || "").trim();
+      const matchAm =
+        amostrasGantt.find(
+          (a) =>
+            (a.codigo_amostra === needle || a.identificacao === needle || String(a.id) === needle) &&
+            (!prev.osNumero || normOs(a.os_numero || "") === normOs(prev.osNumero)),
+        ) ||
+        amostrasGantt.find((a) => a.codigo_amostra === needle || a.identificacao === needle || String(a.id) === needle);
+      if (!matchAm) return prev;
+
+      const parsed = parseGanttSampleData(matchAm);
+      const next = { ...prev };
+      let changed = false;
+      if (!next.borehole && parsed.furo) { next.borehole = parsed.furo; changed = true; }
+      if (!next.depth && parsed.prof) { next.depth = parsed.prof; changed = true; }
+      if (!next.sampleType && parsed.tipo) { next.sampleType = parsed.tipo; changed = true; }
+      if (!next.description && parsed.desc) { next.description = parsed.desc; changed = true; }
+      if (!next.code && parsed.codigo) { next.code = parsed.codigo; changed = true; }
+      return changed ? next : prev;
+    });
+  }, [open, amostrasGantt]);
 
   const update = (key: keyof SampleEditData, val: any) => {
     setForm((prev) => ({ ...prev, [key]: val }));
