@@ -11,7 +11,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
-import { ensureFolderPath, readDriveJson, writeDriveJson, listFilesInFolder, findFileInFolder, deleteDriveFile } from "@/lib/driveStorage";
+import { ensureFolderPath, readDriveJson, readDriveJsonById, writeDriveJson, listFilesInFolder, findFileInFolder, deleteDriveFile } from "@/lib/driveStorage";
 
 type JsonValue = string | number | boolean | null | { [k: string]: JsonValue } | JsonValue[];
 
@@ -157,7 +157,7 @@ export const listPendenciasDigitacao = createServerFn({ method: "GET" })
     const folderId = await ensureFolderPath(FOLDER_PENDENCIAS);
     const files = await listFilesInFolder(folderId);
     const rows = await mapWithConcurrency(files, 8, (f) =>
-      readDriveJson<PendenciaDigitacao>(f.name, folderId),
+      readDriveJsonById<PendenciaDigitacao>(f.id, f.name),
     );
     // O nome do arquivo é determinístico por (os, amostra, ensaio), mas o
     // Drive não impede dois arquivos com o mesmo nome na mesma pasta — uma

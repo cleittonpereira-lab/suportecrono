@@ -13,6 +13,7 @@ import crypto from "node:crypto";
 import {
   ensureFolderPath,
   readDriveJson,
+  readDriveJsonById,
   writeDriveJson,
   listFilesInFolder,
 } from "@/lib/driveStorage";
@@ -95,7 +96,7 @@ export async function listUsers(): Promise<UserRecord[]> {
   const rows = await Promise.all(
     files
       .filter((f) => f.name !== GUEST_TABS_FILE)
-      .map((f) => readDriveJson<UserRecord>(f.name, folderId)),
+      .map((f) => readDriveJsonById<UserRecord>(f.id, f.name)),
   );
   const byId = new Map<string, UserRecord>();
   for (const r of rows) {

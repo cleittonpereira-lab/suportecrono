@@ -5,7 +5,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
-import { ensureFolderPath, listFilesInFolder, readDriveJson } from "@/lib/driveStorage";
+import { ensureFolderPath, listFilesInFolder, readDriveJson, readDriveJsonById } from "@/lib/driveStorage";
 import { FOLDER_ENSAIOS, type EnsaioFile } from "@/lib/lab-entities.functions";
 
 /** Roda `fn` sobre `items` com no máximo `limit` chamadas em voo — ver o mesmo helper em lab-pendencias.functions.ts. */
@@ -88,7 +88,7 @@ export const listEmissoes = createServerFn({ method: "POST" })
 
       const files = await listFilesInFolder(enFolderId);
       const ensaios = (
-        await mapWithConcurrency(files, 8, (f) => readDriveJson<EnsaioFile>(f.name, enFolderId))
+        await mapWithConcurrency(files, 8, (f) => readDriveJsonById<EnsaioFile>(f.id, f.name))
       ).filter((e): e is EnsaioFile => e !== null);
 
       const filtered = data.workflowStatuses && data.workflowStatuses.length > 0

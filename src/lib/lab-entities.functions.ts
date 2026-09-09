@@ -17,7 +17,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import type { Amostra, Coords, Ensaio, EnsaioStatus, EnsaioTipo, LabState, OS, Photo } from "@/features/lab/types";
-import { ensureFolderPath, listFilesInFolder, readDriveJson, writeDriveJson, deleteDriveFile, findFileInFolder, DRIVE_ROOT_FOLDER_ID } from "@/lib/driveStorage";
+import { ensureFolderPath, listFilesInFolder, readDriveJson, readDriveJsonById, writeDriveJson, deleteDriveFile, findFileInFolder, DRIVE_ROOT_FOLDER_ID } from "@/lib/driveStorage";
 
 /**
  * Roda `fn` sobre `items` com no máximo `limit` chamadas em voo ao mesmo
@@ -275,7 +275,7 @@ async function readAllInFolder<T>(folderParts: string[]): Promise<{ fileId: stri
     files,
     8,
     async (f) => {
-      const data = await readDriveJson<T>(f.name, folderId);
+      const data = await readDriveJsonById<T>(f.id, f.name);
       if (!data) return null;
       return { fileId: f.id, name: f.name, data };
     },

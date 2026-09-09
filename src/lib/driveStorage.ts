@@ -46,6 +46,73 @@ const fileIdCache = new Map<string, string>();
  */
 const writeChain = new Map<string, Promise<unknown>>();
 
+/**
+ * O cache acima vive na memória de UMA isolate do Worker, e o Cloudflare
+ * distribui as requisições entre várias. Isso não bastou: a isolate A criava o
+ * arquivo, o autosave seguinte caía na isolate B com cache vazio, a busca por
+ * nome do Drive ainda não enxergava o arquivo de A, e B criava um segundo. As
+ * duas passavam a escrever cada uma no seu arquivo e o trabalho digitado numa
+ * delas se perdia.
+ *
+ * O Postgres é fortemente consistente, então serve de ponto de encontro entre
+ * isolates. Degrada em silêncio: sem Supabase configurado, tudo continua
+ * funcionando como antes, só sem a proteção entre isolates.
+ */
+async function supabaseFileId(key: string): Promise<string | null> {
+  try {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data } = await supabaseAdmin
+      .from("drive_file_cache")
+      .select("file_id")
+      .eq("key", key)
+      .maybeSingle();
+    return (data as { file_id?: string } | null)?.file_id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function rememberFileId(key: string, fileId: string, parentId: string, name: string): Promise<void> {
+  try {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    await supabaseAdmin.from("drive_file_cache").upsert({
+      key, file_id: fileId, parent_id: parentId, name, updated_at: new Date().toISOString(),
+    });
+  } catch { /* melhor esforço: a escrita no Drive não pode falhar por causa do cache */ }
+}
+
+async function forgetFileId(key: string): Promise<void> {
+  try {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    await supabaseAdmin.from("drive_file_cache").delete().eq("key", key);
+  } catch { /* idem */ }
+}
+
+/**
+ * Resolve (pasta, nome) -> fileId na ordem mais confiável primeiro:
+ * memória desta isolate, depois Supabase (consistente entre isolates), e só
+ * então a busca por nome do Drive — que é a única das três que pode "não ver"
+ * um arquivo recém-criado e provocar uma duplicata.
+ */
+async function resolveFileId(name: string, parentId: string): Promise<string | null> {
+  const key = `${parentId}:${name}`;
+  const emMemoria = fileIdCache.get(key);
+  if (emMemoria) return emMemoria;
+
+  const doSupabase = await supabaseFileId(key);
+  if (doSupabase) {
+    fileIdCache.set(key, doSupabase);
+    return doSupabase;
+  }
+
+  const doDrive = await findFileInFolder(name, parentId);
+  if (doDrive) {
+    fileIdCache.set(key, doDrive);
+    void rememberFileId(key, doDrive, parentId, name);
+  }
+  return doDrive;
+}
+
 export function withKeyLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
   const prev = writeChain.get(key) ?? Promise.resolve();
   const next = prev.then(fn, fn);
@@ -350,21 +417,26 @@ export async function uploadBytesToDrive(opts: {
 
   const key = `${opts.parentId}:${opts.name}`;
   return withKeyLock(key, async () => {
-    const cachedId = fileIdCache.get(key);
-    const existingId = cachedId ?? (await findFileInFolder(opts.name, opts.parentId));
+    const existingId = await resolveFileId(opts.name, opts.parentId);
     try {
       const id = await uploadBytesResumable({ ...opts, existingId });
       fileIdCache.set(key, id);
+      // Grava o id sempre — inclusive numa criação, que é justamente o momento
+      // em que a busca por nome do Drive ainda não enxerga o arquivo e outra
+      // isolate criaria uma duplicata.
+      void rememberFileId(key, id, opts.parentId, opts.name);
       return id;
     } catch (err) {
-      // Um id em cache pode ter sido apagado ou movido por fora deste processo.
-      // Nesse caso o PATCH falha: descarta o cache, resolve de novo e repete.
-      // Sem esse retry, o arquivo ficaria inacessível até reiniciar o processo.
-      if (!cachedId) throw err;
+      // Um id resolvido pode ter sido apagado ou movido por fora deste
+      // processo. Nesse caso o PATCH falha: esquece o id nos dois caches,
+      // busca no Drive e repete. Sem isso, o arquivo ficaria inacessível.
+      if (!existingId) throw err;
       fileIdCache.delete(key);
+      await forgetFileId(key);
       const freshId = await findFileInFolder(opts.name, opts.parentId);
       const id = await uploadBytesResumable({ ...opts, existingId: freshId });
       fileIdCache.set(key, id);
+      void rememberFileId(key, id, opts.parentId, opts.name);
       return id;
     }
   });
@@ -427,6 +499,44 @@ export async function readPhotoBytes(fileId: string): Promise<{ bytes: Uint8Arra
   }
 }
 
+/**
+ * Lê um JSON pelo fileId, sem resolver nome nenhum.
+ *
+ * `listFilesInFolder` já devolve `{ id, name }`, mas quem listava jogava o id
+ * fora e chamava `readDriveJson(f.name, ...)`, que faz uma busca por nome na
+ * API do Drive antes de baixar. Eram 2 chamadas por arquivo em vez de 1 — com
+ * ~30 pendências, ~60 requisições numa única invocação do Worker, que é o que
+ * estourava o limite de CPU (Error 1102).
+ *
+ * Ler pelo id também elimina um risco: havendo homônimos, a busca por nome
+ * podia devolver um arquivo DIFERENTE do que a listagem tinha entregue.
+ */
+export async function readDriveJsonById<T>(fileId: string, name?: string): Promise<T | null> {
+  if (!hasDriveCredentials()) {
+    // Sem credenciais, `listFilesInFolder` devolve o nome do arquivo local como id.
+    try {
+      const local = path.join(process.cwd(), ".data", fileId);
+      if (fs.existsSync(local)) {
+        const text = fs.readFileSync(local, "utf8");
+        if (text) return JSON.parse(text) as T;
+      }
+    } catch {}
+    return null;
+  }
+  try {
+    const res = await fetch(`${DRIVE_V3}/files/${fileId}?alt=media&supportsAllDrives=true`, {
+      method: "GET",
+      headers: await driveHeaders(),
+    });
+    if (!res.ok) return null;
+    const text = await res.text();
+    return text ? (JSON.parse(text) as T) : null;
+  } catch (err) {
+    console.warn(`[DriveStorage] Erro ao ler ${name ?? fileId} por id:`, err);
+    return null;
+  }
+}
+
 /** Lê um arquivo JSON do Google Drive com fallback em cache */
 export async function readDriveJson<T>(filename: string, parentId: string = DRIVE_ROOT_FOLDER_ID): Promise<T | null> {
   const cacheKey = `${parentId}:${filename}`;
@@ -446,11 +556,10 @@ export async function readDriveJson<T>(filename: string, parentId: string = DRIV
   // 1. Tenta carregar do Google Drive
   if (hasDriveCredentials()) {
     try {
-      const fileId = await findFileInFolder(filename, parentId);
+      // `resolveFileId` consulta memória e Supabase antes da busca por nome —
+      // uma chamada a menos ao Drive na maioria das leituras.
+      const fileId = await resolveFileId(filename, parentId);
       if (fileId) {
-        // Uma leitura já resolve o id — aproveita para a próxima escrita não
-        // precisar buscar por nome (e não arriscar criar duplicata).
-        fileIdCache.set(cacheKey, fileId);
         const res = await fetch(`${DRIVE_V3}/files/${fileId}?alt=media&supportsAllDrives=true`, {
           method: "GET",
           headers: await driveHeaders(),

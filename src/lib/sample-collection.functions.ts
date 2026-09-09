@@ -6,9 +6,28 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
-import { ensureFolderPath, readDriveJson, writeDriveJson, listFilesInFolder } from "@/lib/driveStorage";
+import { ensureFolderPath, readDriveJson, readDriveJsonById, writeDriveJson, listFilesInFolder } from "@/lib/driveStorage";
 
 const FOLDER_UPLOADS = ["sample-uploads"];
+
+/**
+ * Lê em lotes em vez de disparar tudo de uma vez. O `Promise.all` sem limite
+ * que estava aqui abria uma requisição ao Drive por arquivo simultaneamente,
+ * ajudando a estourar o limite de recursos do Worker.
+ */
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    for (;;) {
+      const i = next++;
+      if (i >= items.length) return;
+      out[i] = await fn(items[i]);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
 
 export type CategoriaAmostra = "bloco" | "shelby" | "denison" | "outro";
 
@@ -86,7 +105,7 @@ export const listarCargasAmostras = createServerFn({ method: "GET" })
     try {
       const folderId = await ensureFolderPath(FOLDER_UPLOADS);
       const files = await listFilesInFolder(folderId);
-      const rows = await Promise.all(files.map((f) => readDriveJson<CargaAmostras>(f.name, folderId)));
+      const rows = await mapWithConcurrency(files, 8, (f) => readDriveJsonById<CargaAmostras>(f.id, f.name));
       return rows
         .filter((r): r is CargaAmostras => r !== null)
         .map((r) => ({
