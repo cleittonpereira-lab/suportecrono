@@ -173,7 +173,11 @@ export const getLabEnsaioSnapshot = createServerFn({ method: "POST" })
         },
       };
     } catch (err) {
-      console.warn("[getLabEnsaioSnapshot] Falha ao ler arquivos do Drive:", err);
-      return null;
+      // `null` aqui significa "esse ensaio não existe", e o editor trata isso
+      // ficando em "Inicializando editor do ensaio…" indefinidamente. Uma
+      // falha de leitura não é ausência: propagando, a tela pode mostrar o
+      // erro e oferecer nova tentativa em vez de girar para sempre.
+      console.error("[getLabEnsaioSnapshot] Falha ao ler arquivos do Drive:", err);
+      throw err;
     }
   });

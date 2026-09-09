@@ -309,30 +309,33 @@ export async function listFilesInFolder(parentId: string): Promise<{ id: string;
       return [];
     }
   }
+  // Uma listagem parcial é pior que nenhuma: quem chama não tem como saber que
+  // faltou arquivo, e o que faltou vira "não existe" na tela. Antes, um `break`
+  // no meio da paginação devolvia silenciosamente as páginas já lidas, e o
+  // catch devolvia o que tinha dado tempo de acumular. Agora, ou a lista sai
+  // inteira, ou estoura.
   const out: { id: string; name: string }[] = [];
   let pageToken: string | undefined;
-  try {
-    do {
-      const q = `'${parentId}' in parents and trashed = false and mimeType != '${FOLDER_MIME}'`;
-      const params = new URLSearchParams({
-        q,
-        fields: "nextPageToken,files(id,name)",
-        pageSize: "1000",
-        supportsAllDrives: "true",
-        includeItemsFromAllDrives: "true",
-        corpora: "drive",
-        driveId: DRIVE_ROOT_FOLDER_ID,
-      });
-      if (pageToken) params.set("pageToken", pageToken);
-      const res = await fetch(`${DRIVE_V3}/files?${params.toString()}`, { method: "GET", headers: await driveHeaders() });
-      if (!res.ok) break;
-      const data = (await res.json()) as { files?: { id: string; name: string }[]; nextPageToken?: string };
-      out.push(...(data.files ?? []));
-      pageToken = data.nextPageToken;
-    } while (pageToken);
-  } catch (err) {
-    console.warn("[DriveStorage] Erro ao listar pasta:", err);
-  }
+  do {
+    const q = `'${parentId}' in parents and trashed = false and mimeType != '${FOLDER_MIME}'`;
+    const params = new URLSearchParams({
+      q,
+      fields: "nextPageToken,files(id,name)",
+      pageSize: "1000",
+      supportsAllDrives: "true",
+      includeItemsFromAllDrives: "true",
+      corpora: "drive",
+      driveId: DRIVE_ROOT_FOLDER_ID,
+    });
+    if (pageToken) params.set("pageToken", pageToken);
+    const res = await fetch(`${DRIVE_V3}/files?${params.toString()}`, { method: "GET", headers: await driveHeaders() });
+    if (!res.ok) {
+      throw new Error(`Falha ao listar a pasta ${parentId} no Drive: HTTP ${res.status}`);
+    }
+    const data = (await res.json()) as { files?: { id: string; name: string }[]; nextPageToken?: string };
+    out.push(...(data.files ?? []));
+    pageToken = data.nextPageToken;
+  } while (pageToken);
   return out;
 }
 
@@ -514,27 +517,31 @@ export async function readPhotoBytes(fileId: string): Promise<{ bytes: Uint8Arra
 export async function readDriveJsonById<T>(fileId: string, name?: string): Promise<T | null> {
   if (!hasDriveCredentials()) {
     // Sem credenciais, `listFilesInFolder` devolve o nome do arquivo local como id.
-    try {
-      const local = path.join(process.cwd(), ".data", fileId);
-      if (fs.existsSync(local)) {
-        const text = fs.readFileSync(local, "utf8");
-        if (text) return JSON.parse(text) as T;
-      }
-    } catch {}
-    return null;
-  }
-  try {
-    const res = await fetch(`${DRIVE_V3}/files/${fileId}?alt=media&supportsAllDrives=true`, {
-      method: "GET",
-      headers: await driveHeaders(),
-    });
-    if (!res.ok) return null;
-    const text = await res.text();
+    const local = path.join(process.cwd(), ".data", fileId);
+    if (!fs.existsSync(local)) return null;
+    const text = fs.readFileSync(local, "utf8");
     return text ? (JSON.parse(text) as T) : null;
-  } catch (err) {
-    console.warn(`[DriveStorage] Erro ao ler ${name ?? fileId} por id:`, err);
-    return null;
   }
+
+  const res = await fetch(`${DRIVE_V3}/files/${fileId}?alt=media&supportsAllDrives=true`, {
+    method: "GET",
+    headers: await driveHeaders(),
+  });
+
+  // 404 é a ÚNICA resposta que significa "este arquivo não existe" — só ela
+  // vira null. Qualquer outra falha (rede, 5xx, Worker sem CPU) é transitória
+  // e PRECISA estourar.
+  //
+  // Devolver null aqui seria indistinguível de "não existe", e quem chama
+  // filtra os nulos: o ensaio sumia da lista e a linha caía para "Em
+  // Digitação". Foi assim que laudos aprovados apareceram como rascunho na
+  // Central de Relatórios, sem nenhum erro na tela.
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`Falha ao ler ${name ?? fileId} do Drive: HTTP ${res.status}`);
+  }
+  const text = await res.text();
+  return text ? (JSON.parse(text) as T) : null;
 }
 
 /** Lê um arquivo JSON do Google Drive com fallback em cache */

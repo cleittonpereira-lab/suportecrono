@@ -449,8 +449,11 @@ export const listApprovalComments = createServerFn({ method: "GET" })
         comments = comments.filter((c) => c.rev === data.rev);
       }
       return [...comments].sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
-    } catch {
-      return [];
+    } catch (err) {
+      // Comentários de verificação/rejeição sumindo em silêncio fazem parecer
+      // que o verificador não escreveu nada. Melhor a tela acusar a falha.
+      console.error("[listApprovalComments] Falha ao ler comentários:", err);
+      throw err;
     }
   });
 

@@ -171,7 +171,16 @@ export const listEmissoes = createServerFn({ method: "POST" })
 
       return rows.sort((a, b) => (a.updated_at ?? "") < (b.updated_at ?? "") ? 1 : -1);
     } catch (err) {
-      console.warn("[listEmissoes] Erro capturado:", err);
-      return [];
+      // NÃO devolver [] aqui. Para o React Query, lista vazia é uma resposta
+      // de SUCESSO: ele troca os dados bons por nada, e a Central de
+      // Relatórios renderiza como se nenhum laudo estivesse aprovado — furo,
+      // profundidade e "Laudo Aprovado" somem da linha, que cai para "Em
+      // Digitação". Foi exatamente o que aconteceu: a mesma OS apareceu ora
+      // com 7/13 aprovados, ora com 2/13, sem nada ter sido apagado.
+      //
+      // Propagando o erro, o React Query mantém o último resultado bom na tela
+      // e marca a query como falha, em vez de mentir que está tudo em digitação.
+      console.error("[listEmissoes] Falha ao montar a lista:", err);
+      throw err;
     }
   });

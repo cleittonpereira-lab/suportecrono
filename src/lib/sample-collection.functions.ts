@@ -117,8 +117,11 @@ export const listarCargasAmostras = createServerFn({ method: "GET" })
         }))
         .sort((a, b) => (a.enviadoEm < b.enviadoEm ? 1 : -1));
     } catch (err) {
-      console.warn("[listarCargasAmostras] Falha:", err);
-      return [];
+      // Mesma armadilha do listEmissoes: [] é sucesso pro React Query, e as
+      // cargas de amostras já registradas sumiriam da tela numa falha
+      // transitória de leitura, como se nunca tivessem sido enviadas.
+      console.error("[listarCargasAmostras] Falha:", err);
+      throw err;
     }
   });
 
