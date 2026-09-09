@@ -328,11 +328,27 @@ export async function listFilesInFolder(parentId: string): Promise<{ id: string;
       driveId: DRIVE_ROOT_FOLDER_ID,
     });
     if (pageToken) params.set("pageToken", pageToken);
-    const res = await fetch(`${DRIVE_V3}/files?${params.toString()}`, { method: "GET", headers: await driveHeaders() });
-    if (!res.ok) {
-      throw new Error(`Falha ao listar a pasta ${parentId} no Drive: HTTP ${res.status}`);
+
+    let data: { files?: { id: string; name: string }[]; nextPageToken?: string } | null = null;
+    let ultimoErro: unknown;
+    for (let tentativa = 0; tentativa < 3 && !data; tentativa++) {
+      if (tentativa > 0) await new Promise((r) => setTimeout(r, 150 * tentativa));
+      try {
+        const res = await fetch(`${DRIVE_V3}/files?${params.toString()}`, { method: "GET", headers: await driveHeaders() });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        data = (await res.json()) as typeof data;
+      } catch (err) {
+        ultimoErro = err;
+      }
     }
-    const data = (await res.json()) as { files?: { id: string; name: string }[]; nextPageToken?: string };
+    if (!data) {
+      throw new Error(
+        `Falha ao listar a pasta ${parentId} no Drive apos 3 tentativas: ${
+          ultimoErro instanceof Error ? ultimoErro.message : String(ultimoErro)
+        }`,
+      );
+    }
+
     out.push(...(data.files ?? []));
     pageToken = data.nextPageToken;
   } while (pageToken);
@@ -523,25 +539,38 @@ export async function readDriveJsonById<T>(fileId: string, name?: string): Promi
     return text ? (JSON.parse(text) as T) : null;
   }
 
-  const res = await fetch(`${DRIVE_V3}/files/${fileId}?alt=media&supportsAllDrives=true`, {
-    method: "GET",
-    headers: await driveHeaders(),
-  });
+  // Quem carrega a árvore do laboratório lê ~80 arquivos de uma vez. Se um
+  // tropeço isolado estourasse direto, a árvore inteira falharia — trocaríamos
+  // "silenciosamente errado" por "nada carrega", que numa tela que atualiza a
+  // cada 8s é igualmente inútil. Tentar de novo resolve a falha passageira sem
+  // voltar a mentir que o arquivo não existe.
+  let ultimoErro: unknown;
+  for (let tentativa = 0; tentativa < 3; tentativa++) {
+    if (tentativa > 0) await new Promise((r) => setTimeout(r, 150 * tentativa));
+    try {
+      const res = await fetch(`${DRIVE_V3}/files/${fileId}?alt=media&supportsAllDrives=true`, {
+        method: "GET",
+        headers: await driveHeaders(),
+      });
 
-  // 404 é a ÚNICA resposta que significa "este arquivo não existe" — só ela
-  // vira null. Qualquer outra falha (rede, 5xx, Worker sem CPU) é transitória
-  // e PRECISA estourar.
-  //
-  // Devolver null aqui seria indistinguível de "não existe", e quem chama
-  // filtra os nulos: o ensaio sumia da lista e a linha caía para "Em
-  // Digitação". Foi assim que laudos aprovados apareceram como rascunho na
-  // Central de Relatórios, sem nenhum erro na tela.
-  if (res.status === 404) return null;
-  if (!res.ok) {
-    throw new Error(`Falha ao ler ${name ?? fileId} do Drive: HTTP ${res.status}`);
+      // 404 é a ÚNICA resposta que significa "este arquivo não existe" — só ela
+      // vira null, e sem repetir. Devolver null numa falha transitória seria
+      // indistinguível de ausência, e quem chama filtra os nulos: o ensaio
+      // sumia da lista e a linha caía para "Em Digitação". Foi assim que laudos
+      // aprovados apareceram como rascunho, sem erro nenhum na tela.
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      return text ? (JSON.parse(text) as T) : null;
+    } catch (err) {
+      ultimoErro = err;
+    }
   }
-  const text = await res.text();
-  return text ? (JSON.parse(text) as T) : null;
+  throw new Error(
+    `Falha ao ler ${name ?? fileId} do Drive apos 3 tentativas: ${
+      ultimoErro instanceof Error ? ultimoErro.message : String(ultimoErro)
+    }`,
+  );
 }
 
 /** Lê um arquivo JSON do Google Drive com fallback em cache */
