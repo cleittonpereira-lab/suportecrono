@@ -31,6 +31,8 @@ import {
   listPendenciasDigitacao,
   type PendenciaDigitacao,
 } from "@/lib/lab-pendencias.functions";
+import { getLabEnsaioSnapshot } from "@/lib/lab-ensaios.functions";
+import type { Photo } from "@/features/lab/types";
 import { pctAguaAbsorvida, dPvc } from "./calc";
 
 // -------- Tipos do payload de campo (ASF.DAP) --------
@@ -80,6 +82,13 @@ export interface AsfDapFieldPayload {
   dpaCalibracao: { m1: number | null; m2: number | null; m3: number | null; m4: number | null };
   corposDeProva: AsfDapCpInput[];
   fotos: AsfDapPhoto[];
+  /**
+   * Vínculo com o ensaio real (labStore), gravado por `abrirPorTipo` em
+   * _app.relatorio.pendentes.tsx assim que alguém abre esta pendência pelo
+   * escritório pela primeira vez. Permite buscar direto (sem varrer pasta
+   * nenhuma) as fotos já adicionadas por lá numa releitura do QR.
+   */
+  _linkedEnsaio?: { osId: string; amostraId: string; ensaioId: string };
   obs: string;
 }
 
@@ -178,10 +187,13 @@ export function AsfDapWorkspace({
   initial,
   pendenciaId,
   onBack,
+  officePhotos = [],
 }: {
   initial: AsfDapFieldPayload;
   pendenciaId: string | null;
   onBack: () => void;
+  /** Fotos já adicionadas no relatório do escritório — só leitura aqui. */
+  officePhotos?: Photo[];
 }) {
   const [data, setData] = useState<AsfDapFieldPayload>(initial);
   const [pid, setPid] = useState<string | null>(pendenciaId);
@@ -553,6 +565,30 @@ export function AsfDapWorkspace({
         onRemove={removePhoto}
       />
 
+      {officePhotos.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Camera className="h-4 w-4 text-primary" /> Já no relatório (escritório)
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Adicionadas por lá — só pra conferência aqui, não editáveis nesta tela.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+              {officePhotos.map((p) => (
+                <div key={p.id} className="relative rounded-md border overflow-hidden">
+                  <div className="aspect-[3/4] bg-black/5 flex items-center justify-center">
+                    <img src={p.url || p.dataUrl} alt="" className="max-h-full max-w-full object-contain" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base">Observações</CardTitle>
@@ -617,6 +653,7 @@ function FieldNum({
 // -------- Loader por pendenciaId (usado na rota) --------
 export function AsfDapPendenciaEditor({ pendenciaId, onBack }: { pendenciaId: string | null; onBack: () => void }) {
   const listFn = useServerFn(listPendenciasDigitacao);
+  const snapshotFn = useServerFn(getLabEnsaioSnapshot);
   const { data: pendencias = [] } = useQuery({
     queryKey: ["asf_dap_scan_pendencias"],
     queryFn: () => listFn(),
@@ -626,6 +663,15 @@ export function AsfDapPendenciaEditor({ pendenciaId, onBack }: { pendenciaId: st
     () => (pendencias as PendenciaDigitacao[]).find((p) => p.id === pendenciaId) ?? null,
     [pendencias, pendenciaId],
   );
+  const linked = (pendencia?.payload as unknown as AsfDapFieldPayload | undefined)?._linkedEnsaio;
+  const { data: officeSnapshot } = useQuery({
+    queryKey: ["asf_dap_linked_ensaio_photos", linked?.osId, linked?.amostraId, linked?.ensaioId],
+    queryFn: () => snapshotFn({ data: { scopeId: `os/${linked!.osId}/amostra/${linked!.amostraId}/ensaio/${linked!.ensaioId}` } }),
+    enabled: !!linked,
+    staleTime: 15_000,
+  });
+  const officePhotos: Photo[] = officeSnapshot?.ensaio?.photos ?? [];
+
   if (pendenciaId && !pendencia) {
     return <div className="p-6 text-center text-sm text-muted-foreground">Carregando pendência…</div>;
   }
@@ -646,7 +692,7 @@ export function AsfDapPendenciaEditor({ pendenciaId, onBack }: { pendenciaId: st
     fotos: Array.isArray(initial.fotos) ? initial.fotos : [],
     obs: initial.obs ?? "",
   };
-  return <AsfDapWorkspace initial={safe} pendenciaId={pendenciaId} onBack={onBack} />;
+  return <AsfDapWorkspace initial={safe} pendenciaId={pendenciaId} onBack={onBack} officePhotos={officePhotos} />;
 }
 
 // -------- Bloco simples de fotos --------

@@ -598,12 +598,16 @@ function CentralRelatoriosPage() {
 
     if (!en) return;
 
-    // Se temos pendência vinculada, marca como em_digitacao
+    // Se temos pendência vinculada, marca como em_digitacao e grava o
+    // vínculo com o ensaio (osId/amostraId/ensaioId) dentro do payload da
+    // pendência — permite que uma próxima leitura do QR busque direto
+    // (sem varrer pasta nenhuma) as fotos já adicionadas no escritório.
     if (pendenciaId) {
       updFn({
         data: {
           id: pendenciaId,
           status: "em_digitacao",
+          payload: { _linkedEnsaio: { osId: os.id, amostraId: am.id, ensaioId: en.id } },
         },
       }).catch(() => {});
     }
