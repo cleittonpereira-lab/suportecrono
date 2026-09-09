@@ -139,6 +139,40 @@ function EnsaioEditor() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [os, amostra, ensaio]);
 
+  // loadLabTree (o carregamento em massa que popula os/amostra/ensaio a
+  // partir do labStore) devolve fotos "leves" (sem dataUrl) — o conteúdo
+  // de cada foto some intencionalmente da resposta em massa pra não
+  // sobrecarregar o Worker (ver comentário em lab-entities.functions.ts).
+  // Assim que o ensaio sendo aberto de fato é resolvido, busca o
+  // conteúdo completo só dele (leitura O(1), sem varrer pasta) e
+  // preenche cada foto pelo id — nunca substitui a lista inteira, então
+  // uma foto adicionada localmente enquanto essa busca está em voo (e
+  // que ainda não existe no Drive) não é apagada.
+  const photosHydratedForRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!os || !amostra || !ensaio) return;
+    const hasPlaceholder = (ensaio.photos ?? []).some((p) => !p.dataUrl && !p.url);
+    if (!hasPlaceholder) return;
+    const currentScopeId = `os/${os.id}/amostra/${amostra.id}/ensaio/${ensaio.id}`;
+    if (photosHydratedForRef.current === currentScopeId) return;
+    photosHydratedForRef.current = currentScopeId;
+    void snapshotFn({ data: { scopeId: currentScopeId } })
+      .then((value) => {
+        const snapshot = value as LabEnsaioSnapshot | null;
+        for (const fp of snapshot?.ensaio?.photos ?? []) {
+          if (fp.dataUrl) {
+            labStore.updateEnsaioPhoto(os.id, amostra.id, ensaio.id, fp.id, {
+              dataUrl: fp.dataUrl, url: fp.url, bytes: fp.bytes,
+            });
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn("[EnsaioEditor] Falha ao carregar fotos completas:", err);
+        photosHydratedForRef.current = null;
+      });
+  }, [os, amostra, ensaio, snapshotFn]);
+
   useEffect(() => {
     if (!os || !amostra || !ensaio) return;
     const currentScopeId = `os/${os.id}/amostra/${amostra.id}/ensaio/${ensaio.id}`;

@@ -236,6 +236,22 @@ function deriveEnsaioStatus(f: EnsaioFile): EnsaioStatus {
   }
 }
 
+/**
+ * Fotos guardam a imagem inteira em base64 dentro de `dataUrl` — cada uma
+ * pode passar de 1 MB. `loadLabTree` carrega TODOS os ensaios do
+ * laboratório de uma vez (todo carregamento de página); embutir o
+ * conteúdo de cada foto nessa resposta é o maior contribuinte pro erro
+ * "Worker exceeded resource limits" (Cloudflare 1102) — o próprio arquivo
+ * fica grande de sobra pra ler/serializar em massa. O bulk load só
+ * precisa saber QUANTAS fotos existem (pra badges/contadores); o
+ * conteúdo de verdade é buscado sob demanda, só para o ensaio realmente
+ * aberto, via getLabEnsaioSnapshot (leitura direta O(1), sem varrer
+ * pasta nenhuma — não passa por aqui).
+ */
+function photoToLightweight(p: Photo): Photo {
+  return { ...p, dataUrl: "" };
+}
+
 function ensaioToPublic(f: EnsaioFile): SerializableEnsaio {
   return {
     id: f.id,
@@ -245,7 +261,7 @@ function ensaioToPublic(f: EnsaioFile): SerializableEnsaio {
     nome: f.nome ?? undefined,
     sigla: f.sigla ?? undefined,
     operator: f.operator ?? undefined,
-    photos: f.photos ?? [],
+    photos: (f.photos ?? []).map(photoToLightweight),
     payload: toSerializableJson(f.payload),
     createdAt: f.createdAt,
     updatedAt: f.updatedAt,
