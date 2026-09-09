@@ -144,28 +144,33 @@ export const criarPendenciaDigitacao = createServerFn({ method: "POST" })
 export const listPendenciasDigitacao = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async (): Promise<PendenciaDigitacao[]> => {
-    try {
-      const folderId = await ensureFolderPath(FOLDER_PENDENCIAS);
-      const files = await listFilesInFolder(folderId);
-      const rows = await mapWithConcurrency(files, 8, (f) =>
-        readDriveJson<PendenciaDigitacao>(f.name, folderId),
-      );
-      // O nome do arquivo é determinístico por (os, amostra, ensaio), mas o
-      // Drive não impede dois arquivos com o mesmo nome na mesma pasta — uma
-      // condição de corrida (dois scans quase simultâneos) pode criar dois
-      // arquivos com o mesmo `id` lógico. Mantém só o mais recente de cada
-      // `id` pra nunca mostrar "pendência duplicada" na tela.
-      const byId = new Map<string, PendenciaDigitacao>();
-      for (const r of rows) {
-        if (!r) continue;
-        const prev = byId.get(r.id);
-        if (!prev || prev.updated_at < r.updated_at) byId.set(r.id, r);
-      }
-      return Array.from(byId.values()).sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
-    } catch (err) {
-      console.warn("[listPendenciasDigitacao] Falha:", err);
-      return [];
+    // Antes, qualquer falha aqui (rede, timeout, limite de recursos do
+    // Worker) era engolida e devolvia [] como se fosse sucesso — pro
+    // React Query isso NÃO é um erro, é uma resposta válida vazia, então
+    // ele substituía a lista de pendências (todos os ensaios "em
+    // digitação" que ainda não têm registro no labStore) por nada.
+    // Resultado: a cada falha transitória, linhas inteiras da Central de
+    // Relatórios somem e só voltam no próximo refetch bem-sucedido — o
+    // "aparece e desaparece" reportado. Deixando propagar o erro, o React
+    // Query mantém os últimos dados bons na tela em vez de trocar por
+    // uma lista vazia.
+    const folderId = await ensureFolderPath(FOLDER_PENDENCIAS);
+    const files = await listFilesInFolder(folderId);
+    const rows = await mapWithConcurrency(files, 8, (f) =>
+      readDriveJson<PendenciaDigitacao>(f.name, folderId),
+    );
+    // O nome do arquivo é determinístico por (os, amostra, ensaio), mas o
+    // Drive não impede dois arquivos com o mesmo nome na mesma pasta — uma
+    // condição de corrida (dois scans quase simultâneos) pode criar dois
+    // arquivos com o mesmo `id` lógico. Mantém só o mais recente de cada
+    // `id` pra nunca mostrar "pendência duplicada" na tela.
+    const byId = new Map<string, PendenciaDigitacao>();
+    for (const r of rows) {
+      if (!r) continue;
+      const prev = byId.get(r.id);
+      if (!prev || prev.updated_at < r.updated_at) byId.set(r.id, r);
     }
+    return Array.from(byId.values()).sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
   });
 
 const UpdateStatusInput = z.object({

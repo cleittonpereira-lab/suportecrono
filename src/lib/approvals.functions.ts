@@ -361,14 +361,13 @@ export const listApprovals = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .validator((v: unknown) => ListInput.parse(v))
   .handler(async ({ data }) => {
-    try {
-      const found = await readEnsaio(data.scopeId);
-      const approvals = (found?.file?.reportApprovals as ApprovalRow[] | undefined) ?? [];
-      return [...approvals].sort((a, b) => b.rev - a.rev);
-    } catch (err: any) {
-      console.warn("[listApprovals] Falha:", err);
-      return [];
-    }
+    // Não engole mais erro devolvendo [] — ver comentário equivalente em
+    // listPendenciasDigitacao (lab-pendencias.functions.ts): pro React
+    // Query, [] é uma resposta válida, não um erro, então substituía o
+    // histórico de aprovações real por "vazio" a cada falha transitória.
+    const found = await readEnsaio(data.scopeId);
+    const approvals = (found?.file?.reportApprovals as ApprovalRow[] | undefined) ?? [];
+    return [...approvals].sort((a, b) => b.rev - a.rev);
   });
 
 /* ─────────────────────────────── COMENTÁRIOS / HISTÓRICO ─────────────────────────────── */

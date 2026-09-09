@@ -187,15 +187,24 @@ function getInitialData(): ProgramacaoData {
 }
 
 export async function readStore(): Promise<ProgramacaoData> {
+  // CUIDADO: nunca grave aqui a partir de uma falha de leitura.
+  // readDriveJson engole erro de rede/fetch e devolve null tanto pra "o
+  // arquivo genuinamente não existe" quanto pra "a leitura falhou" — as
+  // duas situações são indistinguíveis aqui. Antes, QUALQUER uma delas
+  // (inclusive uma falha transitória) disparava um writeStore(initial),
+  // sobrescrevendo o programacao_db.json real no Drive com dados de
+  // semente vazios — um hiccup de rede podia apagar a programação de
+  // verdade permanentemente. Agora só devolve os dados de semente em
+  // memória pra esta requisição (a tela ainda funciona), sem persistir
+  // nada — a próxima leitura bem-sucedida encontra os dados reais
+  // intactos, porque nada foi escrito por cima deles.
   try {
     const data = await readDriveJson<ProgramacaoData>(DRIVE_FILENAME);
     if (data) return data;
   } catch (err) {
     console.error("Error reading programacao_db.json from Drive:", err);
   }
-  const initial = getInitialData();
-  await writeStore(initial);
-  return initial;
+  return getInitialData();
 }
 
 export async function writeStore(data: ProgramacaoData): Promise<void> {

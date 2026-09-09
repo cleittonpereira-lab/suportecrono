@@ -283,12 +283,15 @@ async function hydrate(): Promise<void> {
         if (legacy && !isEmptyState(legacy)) {
           state = legacy;
         } else {
-          // Nada em lugar nenhum: primeira instalação → semente + salva.
-          const seeded = seed();
-          state = seeded;
-          const os = seeded.os[0];
-          scheduleSaveOS(os);
-          scheduleSaveAmostra(os.id, os.amostras[0]);
+          // Nada em lugar nenhum — pode ser primeira instalação de verdade,
+          // OU loadLabTree só falhou de forma transitória (rede, limite de
+          // recursos do Worker) bem no primeiro hydrate da sessão, já que o
+          // .catch() acima trata erro igual a "vazio". Usa a semente só em
+          // memória, pra tela não ficar em branco — NUNCA grava no Drive
+          // daqui: gravar às cegas nesse ponto já criou OS/Amostra de
+          // demonstração fantasma em cima de dados reais quando o problema
+          // era só uma falha passageira de leitura, não ausência de dados.
+          state = seed();
         }
       }
       hydrated = true;
