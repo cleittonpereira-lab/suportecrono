@@ -19,6 +19,27 @@ import { z } from "zod";
 import type { Amostra, Coords, Ensaio, EnsaioStatus, EnsaioTipo, LabState, OS, Photo } from "@/features/lab/types";
 import { ensureFolderPath, listFilesInFolder, readDriveJson, writeDriveJson, deleteDriveFile, findFileInFolder, DRIVE_ROOT_FOLDER_ID } from "@/lib/driveStorage";
 
+/**
+ * Roda `fn` sobre `items` com no máximo `limit` chamadas em voo ao mesmo
+ * tempo — mesmo motivo do helper em lab-pendencias.functions.ts:
+ * `readAllInFolder` (usada por `loadLabTree`, que roda em TODO carregamento
+ * do app) lia todos os arquivos de uma pasta em paralelo sem limite. Ensaios
+ * agora podem carregar fotos em base64 embutidas, então cada arquivo pode
+ * ser bem maior do que antes — piorando um padrão que já era arriscado.
+ */
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const idx = next++;
+      results[idx] = await fn(items[idx]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+  return results;
+}
+
 export type SerializableJson = string | number | boolean | null | SerializableJson[] | { [key: string]: SerializableJson };
 export function toSerializableJson(value: unknown): SerializableJson | undefined {
   if (value === undefined) return undefined;
@@ -202,12 +223,14 @@ function ensaioToPublic(f: EnsaioFile): SerializableEnsaio {
 async function readAllInFolder<T>(folderParts: string[]): Promise<{ fileId: string; name: string; data: T }[]> {
   const folderId = await ensureFolderPath(folderParts);
   const files = await listFilesInFolder(folderId);
-  const results: ({ fileId: string; name: string; data: T } | null)[] = await Promise.all(
-    files.map(async (f) => {
+  const results: ({ fileId: string; name: string; data: T } | null)[] = await mapWithConcurrency(
+    files,
+    8,
+    async (f) => {
       const data = await readDriveJson<T>(f.name, folderId);
       if (!data) return null;
       return { fileId: f.id, name: f.name, data };
-    }),
+    },
   );
   const out: { fileId: string; name: string; data: T }[] = [];
   for (const r of results) {

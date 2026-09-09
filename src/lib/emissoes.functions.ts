@@ -8,6 +8,20 @@ import { z } from "zod";
 import { ensureFolderPath, listFilesInFolder, readDriveJson } from "@/lib/driveStorage";
 import { FOLDER_ENSAIOS, type EnsaioFile } from "@/lib/lab-entities.functions";
 
+/** Roda `fn` sobre `items` com no máximo `limit` chamadas em voo — ver o mesmo helper em lab-pendencias.functions.ts. */
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const idx = next++;
+      results[idx] = await fn(items[idx]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+  return results;
+}
+
 export interface EmissaoRow {
   /** null quando ensaio está apenas em "digitacao" e ainda não gerou nenhuma revisão. */
   id: string | null;
@@ -55,7 +69,7 @@ export const listEmissoes = createServerFn({ method: "POST" })
 
       const files = await listFilesInFolder(enFolderId);
       const ensaios = (
-        await Promise.all(files.map((f) => readDriveJson<EnsaioFile>(f.name, enFolderId)))
+        await mapWithConcurrency(files, 8, (f) => readDriveJson<EnsaioFile>(f.name, enFolderId))
       ).filter((e): e is EnsaioFile => e !== null);
 
       const filtered = data.workflowStatuses && data.workflowStatuses.length > 0
@@ -76,8 +90,10 @@ export const listEmissoes = createServerFn({ method: "POST" })
       const amostraCache = new Map<string, any>();
       const osCache = new Map<string, any>();
 
-      const rows = await Promise.all(
-        filtered.map(async (en): Promise<EmissaoRow> => {
+      const rows = await mapWithConcurrency(
+        filtered,
+        8,
+        async (en): Promise<EmissaoRow> => {
           const approvals = (en.reportApprovals ?? []).slice().sort((a, b) => b.rev - a.rev);
           const latest = approvals[0];
 
@@ -131,7 +147,7 @@ export const listEmissoes = createServerFn({ method: "POST" })
             pendencia_finished_at: null,
             digitador_nome: latest?.requested_by_name ?? null,
           };
-        }),
+        },
       );
 
       return rows.sort((a, b) => (a.updated_at ?? "") < (b.updated_at ?? "") ? 1 : -1);

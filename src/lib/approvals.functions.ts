@@ -28,6 +28,20 @@ import {
   type ReportApprovalCommentRow,
 } from "@/lib/lab-entities.functions";
 
+/** Roda `fn` sobre `items` com no máximo `limit` chamadas em voo — ver o mesmo helper em lab-pendencias.functions.ts. */
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const idx = next++;
+      results[idx] = await fn(items[idx]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+  return results;
+}
+
 function normStr(str?: string | null): string {
   if (!str) return "";
   return str.toLowerCase().replace(/[^a-z0-9]/g, "").trim();
@@ -443,21 +457,19 @@ export const getWorkflowStatuses = createServerFn({ method: "POST" })
     const out: Record<string, string> = {};
     try {
       const folderId = await ensureFolderPath(FOLDER_ENSAIOS);
-      await Promise.all(
-        data.scopeIds.map(async (scopeId) => {
-          const ids = parseScope(scopeId);
-          if (!ids) {
-            out[scopeId] = "digitacao";
-            return;
-          }
-          try {
-            const file = await readDriveJson<EnsaioFile>(ensaioFileName(ids.amostraId, ids.ensaioId), folderId);
-            out[scopeId] = file?.workflowStatus || "digitacao";
-          } catch {
-            out[scopeId] = "digitacao";
-          }
-        }),
-      );
+      await mapWithConcurrency(data.scopeIds, 8, async (scopeId) => {
+        const ids = parseScope(scopeId);
+        if (!ids) {
+          out[scopeId] = "digitacao";
+          return;
+        }
+        try {
+          const file = await readDriveJson<EnsaioFile>(ensaioFileName(ids.amostraId, ids.ensaioId), folderId);
+          out[scopeId] = file?.workflowStatus || "digitacao";
+        } catch {
+          out[scopeId] = "digitacao";
+        }
+      });
     } catch (err: any) {
       console.warn("[getWorkflowStatuses] Aviso:", err);
       for (const id of data.scopeIds) out[id] = out[id] || "digitacao";
