@@ -173,7 +173,11 @@ export const requestApproval = createServerFn({ method: "POST" })
       id: ids.ensaioId,
       amostraId: ids.amostraId,
       tipo: existing?.tipo || data.index?.ensaio_tipo || "cisalhamento-direto",
-      status: existing?.status ?? null,
+      // Ver comentário equivalente em verifyApproval/decideApproval — sem
+      // gravar `status` junto aqui, um ensaio já aprovado que ganha uma
+      // nova revisão ficava com o Kanban/labStore mostrando o status
+      // antigo ("aprovado") até que o patch otimista do cliente expirasse.
+      status: targetWorkflow,
       label: existing?.label ?? null,
       nome: existing?.nome ?? data.index?.ensaio_nome ?? null,
       sigla: existing?.sigla ?? null,

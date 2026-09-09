@@ -494,7 +494,7 @@ function CentralRelatoriosPage() {
   // Roteamento inteligente para os editores de laudo
   function abrirDigitacao(r: PendenciaDigitacao) {
     const tipo = detectMethodology(r.ensaio, r.tipo_ensaio) ?? "triaxial-cid";
-    abrirPorTipo(tipo, r.os, r.amostra ?? "", undefined, undefined, r.id, r.ensaio);
+    abrirPorTipo(tipo, r.os, r.amostra ?? "", undefined, undefined, r.id, r.ensaio, r.status);
   }
 
   function abrirPorTipo(
@@ -505,6 +505,7 @@ function CentralRelatoriosPage() {
     obra?: string,
     pendenciaId?: string,
     siglaOficial?: string,
+    currentStatus?: PendenciaDigitacao["status"],
   ) {
     if (tipo === "mesp-a") {
       navigate({
@@ -601,12 +602,17 @@ function CentralRelatoriosPage() {
     // Se temos pendência vinculada, marca como em_digitacao e grava o
     // vínculo com o ensaio (osId/amostraId/ensaioId) dentro do payload da
     // pendência — permite que uma próxima leitura do QR busque direto
-    // (sem varrer pasta nenhuma) as fotos já adicionadas no escritório.
+    // (sem varrer pasta nenhuma) as fotos já adicionadas no escritório. Só
+    // regride o status pra em_digitacao se ele ainda não tiver avançado —
+    // só ABRIR um laudo já digitado/verificado/aprovado (ex.: reabrir pra
+    // gerar uma nova revisão pós-aprovação) não pode fazer o Kanban voltar
+    // a mostrá-lo como "Em Digitação".
     if (pendenciaId) {
+      const jaAvancou = currentStatus === "digitado" || currentStatus === "verificado" || currentStatus === "aprovado" || currentStatus === "concluido_externo";
       updFn({
         data: {
           id: pendenciaId,
-          status: "em_digitacao",
+          status: jaAvancou && currentStatus ? currentStatus : "em_digitacao",
           payload: { _linkedEnsaio: { osId: os.id, amostraId: am.id, ensaioId: en.id } },
         },
       }).catch(() => {});
@@ -1130,7 +1136,7 @@ function CentralRelatoriosPage() {
                                   onClick={() => {
                                     const tipo =
                                       detectMethodology(item.ensaio, item.tipoEnsaioNome) || "cisalhamento-direto";
-                                    abrirPorTipo(tipo, item.os, item.amostra, cad?.tomador, cad?.obra, pendExistente?.id, item.ensaio);
+                                    abrirPorTipo(tipo, item.os, item.amostra, cad?.tomador, cad?.obra, pendExistente?.id, item.ensaio, pendExistente?.status);
                                   }}
                                 >
                                   {isAprovado ? (

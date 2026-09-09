@@ -755,25 +755,43 @@ export function CompressaoSimplesPage() {
   };
 
   /**
+   * Verificado/Aprovado por e o número de Revisão impresso no relatório são
+   * sempre calculados ao vivo a partir do histórico de aprovações — nunca
+   * gravados em `sample` — pra nunca desalinhar entre quem verificou/aprovou
+   * e o que o PDF mostra. "Revisão" só avança quando o relatório já foi
+   * aprovado alguma vez antes (não a cada rascunho/prévia).
+   */
+  const reportOverrides = useMemo(() => {
+    const activeAprov = approvals[0];
+    const aprovadosCount = approvals.filter((a) => a.status === "aprovado").length;
+    const isAprovadoNow = activeAprov?.status === "aprovado";
+    return {
+      revision: String(Math.max(0, aprovadosCount - (isAprovadoNow ? 1 : 0))),
+      verifiedBy: activeAprov?.verified_by_name ?? "",
+      approvedBy: isAprovadoNow ? (activeAprov?.decided_by_name ?? "") : "",
+    };
+  }, [approvals]);
+
+  /**
    * Reage depois que verificar/aprovar/rejeitar já foi confirmado no
    * servidor (chamado tanto pelos botões do cabeçalho quanto pelo diálogo
    * de dentro de "Versões", já que os dois disparam o mesmo fluxo real).
-   * Grava quem verificou/aprovou e, na aprovação final, regenera o PDF já
-   * com a assinatura completa e substitui o conteúdo da MESMA versão — a
-   * revisão "de verdade" só fica pronta depois de aprovada.
+   * Busca o histórico fresco direto do servidor (não confia no estado
+   * `approvals` do React, que só atualiza depois de um refreshApprovals())
+   * e, na aprovação final, regenera o PDF já com verificado/aprovado por e
+   * a revisão corretos, substituindo o conteúdo da MESMA versão.
    */
   const applyApprovalSideEffects = async (info: {
     stage: "verify" | "approve";
     decision: "verificado" | "rejeitado_verificacao" | "aprovado" | "rejeitado";
     rev: number;
   }) => {
-    if (info.decision === "verificado") {
-      setSample((prev) => ({ ...prev, verifiedBy: currentUserName }));
-      return;
-    }
+    const freshApprovals = await listApprovals({ data: { scopeId } }).catch(() => approvals);
+    setApprovals(freshApprovals);
     if (info.decision !== "aprovado") return;
-    const assinado = { ...sample, verifiedBy: sample.verifiedBy || currentUserName, approvedBy: currentUserName };
-    setSample(assinado);
+    // Dá tempo do React re-renderizar o relatório oculto com os overrides
+    // (verificado/aprovado por, revisão) atualizados antes do "print".
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
     try {
       const blob = await buildReportPdfBlob();
       const versao = versions.find((v) => v.rev === info.rev);
@@ -783,7 +801,7 @@ export function CompressaoSimplesPage() {
         try {
           await withTimeout(
             syncRevision({
-              scopeId, rev: info.rev, pdfBlob: blob, pdfFilename: versao.filename, sample: assinado,
+              scopeId, rev: info.rev, pdfBlob: blob, pdfFilename: versao.filename, sample,
               photos: ctx?.photos || [], ctxOs: ctx?.os, ctxAmostra: ctx?.amostra,
               ctxEnsaio: { tipo: "compressao-simples", nome: sample.reportNumber }, fotos: fotosParaDrive(),
             }),
@@ -866,7 +884,7 @@ export function CompressaoSimplesPage() {
           <div className="flex-1 min-h-0 overflow-auto bg-[#525659] p-8 flex justify-center">
             <div className="flex flex-col items-center gap-8 shrink-0 pb-12">
               <div className="w-[210mm] h-[297mm] shadow-2xl bg-white shrink-0 overflow-hidden">
-                <CompressaoSimplesReportPage sample={sample} photos={ctx?.photos ?? []} />
+                <CompressaoSimplesReportPage sample={{ ...sample, ...reportOverrides }} photos={ctx?.photos ?? []} />
               </div>
             </div>
           </div>
