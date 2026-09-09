@@ -204,7 +204,14 @@ export function useOsGroups() {
             codigo: am.code || details.codigo || "",
             ensaio: siglaEnsaio,
             tipo: en.tipo,
-            status: en.status === "concluido" ? "aprovado" : "em_digitacao",
+            // en.status vem do labStore (loadLabTree), que já deriva o
+            // status real a partir do histórico de aprovações — comparar
+            // com "concluido" aqui era um bug antigo (o valor real gravado
+            // é "aprovado"), fazendo todo ensaio já aprovado cair sempre
+            // no "em_digitacao" abaixo, mesmo aprovado de verdade.
+            status: en.status === "aprovado" ? "aprovado"
+              : (en.status === "aguardando_aprovacao" || en.status === "aguardando_verificacao") ? "verificacao"
+              : "em_digitacao",
             digitador: en.operator || currentUserName,
             revisao: os.revision || "0",
           };
