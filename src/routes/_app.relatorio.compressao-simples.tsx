@@ -19,7 +19,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Download, Gauge, Send, ShieldCheck, CheckCircle2,
-  Beaker, History, FileText, Upload, Plus, Trash2,
+  Beaker, History, FileText, Upload, Plus, Trash2, FileSpreadsheet,
 } from "lucide-react";
 import { toast } from "sonner";
 import { toPng } from "html-to-image";
@@ -51,6 +51,7 @@ import {
   capsulaUmidadePct, teorUmidadeMedio, calcCorpoDeProva, mediaCps,
 } from "@/features/compressao-simples/calc";
 import { CsCurveImportDialog } from "@/features/compressao-simples/components/CsCurveImportDialog";
+import { exportCompressaoSimplesXlsx } from "@/features/compressao-simples/exportXlsx";
 import { loadDraft, saveDraft, fetchRemoteDraft, flushDraft } from "@/features/compressao-simples/draftStore";
 import { listPendenciasDigitacao } from "@/lib/lab-pendencias.functions";
 import { findMatchingPendencia } from "@/lib/pendencia-match";
@@ -662,6 +663,18 @@ export function CompressaoSimplesPage() {
     }
   };
 
+  const handleExportXlsx = async () => {
+    const tid = toast.loading("Gerando planilha Excel (.xlsx)…");
+    try {
+      await exportCompressaoSimplesXlsx({
+        sample, results, media, comIndices, isCompleto, photos: ctx?.photos || [],
+      });
+      toast.success("Planilha Excel exportada com sucesso!", { id: tid });
+    } catch (err) {
+      toast.error("Erro ao gerar Excel: " + (err instanceof Error ? err.message : String(err)), { id: tid });
+    }
+  };
+
   const handleSaveVersion = async (opts?: { skipVerification?: boolean }) => {
     const skipVerification = opts?.skipVerification === true;
     setSample((prev) => ({ ...prev, typedBy: currentUserName }));
@@ -879,6 +892,9 @@ export function CompressaoSimplesPage() {
 
             <Button variant="outline" size="sm" onClick={handleGeneratePdf}>
               <Download className="mr-1.5 h-4 w-4" /> Baixar PDF
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleExportXlsx} className="gap-1.5">
+              <FileSpreadsheet className="h-4 w-4 text-emerald-600" /> Exportar Dados Brutos (XLSX)
             </Button>
           </div>
         </div>
