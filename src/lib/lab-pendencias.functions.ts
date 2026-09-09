@@ -15,6 +15,29 @@ import { ensureFolderPath, readDriveJson, writeDriveJson, listFilesInFolder, fin
 
 type JsonValue = string | number | boolean | null | { [k: string]: JsonValue } | JsonValue[];
 
+/**
+ * Roda `fn` sobre `items` com no máximo `limit` chamadas em voo ao mesmo
+ * tempo. `readDriveJson` faz 2 requisições HTTP por arquivo (acha o id +
+ * baixa o conteúdo) — sem isso, `Promise.all(files.map(readDriveJson))`
+ * disparava 2×N requisições simultâneas numa única invocação do Worker.
+ * Com a pasta de pendências crescendo (uso normal do dia a dia), isso
+ * passou a estourar o limite de subrequests/CPU do Cloudflare Workers
+ * ("Error 1102: Worker exceeded resource limits") em qualquer tela que
+ * chamasse `listPendenciasDigitacao` — ou seja, quase todas.
+ */
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const idx = next++;
+      results[idx] = await fn(items[idx]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+  return results;
+}
+
 function displayName(claims: { email?: string; user_metadata?: { full_name?: string; name?: string } } | undefined) {
   return (
     (claims?.user_metadata?.full_name as string | undefined) ||
@@ -124,8 +147,8 @@ export const listPendenciasDigitacao = createServerFn({ method: "GET" })
     try {
       const folderId = await ensureFolderPath(FOLDER_PENDENCIAS);
       const files = await listFilesInFolder(folderId);
-      const rows = await Promise.all(
-        files.map((f) => readDriveJson<PendenciaDigitacao>(f.name, folderId)),
+      const rows = await mapWithConcurrency(files, 8, (f) =>
+        readDriveJson<PendenciaDigitacao>(f.name, folderId),
       );
       // O nome do arquivo é determinístico por (os, amostra, ensaio), mas o
       // Drive não impede dois arquivos com o mesmo nome na mesma pasta — uma
