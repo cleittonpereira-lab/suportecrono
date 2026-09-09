@@ -61,6 +61,9 @@ export interface CompressaoSimplesSample {
   operator: string;
   technicalResp: string;
   typedBy?: string;
+  /** Nome de quem verificou/aprovou a última versão — gravado ao confirmar cada etapa. */
+  verifiedBy?: string;
+  approvedBy?: string;
   description: string;
   code: string;
   os: string;

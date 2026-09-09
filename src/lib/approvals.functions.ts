@@ -256,6 +256,12 @@ export const verifyApproval = createServerFn({ method: "POST" })
       updatedAt: nowIso,
       rev: nextRev,
       workflowStatus: nextWorkflow,
+      // `status` (o EnsaioStatus visto pelo labStore/Kanban/Central de
+      // Relatórios) é um campo SEPARADO de `workflowStatus` (o que o editor
+      // lê) — sem gravar os dois juntos aqui, verificar/aprovar nunca
+      // avançava o status que essas outras telas mostram, deixando ensaios
+      // já aprovados aparecendo pra sempre como "Em Digitação" nelas.
+      status: nextWorkflow,
       reportApprovals: nextApprovals,
       approvalComments: [commentRow, ...comments].slice(0, 200),
     };
@@ -333,6 +339,8 @@ export const decideApproval = createServerFn({ method: "POST" })
       updatedAt: nowIso,
       rev: nextRev,
       workflowStatus: nextWorkflow,
+      // Ver comentário equivalente em verifyApproval.
+      status: nextWorkflow,
       reportApprovals: nextApprovals,
       approvalComments: [commentRow, ...comments].slice(0, 200),
     };

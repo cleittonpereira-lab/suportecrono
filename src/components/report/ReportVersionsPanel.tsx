@@ -65,6 +65,18 @@ interface ReportVersionsPanelProps {
   onOpenReport: () => void;
   onDownloadVersion: (v: ReportVersionLike) => void;
   onDeleteVersion: (id: string) => Promise<void> | void;
+  /**
+   * Chamado depois que verificar/aprovar/rejeitar é confirmado aqui dentro
+   * (verifyApproval/decideApproval já concluídos com sucesso) — dá pro
+   * relatório de cada módulo reagir (gravar quem verificou/aprovou,
+   * regenerar o PDF com a assinatura completa na aprovação final...) sem
+   * este painel genérico precisar saber desses detalhes específicos.
+   */
+  onApprovalDecided?: (info: {
+    stage: "verify" | "approve";
+    decision: "verificado" | "rejeitado_verificacao" | "aprovado" | "rejeitado";
+    rev: number;
+  }) => void | Promise<void>;
 }
 
 export function ReportVersionsPanel({
@@ -81,6 +93,7 @@ export function ReportVersionsPanel({
   onOpenReport,
   onDownloadVersion,
   onDeleteVersion,
+  onApprovalDecided,
 }: ReportVersionsPanelProps) {
   const [previewVersion, setPreviewVersion] = useState<{ url: string; filename: string; rev: number } | null>(null);
   const [decideOpen, setDecideOpen] = useState<null | {
@@ -135,7 +148,7 @@ export function ReportVersionsPanel({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-24">Prévia / Revisão</TableHead>
+                  <TableHead className="w-24">Versão</TableHead>
                   <TableHead>Data / Hora</TableHead>
                   <TableHead>Arquivo</TableHead>
                   <TableHead className="text-right">Tamanho</TableHead>
@@ -147,10 +160,10 @@ export function ReportVersionsPanel({
               <TableBody>
                 {versions.map((v) => {
                   const appr = approvals.find((a) => a.rev === v.rev) ?? null;
-                  const isApproved = appr?.status === "aprovado";
-                  const label = isApproved
-                    ? `Rev ${String(v.rev).padStart(2, "0")}`
-                    : `Prévia ${String(v.rev).padStart(2, "0")}`;
+                  // "Versão" (não "Revisão"/"Rev") de propósito — esse número é
+                  // só quantas vezes o PDF foi (re)gerado, não a revisão da
+                  // amostra (campo separado, impresso no próprio documento).
+                  const label = `Versão ${String(v.rev).padStart(2, "0")}`;
                   return (
                     <TableRow key={v.id}>
                       <TableCell className="font-semibold">{label}</TableCell>
@@ -179,7 +192,7 @@ export function ReportVersionsPanel({
                           onRequest={async () => {
                             try {
                               await requestApproval({ data: { scopeId, rev: v.rev, filename: v.filename } });
-                              toast.success(`Aprovação solicitada para Rev ${String(v.rev).padStart(2, "0")}`);
+                              toast.success(`Aprovação solicitada para a Versão ${String(v.rev).padStart(2, "0")}`);
                               await onRefreshApprovals();
                             } catch (err) {
                               toast.error(`Falha: ${(err as Error).message}`);
@@ -217,7 +230,7 @@ export function ReportVersionsPanel({
         <DialogContent className="max-w-[95vw] w-[95vw] h-[92vh] p-0 flex flex-col">
           <DialogHeader className="px-4 py-2 border-b">
             <DialogTitle className="text-sm">
-              Visualização — Rev {String(previewVersion?.rev ?? 0).padStart(2, "0")} · {previewVersion?.filename}
+              Visualização — Versão {String(previewVersion?.rev ?? 0).padStart(2, "0")} · {previewVersion?.filename}
             </DialogTitle>
           </DialogHeader>
           {previewVersion && <iframe src={previewVersion.url} title="Relatório PDF" className="flex-1 w-full border-0" />}
@@ -232,8 +245,8 @@ export function ReportVersionsPanel({
             const isPositive = decideOpen.decision === "verificado" || decideOpen.decision === "aprovado";
             const requireComment = !isPositive;
             const title = isVerifyStage
-              ? isPositive ? "Verificar Revisão" : "Rejeitar Verificação"
-              : isPositive ? "Aprovar Revisão" : "Rejeitar Aprovação";
+              ? isPositive ? "Verificar Versão" : "Rejeitar Verificação"
+              : isPositive ? "Aprovar Versão" : "Rejeitar Aprovação";
             const desc = isVerifyStage
               ? isPositive
                 ? "Confirme que os dados do relatório foram verificados. O comentário é opcional."
@@ -245,7 +258,7 @@ export function ReportVersionsPanel({
               <>
                 <DialogHeader>
                   <DialogTitle>
-                    {title} — Rev {String(decideOpen.rev).padStart(2, "0")}
+                    {title} — Versão {String(decideOpen.rev).padStart(2, "0")}
                   </DialogTitle>
                   <DialogDescription>{desc}</DialogDescription>
                 </DialogHeader>
@@ -268,8 +281,9 @@ export function ReportVersionsPanel({
                           toast.success(isPositive ? "Verificação registrada — aguardando aprovação" : "Verificação rejeitada");
                         } else {
                           await decideApproval({ data: { ...payload, decision: decideOpen.decision as "aprovado" | "rejeitado" } });
-                          toast.success(isPositive ? "Revisão aprovada" : "Revisão rejeitada");
+                          toast.success(isPositive ? "Versão aprovada" : "Versão rejeitada");
                         }
+                        await onApprovalDecided?.({ stage: decideOpen.stage, decision: decideOpen.decision, rev: decideOpen.rev });
                         setDecideOpen(null);
                         await onRefreshApprovals();
                       } catch (err) {

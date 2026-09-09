@@ -24,7 +24,7 @@ import {
 import { toast } from "sonner";
 import { toPng } from "html-to-image";
 import {
-  listVersions, saveVersion, nextRev, deleteVersion, downloadVersion, type ReportVersion,
+  listVersions, saveVersion, nextRev, deleteVersion, downloadVersion, replaceVersionPdf, type ReportVersion,
 } from "@/features/compressao-simples/report-versions";
 import { syncRevision, fetchDriveStatus } from "@/features/compressao-simples/driveSync";
 import { ReportVersionsPanel } from "@/components/report/ReportVersionsPanel";
@@ -744,14 +744,59 @@ export function CompressaoSimplesPage() {
 
       toast.success(
         skipVerification
-          ? `Versão Rev ${String(saved.rev).padStart(2, "0")} gerada e enviada para aprovação!`
-          : `Versão Rev ${String(saved.rev).padStart(2, "0")} gerada e enviada para verificação!`,
+          ? `Versão ${String(saved.rev).padStart(2, "0")} gerada e enviada para aprovação!`
+          : `Versão ${String(saved.rev).padStart(2, "0")} gerada e enviada para verificação!`,
         { id: tid },
       );
     } catch (err) {
       console.error("Erro ao salvar versão / enviar para aprovação:", err);
       toast.error("Erro ao salvar versão / solicitar verificação: " + (err instanceof Error ? err.message : String(err)), { id: tid });
     } finally { setSaveBusy(false); }
+  };
+
+  /**
+   * Reage depois que verificar/aprovar/rejeitar já foi confirmado no
+   * servidor (chamado tanto pelos botões do cabeçalho quanto pelo diálogo
+   * de dentro de "Versões", já que os dois disparam o mesmo fluxo real).
+   * Grava quem verificou/aprovou e, na aprovação final, regenera o PDF já
+   * com a assinatura completa e substitui o conteúdo da MESMA versão — a
+   * revisão "de verdade" só fica pronta depois de aprovada.
+   */
+  const applyApprovalSideEffects = async (info: {
+    stage: "verify" | "approve";
+    decision: "verificado" | "rejeitado_verificacao" | "aprovado" | "rejeitado";
+    rev: number;
+  }) => {
+    if (info.decision === "verificado") {
+      setSample((prev) => ({ ...prev, verifiedBy: currentUserName }));
+      return;
+    }
+    if (info.decision !== "aprovado") return;
+    const assinado = { ...sample, verifiedBy: sample.verifiedBy || currentUserName, approvedBy: currentUserName };
+    setSample(assinado);
+    try {
+      const blob = await buildReportPdfBlob();
+      const versao = versions.find((v) => v.rev === info.rev);
+      if (versao) {
+        await replaceVersionPdf(versao.id, blob, blob.size);
+        await refreshVersions();
+        try {
+          await withTimeout(
+            syncRevision({
+              scopeId, rev: info.rev, pdfBlob: blob, pdfFilename: versao.filename, sample: assinado,
+              photos: ctx?.photos || [], ctxOs: ctx?.os, ctxAmostra: ctx?.amostra,
+              ctxEnsaio: { tipo: "compressao-simples", nome: sample.reportNumber }, fotos: fotosParaDrive(),
+            }),
+            25000,
+            "Sincronização com o Drive",
+          );
+        } catch (err) {
+          console.warn("Drive sync (regeração pós-aprovação) standby:", err);
+        }
+      }
+    } catch (err) {
+      console.warn("[Compressão Simples] Falha ao regenerar PDF pós-aprovação:", err);
+    }
   };
 
   const rawSt = wfStatus || approvals[0]?.status || (ctx?.ensaio as any)?.status || "digitacao";
@@ -792,6 +837,7 @@ export function CompressaoSimplesPage() {
                   } else {
                     await decideApproval({ data: { scopeId, rev: decideOpen.rev, decision: decideOpen.decision as any, comment: decideComment } });
                   }
+                  await applyApprovalSideEffects({ stage: decideOpen.stage, decision: decideOpen.decision, rev: decideOpen.rev });
                   await refreshApprovals();
                   toast.success("Decisão registrada com sucesso!");
                   setDecideOpen(null);
@@ -862,6 +908,7 @@ export function CompressaoSimplesPage() {
                       const tid = toast.loading("Enviando para aprovação RT…");
                       try {
                         await verifyApproval({ data: { scopeId, rev, decision: "verificado" } });
+                        await applyApprovalSideEffects({ stage: "verify", decision: "verificado", rev });
                         await refreshApprovals();
                         toast.success("Enviado para aprovação RT ✓", { id: tid });
                       } catch (err) {
@@ -1224,6 +1271,7 @@ export function CompressaoSimplesPage() {
                   driveFolderUrl={driveFolderUrl} driveStatus={driveStatus} driveBusy={driveBusy}
                   onSyncAll={handleSyncAll} onOpenReport={() => setReportOpen(true)}
                   onDownloadVersion={downloadVersion} onDeleteVersion={handleDeleteVersion}
+                  onApprovalDecided={applyApprovalSideEffects}
                 />
               </div>
             </TabsContent>

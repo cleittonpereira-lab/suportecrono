@@ -85,6 +85,19 @@ export async function deleteVersion(id: string): Promise<void> {
   await tx("readwrite", (store) => reqAsPromise(store.delete(id)));
 }
 
+/**
+ * Substitui o PDF de uma versão já salva (mesmo `id`/`rev`) — usado na
+ * aprovação final, pra regenerar o PDF com a assinatura completa de quem
+ * verificou/aprovou sem criar uma revisão nova nem reabrir aprovação.
+ */
+export async function replaceVersionPdf(id: string, pdfBlob: Blob, size: number): Promise<void> {
+  await tx("readwrite", async (store) => {
+    const existing = await reqAsPromise(store.get(id) as IDBRequest<ReportVersion | undefined>);
+    if (!existing) return;
+    await reqAsPromise(store.put({ ...existing, pdfBlob, size }));
+  });
+}
+
 export async function getVersion(id: string): Promise<ReportVersion | undefined> {
   return tx("readonly", (store) => reqAsPromise(store.get(id) as IDBRequest<ReportVersion | undefined>));
 }
