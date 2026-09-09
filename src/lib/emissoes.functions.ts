@@ -22,6 +22,25 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
   return results;
 }
 
+/**
+ * Deriva o farol a partir da revisão mais recente em `reportApprovals`, não
+ * do campo `workflowStatus` gravado separadamente — os dois já saíram de
+ * sincronia mais de uma vez. Mesma lógica de approvals.functions.ts's
+ * deriveWorkflowStatus (arquivo diferente, mesmo princípio: `reportApprovals`
+ * sempre foi corretamente mantido, então derivar dali corrige
+ * retroativamente ensaios já aprovados antes deste fix).
+ */
+function deriveWorkflowStatus(en: EnsaioFile): string {
+  const approvals = (en.reportApprovals ?? []).slice();
+  if (approvals.length > 0) {
+    const latest = approvals.reduce((a, b) => (b.rev > a.rev ? b : a));
+    if (latest.status === "aprovado") return "aprovado";
+    if (latest.status === "pendente_aprovacao" || latest.status === "verificado") return "aguardando_aprovacao";
+    if (latest.status === "pendente_verificacao" || latest.status === "rejeitado_verificacao" || latest.status === "rejeitado") return "aguardando_verificacao";
+  }
+  return en.workflowStatus || "digitacao";
+}
+
 export interface EmissaoRow {
   /** null quando ensaio está apenas em "digitacao" e ainda não gerou nenhuma revisão. */
   id: string | null;
@@ -73,7 +92,7 @@ export const listEmissoes = createServerFn({ method: "POST" })
       ).filter((e): e is EnsaioFile => e !== null);
 
       const filtered = data.workflowStatuses && data.workflowStatuses.length > 0
-        ? ensaios.filter((e) => data.workflowStatuses!.includes(e.workflowStatus || "digitacao"))
+        ? ensaios.filter((e) => data.workflowStatuses!.includes(deriveWorkflowStatus(e)))
         : ensaios;
 
       if (filtered.length === 0) return [];
@@ -119,7 +138,7 @@ export const listEmissoes = createServerFn({ method: "POST" })
             scope_id: scopeId,
             rev: latest?.rev ?? null,
             status: latest?.status ?? "digitacao",
-            workflow_status: en.workflowStatus || "digitacao",
+            workflow_status: deriveWorkflowStatus(en),
             requested_by: latest?.requested_by ?? null,
             requested_by_name: latest?.requested_by_name ?? null,
             requested_at: latest?.requested_at ?? null,

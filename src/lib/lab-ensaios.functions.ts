@@ -49,6 +49,25 @@ function workflowToStatus(status: unknown): EnsaioStatus {
   return "processando";
 }
 
+/**
+ * Mesma lógica de lab-entities.functions.ts's deriveEnsaioStatus: deriva o
+ * status a partir do histórico de aprovações por revisão
+ * (`reportApprovals`), não do campo `status`/`workflowStatus` gravado
+ * separadamente — esses saem de sincronia quando um caminho de escrita
+ * esquece de atualizar os dois juntos, e `reportApprovals` sempre foi
+ * corretamente mantido por todos eles.
+ */
+function deriveStatus(foundEn: { status?: unknown; workflowStatus?: unknown; reportApprovals?: unknown }): EnsaioStatus {
+  const approvals = Array.isArray(foundEn.reportApprovals) ? (foundEn.reportApprovals as { rev: number; status: string }[]) : [];
+  if (approvals.length > 0) {
+    const latest = approvals.reduce((a, b) => (b.rev > a.rev ? b : a));
+    if (latest.status === "aprovado") return "aprovado";
+    if (latest.status === "pendente_aprovacao" || latest.status === "verificado") return "aguardando_aprovacao";
+    if (latest.status === "pendente_verificacao" || latest.status === "rejeitado_verificacao" || latest.status === "rejeitado") return "aguardando_verificacao";
+  }
+  return (foundEn.status as EnsaioStatus) || workflowToStatus(foundEn.workflowStatus);
+}
+
 function asObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return value as Record<string, unknown>;
@@ -148,7 +167,7 @@ export const getLabEnsaioSnapshot = createServerFn({ method: "POST" })
           id: foundEn.id,
           tipo: foundEn.tipo,
           label: foundEn.label,
-          status: foundEn.status || workflowToStatus(foundEn.workflowStatus),
+          status: deriveStatus(foundEn),
           payload: toSerializableJson(foundEn.payload),
           photos: Array.isArray(foundEn.photos) ? (foundEn.photos as Photo[]) : [],
         },

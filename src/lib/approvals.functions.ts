@@ -455,6 +455,29 @@ export const listApprovalComments = createServerFn({ method: "GET" })
     }
   });
 
+/**
+ * Deriva o farol ("digitacao" | "aguardando_verificacao" |
+ * "aguardando_aprovacao" | "aprovado") a partir da revisão mais recente em
+ * `reportApprovals`, em vez de confiar no campo `workflowStatus` gravado
+ * separadamente. Os dois já saíram de sincronia mais de uma vez — cada
+ * caminho de escrita (requestApproval/verifyApproval/decideApproval)
+ * precisava lembrar de gravar ambos os campos juntos, e esquecer um deles
+ * deixava um ensaio já aprovado aparecendo pra sempre com o status
+ * antigo. `reportApprovals` em si sempre foi corretamente atualizado por
+ * todos os caminhos, então derivar dali também corrige retroativamente
+ * ensaios já aprovados antes deste fix, sem precisar de migração.
+ */
+function deriveWorkflowStatus(file: EnsaioFile | null): string {
+  const approvals = (file?.reportApprovals as ApprovalRow[] | undefined) ?? [];
+  if (approvals.length > 0) {
+    const latest = approvals.reduce((a, b) => (b.rev > a.rev ? b : a));
+    if (latest.status === "aprovado") return "aprovado";
+    if (latest.status === "pendente_aprovacao" || latest.status === "verificado") return "aguardando_aprovacao";
+    if (latest.status === "pendente_verificacao" || latest.status === "rejeitado_verificacao" || latest.status === "rejeitado") return "aguardando_verificacao";
+  }
+  return file?.workflowStatus || "digitacao";
+}
+
 /* ─────────────────────────────── FARÓIS / WORKFLOW STATUSES ─────────────────────────────── */
 
 const WorkflowStatusesInput = z.object({
@@ -477,7 +500,7 @@ export const getWorkflowStatuses = createServerFn({ method: "POST" })
         }
         try {
           const file = await readDriveJson<EnsaioFile>(ensaioFileName(ids.amostraId, ids.ensaioId), folderId);
-          out[scopeId] = file?.workflowStatus || "digitacao";
+          out[scopeId] = deriveWorkflowStatus(file);
         } catch {
           out[scopeId] = "digitacao";
         }

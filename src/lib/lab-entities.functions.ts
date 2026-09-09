@@ -204,11 +204,43 @@ function amostraToPublic(f: AmostraFile): Omit<Amostra, "ensaios"> {
 
 type SerializableEnsaio = Omit<Ensaio, "payload"> & { payload?: SerializableJson };
 
+/**
+ * Deriva o status "oficial" (visto pelo Kanban/Central de Relatórios/
+ * labStore) a partir do histórico de aprovações por revisão
+ * (`reportApprovals`) em vez de confiar no campo `status` gravado
+ * separadamente. Os dois já saíram de sincronia mais de uma vez porque
+ * cada caminho de escrita (requestApproval/verifyApproval/decideApproval)
+ * precisava lembrar de gravar AMBOS os campos juntos — esquecer um deles
+ * deixava um ensaio já aprovado aparecendo pra sempre com o status
+ * antigo. `reportApprovals` em si nunca teve esse problema (sempre foi
+ * corretamente atualizado por todos os caminhos), então derivar dali
+ * também corrige retroativamente ensaios já aprovados antes deste fix,
+ * sem precisar de nenhuma migração.
+ */
+function deriveEnsaioStatus(f: EnsaioFile): EnsaioStatus {
+  const approvals = (f.reportApprovals as ReportApprovalRow[] | undefined) ?? [];
+  if (approvals.length === 0) return (f.status as EnsaioStatus) || "rascunho";
+  const latest = approvals.reduce((a, b) => (b.rev > a.rev ? b : a));
+  switch (latest.status) {
+    case "aprovado":
+      return "aprovado";
+    case "pendente_aprovacao":
+    case "verificado":
+      return "aguardando_aprovacao";
+    case "pendente_verificacao":
+    case "rejeitado_verificacao":
+    case "rejeitado":
+      return "aguardando_verificacao";
+    default:
+      return (f.status as EnsaioStatus) || "rascunho";
+  }
+}
+
 function ensaioToPublic(f: EnsaioFile): SerializableEnsaio {
   return {
     id: f.id,
     tipo: f.tipo as EnsaioTipo,
-    status: (f.status as EnsaioStatus) || "rascunho",
+    status: deriveEnsaioStatus(f),
     label: f.label ?? undefined,
     nome: f.nome ?? undefined,
     sigla: f.sigla ?? undefined,
