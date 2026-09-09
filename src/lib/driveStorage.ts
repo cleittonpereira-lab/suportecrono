@@ -26,6 +26,37 @@ const DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive"];
 const memoryCache = new Map<string, { data: any; timestamp: number }>();
 const folderIdCache = new Map<string, string>();
 
+/**
+ * fileId já conhecido para (pasta, nome).
+ *
+ * A busca por nome do Drive é eventualmente consistente: um arquivo criado há
+ * poucos segundos ainda pode não aparecer nela. Sem esse mapa, o autosave
+ * seguinte não encontrava o arquivo recém-criado, concluía que ele não existia
+ * e criava OUTRO com o mesmo nome — foi assim que um único ensaio chegou a ter
+ * quatro arquivos, incluindo cópias aprovadas divergentes.
+ */
+const fileIdCache = new Map<string, string>();
+
+/**
+ * Fila por chave, para escritas na mesma (pasta, nome).
+ *
+ * Dois autosaves simultâneos resolviam o id em paralelo, ambos não achavam
+ * nada e ambos criavam. Encadeando as escritas, a segunda só resolve o id
+ * depois que a primeira terminou — e aí já encontra o arquivo, no cache acima.
+ */
+const writeChain = new Map<string, Promise<unknown>>();
+
+export function withKeyLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const prev = writeChain.get(key) ?? Promise.resolve();
+  const next = prev.then(fn, fn);
+  // A cauda da fila nunca pode rejeitar, senão uma falha derruba as próximas.
+  writeChain.set(
+    key,
+    next.catch(() => {}),
+  );
+  return next;
+}
+
 async function driveHeaders(extra: Record<string, string> = {}): Promise<Headers> {
   const h = new Headers(extra);
   const token = await getGoogleAccessToken(DRIVE_SCOPES);
@@ -53,26 +84,88 @@ function getLocalPath(filename: string): string {
   return path.join(dir, safe);
 }
 
-export async function findFileInFolder(name: string, parentId: string): Promise<string | null> {
-  if (!hasDriveCredentials()) return null;
+/**
+ * Lista TODOS os arquivos com um dado nome dentro de uma pasta, do mais
+ * recentemente modificado para o mais antigo.
+ *
+ * O Google Drive permite vários arquivos com o mesmo nome na mesma pasta, e a
+ * busca por nome não garante ordem nenhuma. É por isso que existe essa função:
+ * quem chama precisa de um critério explícito de desempate.
+ */
+export async function findFileEntriesInFolder(
+  name: string,
+  parentId: string,
+): Promise<{ id: string; modifiedTime?: string }[]> {
+  if (!hasDriveCredentials()) return [];
   try {
-    const q = `name = '${escQ(name)}' and '${parentId}' in parents and trashed = false`;
-    const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name)")}&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=drive&driveId=${DRIVE_ROOT_FOLDER_ID}`;
-    const res = await fetch(url, { method: "GET", headers: await driveHeaders() });
-    if (!res.ok) return null;
-    const data = (await res.json()) as { files?: { id: string }[] };
-    return data.files?.[0]?.id ?? null;
+    const params = new URLSearchParams({
+      q: `name = '${escQ(name)}' and '${parentId}' in parents and trashed = false`,
+      fields: "files(id,name,modifiedTime)",
+      orderBy: "modifiedTime desc",
+      pageSize: "100",
+      supportsAllDrives: "true",
+      includeItemsFromAllDrives: "true",
+      corpora: "drive",
+      driveId: DRIVE_ROOT_FOLDER_ID,
+    });
+    const res = await fetch(`${DRIVE_V3}/files?${params.toString()}`, { method: "GET", headers: await driveHeaders() });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { files?: { id: string; modifiedTime?: string }[] };
+    return data.files ?? [];
   } catch {
-    return null;
+    return [];
   }
 }
 
+/**
+ * Resolve um nome de arquivo para um único fileId — sempre o mais recentemente
+ * modificado.
+ *
+ * A versão anterior usava `pageSize=1` + `files[0]` sem `orderBy`. Havendo
+ * homônimos, duas leituras seguidas do mesmo ensaio podiam devolver arquivos
+ * diferentes — uma o laudo aprovado, outra o stub com `payload: null`. Era essa
+ * a causa real do "aparece e desaparece" na Central de Relatórios: a linha
+ * perdia furo/profundidade e voltava de "Laudo Aprovado" para "Em Digitação"
+ * conforme o sorteio de cada requisição.
+ *
+ * Ordenar por `modifiedTime desc` torna a escolha determinística e escolhe a
+ * cópia viva, mesmo enquanto ainda existirem duplicados na pasta.
+ */
+export async function findFileInFolder(name: string, parentId: string): Promise<string | null> {
+  const entries = await findFileEntriesInFolder(name, parentId);
+  if (entries.length > 1) {
+    console.warn(
+      `[DriveStorage] ${entries.length} arquivos homônimos para "${name}" em ${parentId}; ` +
+        `usando o mais recente (${entries[0].id}).`,
+    );
+  }
+  return entries[0]?.id ?? null;
+}
+
+/**
+ * Resolve uma pasta pelo nome — sempre a mais ANTIGA, ao contrário dos
+ * arquivos.
+ *
+ * Para um arquivo, o que vale é o conteúdo mais novo. Para uma pasta, o que
+ * vale é o acervo: se houver duplicatas, a original é a que acumulou os filhos
+ * (as 15 cópias vazias de `os-hub` nasceram todas depois dela). Ordenar por
+ * `createdTime` ascendente faz todas as isolates convergirem para a mesma pasta
+ * canônica, em vez de espalhar arquivos entre cópias.
+ */
 export async function findFolder(name: string, parentId: string): Promise<string | null> {
   if (!hasDriveCredentials()) return null;
   try {
-    const q = `name = '${escQ(name)}' and '${parentId}' in parents and mimeType = '${FOLDER_MIME}' and trashed = false`;
-    const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name)")}&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=drive&driveId=${DRIVE_ROOT_FOLDER_ID}`;
-    const res = await fetch(url, { method: "GET", headers: await driveHeaders() });
+    const params = new URLSearchParams({
+      q: `name = '${escQ(name)}' and '${parentId}' in parents and mimeType = '${FOLDER_MIME}' and trashed = false`,
+      fields: "files(id,name,createdTime)",
+      orderBy: "createdTime",
+      pageSize: "100",
+      supportsAllDrives: "true",
+      includeItemsFromAllDrives: "true",
+      corpora: "drive",
+      driveId: DRIVE_ROOT_FOLDER_ID,
+    });
+    const res = await fetch(`${DRIVE_V3}/files?${params.toString()}`, { method: "GET", headers: await driveHeaders() });
     if (!res.ok) return null;
     const data = (await res.json()) as { files?: { id: string }[] };
     return data.files?.[0]?.id ?? null;
@@ -112,10 +205,16 @@ export async function ensureFolderPath(parts: string[]): Promise<string> {
       continue;
     }
 
-    let folderId = await findFolder(clean, parent);
-    if (!folderId) {
-      folderId = await createFolder(clean, parent);
-    }
+    // Sem a fila, N requisições simultâneas chamavam `findFolder` em paralelo,
+    // nenhuma encontrava nada e todas criavam — foi assim que nasceram 16
+    // pastas `os-hub` no mesmo minuto, 15 delas vazias.
+    const parentId = parent;
+    const folderId = await withKeyLock(`folder:${currentAccum}`, async () => {
+      const cached = folderIdCache.get(currentAccum);
+      if (cached) return cached;
+      const found = await findFolder(clean, parentId);
+      return found ?? (await createFolder(clean, parentId));
+    });
     folderIdCache.set(currentAccum, folderId);
     parent = folderId;
   }
@@ -243,8 +342,32 @@ export async function uploadBytesToDrive(opts: {
     return "local_saved";
   }
 
-  const existingId = opts.overwrite !== false ? await findFileInFolder(opts.name, opts.parentId) : null;
-  return uploadBytesResumable({ ...opts, existingId });
+  // `overwrite: false` é upload de arquivo novo por definição (ex.: cada foto
+  // é um arquivo próprio) — não resolve nome nem entra na fila.
+  if (opts.overwrite === false) {
+    return uploadBytesResumable({ ...opts, existingId: null });
+  }
+
+  const key = `${opts.parentId}:${opts.name}`;
+  return withKeyLock(key, async () => {
+    const cachedId = fileIdCache.get(key);
+    const existingId = cachedId ?? (await findFileInFolder(opts.name, opts.parentId));
+    try {
+      const id = await uploadBytesResumable({ ...opts, existingId });
+      fileIdCache.set(key, id);
+      return id;
+    } catch (err) {
+      // Um id em cache pode ter sido apagado ou movido por fora deste processo.
+      // Nesse caso o PATCH falha: descarta o cache, resolve de novo e repete.
+      // Sem esse retry, o arquivo ficaria inacessível até reiniciar o processo.
+      if (!cachedId) throw err;
+      fileIdCache.delete(key);
+      const freshId = await findFileInFolder(opts.name, opts.parentId);
+      const id = await uploadBytesResumable({ ...opts, existingId: freshId });
+      fileIdCache.set(key, id);
+      return id;
+    }
+  });
 }
 
 /**
@@ -325,6 +448,9 @@ export async function readDriveJson<T>(filename: string, parentId: string = DRIV
     try {
       const fileId = await findFileInFolder(filename, parentId);
       if (fileId) {
+        // Uma leitura já resolve o id — aproveita para a próxima escrita não
+        // precisar buscar por nome (e não arriscar criar duplicata).
+        fileIdCache.set(cacheKey, fileId);
         const res = await fetch(`${DRIVE_V3}/files/${fileId}?alt=media&supportsAllDrives=true`, {
           method: "GET",
           headers: await driveHeaders(),

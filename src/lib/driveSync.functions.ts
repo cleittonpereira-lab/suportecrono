@@ -13,6 +13,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { getGoogleAccessToken, isGoogleAuthConfigured } from "./google-auth.server";
+// A resolução de nome→id vive só em `driveStorage`. Este módulo tinha a sua
+// própria cópia de `findFolder`/`findFileInFolder`, com o mesmo defeito de
+// pegar `files[0]` sem ordenação — e por isso duplicava pastas `relatorios`.
+import { findFileInFolder, findFolder, withKeyLock } from "./driveStorage";
 
 const DRIVE_V3 = "https://www.googleapis.com/drive/v3";
 const DRIVE_UPLOAD = "https://www.googleapis.com/upload/drive/v3/files";
@@ -34,17 +38,6 @@ async function driveJson(url: string, init?: RequestInit) {
   const text = await res.text();
   if (!res.ok) throw new Error(`Drive ${res.status}: ${text.slice(0, 300)}`);
   return text ? JSON.parse(text) : {};
-}
-
-function escQ(s: string) {
-  return s.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-}
-
-async function findFolder(name: string, parentId: string): Promise<string | null> {
-  const q = `name = '${escQ(name)}' and '${parentId}' in parents and mimeType = '${FOLDER_MIME}' and trashed = false`;
-  const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name)")}&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=drive&driveId=${DRIVE_ROOT_FOLDER_ID}`;
-  const data = await driveJson(url, { method: "GET", headers: await driveHeaders() });
-  return data.files?.[0]?.id ?? null;
 }
 
 async function createFolder(name: string, parentId: string): Promise<string> {
@@ -92,19 +85,28 @@ async function ensureFolderPath(parts: string[]): Promise<string> {
       }
     } catch {}
 
-    let id = await findFolder(name, parent);
-    if (!id) id = await createFolder(name, parent);
+    // Encadeia por caminho: duas requisições simultâneas para a mesma pasta não
+    // podem mais buscar em paralelo, não achar e criar duas.
+    const parentId = parent;
+    const id = await withKeyLock(`folder:${currentAccum}`, async () => {
+      const cached = driveFolderMemCache.get(currentAccum);
+      if (cached) return cached;
+      const found = await findFolder(name, parentId);
+      return found ?? (await createFolder(name, parentId));
+    });
 
     driveFolderMemCache.set(currentAccum, id);
     parent = id;
 
-    // Grava no Supabase cache de forma assíncrona/não-bloqueante
+    // Grava no Supabase cache de forma assíncrona/não-bloqueante.
+    // `parent_id` recebia `parent`, que nesta altura já tinha sido reatribuído
+    // para o próprio `id` — a coluna guardava o id da própria pasta.
     try {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
       await supabaseAdmin.from("drive_folder_cache").upsert({
         path: currentAccum,
         folder_id: id,
-        parent_id: parent,
+        parent_id: parentId,
         updated_at: new Date().toISOString(),
       });
     } catch {}
@@ -138,13 +140,6 @@ function parseScope(scopeId: string): { osId: string; amostraId: string; ensaioI
   return { osId, amostraId, ensaioId };
 }
 
-async function findFileInFolder(name: string, parentId: string): Promise<string | null> {
-  const q = `name = '${escQ(name)}' and '${parentId}' in parents and trashed = false`;
-  const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name)")}&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=drive&driveId=${DRIVE_ROOT_FOLDER_ID}`;
-  const data = await driveJson(url, { method: "GET", headers: await driveHeaders() });
-  return data.files?.[0]?.id ?? null;
-}
-
 async function uploadBytes(opts: {
   parentId: string;
   name: string;
@@ -152,16 +147,36 @@ async function uploadBytes(opts: {
   bytes: Uint8Array;
   overwrite?: boolean;
 }): Promise<string> {
-  const existing = opts.overwrite ? await findFileInFolder(opts.name, opts.parentId) : null;
-  if (existing) {
-    const res = await fetch(`${DRIVE_UPLOAD}/${existing}?uploadType=media&fields=id&supportsAllDrives=true`, {
-      method: "PATCH",
-      headers: await driveHeaders({ "Content-Type": opts.mimeType }),
-      body: opts.bytes as BodyInit,
-    });
-    if (!res.ok) throw new Error(`Drive update ${res.status}: ${(await res.text()).slice(0, 300)}`);
-    return existing;
-  }
+  if (!opts.overwrite) return uploadBytesNew(opts);
+  // Mesma fila por (pasta, nome) usada em `driveStorage`: sem ela, dois
+  // salvamentos simultâneos do mesmo relatório criavam dois arquivos.
+  return withKeyLock(`${opts.parentId}:${opts.name}`, async () => {
+    const existing = await findFileInFolder(opts.name, opts.parentId);
+    return existing ? uploadBytesOverwrite(opts, existing) : uploadBytesNew(opts);
+  });
+}
+
+/** Sobrescreve o conteúdo de um arquivo já existente, pelo seu fileId. */
+async function uploadBytesOverwrite(
+  opts: { mimeType: string; bytes: Uint8Array },
+  existing: string,
+): Promise<string> {
+  const res = await fetch(`${DRIVE_UPLOAD}/${existing}?uploadType=media&fields=id&supportsAllDrives=true`, {
+    method: "PATCH",
+    headers: await driveHeaders({ "Content-Type": opts.mimeType }),
+    body: opts.bytes as BodyInit,
+  });
+  if (!res.ok) throw new Error(`Drive update ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  return existing;
+}
+
+/** Cria um arquivo novo na pasta. */
+async function uploadBytesNew(opts: {
+  parentId: string;
+  name: string;
+  mimeType: string;
+  bytes: Uint8Array;
+}): Promise<string> {
   const boundary = `----lovable${Math.random().toString(36).slice(2)}`;
   const metadata = JSON.stringify({ name: opts.name, parents: [opts.parentId] });
   const enc = new TextEncoder();
