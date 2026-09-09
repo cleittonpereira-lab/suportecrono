@@ -23,8 +23,8 @@ export interface SyncRevisionArgs {
   results?: CDSpecimenResults[];
   envelope?: CDEnvelopeResult | null;
   photos?: Photo[];
-  ctxOs?: { numero?: string; cliente?: string };
-  ctxAmostra?: { code?: string; descricao?: string };
+  ctxOs?: { numero?: string; client?: string };
+  ctxAmostra?: { code?: string; description?: string };
   ctxEnsaio?: { tipo?: string; nome?: string };
   fotos?: DrivePhotoInput[];
   dadosExtra?: Record<string, unknown>;
@@ -64,11 +64,11 @@ export async function syncRevision(args: SyncRevisionArgs) {
       scopeId: args.scopeId,
       os: {
         numero: args.ctxOs?.numero ?? args.sample.workNumber ?? "",
-        cliente: args.ctxOs?.cliente ?? args.sample.client ?? "",
+        cliente: args.ctxOs?.client ?? args.sample.client ?? "",
       },
       amostra: {
         code: args.ctxAmostra?.code ?? args.sample.code ?? "",
-        descricao: args.ctxAmostra?.descricao ?? args.sample.description ?? "",
+        descricao: args.ctxAmostra?.description ?? args.sample.description ?? "",
       },
       ensaio: {
         tipo: args.ctxEnsaio?.tipo ?? "cisalhamento-direto",

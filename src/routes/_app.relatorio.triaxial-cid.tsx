@@ -790,7 +790,7 @@ export function TriaxialCidPage() {
           sample,
           specimens,
           ctxOs: ctx?.os,
-          ctxAmostra: ctx?.amostra ? { code: ctx.amostra.code, descricao: ctx.amostra.description } : undefined,
+          ctxAmostra: ctx?.amostra ? { code: ctx.amostra.code, description: ctx.amostra.description } : undefined,
           ctxEnsaio: ctx?.ensaio ? { tipo: ctx.ensaio.tipo, nome: ctx.ensaio.label ?? ctx.amostra?.reportNumber ?? "" } : undefined,
           fotos,
         });
@@ -892,7 +892,7 @@ export function TriaxialCidPage() {
         sample,
         specimens,
         ctxOs: ctx?.os,
-        ctxAmostra: ctx?.amostra ? { code: ctx.amostra.code, descricao: ctx.amostra.description } : undefined,
+        ctxAmostra: ctx?.amostra ? { code: ctx.amostra.code, description: ctx.amostra.description } : undefined,
         ctxEnsaio: ctx?.ensaio ? { tipo: ctx.ensaio.tipo, nome: ctx.ensaio.label ?? ctx.amostra?.reportNumber ?? "" } : undefined,
         fotos,
       });
