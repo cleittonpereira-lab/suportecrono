@@ -1,20 +1,19 @@
 /**
- * Painel "Revisões do Relatório" — tabela de versões em PDF, status de envio
- * ao Drive por linha, e aprovação/rejeição controlada por papel (verificador/
- * responsável técnico). Extraído do que já existia (só) em
- * `src/routes/_app.relatorio.triaxial-cid.tsx`, pra Umidade Natural, Módulo
- * de Resiliência e ASF.DAP ganharem o mesmo nível de acompanhamento sem
- * duplicar ~200 linhas de JSX à mão em cada um.
+ * Painel "Revisões do Relatório" — histórico somente-leitura das versões em
+ * PDF já salvas, com status de envio ao Drive por linha e o resultado da
+ * aprovação de cada uma (quem verificou/aprovou/rejeitou e quando).
  *
- * Fica "burro" de propósito pra coisas específicas de cada relatório
- * (sincronizar com o Drive, baixar, excluir, abrir o relatório) — essas
- * entram como callbacks; só aprovação/verificação (`requestApproval`/
- * `verifyApproval`/`decideApproval`) é chamada direto aqui porque é
- * genuinamente compartilhada entre todos os ensaios.
+ * De propósito NÃO tem nenhum botão que muda o fluxo (enviar pra
+ * verificação, verificar, aprovar, rejeitar) — isso ficava duplicado com
+ * os botões de cabeçalho de cada relatório (mesma ação, dois lugares
+ * diferentes), o que fazia a tela parecer "dissociada": o cabeçalho dizia
+ * uma coisa e uma linha antiga da tabela — de uma versão já superada,
+ * quando uma revisão seguinte tinha sido salva antes dela ser enviada —
+ * continuava oferecendo uma ação que não fazia mais sentido. Toda ação
+ * agora mora só no cabeçalho de cada relatório; este painel só mostra o
+ * que aconteceu.
  */
-import { useState } from "react";
 import {
-  Send,
   ShieldCheck,
   CheckCircle2,
   XCircle,
@@ -29,13 +28,12 @@ import {
   CloudAlert,
   Trash2,
 } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
-import { toast } from "sonner";
-import { requestApproval, verifyApproval, decideApproval, type ApprovalRow } from "@/lib/approvals.functions";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import type { ApprovalRow } from "@/lib/approvals.functions";
 
 export interface ReportVersionLike {
   id: string;
@@ -55,9 +53,6 @@ interface ReportVersionsPanelProps {
   scopeId: string;
   versions: ReportVersionLike[];
   approvals: ApprovalRow[];
-  onRefreshApprovals: () => Promise<void> | void;
-  isAdmin: boolean;
-  isVerificador: boolean;
   driveFolderUrl: string | null;
   driveStatus: DriveSyncStatusLike | null;
   driveBusy: boolean;
@@ -65,27 +60,12 @@ interface ReportVersionsPanelProps {
   onOpenReport: () => void;
   onDownloadVersion: (v: ReportVersionLike) => void;
   onDeleteVersion: (id: string) => Promise<void> | void;
-  /**
-   * Chamado depois que verificar/aprovar/rejeitar é confirmado aqui dentro
-   * (verifyApproval/decideApproval já concluídos com sucesso) — dá pro
-   * relatório de cada módulo reagir (gravar quem verificou/aprovou,
-   * regenerar o PDF com a assinatura completa na aprovação final...) sem
-   * este painel genérico precisar saber desses detalhes específicos.
-   */
-  onApprovalDecided?: (info: {
-    stage: "verify" | "approve";
-    decision: "verificado" | "rejeitado_verificacao" | "aprovado" | "rejeitado";
-    rev: number;
-  }) => void | Promise<void>;
 }
 
 export function ReportVersionsPanel({
-  scopeId,
+  scopeId: _scopeId,
   versions,
   approvals,
-  onRefreshApprovals,
-  isAdmin,
-  isVerificador,
   driveFolderUrl,
   driveStatus,
   driveBusy,
@@ -93,16 +73,8 @@ export function ReportVersionsPanel({
   onOpenReport,
   onDownloadVersion,
   onDeleteVersion,
-  onApprovalDecided,
 }: ReportVersionsPanelProps) {
   const [previewVersion, setPreviewVersion] = useState<{ url: string; filename: string; rev: number } | null>(null);
-  const [decideOpen, setDecideOpen] = useState<null | {
-    rev: number;
-    stage: "verify" | "approve";
-    decision: "verificado" | "rejeitado_verificacao" | "aprovado" | "rejeitado";
-  }>(null);
-  const [decideComment, setDecideComment] = useState("");
-  const [decideBusy, setDecideBusy] = useState(false);
 
   const openPreviewVersion = (v: ReportVersionLike) => {
     if (previewVersion) URL.revokeObjectURL(previewVersion.url);
@@ -114,14 +86,18 @@ export function ReportVersionsPanel({
     setPreviewVersion(null);
   };
 
+  const latestRev = versions.length > 0 ? Math.max(...versions.map((v) => v.rev)) : null;
+
   return (
     <>
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle className="text-sm">Revisões do Relatório</CardTitle>
+            <CardTitle className="text-sm">Histórico de Versões do Relatório</CardTitle>
             <CardDescription>
-              Cada clique em <b>Salvar Versão</b> cria uma nova revisão (Rev 00, 01, 02…) armazenada localmente e enviada ao <b>Google Drive da Suporte</b> (PDF · dados · fotos).
+              Cada versão é uma cópia estática (arquivo PDF) salva num momento — <b>não</b> muda depois. Pra ver os
+              dados atuais da tela (mesmo sem salvar), use <b>Pré-visualizar Dados Atuais</b>. As ações de enviar,
+              verificar e aprovar ficam nos botões no topo do relatório, não aqui.
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
@@ -135,14 +111,14 @@ export function ReportVersionsPanel({
               {driveBusy ? "Enviando…" : "Sincronizar com Drive"}
             </Button>
             <Button onClick={onOpenReport} className="gap-2">
-              <FileText className="h-4 w-4" /> Abrir Relatório
+              <FileText className="h-4 w-4" /> Pré-visualizar Dados Atuais
             </Button>
           </div>
         </CardHeader>
         <CardContent>
           {versions.length === 0 ? (
             <div className="rounded border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-              Nenhuma revisão salva ainda. Abra o relatório e clique em <b>Salvar Versão</b>.
+              Nenhuma versão salva ainda. Use os botões no topo do relatório pra gerar e enviar a primeira.
             </div>
           ) : (
             <Table>
@@ -153,20 +129,28 @@ export function ReportVersionsPanel({
                   <TableHead>Arquivo</TableHead>
                   <TableHead className="text-right">Tamanho</TableHead>
                   <TableHead className="w-28 text-center">Drive</TableHead>
-                  <TableHead className="w-56 text-center">Aprovação</TableHead>
-                  <TableHead className="w-56 text-right">Ações</TableHead>
+                  <TableHead className="w-56 text-center">Resultado</TableHead>
+                  <TableHead className="w-44 text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {versions.map((v) => {
                   const appr = approvals.find((a) => a.rev === v.rev) ?? null;
+                  const isCurrent = v.rev === latestRev;
                   // "Versão" (não "Revisão"/"Rev") de propósito — esse número é
                   // só quantas vezes o PDF foi (re)gerado, não a revisão da
                   // amostra (campo separado, impresso no próprio documento).
                   const label = `Versão ${String(v.rev).padStart(2, "0")}`;
                   return (
-                    <TableRow key={v.id}>
-                      <TableCell className="font-semibold">{label}</TableCell>
+                    <TableRow key={v.id} className={isCurrent ? "bg-primary/5" : undefined}>
+                      <TableCell className="font-semibold">
+                        {label}
+                        {isCurrent && (
+                          <span className="ml-1.5 inline-block rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-bold uppercase text-primary align-middle">
+                            atual
+                          </span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-xs">
                         {new Intl.DateTimeFormat("pt-BR", {
                           timeZone: "America/Sao_Paulo",
@@ -185,29 +169,12 @@ export function ReportVersionsPanel({
                         })()}
                       </TableCell>
                       <TableCell className="text-center">
-                        <ApprovalCell
-                          approval={appr}
-                          isAdmin={isAdmin}
-                          isVerificador={isVerificador}
-                          onRequest={async () => {
-                            try {
-                              await requestApproval({ data: { scopeId, rev: v.rev, filename: v.filename } });
-                              toast.success(`Aprovação solicitada para a Versão ${String(v.rev).padStart(2, "0")}`);
-                              await onRefreshApprovals();
-                            } catch (err) {
-                              toast.error(`Falha: ${(err as Error).message}`);
-                            }
-                          }}
-                          onDecide={(stage, decision) => {
-                            setDecideComment("");
-                            setDecideOpen({ rev: v.rev, stage, decision });
-                          }}
-                        />
+                        <ApprovalStatusBadge approval={appr} />
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
-                          <Button size="sm" variant="outline" className="gap-1" onClick={() => openPreviewVersion(v)} title="Visualizar PDF">
-                            <Eye className="h-3 w-3" /> Visualizar
+                          <Button size="sm" variant="outline" className="gap-1" onClick={() => openPreviewVersion(v)} title="Ver o PDF salvo desta versão">
+                            <Eye className="h-3 w-3" /> Ver
                           </Button>
                           <Button size="sm" variant="secondary" className="gap-1" onClick={() => onDownloadVersion(v)}>
                             <Download className="h-3 w-3" /> Baixar
@@ -230,103 +197,26 @@ export function ReportVersionsPanel({
         <DialogContent className="max-w-[95vw] w-[95vw] h-[92vh] p-0 flex flex-col">
           <DialogHeader className="px-4 py-2 border-b">
             <DialogTitle className="text-sm">
-              Visualização — Versão {String(previewVersion?.rev ?? 0).padStart(2, "0")} · {previewVersion?.filename}
+              Versão {String(previewVersion?.rev ?? 0).padStart(2, "0")} · {previewVersion?.filename}
             </DialogTitle>
+            <DialogDescription className="text-xs">
+              Arquivo PDF salvo neste momento — não reflete nenhuma edição feita depois.
+            </DialogDescription>
           </DialogHeader>
           {previewVersion && <iframe src={previewVersion.url} title="Relatório PDF" className="flex-1 w-full border-0" />}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={!!decideOpen} onOpenChange={(o) => !o && setDecideOpen(null)}>
-        <DialogContent className="sm:max-w-md">
-          {(() => {
-            if (!decideOpen) return null;
-            const isVerifyStage = decideOpen.stage === "verify";
-            const isPositive = decideOpen.decision === "verificado" || decideOpen.decision === "aprovado";
-            const requireComment = !isPositive;
-            const title = isVerifyStage
-              ? isPositive ? "Verificar Versão" : "Rejeitar Verificação"
-              : isPositive ? "Aprovar Versão" : "Rejeitar Aprovação";
-            const desc = isVerifyStage
-              ? isPositive
-                ? "Confirme que os dados do relatório foram verificados. O comentário é opcional."
-                : "Descreva o que precisa ser corrigido pelo laboratorista antes de reenviar."
-              : isPositive
-                ? "Aprovação técnica final. O comentário é opcional e ficará registrado."
-                : "Descreva o motivo da rejeição pelo Responsável Técnico.";
-            return (
-              <>
-                <DialogHeader>
-                  <DialogTitle>
-                    {title} — Versão {String(decideOpen.rev).padStart(2, "0")}
-                  </DialogTitle>
-                  <DialogDescription>{desc}</DialogDescription>
-                </DialogHeader>
-                <Textarea
-                  value={decideComment}
-                  onChange={(e) => setDecideComment(e.target.value)}
-                  placeholder={isPositive ? "Comentário (opcional)…" : "Motivo (obrigatório)…"}
-                  rows={4}
-                />
-                <DialogFooter>
-                  <Button variant="ghost" onClick={() => setDecideOpen(null)} disabled={decideBusy}>Cancelar</Button>
-                  <Button
-                    disabled={decideBusy || (requireComment && !decideComment.trim())}
-                    onClick={async () => {
-                      setDecideBusy(true);
-                      try {
-                        const payload = { scopeId, rev: decideOpen.rev, comment: decideComment.trim() || undefined };
-                        if (isVerifyStage) {
-                          await verifyApproval({ data: { ...payload, decision: decideOpen.decision as "verificado" | "rejeitado_verificacao" } });
-                          toast.success(isPositive ? "Verificação registrada — aguardando aprovação" : "Verificação rejeitada");
-                        } else {
-                          await decideApproval({ data: { ...payload, decision: decideOpen.decision as "aprovado" | "rejeitado" } });
-                          toast.success(isPositive ? "Versão aprovada" : "Versão rejeitada");
-                        }
-                        await onApprovalDecided?.({ stage: decideOpen.stage, decision: decideOpen.decision, rev: decideOpen.rev });
-                        setDecideOpen(null);
-                        await onRefreshApprovals();
-                      } catch (err) {
-                        toast.error(`Falha: ${(err as Error).message}`);
-                      } finally {
-                        setDecideBusy(false);
-                      }
-                    }}
-                    className={isPositive ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-destructive hover:bg-destructive/90"}
-                  >
-                    {decideBusy ? "Enviando…" : `Confirmar ${isPositive ? (isVerifyStage ? "Verificação" : "Aprovação") : "Rejeição"}`}
-                  </Button>
-                </DialogFooter>
-              </>
-            );
-          })()}
         </DialogContent>
       </Dialog>
     </>
   );
 }
 
-function ApprovalCell({
-  approval,
-  isAdmin,
-  isVerificador,
-  onRequest,
-  onDecide,
-}: {
-  approval: ApprovalRow | null;
-  isAdmin: boolean;
-  isVerificador: boolean;
-  onRequest: () => void;
-  onDecide: (
-    stage: "verify" | "approve",
-    decision: "verificado" | "rejeitado_verificacao" | "aprovado" | "rejeitado",
-  ) => void;
-}) {
+/** Badge somente-leitura — mostra o resultado da aprovação desta versão, sem nenhuma ação. */
+function ApprovalStatusBadge({ approval }: { approval: ApprovalRow | null }) {
   if (!approval) {
     return (
-      <Button size="sm" variant="outline" className="gap-1 h-7 text-xs" onClick={onRequest} title="Enviar para verificação">
-        <Send className="h-3 w-3" /> Enviar p/ verificação
-      </Button>
+      <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+        <Clock className="h-3 w-3" /> Não enviada
+      </span>
     );
   }
   const fmt = (iso?: string | null) =>
@@ -335,7 +225,6 @@ function ApprovalCell({
       : "";
 
   const status = approval.status === "pendente" ? "pendente_verificacao" : approval.status;
-  const isFinal = status === "aprovado" || status === "rejeitado" || status === "rejeitado_verificacao";
 
   const badgeMap: Record<string, { label: string; cls: string; Icon: typeof CheckCircle2 }> = {
     pendente_verificacao: { label: "Aguardando verificação", cls: "bg-amber-500/15   text-amber-700   dark:text-amber-400", Icon: Clock },
@@ -352,41 +241,11 @@ function ApprovalCell({
       <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${b.cls}`}>
         <b.Icon className="h-3 w-3" /> {b.label}
       </span>
-
       <div className="text-[9px] text-muted-foreground leading-tight text-center">
         <div>sol. {approval.requested_by_name ?? "—"} · {fmt(approval.requested_at)}</div>
         {approval.verified_by_name && <div>ver. {approval.verified_by_name} · {fmt(approval.verified_at)}</div>}
         {approval.decided_by_name && <div>apr. {approval.decided_by_name} · {fmt(approval.decided_at)}</div>}
       </div>
-
-      {isVerificador && status === "pendente_verificacao" && (
-        <div className="flex gap-1">
-          <Button size="sm" variant="outline" className="h-6 gap-1 text-[10px] text-sky-700 border-sky-500/40 hover:bg-sky-500/10" onClick={() => onDecide("verify", "verificado")}>
-            <ShieldCheck className="h-3 w-3" /> Verificar
-          </Button>
-          <Button size="sm" variant="outline" className="h-6 gap-1 text-[10px] text-destructive border-destructive/40 hover:bg-destructive/10" onClick={() => onDecide("verify", "rejeitado_verificacao")}>
-            <XCircle className="h-3 w-3" /> Rejeitar
-          </Button>
-        </div>
-      )}
-
-      {isAdmin && status === "pendente_aprovacao" && (
-        <div className="flex gap-1">
-          <Button size="sm" variant="outline" className="h-6 gap-1 text-[10px] text-emerald-700 border-emerald-500/40 hover:bg-emerald-500/10" onClick={() => onDecide("approve", "aprovado")}>
-            <CheckCircle2 className="h-3 w-3" /> Aprovar
-          </Button>
-          <Button size="sm" variant="outline" className="h-6 gap-1 text-[10px] text-destructive border-destructive/40 hover:bg-destructive/10" onClick={() => onDecide("approve", "rejeitado")}>
-            <XCircle className="h-3 w-3" /> Rejeitar
-          </Button>
-        </div>
-      )}
-
-      {isFinal && (
-        <Button size="sm" variant="ghost" className="h-6 gap-1 text-[10px]" onClick={onRequest} title="Reenviar para verificação">
-          <Send className="h-3 w-3" /> Reenviar
-        </Button>
-      )}
-
       {approval.verification_comment && (
         <div className="text-[10px] italic text-muted-foreground text-center max-w-[220px] truncate" title={approval.verification_comment}>
           Verif.: "{approval.verification_comment}"

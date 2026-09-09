@@ -866,10 +866,11 @@ export function CompressaoSimplesPage() {
             "Sincronização com o Drive",
           );
         } catch (err) {
+          const detail = err instanceof Error ? err.message : String(err);
           console.warn("Drive sync (regeração pós-aprovação) standby:", err);
           toast.error(
-            "Laudo aprovado, mas o PDF com a assinatura ainda não foi confirmado no servidor — use \"Sincronizar com Drive\" pra tentar de novo, senão ele fica só neste navegador.",
-            { duration: 12000 },
+            `Laudo aprovado, mas o PDF com a assinatura ainda não foi confirmado no servidor — use "Sincronizar com Drive" pra tentar de novo, senão ele fica só neste navegador. (${detail})`,
+            { duration: 15000 },
           );
         }
       }
@@ -937,9 +938,12 @@ export function CompressaoSimplesPage() {
           <div className="flex items-center justify-between px-6 py-3 border-b bg-card">
             <div>
               <DialogTitle className="text-base font-bold text-foreground">
-                Compressão Simples — {AMOSTRA_TIPO_LABEL[sample.amostraTipo]} — Pré-visualização
+                Compressão Simples — {AMOSTRA_TIPO_LABEL[sample.amostraTipo]} — Dados Atuais (não salvo)
               </DialogTitle>
-              <DialogDescription className="text-xs text-muted-foreground">A4 · 210 × 297 mm</DialogDescription>
+              <DialogDescription className="text-xs text-muted-foreground">
+                A4 · 210 × 297 mm · Reflete o que está na tela agora — pode incluir edições feitas depois da última
+                versão salva. Pra registrar isto como uma versão oficial, use os botões no topo da página.
+              </DialogDescription>
             </div>
           </div>
           <div className="flex-1 min-h-0 overflow-auto bg-[#525659] p-8 flex justify-center">
@@ -1139,7 +1143,7 @@ export function CompressaoSimplesPage() {
               <TabsTrigger value="versoes"><History className="mr-1.5 h-3.5 w-3.5" />Versões</TabsTrigger>
             </TabsList>
             <Button type="button" onClick={() => setReportOpen(true)} className="gap-2 shrink-0">
-              <FileText className="h-4 w-4" /> Gerar Relatório
+              <FileText className="h-4 w-4" /> Pré-visualizar Dados Atuais
             </Button>
           </div>
 
@@ -1346,11 +1350,9 @@ export function CompressaoSimplesPage() {
               <div className="mb-4">
                 <ReportVersionsPanel
                   scopeId={scopeId} versions={versions} approvals={approvals}
-                  onRefreshApprovals={refreshApprovals} isAdmin={isAdmin} isVerificador={isVerificador}
                   driveFolderUrl={driveFolderUrl} driveStatus={driveStatus} driveBusy={driveBusy}
                   onSyncAll={handleSyncAll} onOpenReport={() => setReportOpen(true)}
                   onDownloadVersion={downloadVersion} onDeleteVersion={handleDeleteVersion}
-                  onApprovalDecided={applyApprovalSideEffects}
                 />
               </div>
             </TabsContent>

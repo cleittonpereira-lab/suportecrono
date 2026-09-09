@@ -1521,7 +1521,7 @@ export function TriaxialCidPage() {
               onClick={() => setReportOpen(true)}
               className="gap-2 shrink-0"
             >
-              <FileText className="h-4 w-4" /> Gerar Relatório
+              <FileText className="h-4 w-4" /> Pré-visualizar Dados Atuais
             </Button>
           </div>
 

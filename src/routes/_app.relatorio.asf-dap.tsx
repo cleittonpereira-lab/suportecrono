@@ -971,7 +971,7 @@ export function ASFPage() {
               <TabsTrigger value="versoes"><History className="mr-1.5 h-3.5 w-3.5" />Versões</TabsTrigger>
             </TabsList>
             <Button type="button" onClick={() => setReportOpen(true)} className="gap-2 shrink-0">
-              <FileText className="h-4 w-4" /> Gerar Relatório
+              <FileText className="h-4 w-4" /> Pré-visualizar Dados Atuais
             </Button>
           </div>
 
@@ -1136,9 +1136,6 @@ export function ASFPage() {
             scopeId={scopeId}
             versions={versions}
             approvals={approvals}
-            onRefreshApprovals={refreshApprovals}
-            isAdmin={isAdmin}
-            isVerificador={isVerificador}
             driveFolderUrl={driveFolderUrl}
             driveStatus={driveStatus}
             driveBusy={driveBusy}
