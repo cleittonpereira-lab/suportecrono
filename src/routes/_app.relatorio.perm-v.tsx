@@ -490,6 +490,15 @@ export function PermVPage() {
       toast.info("Salve pelo menos uma versão para sincronizar.");
       return;
     }
+    // As duas operações escrevem no mesmo escopo do Drive (inclusive arquivos
+    // de mesmo nome, como o manifest), e cada uma tinha o seu próprio "busy" —
+    // dava para disparar as duas juntas, que foi o que aconteceu no relato:
+    // "Reenviando última revisão ao Drive…" e "Gerando e salvando versão PDF…"
+    // empilhados na tela, disputando o mesmo destino.
+    if (saveBusy) {
+      toast.info("Aguarde o salvamento da versão terminar.");
+      return;
+    }
     setDriveBusy(true);
     const tid = toast.loading("Reenviando última revisão ao Drive…");
     try {
@@ -640,6 +649,29 @@ export function PermVPage() {
   const k20med = k20Medio(determinacoes, sample.mediaExcluidas);
   const a = useMemo(() => areaBureta(sample.calibracao), [sample.calibracao]);
 
+  /**
+   * `toPng` embute as imagens do laudo baixando cada uma. Se uma dessas
+   * requisições ficar pendurada — o /api/photo é servido pelo mesmo Worker que
+   * às vezes estoura o limite de recursos — o <img> nunca dispara load nem
+   * error, e a promise do toPng não resolve nunca. Como quem chama só devolve
+   * `saveBusy = false` no finally, a tela ficava travada em "Gerando e salvando
+   * versão PDF…" para sempre, com o botão de verificar desabilitado junto.
+   *
+   * Um teto de tempo transforma trava permanente em erro visível e recuperável.
+   */
+  const comTeto = <T,>(p: Promise<T>, ms: number, oQue: string): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    return Promise.race([
+      p,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`${oQue} passou de ${Math.round(ms / 1000)}s sem responder. Tente novamente.`)),
+          ms,
+        );
+      }),
+    ]).finally(() => clearTimeout(timer)) as Promise<T>;
+  };
+
   const buildReportPdfBlob = async (): Promise<Blob> => {
     if (import.meta.env.SSR) throw new Error("buildReportPdfBlob só roda no navegador");
     const el = reportRef.current;
@@ -668,14 +700,18 @@ export function PermVPage() {
 
       for (let i = 0; i < pages.length; i++) {
         const page = pages[i];
-        const dataUrl = await toPng(page, {
-          pixelRatio: 2.5, cacheBust: true, backgroundColor: "#ffffff",
-          style: {
-            transform: "none", margin: "0", padding: "5mm 8mm", width: "210mm", height: "297mm",
-            maxWidth: "210mm", maxHeight: "297mm", boxSizing: "border-box", overflow: "hidden",
-          },
-          filter: (node) => !(node instanceof HTMLElement && node.classList.contains("no-print")),
-        });
+        const dataUrl = await comTeto(
+          toPng(page, {
+            pixelRatio: 2.5, cacheBust: false, backgroundColor: "#ffffff",
+            style: {
+              transform: "none", margin: "0", padding: "5mm 8mm", width: "210mm", height: "297mm",
+              maxWidth: "210mm", maxHeight: "297mm", boxSizing: "border-box", overflow: "hidden",
+            },
+            filter: (node) => !(node instanceof HTMLElement && node.classList.contains("no-print")),
+          }),
+          60_000,
+          `A renderização da página ${i + 1} do laudo`,
+        );
 
         if (i > 0) pdf.addPage("a4", "portrait");
         pdf.addImage(dataUrl, "PNG", 0, 0, W, H, undefined, "FAST");
@@ -707,6 +743,11 @@ export function PermVPage() {
   };
 
   const handleSaveVersion = async (opts?: { skipVerification?: boolean }) => {
+    if (saveBusy) return;
+    if (driveBusy) {
+      toast.info("Aguarde o reenvio ao Drive terminar.");
+      return;
+    }
     const skipVerification = opts?.skipVerification === true;
     setSample((prev) => ({ ...prev, typedBy: currentUserName }));
     setWfStatus(skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao");
@@ -731,11 +772,18 @@ export function PermVPage() {
           })
           .filter((f) => f.base64.length > 0);
 
-        const resDrive = await syncRevision({
-          scopeId, rev: saved.rev, pdfBlob: blob, pdfFilename: filename, sample,
-          photos: ctx?.photos || [], ctxOs: ctx?.os, ctxAmostra: ctx?.amostra,
-          ctxEnsaio: { tipo: "perm-v", nome: sample.reportNumber }, fotos,
-        });
+        // Com teto: a versão e a aprovação já estão gravadas neste ponto, então
+        // um Drive lento não pode impedir o fluxo de chegar em "aguardando
+        // verificação". O catch abaixo já trata a falha como não-fatal.
+        const resDrive = await comTeto(
+          syncRevision({
+            scopeId, rev: saved.rev, pdfBlob: blob, pdfFilename: filename, sample,
+            photos: ctx?.photos || [], ctxOs: ctx?.os, ctxAmostra: ctx?.amostra,
+            ctxEnsaio: { tipo: "perm-v", nome: sample.reportNumber }, fotos,
+          }),
+          120_000,
+          "O envio da revisão ao Drive",
+        );
         if (resDrive?.folderUrl) setDriveFolderUrl(resDrive.folderUrl);
       } catch (err) {
         console.warn("Drive sync standby:", err);

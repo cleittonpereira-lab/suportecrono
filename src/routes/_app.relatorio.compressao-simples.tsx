@@ -683,7 +683,7 @@ export function CompressaoSimplesPage() {
       for (let i = 0; i < pages.length; i++) {
         const page = pages[i];
         const dataUrl = await toPng(page, {
-          pixelRatio: 2.5, cacheBust: true, backgroundColor: "#ffffff",
+          pixelRatio: 2.5, cacheBust: false, backgroundColor: "#ffffff",
           style: {
             transform: "none", margin: "0", padding: "5mm 8mm", width: "210mm", height: "297mm",
             maxWidth: "210mm", maxHeight: "297mm", boxSizing: "border-box", overflow: "hidden",

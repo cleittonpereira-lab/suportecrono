@@ -733,7 +733,7 @@ export function TriaxialCidPage() {
       // eslint-disable-next-line no-await-in-loop
       const dataUrl = await toPng(pages[i], {
         pixelRatio: 2,
-        cacheBust: true,
+        cacheBust: false,
         backgroundColor: "#ffffff",
       });
       if (i > 0) pdf.addPage("a4", "portrait");

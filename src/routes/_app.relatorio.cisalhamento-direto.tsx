@@ -669,7 +669,7 @@ export function CDPage() {
         const page = pages[i];
         const dataUrl = await toPng(page, {
           pixelRatio: 2.5,
-          cacheBust: true,
+          cacheBust: false,
           backgroundColor: "#ffffff",
           style: {
             transform: "none",

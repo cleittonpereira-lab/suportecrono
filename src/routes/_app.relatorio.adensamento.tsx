@@ -732,7 +732,7 @@ export function AdensamentoPage() {
                   pixelRatio: 2,
                   width: Math.ceil(rect.width),
                   height: Math.ceil(rect.height),
-                  cacheBust: true,
+                  cacheBust: false,
                   skipAutoScale: true,
                   style: { background: "#ffffff", color: "#0f172a", transform: "none" },
                 });
@@ -1171,7 +1171,7 @@ export function AdensamentoPage() {
             pixelRatio: 3,
             width: Math.ceil(rect.width),
             height: Math.ceil(rect.height),
-            cacheBust: true,
+            cacheBust: false,
             skipAutoScale: true,
             style: {
               background: "#ffffff",
