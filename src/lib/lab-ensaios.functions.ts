@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import type { EnsaioStatus, EnsaioTipo, Coords } from "@/features/lab/types";
+import type { EnsaioStatus, EnsaioTipo, Coords, Photo } from "@/features/lab/types";
 
 export type SerializableJson =
   | string
@@ -90,6 +90,7 @@ export type LabEnsaioSnapshot = {
     label?: string;
     status: EnsaioStatus;
     payload?: SerializableJson;
+    photos?: Photo[];
   };
 };
 
@@ -149,6 +150,7 @@ export const getLabEnsaioSnapshot = createServerFn({ method: "POST" })
           label: foundEn.label,
           status: foundEn.status || workflowToStatus(foundEn.workflowStatus),
           payload: toSerializableJson(foundEn.payload),
+          photos: Array.isArray(foundEn.photos) ? (foundEn.photos as Photo[]) : [],
         },
       };
     } catch (err) {

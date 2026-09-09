@@ -732,7 +732,7 @@ export const labStore = {
         updatedAt: now,
         label: input.ensaio.label,
         operator: "",
-        photos: [],
+        photos: input.ensaio.photos ?? [],
         payload: input.ensaio.payload,
       };
       amostra.ensaios = [...amostra.ensaios, enChanged];

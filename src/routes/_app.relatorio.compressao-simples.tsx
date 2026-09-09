@@ -60,6 +60,21 @@ import type { CsFieldPayload } from "@/features/compressao-simples/ui";
 const fmt = (n: number | null | undefined, d = 2) =>
   n == null || !isFinite(n) ? "—" : n.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
 
+/**
+ * Se o Worker travar no meio de uma chamada (ex.: estourou limite de
+ * recursos do Cloudflare), o fetch original às vezes nunca resolve nem
+ * rejeita — o toast.loading correspondente fica preso pra sempre. Isso
+ * força um erro claro depois de `ms`, em vez de carregar indefinidamente.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label}: tempo esgotado (${Math.round(ms / 1000)}s) — tente novamente em instantes.`)), ms),
+    ),
+  ]);
+}
+
 const AMOSTRA_TIPO_LABEL: Record<CsAmostraTipo, string> = { solo: "Solo", rocha: "Rocha", dosagem: "Dosagem (solo-cimento)" };
 
 function normsFor(tipo: CsAmostraTipo): ReportNorm[] {
@@ -448,11 +463,15 @@ export function CompressaoSimplesPage() {
     const tid = toast.loading("Reenviando última revisão ao Drive…");
     try {
       const last = versions[0];
-      const result = await syncRevision({
-        scopeId, rev: last.rev, pdfBlob: last.pdfBlob, pdfFilename: last.filename, sample,
-        photos: ctx?.photos || [], ctxOs: ctx?.os, ctxAmostra: ctx?.amostra,
-        ctxEnsaio: { tipo: "compressao-simples", nome: sample.reportNumber }, fotos: fotosParaDrive(),
-      });
+      const result = await withTimeout(
+        syncRevision({
+          scopeId, rev: last.rev, pdfBlob: last.pdfBlob, pdfFilename: last.filename, sample,
+          photos: ctx?.photos || [], ctxOs: ctx?.os, ctxAmostra: ctx?.amostra,
+          ctxEnsaio: { tipo: "compressao-simples", nome: sample.reportNumber }, fotos: fotosParaDrive(),
+        }),
+        25000,
+        "Sincronização com o Drive",
+      );
       if (result?.folderUrl) setDriveFolderUrl(result.folderUrl);
       await refreshDriveStatus();
       toast.success("Reenvio concluído ✓", { id: tid });
@@ -690,11 +709,15 @@ export function CompressaoSimplesPage() {
       await refreshVersions();
 
       try {
-        const resDrive = await syncRevision({
-          scopeId, rev: saved.rev, pdfBlob: blob, pdfFilename: filename, sample,
-          photos: ctx?.photos || [], ctxOs: ctx?.os, ctxAmostra: ctx?.amostra,
-          ctxEnsaio: { tipo: "compressao-simples", nome: sample.reportNumber }, fotos: fotosParaDrive(),
-        });
+        const resDrive = await withTimeout(
+          syncRevision({
+            scopeId, rev: saved.rev, pdfBlob: blob, pdfFilename: filename, sample,
+            photos: ctx?.photos || [], ctxOs: ctx?.os, ctxAmostra: ctx?.amostra,
+            ctxEnsaio: { tipo: "compressao-simples", nome: sample.reportNumber }, fotos: fotosParaDrive(),
+          }),
+          25000,
+          "Sincronização com o Drive",
+        );
         if (resDrive?.folderUrl) setDriveFolderUrl(resDrive.folderUrl);
       } catch (err) { console.warn("Drive sync standby:", err); }
 
