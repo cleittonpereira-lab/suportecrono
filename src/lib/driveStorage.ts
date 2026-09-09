@@ -308,7 +308,15 @@ export async function readPhotoBytes(fileId: string): Promise<{ bytes: Uint8Arra
 export async function readDriveJson<T>(filename: string, parentId: string = DRIVE_ROOT_FOLDER_ID): Promise<T | null> {
   const cacheKey = `${parentId}:${filename}`;
   const mem = memoryCache.get(cacheKey);
-  if (mem && Date.now() - mem.timestamp < 15000) {
+  // Esse cache é por-isolate do Cloudflare Worker — uma escrita numa isolate
+  // não invalida o cache de outra que já tinha lido o arquivo antes. Com
+  // 15s de validade, uma aprovação recém-gravada podia ser respondida por
+  // uma isolate diferente ainda servindo a versão de antes da aprovação —
+  // exatamente o "aparece e desaparece" reportado no status dos ensaios.
+  // Curto o bastante pra não ficar perceptível, mas ainda evita reler o
+  // mesmo arquivo (ex.: os.json) várias vezes dentro da mesma leva de
+  // requisições rápidas.
+  if (mem && Date.now() - mem.timestamp < 2000) {
     return mem.data as T;
   }
 
