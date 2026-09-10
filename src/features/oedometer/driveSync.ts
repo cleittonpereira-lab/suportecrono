@@ -66,7 +66,7 @@ export async function syncOedometerRevisionToDrive(args: {
 
     return {
       ok: res.ok,
-      revisionUrl: res.storagePath || undefined,
+      revisionUrl: res.pdfId ? `https://drive.google.com/file/d/${res.pdfId}/view` : undefined,
       folderUrl: res.folderUrl ?? undefined,
       error: res.ok ? undefined : "Falha na sincronização",
     };

@@ -10,6 +10,7 @@
  *         fotos/CP{n}/*.jpg
  *         manifest.json
  */
+import { exigirLogin, requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { getGoogleAccessToken, isGoogleAuthConfigured } from "./google-auth.server";
@@ -479,6 +480,7 @@ async function enviarRevisaoAoDrive(data: z.infer<typeof SyncRevisionInput>, pdf
  * configurado, a função ainda devolvia `ok: true` sem ter gravado nada.
  */
 export const syncRevisionToDrive = createServerFn({ method: "POST" })
+  .middleware([exigirLogin])
   .inputValidator((input: unknown) => SyncRevisionInput.parse(input))
   .handler(async ({ data }) => {
     const rotulo = `Rev-${String(data.rev).padStart(2, "0")}`;
@@ -519,6 +521,7 @@ export type RevisaoNoDrive = { rev: number; filename: string; size: number; upda
  * trazer as revisões que ainda não tem. Falha estoura — não vira lista vazia.
  */
 export const listDriveRevisions = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => z.object({ scopeId: z.string().min(1) }).parse(input))
   .handler(async ({ data }): Promise<{ revisions: RevisaoNoDrive[] }> => {
     if (!isGoogleAuthConfigured()) return { revisions: [] };
@@ -554,6 +557,7 @@ export const listDriveRevisions = createServerFn({ method: "GET" })
  * passadas, mas é o que a UI realmente usa).
  */
 export const getDriveSyncStatus = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => z.object({ scopeId: z.string() }).parse(input))
   .handler(async ({ data }): Promise<{ entries: DriveSyncEntry[] }> => {
     try {
@@ -598,6 +602,7 @@ export const getDriveSyncStatus = createServerFn({ method: "GET" })
  * fonte respondeu — a tela avisa e usa só o histórico local.
  */
 export const getProximaRevisao = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => z.object({ scopeId: z.string().min(1) }).parse(input))
   .handler(async ({ data }): Promise<{ proxima: number | null; fontes: string[] }> => {
     const revs: number[] = [];
@@ -656,6 +661,7 @@ const RegisterDraftInput = z.object({
 });
 
 export const registerEnsaioDraft = createServerFn({ method: "POST" })
+  .middleware([exigirLogin])
   .inputValidator((v: unknown) => RegisterDraftInput.parse(v))
   .handler(async () => {
     return { ok: true, created: false };
@@ -672,6 +678,7 @@ const PreviewInput = z.object({
 });
 
 export const getRevisionPdfBase64 = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((v: unknown) => PreviewInput.parse(v))
   .handler(async ({ data }) => {
     if (!isGoogleAuthConfigured()) {

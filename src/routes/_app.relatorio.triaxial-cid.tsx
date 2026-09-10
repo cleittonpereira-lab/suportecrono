@@ -220,7 +220,7 @@ export function TriaxialCidPage() {
   const cad = ctx?.os?.numero ? lookup(ctx.os.numero) : undefined;
   const { displayName, user, profile, role } = useAuth();
   const currentUserName = displayName || profile?.nome || user?.email?.split("@")[0] || "Cleitton Pereira";
-  const isAdmin = role === "admin" || user?.email?.includes("cleitton") || user?.id === "cleitton-admin-local";
+  const isAdmin = role === "admin";
   const isVerificador = role === "verificador" || role === "gestor" || isAdmin;
   const navigate = useNavigate();
 

@@ -154,7 +154,7 @@ export function UNPage() {
   const { lookup } = useCadastroByOs();
   const cad = ctx?.os?.numero ? lookup(ctx.os.numero) : undefined;
   const { displayName, user, role } = useAuth();
-  const isAdmin = role === "admin" || user?.email?.includes("cleitton") || user?.id === "cleitton-admin-local";
+  const isAdmin = role === "admin";
   const isVerificador = role === "verificador" || role === "gestor" || isAdmin;
   const currentUserName = displayName || user?.email?.split("@")[0] || "Cleitton Pereira";
 

@@ -489,7 +489,7 @@ export function PermVPage() {
   const currentUserName = displayName || user?.email?.split("@")[0] || "Cleitton Pereira";
   // Admin vem do papel do usuário. Antes, qualquer conta cujo e-mail CONTIVESSE
   // "cleitton" era tratada como admin e podia aprovar laudo oficial.
-  const isAdmin = role === "admin" || user?.id === "cleitton-admin-local";
+  const isAdmin = role === "admin";
   const isVerificador = role === "verificador" || role === "gestor" || isAdmin;
 
   const scopeId =
