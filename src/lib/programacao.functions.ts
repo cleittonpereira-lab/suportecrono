@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { exigirLogin } from "@/integrations/supabase/auth-middleware";
 import { fetchDirectGoogleSheet } from "./sheets-read.server";
 import { getGoogleAccessToken } from "./google-auth.server";
 import { readStore, writeStore, type ProgramacaoData } from "./programacao-store.server";
@@ -124,6 +125,7 @@ export const listRows = createServerFn({ method: "GET" })
   });
 
 export const insertRow = createServerFn({ method: "POST" })
+  .middleware([exigirLogin])
   .inputValidator((d: { sheet: string; row: Record<string, unknown> }) => d)
   .handler(async ({ data }) => {
     const id = (data.row.id as string) || crypto.randomUUID();
@@ -155,6 +157,7 @@ export const insertRow = createServerFn({ method: "POST" })
   });
 
 export const updateRow = createServerFn({ method: "POST" })
+  .middleware([exigirLogin])
   .inputValidator((d: { sheet: string; id: string; patch: Record<string, unknown> }) => d)
   .handler(async ({ data }) => {
     // 1. Gravar no armazenamento persistente no Drive imediatamente
@@ -194,6 +197,7 @@ export const updateRow = createServerFn({ method: "POST" })
   });
 
 export const deleteRow = createServerFn({ method: "POST" })
+  .middleware([exigirLogin])
   .inputValidator((d: { sheet: string; id: string }) => d)
   .handler(async ({ data }) => {
     // 1. Deletar no armazenamento persistente no Drive imediatamente
@@ -240,6 +244,7 @@ export const deleteRow = createServerFn({ method: "POST" })
   });
 
 export const ensureColumns = createServerFn({ method: "POST" })
+  .middleware([exigirLogin])
   .inputValidator((d: { sheet: string; columns: string[] }) => d)
   .handler(async ({ data }) => {
     return { header: data.columns };

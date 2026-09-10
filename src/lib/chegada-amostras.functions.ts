@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { exigirLogin } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import type { ChegadaTask, ChegadaColumn, Option } from "./chegada-amostras-store";
 
@@ -375,6 +376,7 @@ export const fetchSharedChegadaState = createServerFn({ method: "GET" })
   });
 
 export const saveSharedChegadaState = createServerFn({ method: "POST" })
+  .middleware([exigirLogin])
   .validator(
     (d: {
       tasks: Record<string, ChegadaTask[]>;

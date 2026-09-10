@@ -3,6 +3,7 @@
  * Todas as OS, amostras e ensaios ficam sincronizados em tempo real entre todas as máquinas do laboratório.
  */
 import { createServerFn } from "@tanstack/react-start";
+import { exigirLogin } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { readDriveJson, writeDriveJson, DRIVE_ROOT_FOLDER_ID } from "./driveStorage";
 
@@ -40,6 +41,7 @@ const SaveLabStateInput = z.object({
 });
 
 export const saveLabStateToDrive = createServerFn({ method: "POST" })
+  .middleware([exigirLogin])
   .validator((input: unknown) => SaveLabStateInput.parse(input))
   .handler(async ({ data }) => {
     const nowIso = new Date().toISOString();

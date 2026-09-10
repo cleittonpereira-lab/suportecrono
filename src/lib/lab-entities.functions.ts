@@ -14,7 +14,7 @@
  * recusada em conflito; essa comparação nunca existiu no código.)
  */
 import { createServerFn } from "@tanstack/react-start";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { exigirLogin } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import type { Amostra, Coords, Ensaio, EnsaioStatus, EnsaioTipo, LabState, OS, Photo } from "@/features/lab/types";
 import { ensureFolderPath, listFilesInFolder, readDriveJson, readDriveJsonById, deleteDriveFile, findFileInFolder, atualizarDriveJson, DRIVE_ROOT_FOLDER_ID } from "@/lib/driveStorage";
@@ -335,7 +335,7 @@ const OSInput = z.object({
 });
 
 export const upsertOSFn = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([exigirLogin])
   .validator((v: unknown) => OSInput.parse(v))
   .handler(async ({ data }) => {
     const folderId = await ensureFolderPath(FOLDER_OS);
@@ -363,7 +363,7 @@ export const upsertOSFn = createServerFn({ method: "POST" })
 
 const DeleteOSInput = z.object({ id: z.string().min(1) });
 export const deleteOSFn = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([exigirLogin])
   .validator((v: unknown) => DeleteOSInput.parse(v))
   .handler(async ({ data }) => {
     const folderId = await ensureFolderPath(FOLDER_OS);
@@ -392,7 +392,7 @@ const AmostraInput = z.object({
 });
 
 export const upsertAmostraFn = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([exigirLogin])
   .validator((v: unknown) => AmostraInput.parse(v))
   .handler(async ({ data }) => {
     const folderId = await ensureFolderPath(FOLDER_AMOSTRAS);
@@ -426,7 +426,7 @@ export const upsertAmostraFn = createServerFn({ method: "POST" })
 
 const DeleteAmostraInput = z.object({ id: z.string().min(1), osId: z.string().min(1) });
 export const deleteAmostraFn = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([exigirLogin])
   .validator((v: unknown) => DeleteAmostraInput.parse(v))
   .handler(async ({ data }) => {
     const folderId = await ensureFolderPath(FOLDER_AMOSTRAS);
@@ -487,7 +487,7 @@ export function mesclarEnsaio(existing: EnsaioFile | null, data: z.infer<typeof 
 }
 
 export const upsertEnsaioFn = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([exigirLogin])
   .validator((v: unknown) => EnsaioInput.parse(v))
   .handler(async ({ data }) => {
     const folderId = await ensureFolderPath(FOLDER_ENSAIOS);
@@ -502,7 +502,7 @@ export const upsertEnsaioFn = createServerFn({ method: "POST" })
 
 const DeleteEnsaioInput = z.object({ id: z.string().min(1), amostraId: z.string().min(1) });
 export const deleteEnsaioFn = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([exigirLogin])
   .validator((v: unknown) => DeleteEnsaioInput.parse(v))
   .handler(async ({ data }) => {
     const folderId = await ensureFolderPath(FOLDER_ENSAIOS);

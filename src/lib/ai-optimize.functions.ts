@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { exigirLogin } from "@/integrations/supabase/auth-middleware";
 import { generateText } from "ai";
 import { z } from "zod";
 
@@ -29,6 +30,7 @@ const InputSchema = z.object({
 });
 
 export const optimizeSchedule = createServerFn({ method: "POST" })
+  .middleware([exigirLogin])
   .inputValidator((d: unknown) => InputSchema.parse(d))
   .handler(async ({ data }) => {
     const key = process.env.LOVABLE_API_KEY || process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY;

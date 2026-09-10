@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { exigirLogin } from "@/integrations/supabase/auth-middleware";
 import { generateText } from "ai";
 import { z } from "zod";
 
@@ -35,6 +36,7 @@ function buildContext(rows: z.infer<typeof RowSchema>[]) {
 }
 
 export const askAssistant = createServerFn({ method: "POST" })
+  .middleware([exigirLogin])
   .inputValidator((data: unknown) => InputSchema.parse(data))
   .handler(async ({ data }) => {
     const key = process.env.LOVABLE_API_KEY || process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY;

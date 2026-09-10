@@ -4,7 +4,7 @@
  * no Drive, mesmo padrão de `lab-pendencias.functions.ts`.
  */
 import { createServerFn } from "@tanstack/react-start";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireSupabaseAuth, exigirLogin } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { ensureFolderPath, readDriveJson, writeDriveJson } from "@/lib/driveStorage";
 import { uploadPhoto } from "@/lib/photo-upload.functions";
@@ -72,7 +72,7 @@ export const getOsHub = createServerFn({ method: "GET" })
 const AtualizarDataInput = z.object({ osNumero: z.string().min(1), novaData: z.string().min(1) });
 
 export const atualizarDataAcordada = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([exigirLogin])
   .inputValidator((i: unknown) => AtualizarDataInput.parse(i))
   .handler(async ({ context, data }) => {
     const folderId = await ensureFolderPath(FOLDER_OS_HUB);
@@ -90,7 +90,7 @@ export const atualizarDataAcordada = createServerFn({ method: "POST" })
   });
 
 export const arquivarOs = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([exigirLogin])
   .inputValidator((i: unknown) => OsNumeroInput.parse(i))
   .handler(async ({ context, data }) => {
     const folderId = await ensureFolderPath(FOLDER_OS_HUB);
@@ -104,7 +104,7 @@ export const arquivarOs = createServerFn({ method: "POST" })
   });
 
 export const desarquivarOs = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([exigirLogin])
   .inputValidator((i: unknown) => OsNumeroInput.parse(i))
   .handler(async ({ data }) => {
     const folderId = await ensureFolderPath(FOLDER_OS_HUB);
@@ -130,7 +130,7 @@ function mimeFromDataUrl(dataUrl: string): string {
 }
 
 export const postOsChatMessage = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([exigirLogin])
   .inputValidator((i: unknown) => PostChatInput.parse(i))
   .handler(async ({ context, data }) => {
     if (!data.text?.trim() && !data.fileDataUrl) {
@@ -169,7 +169,7 @@ export const postOsChatMessage = createServerFn({ method: "POST" })
 const DeleteChatInput = z.object({ osNumero: z.string().min(1), messageId: z.string().min(1) });
 
 export const excluirOsChatMessage = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([exigirLogin])
   .inputValidator((i: unknown) => DeleteChatInput.parse(i))
   .handler(async ({ context, data }) => {
     const folderId = await ensureFolderPath(FOLDER_OS_HUB);

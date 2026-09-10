@@ -7,6 +7,7 @@
  * que a migração rodou com sucesso.
  */
 import { createServerFn } from "@tanstack/react-start";
+import { exigirLogin } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 
 const Input = z.object({ secret: z.string() });
@@ -73,6 +74,7 @@ const ImportInput = z.object({ secret: z.string(), stateJson: z.string().min(2) 
  * estão hoje.
  */
 export const importLabStateFromClient = createServerFn({ method: "POST" })
+  .middleware([exigirLogin])
   .validator((v: unknown) => ImportInput.parse(v))
   .handler(async ({ data }) => {
     if (data.secret !== "suportecrono-migrate-2026-lab-tables") {

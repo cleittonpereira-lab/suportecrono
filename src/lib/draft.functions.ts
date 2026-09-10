@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { exigirLogin } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { atualizarDriveJson, ensureFolderPath, readDriveJson, writeDriveJson } from "@/lib/driveStorage";
 import type { SerializableJson } from "@/lib/lab-entities.functions";
@@ -94,6 +95,7 @@ const SaveDraftInput = z.object({
 });
 
 export const saveSharedDraft = createServerFn({ method: "POST" })
+  .middleware([exigirLogin])
   .validator((d: z.infer<typeof SaveDraftInput>) => d)
   .handler(async ({ data }) => {
     try {

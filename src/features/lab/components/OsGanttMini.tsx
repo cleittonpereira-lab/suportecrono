@@ -151,7 +151,7 @@ export function OsGanttMini({
         alteradoPor: h.alteradoPor,
         alteradoEm: h.alteradoEm,
       }))
-      .filter((h): h is { idx: number; date: Date; alteradoPor?: string; alteradoEm?: string } => h.date !== null);
+      .filter((h): h is typeof h & { date: Date } => h.date !== null);
   }, [historicoData]);
 
   return (

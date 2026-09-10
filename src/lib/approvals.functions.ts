@@ -17,7 +17,7 @@
  *   rejeitado              → Responsável Técnico rejeitou (final)
  */
 import { createServerFn } from "@tanstack/react-start";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireSupabaseAuth, exigirLogin } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { ensureFolderPath, readDriveJson, writeDriveJson } from "@/lib/driveStorage";
 import {
@@ -160,7 +160,7 @@ const RequestInput = z.object({
 });
 
 export const requestApproval = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([exigirLogin])
   .validator((v: unknown) => RequestInput.parse(v))
   .handler(async ({ data, context }) => {
     const { claims } = context as { claims: { email?: string; user_metadata?: { full_name?: string; name?: string } } };
@@ -264,7 +264,7 @@ const VerifyInput = z.object({
 });
 
 export const verifyApproval = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([exigirLogin])
   .validator((v: unknown) => VerifyInput.parse(v))
   .handler(async ({ data, context }) => {
     const { userId, claims } = context as {
@@ -346,7 +346,7 @@ const DecideInput = z.object({
 });
 
 export const decideApproval = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([exigirLogin])
   .validator((v: unknown) => DecideInput.parse(v))
   .handler(async ({ data, context }) => {
     const { userId, claims } = context as {
@@ -446,7 +446,7 @@ const CommentInput = z.object({
 });
 
 export const addApprovalComment = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([exigirLogin])
   .validator((v: unknown) => CommentInput.parse(v))
   .handler(async ({ data, context }) => {
     const { userId, claims } = context as {

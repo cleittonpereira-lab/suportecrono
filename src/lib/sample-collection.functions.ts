@@ -4,7 +4,7 @@
  * sobrescrito) — mesmo padrão Drive-JSON de os-hub.functions.ts.
  */
 import { createServerFn } from "@tanstack/react-start";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireSupabaseAuth, exigirLogin } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { ensureFolderPath, readDriveJson, readDriveJsonById, writeDriveJson, listFilesInFolder } from "@/lib/driveStorage";
 
@@ -82,7 +82,7 @@ const SalvarCargaInput = z.object({
 });
 
 export const salvarCargaAmostras = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([exigirLogin])
   .inputValidator((i: unknown) => SalvarCargaInput.parse(i))
   .handler(async ({ context, data }) => {
     const nowIso = new Date().toISOString();

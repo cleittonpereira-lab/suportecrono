@@ -9,7 +9,7 @@
  *      operador escolhe a correta e digita `peso_final`.
  */
 import { createServerFn } from "@tanstack/react-start";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireSupabaseAuth, exigirLogin } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 
 const CriarInput = z.object({
@@ -27,7 +27,7 @@ const CriarInput = z.object({
 });
 
 export const criarCapsula = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([exigirLogin])
   .inputValidator((i: unknown) => CriarInput.parse(i))
   .handler(async ({ context, data }) => {
     const now = new Date().toISOString();
@@ -64,7 +64,7 @@ const AtualizarFinalInput = z.object({
 });
 
 export const registrarPesagemFinal = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([exigirLogin])
   .inputValidator((i: unknown) => AtualizarFinalInput.parse(i))
   .handler(async ({ context, data }) => {
     const now = new Date().toISOString();
@@ -94,7 +94,7 @@ const AtualizarInput = z.object({
 });
 
 export const atualizarCapsula = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([exigirLogin])
   .inputValidator((i: unknown) => AtualizarInput.parse(i))
   .handler(async ({ context, data }) => {
     const { data: row, error } = await context.supabase
@@ -109,7 +109,7 @@ export const atualizarCapsula = createServerFn({ method: "POST" })
 
 const RemoverInput = z.object({ id: z.string().uuid() });
 export const removerCapsula = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([exigirLogin])
   .inputValidator((i: unknown) => RemoverInput.parse(i))
   .handler(async ({ context, data }) => {
     const { error } = await context.supabase.from("lab_capsulas").delete().eq("id", data.id);

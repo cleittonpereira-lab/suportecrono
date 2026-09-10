@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { exigirLogin } from "@/integrations/supabase/auth-middleware";
 import { fetchDirectGoogleSheet, invalidateSheetsCache as invalidateReadCache } from "./sheets-read.server.ts";
 import { sheetsApiRequest } from "./sheets-client.server.ts";
 import { readScheduleStore, writeScheduleStore } from "./schedule-store.server.ts";
@@ -275,6 +276,7 @@ export const fetchEntregues = createServerFn({ method: "GET" }).handler(
 /* --------------------------------- Mutations ---------------------------------- */
 
 export const updateScheduleRow = createServerFn({ method: "POST" })
+  .middleware([exigirLogin])
   .inputValidator(
     (d: {
       rowIndex: number;
@@ -375,6 +377,7 @@ async function appendOneRow(sheetTitle: string): Promise<void> {
 }
 
 export const moveScheduleRowToEntregues = createServerFn({ method: "POST" })
+  .middleware([exigirLogin])
   .inputValidator((d: { rowIndex: number; dataPostagem?: string }) => d)
   .handler(async ({ data }) => {
     if (!data.rowIndex || data.rowIndex < 5) {
@@ -446,6 +449,7 @@ export const moveScheduleRowToEntregues = createServerFn({ method: "POST" })
   });
 
 export const createScheduleRow = createServerFn({ method: "POST" })
+  .middleware([exigirLogin])
   .inputValidator(
     (d: {
       dataPostagem?: string;
@@ -505,6 +509,7 @@ export const createScheduleRow = createServerFn({ method: "POST" })
   });
 
 export const deleteScheduleRow = createServerFn({ method: "POST" })
+  .middleware([exigirLogin])
   .inputValidator((d: { rowIndex: number }) => d)
   .handler(async ({ data }) => {
     if (!data.rowIndex || data.rowIndex < 5) {

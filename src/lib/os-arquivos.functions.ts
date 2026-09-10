@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { exigirLogin } from "@/integrations/supabase/auth-middleware";
 import fs from "fs";
 import path from "path";
 import { getGoogleAccessToken, isGoogleAuthConfigured } from "./google-auth.server";
@@ -169,6 +170,7 @@ export const listOsFiles = createServerFn({ method: "GET" })
   });
 
 export const uploadOsFile = createServerFn({ method: "POST" })
+  .middleware([exigirLogin])
   .inputValidator((d: { os: string; name: string; mimeType: string; base64: string }) => d)
   .handler(async ({ data }) => {
     if (hasDriveAuth()) {
@@ -225,6 +227,7 @@ export const uploadOsFile = createServerFn({ method: "POST" })
   });
 
 export const deleteOsFile = createServerFn({ method: "POST" })
+  .middleware([exigirLogin])
   .inputValidator((d: { fileId: string }) => d)
   .handler(async ({ data }) => {
     if (hasDriveAuth() && !data.fileId.includes(":::")) {
@@ -332,6 +335,7 @@ export const getOsNotes = createServerFn({ method: "GET" })
   });
 
 export const saveOsNotes = createServerFn({ method: "POST" })
+  .middleware([exigirLogin])
   .inputValidator((d: { os: string; notes: string }) => d)
   .handler(async ({ data }) => {
     if (hasDriveAuth()) {

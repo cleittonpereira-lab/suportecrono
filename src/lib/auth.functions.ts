@@ -19,8 +19,16 @@ import {
 } from "@/lib/user-store.server";
 import { issueSession, clearSession, getSessionUserRecord, requireAppAuth } from "@/lib/auth-session.server";
 
+/**
+ * Único e-mail promovido a admin automaticamente no cadastro/primeiro login.
+ * Antes era `email.includes("cleitton")`: qualquer pessoa que se cadastrasse —
+ * ou entrasse com uma conta Google — com um e-mail contendo "cleitton" virava
+ * administrador ativo na hora, sem aprovação.
+ */
+const EMAIL_ADMIN_INICIAL = "cleitton.pereira@suportesolos.com.br";
+
 function isCleitton(email: string): boolean {
-  return email.toLowerCase().includes("cleitton");
+  return email.trim().toLowerCase() === EMAIL_ADMIN_INICIAL;
 }
 
 // ---- login com e-mail/usuário + senha ----

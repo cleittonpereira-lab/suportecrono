@@ -9,7 +9,7 @@
  * dava no Supabase.
  */
 import { createServerFn } from "@tanstack/react-start";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireSupabaseAuth, exigirLogin } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { ensureFolderPath, readDriveJson, readDriveJsonById, writeDriveJson, listFilesInFolder, findFileInFolder, deleteDriveFile, withKeyLock } from "@/lib/driveStorage";
 import { aplicarStatusPendencia, escolherPendenciaDoEnsaio, proximaPendencia } from "@/lib/pendencia-match";
@@ -93,7 +93,7 @@ const CriarInput = z.object({
 });
 
 export const criarPendenciaDigitacao = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([exigirLogin])
   .inputValidator((i: unknown) => CriarInput.parse(i))
   .handler(async ({ context, data }) => {
     const amostraNorm = data.amostra == null || data.amostra.trim() === "" ? null : data.amostra.trim();
@@ -175,7 +175,7 @@ const UpdateStatusInput = z.object({
 });
 
 export const atualizarStatusPendencia = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([exigirLogin])
   .inputValidator((i: unknown) => UpdateStatusInput.parse(i))
   .handler(async ({ context, data }) => {
     const now = new Date().toISOString();
@@ -253,7 +253,7 @@ const ConcluirExternoInput = z.object({
 });
 
 export const concluirPendenciaExterna = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([exigirLogin])
   .inputValidator((i: unknown) => ConcluirExternoInput.parse(i))
   .handler(async ({ data }) => {
     return atualizarStatusPendencia({
@@ -277,7 +277,7 @@ const CriarAvulsoInput = z.object({
 });
 
 export const criarRelatorioAvulso = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([exigirLogin])
   .inputValidator((i: unknown) => CriarAvulsoInput.parse(i))
   .handler(async ({ context, data }) => {
     const now = new Date().toISOString();
@@ -327,7 +327,7 @@ export const criarRelatorioAvulso = createServerFn({ method: "POST" })
 const DeleteInput = z.object({ id: z.string().min(1) });
 
 export const removerPendenciaDigitacao = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([exigirLogin])
   .inputValidator((i: unknown) => DeleteInput.parse(i))
   .handler(async ({ data }) => {
     const folderId = await ensureFolderPath(FOLDER_PENDENCIAS);

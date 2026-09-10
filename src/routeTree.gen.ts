@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
+import { Route as AdminMigrarLabstateRouteImport } from './routes/admin-migrar-labstate'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as PendenteRouteImport } from './routes/pendente'
 import { Route as RegistroAmostraRouteImport } from './routes/registro-amostra'
@@ -34,9 +35,16 @@ import { Route as AppAdminUsuariosRouteImport } from './routes/_app.admin.usuari
 import { Route as AppChegadaAmostrasRegistroRouteImport } from './routes/_app.chegada-amostras.registro'
 import { Route as AppModelosRelatoriosIndexRouteImport } from './routes/_app.modelos-relatorios.index'
 import { Route as AppModelosRelatoriosAdensamentoRouteImport } from './routes/_app.modelos-relatorios.adensamento'
+import { Route as AppModelosRelatoriosAsfDapRouteImport } from './routes/_app.modelos-relatorios.asf-dap'
 import { Route as AppModelosRelatoriosCisalhamentoDiretoRouteImport } from './routes/_app.modelos-relatorios.cisalhamento-direto'
+import { Route as AppModelosRelatoriosCompressaoSimplesRouteImport } from './routes/_app.modelos-relatorios.compressao-simples'
 import { Route as AppModelosRelatoriosMespANaturalRouteImport } from './routes/_app.modelos-relatorios.mesp-a-natural'
+import { Route as AppModelosRelatoriosModuloResilienciaRouteImport } from './routes/_app.modelos-relatorios.modulo-resiliencia'
+import { Route as AppModelosRelatoriosPermVRouteImport } from './routes/_app.modelos-relatorios.perm-v'
 import { Route as AppModelosRelatoriosTriaxialCidRouteImport } from './routes/_app.modelos-relatorios.triaxial-cid'
+import { Route as AppModelosRelatoriosTriaxialCiuRouteImport } from './routes/_app.modelos-relatorios.triaxial-ciu'
+import { Route as AppModelosRelatoriosTriaxialUuRouteImport } from './routes/_app.modelos-relatorios.triaxial-uu'
+import { Route as AppModelosRelatoriosUmidadeNaturalRouteImport } from './routes/_app.modelos-relatorios.umidade-natural'
 import { Route as AppProgramacaoIndexRouteImport } from './routes/_app.programacao.index'
 import { Route as AppProgramacaoCentralRouteImport } from './routes/_app.programacao.central'
 import { Route as AppProgramacaoCompatibilidadeRouteImport } from './routes/_app.programacao.compatibilidade'
@@ -47,17 +55,28 @@ import { Route as AppProgramacaoScanRouteImport } from './routes/_app.programaca
 import { Route as AppProgramacaoTiposEnsaioRouteImport } from './routes/_app.programacao.tipos-ensaio'
 import { Route as AppRelatorioIndexRouteImport } from './routes/_app.relatorio.index'
 import { Route as AppRelatorioAdensamentoRouteImport } from './routes/_app.relatorio.adensamento'
+import { Route as AppRelatorioAsfDapRouteImport } from './routes/_app.relatorio.asf-dap'
 import { Route as AppRelatorioCisalhamentoDiretoRouteImport } from './routes/_app.relatorio.cisalhamento-direto'
+import { Route as AppRelatorioCompressaoSimplesRouteImport } from './routes/_app.relatorio.compressao-simples'
 import { Route as AppRelatorioDigitalizacaoRouteImport } from './routes/_app.relatorio.digitalizacao'
 import { Route as AppRelatorioEmissoesRouteImport } from './routes/_app.relatorio.emissoes'
 import { Route as AppRelatorioMespARouteImport } from './routes/_app.relatorio.mesp-a'
 import { Route as AppRelatorioMespANaturalRouteImport } from './routes/_app.relatorio.mesp-a-natural'
+import { Route as AppRelatorioModuloResilienciaRouteImport } from './routes/_app.relatorio.modulo-resiliencia'
 import { Route as AppRelatorioPendentesRouteImport } from './routes/_app.relatorio.pendentes'
+import { Route as AppRelatorioPermVRouteImport } from './routes/_app.relatorio.perm-v'
 import { Route as AppRelatorioTriaxialCidRouteImport } from './routes/_app.relatorio.triaxial-cid'
+import { Route as AppRelatorioUmidadeNaturalRouteImport } from './routes/_app.relatorio.umidade-natural'
+import { Route as ApiPhotoFileIdRouteImport } from './routes/api.photo.$fileId'
 import { Route as AppRelatorioDigitalizacaoIndexRouteImport } from './routes/_app.relatorio.digitalizacao.index'
 import { Route as AppRelatorioDigitalizacaoAdensamentoRouteImport } from './routes/_app.relatorio.digitalizacao.adensamento'
+import { Route as AppRelatorioDigitalizacaoAsfDapRouteImport } from './routes/_app.relatorio.digitalizacao.asf-dap'
 import { Route as AppRelatorioDigitalizacaoCapsulasRouteImport } from './routes/_app.relatorio.digitalizacao.capsulas'
+import { Route as AppRelatorioDigitalizacaoCompressaoSimplesRouteImport } from './routes/_app.relatorio.digitalizacao.compressao-simples'
 import { Route as AppRelatorioDigitalizacaoPendenciasRouteImport } from './routes/_app.relatorio.digitalizacao.pendencias'
+import { Route as AppRelatorioDigitalizacaoPermVRouteImport } from './routes/_app.relatorio.digitalizacao.perm-v'
+import { Route as AppRelatorioEspeciaisIndexRouteImport } from './routes/_app.relatorio.especiais.index'
+import { Route as AppRelatorioEspeciaisOsNumeroRouteImport } from './routes/_app.relatorio.especiais.$osNumero'
 import { Route as AppRelatorioOsIndexRouteImport } from './routes/_app.relatorio.os.index'
 import { Route as AppRelatorioOsOsIdIndexRouteImport } from './routes/_app.relatorio.os.$osId.index'
 import { Route as AppRelatorioOsOsIdAmostraAmostraIdIndexRouteImport } from './routes/_app.relatorio.os.$osId.amostra.$amostraId.index'
@@ -70,6 +89,11 @@ const IndexRoute = IndexRouteImport.update({
 } as any)
 const AppRoute = AppRouteImport.update({
   id: '/_app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminMigrarLabstateRoute = AdminMigrarLabstateRouteImport.update({
+  id: '/admin-migrar-labstate',
+  path: '/admin-migrar-labstate',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRoute = AuthRouteImport.update({
@@ -190,10 +214,22 @@ const AppModelosRelatoriosAdensamentoRoute =
     path: '/modelos-relatorios/adensamento',
     getParentRoute: () => AppRoute,
   } as any)
+const AppModelosRelatoriosAsfDapRoute =
+  AppModelosRelatoriosAsfDapRouteImport.update({
+    id: '/modelos-relatorios/asf-dap',
+    path: '/modelos-relatorios/asf-dap',
+    getParentRoute: () => AppRoute,
+  } as any)
 const AppModelosRelatoriosCisalhamentoDiretoRoute =
   AppModelosRelatoriosCisalhamentoDiretoRouteImport.update({
     id: '/modelos-relatorios/cisalhamento-direto',
     path: '/modelos-relatorios/cisalhamento-direto',
+    getParentRoute: () => AppRoute,
+  } as any)
+const AppModelosRelatoriosCompressaoSimplesRoute =
+  AppModelosRelatoriosCompressaoSimplesRouteImport.update({
+    id: '/modelos-relatorios/compressao-simples',
+    path: '/modelos-relatorios/compressao-simples',
     getParentRoute: () => AppRoute,
   } as any)
 const AppModelosRelatoriosMespANaturalRoute =
@@ -202,10 +238,40 @@ const AppModelosRelatoriosMespANaturalRoute =
     path: '/modelos-relatorios/mesp-a-natural',
     getParentRoute: () => AppRoute,
   } as any)
+const AppModelosRelatoriosModuloResilienciaRoute =
+  AppModelosRelatoriosModuloResilienciaRouteImport.update({
+    id: '/modelos-relatorios/modulo-resiliencia',
+    path: '/modelos-relatorios/modulo-resiliencia',
+    getParentRoute: () => AppRoute,
+  } as any)
+const AppModelosRelatoriosPermVRoute =
+  AppModelosRelatoriosPermVRouteImport.update({
+    id: '/modelos-relatorios/perm-v',
+    path: '/modelos-relatorios/perm-v',
+    getParentRoute: () => AppRoute,
+  } as any)
 const AppModelosRelatoriosTriaxialCidRoute =
   AppModelosRelatoriosTriaxialCidRouteImport.update({
     id: '/modelos-relatorios/triaxial-cid',
     path: '/modelos-relatorios/triaxial-cid',
+    getParentRoute: () => AppRoute,
+  } as any)
+const AppModelosRelatoriosTriaxialCiuRoute =
+  AppModelosRelatoriosTriaxialCiuRouteImport.update({
+    id: '/modelos-relatorios/triaxial-ciu',
+    path: '/modelos-relatorios/triaxial-ciu',
+    getParentRoute: () => AppRoute,
+  } as any)
+const AppModelosRelatoriosTriaxialUuRoute =
+  AppModelosRelatoriosTriaxialUuRouteImport.update({
+    id: '/modelos-relatorios/triaxial-uu',
+    path: '/modelos-relatorios/triaxial-uu',
+    getParentRoute: () => AppRoute,
+  } as any)
+const AppModelosRelatoriosUmidadeNaturalRoute =
+  AppModelosRelatoriosUmidadeNaturalRouteImport.update({
+    id: '/modelos-relatorios/umidade-natural',
+    path: '/modelos-relatorios/umidade-natural',
     getParentRoute: () => AppRoute,
   } as any)
 const AppProgramacaoIndexRoute = AppProgramacaoIndexRouteImport.update({
@@ -261,10 +327,21 @@ const AppRelatorioAdensamentoRoute = AppRelatorioAdensamentoRouteImport.update({
   path: '/relatorio/adensamento',
   getParentRoute: () => AppRoute,
 } as any)
+const AppRelatorioAsfDapRoute = AppRelatorioAsfDapRouteImport.update({
+  id: '/relatorio/asf-dap',
+  path: '/relatorio/asf-dap',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppRelatorioCisalhamentoDiretoRoute =
   AppRelatorioCisalhamentoDiretoRouteImport.update({
     id: '/relatorio/cisalhamento-direto',
     path: '/relatorio/cisalhamento-direto',
+    getParentRoute: () => AppRoute,
+  } as any)
+const AppRelatorioCompressaoSimplesRoute =
+  AppRelatorioCompressaoSimplesRouteImport.update({
+    id: '/relatorio/compressao-simples',
+    path: '/relatorio/compressao-simples',
     getParentRoute: () => AppRoute,
   } as any)
 const AppRelatorioDigitalizacaoRoute =
@@ -289,15 +366,37 @@ const AppRelatorioMespANaturalRoute =
     path: '/relatorio/mesp-a-natural',
     getParentRoute: () => AppRoute,
   } as any)
+const AppRelatorioModuloResilienciaRoute =
+  AppRelatorioModuloResilienciaRouteImport.update({
+    id: '/relatorio/modulo-resiliencia',
+    path: '/relatorio/modulo-resiliencia',
+    getParentRoute: () => AppRoute,
+  } as any)
 const AppRelatorioPendentesRoute = AppRelatorioPendentesRouteImport.update({
   id: '/relatorio/pendentes',
   path: '/relatorio/pendentes',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppRelatorioPermVRoute = AppRelatorioPermVRouteImport.update({
+  id: '/relatorio/perm-v',
+  path: '/relatorio/perm-v',
   getParentRoute: () => AppRoute,
 } as any)
 const AppRelatorioTriaxialCidRoute = AppRelatorioTriaxialCidRouteImport.update({
   id: '/relatorio/triaxial-cid',
   path: '/relatorio/triaxial-cid',
   getParentRoute: () => AppRoute,
+} as any)
+const AppRelatorioUmidadeNaturalRoute =
+  AppRelatorioUmidadeNaturalRouteImport.update({
+    id: '/relatorio/umidade-natural',
+    path: '/relatorio/umidade-natural',
+    getParentRoute: () => AppRoute,
+  } as any)
+const ApiPhotoFileIdRoute = ApiPhotoFileIdRouteImport.update({
+  id: '/api/photo/$fileId',
+  path: '/api/photo/$fileId',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AppRelatorioDigitalizacaoIndexRoute =
   AppRelatorioDigitalizacaoIndexRouteImport.update({
@@ -311,10 +410,22 @@ const AppRelatorioDigitalizacaoAdensamentoRoute =
     path: '/adensamento',
     getParentRoute: () => AppRelatorioDigitalizacaoRoute,
   } as any)
+const AppRelatorioDigitalizacaoAsfDapRoute =
+  AppRelatorioDigitalizacaoAsfDapRouteImport.update({
+    id: '/asf-dap',
+    path: '/asf-dap',
+    getParentRoute: () => AppRelatorioDigitalizacaoRoute,
+  } as any)
 const AppRelatorioDigitalizacaoCapsulasRoute =
   AppRelatorioDigitalizacaoCapsulasRouteImport.update({
     id: '/capsulas',
     path: '/capsulas',
+    getParentRoute: () => AppRelatorioDigitalizacaoRoute,
+  } as any)
+const AppRelatorioDigitalizacaoCompressaoSimplesRoute =
+  AppRelatorioDigitalizacaoCompressaoSimplesRouteImport.update({
+    id: '/compressao-simples',
+    path: '/compressao-simples',
     getParentRoute: () => AppRelatorioDigitalizacaoRoute,
   } as any)
 const AppRelatorioDigitalizacaoPendenciasRoute =
@@ -322,6 +433,24 @@ const AppRelatorioDigitalizacaoPendenciasRoute =
     id: '/pendencias',
     path: '/pendencias',
     getParentRoute: () => AppRelatorioDigitalizacaoRoute,
+  } as any)
+const AppRelatorioDigitalizacaoPermVRoute =
+  AppRelatorioDigitalizacaoPermVRouteImport.update({
+    id: '/perm-v',
+    path: '/perm-v',
+    getParentRoute: () => AppRelatorioDigitalizacaoRoute,
+  } as any)
+const AppRelatorioEspeciaisIndexRoute =
+  AppRelatorioEspeciaisIndexRouteImport.update({
+    id: '/relatorio/especiais/',
+    path: '/relatorio/especiais/',
+    getParentRoute: () => AppRoute,
+  } as any)
+const AppRelatorioEspeciaisOsNumeroRoute =
+  AppRelatorioEspeciaisOsNumeroRouteImport.update({
+    id: '/relatorio/especiais/$osNumero',
+    path: '/relatorio/especiais/$osNumero',
+    getParentRoute: () => AppRoute,
   } as any)
 const AppRelatorioOsIndexRoute = AppRelatorioOsIndexRouteImport.update({
   id: '/relatorio/os/',
@@ -348,6 +477,7 @@ const AppRelatorioOsOsIdAmostraAmostraIdEnsaioEnsaioIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin-migrar-labstate': typeof AdminMigrarLabstateRoute
   '/auth': typeof AuthRoute
   '/pendente': typeof PendenteRoute
   '/registro-amostra': typeof RegistroAmostraRoute
@@ -370,9 +500,16 @@ export interface FileRoutesByFullPath {
   '/admin/usuarios': typeof AppAdminUsuariosRoute
   '/chegada-amostras/registro': typeof AppChegadaAmostrasRegistroRoute
   '/modelos-relatorios/adensamento': typeof AppModelosRelatoriosAdensamentoRoute
+  '/modelos-relatorios/asf-dap': typeof AppModelosRelatoriosAsfDapRoute
   '/modelos-relatorios/cisalhamento-direto': typeof AppModelosRelatoriosCisalhamentoDiretoRoute
+  '/modelos-relatorios/compressao-simples': typeof AppModelosRelatoriosCompressaoSimplesRoute
   '/modelos-relatorios/mesp-a-natural': typeof AppModelosRelatoriosMespANaturalRoute
+  '/modelos-relatorios/modulo-resiliencia': typeof AppModelosRelatoriosModuloResilienciaRoute
+  '/modelos-relatorios/perm-v': typeof AppModelosRelatoriosPermVRoute
   '/modelos-relatorios/triaxial-cid': typeof AppModelosRelatoriosTriaxialCidRoute
+  '/modelos-relatorios/triaxial-ciu': typeof AppModelosRelatoriosTriaxialCiuRoute
+  '/modelos-relatorios/triaxial-uu': typeof AppModelosRelatoriosTriaxialUuRoute
+  '/modelos-relatorios/umidade-natural': typeof AppModelosRelatoriosUmidadeNaturalRoute
   '/programacao/central': typeof AppProgramacaoCentralRoute
   '/programacao/compatibilidade': typeof AppProgramacaoCompatibilidadeRoute
   '/programacao/dashboard': typeof AppProgramacaoDashboardRoute
@@ -381,20 +518,31 @@ export interface FileRoutesByFullPath {
   '/programacao/scan': typeof AppProgramacaoScanRoute
   '/programacao/tipos-ensaio': typeof AppProgramacaoTiposEnsaioRoute
   '/relatorio/adensamento': typeof AppRelatorioAdensamentoRoute
+  '/relatorio/asf-dap': typeof AppRelatorioAsfDapRoute
   '/relatorio/cisalhamento-direto': typeof AppRelatorioCisalhamentoDiretoRoute
+  '/relatorio/compressao-simples': typeof AppRelatorioCompressaoSimplesRoute
   '/relatorio/digitalizacao': typeof AppRelatorioDigitalizacaoRouteWithChildren
   '/relatorio/emissoes': typeof AppRelatorioEmissoesRoute
   '/relatorio/mesp-a': typeof AppRelatorioMespARoute
   '/relatorio/mesp-a-natural': typeof AppRelatorioMespANaturalRoute
+  '/relatorio/modulo-resiliencia': typeof AppRelatorioModuloResilienciaRoute
   '/relatorio/pendentes': typeof AppRelatorioPendentesRoute
+  '/relatorio/perm-v': typeof AppRelatorioPermVRoute
   '/relatorio/triaxial-cid': typeof AppRelatorioTriaxialCidRoute
+  '/relatorio/umidade-natural': typeof AppRelatorioUmidadeNaturalRoute
+  '/api/photo/$fileId': typeof ApiPhotoFileIdRoute
   '/modelos-relatorios/': typeof AppModelosRelatoriosIndexRoute
   '/programacao/': typeof AppProgramacaoIndexRoute
   '/relatorio/': typeof AppRelatorioIndexRoute
   '/relatorio/digitalizacao/adensamento': typeof AppRelatorioDigitalizacaoAdensamentoRoute
+  '/relatorio/digitalizacao/asf-dap': typeof AppRelatorioDigitalizacaoAsfDapRoute
   '/relatorio/digitalizacao/capsulas': typeof AppRelatorioDigitalizacaoCapsulasRoute
+  '/relatorio/digitalizacao/compressao-simples': typeof AppRelatorioDigitalizacaoCompressaoSimplesRoute
   '/relatorio/digitalizacao/pendencias': typeof AppRelatorioDigitalizacaoPendenciasRoute
+  '/relatorio/digitalizacao/perm-v': typeof AppRelatorioDigitalizacaoPermVRoute
+  '/relatorio/especiais/$osNumero': typeof AppRelatorioEspeciaisOsNumeroRoute
   '/relatorio/digitalizacao/': typeof AppRelatorioDigitalizacaoIndexRoute
+  '/relatorio/especiais/': typeof AppRelatorioEspeciaisIndexRoute
   '/relatorio/os/': typeof AppRelatorioOsIndexRoute
   '/relatorio/os/$osId/': typeof AppRelatorioOsOsIdIndexRoute
   '/relatorio/os/$osId/amostra/$amostraId/': typeof AppRelatorioOsOsIdAmostraAmostraIdIndexRoute
@@ -402,6 +550,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/admin-migrar-labstate': typeof AdminMigrarLabstateRoute
   '/auth': typeof AuthRoute
   '/pendente': typeof PendenteRoute
   '/registro-amostra': typeof RegistroAmostraRoute
@@ -424,9 +573,16 @@ export interface FileRoutesByTo {
   '/admin/usuarios': typeof AppAdminUsuariosRoute
   '/chegada-amostras/registro': typeof AppChegadaAmostrasRegistroRoute
   '/modelos-relatorios/adensamento': typeof AppModelosRelatoriosAdensamentoRoute
+  '/modelos-relatorios/asf-dap': typeof AppModelosRelatoriosAsfDapRoute
   '/modelos-relatorios/cisalhamento-direto': typeof AppModelosRelatoriosCisalhamentoDiretoRoute
+  '/modelos-relatorios/compressao-simples': typeof AppModelosRelatoriosCompressaoSimplesRoute
   '/modelos-relatorios/mesp-a-natural': typeof AppModelosRelatoriosMespANaturalRoute
+  '/modelos-relatorios/modulo-resiliencia': typeof AppModelosRelatoriosModuloResilienciaRoute
+  '/modelos-relatorios/perm-v': typeof AppModelosRelatoriosPermVRoute
   '/modelos-relatorios/triaxial-cid': typeof AppModelosRelatoriosTriaxialCidRoute
+  '/modelos-relatorios/triaxial-ciu': typeof AppModelosRelatoriosTriaxialCiuRoute
+  '/modelos-relatorios/triaxial-uu': typeof AppModelosRelatoriosTriaxialUuRoute
+  '/modelos-relatorios/umidade-natural': typeof AppModelosRelatoriosUmidadeNaturalRoute
   '/programacao/central': typeof AppProgramacaoCentralRoute
   '/programacao/compatibilidade': typeof AppProgramacaoCompatibilidadeRoute
   '/programacao/dashboard': typeof AppProgramacaoDashboardRoute
@@ -435,19 +591,30 @@ export interface FileRoutesByTo {
   '/programacao/scan': typeof AppProgramacaoScanRoute
   '/programacao/tipos-ensaio': typeof AppProgramacaoTiposEnsaioRoute
   '/relatorio/adensamento': typeof AppRelatorioAdensamentoRoute
+  '/relatorio/asf-dap': typeof AppRelatorioAsfDapRoute
   '/relatorio/cisalhamento-direto': typeof AppRelatorioCisalhamentoDiretoRoute
+  '/relatorio/compressao-simples': typeof AppRelatorioCompressaoSimplesRoute
   '/relatorio/emissoes': typeof AppRelatorioEmissoesRoute
   '/relatorio/mesp-a': typeof AppRelatorioMespARoute
   '/relatorio/mesp-a-natural': typeof AppRelatorioMespANaturalRoute
+  '/relatorio/modulo-resiliencia': typeof AppRelatorioModuloResilienciaRoute
   '/relatorio/pendentes': typeof AppRelatorioPendentesRoute
+  '/relatorio/perm-v': typeof AppRelatorioPermVRoute
   '/relatorio/triaxial-cid': typeof AppRelatorioTriaxialCidRoute
+  '/relatorio/umidade-natural': typeof AppRelatorioUmidadeNaturalRoute
+  '/api/photo/$fileId': typeof ApiPhotoFileIdRoute
   '/modelos-relatorios': typeof AppModelosRelatoriosIndexRoute
   '/programacao': typeof AppProgramacaoIndexRoute
   '/relatorio': typeof AppRelatorioIndexRoute
   '/relatorio/digitalizacao/adensamento': typeof AppRelatorioDigitalizacaoAdensamentoRoute
+  '/relatorio/digitalizacao/asf-dap': typeof AppRelatorioDigitalizacaoAsfDapRoute
   '/relatorio/digitalizacao/capsulas': typeof AppRelatorioDigitalizacaoCapsulasRoute
+  '/relatorio/digitalizacao/compressao-simples': typeof AppRelatorioDigitalizacaoCompressaoSimplesRoute
   '/relatorio/digitalizacao/pendencias': typeof AppRelatorioDigitalizacaoPendenciasRoute
+  '/relatorio/digitalizacao/perm-v': typeof AppRelatorioDigitalizacaoPermVRoute
+  '/relatorio/especiais/$osNumero': typeof AppRelatorioEspeciaisOsNumeroRoute
   '/relatorio/digitalizacao': typeof AppRelatorioDigitalizacaoIndexRoute
+  '/relatorio/especiais': typeof AppRelatorioEspeciaisIndexRoute
   '/relatorio/os': typeof AppRelatorioOsIndexRoute
   '/relatorio/os/$osId': typeof AppRelatorioOsOsIdIndexRoute
   '/relatorio/os/$osId/amostra/$amostraId': typeof AppRelatorioOsOsIdAmostraAmostraIdIndexRoute
@@ -457,6 +624,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
+  '/admin-migrar-labstate': typeof AdminMigrarLabstateRoute
   '/auth': typeof AuthRoute
   '/pendente': typeof PendenteRoute
   '/registro-amostra': typeof RegistroAmostraRoute
@@ -479,9 +647,16 @@ export interface FileRoutesById {
   '/_app/admin/usuarios': typeof AppAdminUsuariosRoute
   '/_app/chegada-amostras/registro': typeof AppChegadaAmostrasRegistroRoute
   '/_app/modelos-relatorios/adensamento': typeof AppModelosRelatoriosAdensamentoRoute
+  '/_app/modelos-relatorios/asf-dap': typeof AppModelosRelatoriosAsfDapRoute
   '/_app/modelos-relatorios/cisalhamento-direto': typeof AppModelosRelatoriosCisalhamentoDiretoRoute
+  '/_app/modelos-relatorios/compressao-simples': typeof AppModelosRelatoriosCompressaoSimplesRoute
   '/_app/modelos-relatorios/mesp-a-natural': typeof AppModelosRelatoriosMespANaturalRoute
+  '/_app/modelos-relatorios/modulo-resiliencia': typeof AppModelosRelatoriosModuloResilienciaRoute
+  '/_app/modelos-relatorios/perm-v': typeof AppModelosRelatoriosPermVRoute
   '/_app/modelos-relatorios/triaxial-cid': typeof AppModelosRelatoriosTriaxialCidRoute
+  '/_app/modelos-relatorios/triaxial-ciu': typeof AppModelosRelatoriosTriaxialCiuRoute
+  '/_app/modelos-relatorios/triaxial-uu': typeof AppModelosRelatoriosTriaxialUuRoute
+  '/_app/modelos-relatorios/umidade-natural': typeof AppModelosRelatoriosUmidadeNaturalRoute
   '/_app/programacao/central': typeof AppProgramacaoCentralRoute
   '/_app/programacao/compatibilidade': typeof AppProgramacaoCompatibilidadeRoute
   '/_app/programacao/dashboard': typeof AppProgramacaoDashboardRoute
@@ -490,20 +665,31 @@ export interface FileRoutesById {
   '/_app/programacao/scan': typeof AppProgramacaoScanRoute
   '/_app/programacao/tipos-ensaio': typeof AppProgramacaoTiposEnsaioRoute
   '/_app/relatorio/adensamento': typeof AppRelatorioAdensamentoRoute
+  '/_app/relatorio/asf-dap': typeof AppRelatorioAsfDapRoute
   '/_app/relatorio/cisalhamento-direto': typeof AppRelatorioCisalhamentoDiretoRoute
+  '/_app/relatorio/compressao-simples': typeof AppRelatorioCompressaoSimplesRoute
   '/_app/relatorio/digitalizacao': typeof AppRelatorioDigitalizacaoRouteWithChildren
   '/_app/relatorio/emissoes': typeof AppRelatorioEmissoesRoute
   '/_app/relatorio/mesp-a': typeof AppRelatorioMespARoute
   '/_app/relatorio/mesp-a-natural': typeof AppRelatorioMespANaturalRoute
+  '/_app/relatorio/modulo-resiliencia': typeof AppRelatorioModuloResilienciaRoute
   '/_app/relatorio/pendentes': typeof AppRelatorioPendentesRoute
+  '/_app/relatorio/perm-v': typeof AppRelatorioPermVRoute
   '/_app/relatorio/triaxial-cid': typeof AppRelatorioTriaxialCidRoute
+  '/_app/relatorio/umidade-natural': typeof AppRelatorioUmidadeNaturalRoute
+  '/api/photo/$fileId': typeof ApiPhotoFileIdRoute
   '/_app/modelos-relatorios/': typeof AppModelosRelatoriosIndexRoute
   '/_app/programacao/': typeof AppProgramacaoIndexRoute
   '/_app/relatorio/': typeof AppRelatorioIndexRoute
   '/_app/relatorio/digitalizacao/adensamento': typeof AppRelatorioDigitalizacaoAdensamentoRoute
+  '/_app/relatorio/digitalizacao/asf-dap': typeof AppRelatorioDigitalizacaoAsfDapRoute
   '/_app/relatorio/digitalizacao/capsulas': typeof AppRelatorioDigitalizacaoCapsulasRoute
+  '/_app/relatorio/digitalizacao/compressao-simples': typeof AppRelatorioDigitalizacaoCompressaoSimplesRoute
   '/_app/relatorio/digitalizacao/pendencias': typeof AppRelatorioDigitalizacaoPendenciasRoute
+  '/_app/relatorio/digitalizacao/perm-v': typeof AppRelatorioDigitalizacaoPermVRoute
+  '/_app/relatorio/especiais/$osNumero': typeof AppRelatorioEspeciaisOsNumeroRoute
   '/_app/relatorio/digitalizacao/': typeof AppRelatorioDigitalizacaoIndexRoute
+  '/_app/relatorio/especiais/': typeof AppRelatorioEspeciaisIndexRoute
   '/_app/relatorio/os/': typeof AppRelatorioOsIndexRoute
   '/_app/relatorio/os/$osId/': typeof AppRelatorioOsOsIdIndexRoute
   '/_app/relatorio/os/$osId/amostra/$amostraId/': typeof AppRelatorioOsOsIdAmostraAmostraIdIndexRoute
@@ -513,6 +699,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/admin-migrar-labstate'
     | '/auth'
     | '/pendente'
     | '/registro-amostra'
@@ -535,9 +722,16 @@ export interface FileRouteTypes {
     | '/admin/usuarios'
     | '/chegada-amostras/registro'
     | '/modelos-relatorios/adensamento'
+    | '/modelos-relatorios/asf-dap'
     | '/modelos-relatorios/cisalhamento-direto'
+    | '/modelos-relatorios/compressao-simples'
     | '/modelos-relatorios/mesp-a-natural'
+    | '/modelos-relatorios/modulo-resiliencia'
+    | '/modelos-relatorios/perm-v'
     | '/modelos-relatorios/triaxial-cid'
+    | '/modelos-relatorios/triaxial-ciu'
+    | '/modelos-relatorios/triaxial-uu'
+    | '/modelos-relatorios/umidade-natural'
     | '/programacao/central'
     | '/programacao/compatibilidade'
     | '/programacao/dashboard'
@@ -546,20 +740,31 @@ export interface FileRouteTypes {
     | '/programacao/scan'
     | '/programacao/tipos-ensaio'
     | '/relatorio/adensamento'
+    | '/relatorio/asf-dap'
     | '/relatorio/cisalhamento-direto'
+    | '/relatorio/compressao-simples'
     | '/relatorio/digitalizacao'
     | '/relatorio/emissoes'
     | '/relatorio/mesp-a'
     | '/relatorio/mesp-a-natural'
+    | '/relatorio/modulo-resiliencia'
     | '/relatorio/pendentes'
+    | '/relatorio/perm-v'
     | '/relatorio/triaxial-cid'
+    | '/relatorio/umidade-natural'
+    | '/api/photo/$fileId'
     | '/modelos-relatorios/'
     | '/programacao/'
     | '/relatorio/'
     | '/relatorio/digitalizacao/adensamento'
+    | '/relatorio/digitalizacao/asf-dap'
     | '/relatorio/digitalizacao/capsulas'
+    | '/relatorio/digitalizacao/compressao-simples'
     | '/relatorio/digitalizacao/pendencias'
+    | '/relatorio/digitalizacao/perm-v'
+    | '/relatorio/especiais/$osNumero'
     | '/relatorio/digitalizacao/'
+    | '/relatorio/especiais/'
     | '/relatorio/os/'
     | '/relatorio/os/$osId/'
     | '/relatorio/os/$osId/amostra/$amostraId/'
@@ -567,6 +772,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/admin-migrar-labstate'
     | '/auth'
     | '/pendente'
     | '/registro-amostra'
@@ -589,9 +795,16 @@ export interface FileRouteTypes {
     | '/admin/usuarios'
     | '/chegada-amostras/registro'
     | '/modelos-relatorios/adensamento'
+    | '/modelos-relatorios/asf-dap'
     | '/modelos-relatorios/cisalhamento-direto'
+    | '/modelos-relatorios/compressao-simples'
     | '/modelos-relatorios/mesp-a-natural'
+    | '/modelos-relatorios/modulo-resiliencia'
+    | '/modelos-relatorios/perm-v'
     | '/modelos-relatorios/triaxial-cid'
+    | '/modelos-relatorios/triaxial-ciu'
+    | '/modelos-relatorios/triaxial-uu'
+    | '/modelos-relatorios/umidade-natural'
     | '/programacao/central'
     | '/programacao/compatibilidade'
     | '/programacao/dashboard'
@@ -600,19 +813,30 @@ export interface FileRouteTypes {
     | '/programacao/scan'
     | '/programacao/tipos-ensaio'
     | '/relatorio/adensamento'
+    | '/relatorio/asf-dap'
     | '/relatorio/cisalhamento-direto'
+    | '/relatorio/compressao-simples'
     | '/relatorio/emissoes'
     | '/relatorio/mesp-a'
     | '/relatorio/mesp-a-natural'
+    | '/relatorio/modulo-resiliencia'
     | '/relatorio/pendentes'
+    | '/relatorio/perm-v'
     | '/relatorio/triaxial-cid'
+    | '/relatorio/umidade-natural'
+    | '/api/photo/$fileId'
     | '/modelos-relatorios'
     | '/programacao'
     | '/relatorio'
     | '/relatorio/digitalizacao/adensamento'
+    | '/relatorio/digitalizacao/asf-dap'
     | '/relatorio/digitalizacao/capsulas'
+    | '/relatorio/digitalizacao/compressao-simples'
     | '/relatorio/digitalizacao/pendencias'
+    | '/relatorio/digitalizacao/perm-v'
+    | '/relatorio/especiais/$osNumero'
     | '/relatorio/digitalizacao'
+    | '/relatorio/especiais'
     | '/relatorio/os'
     | '/relatorio/os/$osId'
     | '/relatorio/os/$osId/amostra/$amostraId'
@@ -621,6 +845,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/_app'
+    | '/admin-migrar-labstate'
     | '/auth'
     | '/pendente'
     | '/registro-amostra'
@@ -643,9 +868,16 @@ export interface FileRouteTypes {
     | '/_app/admin/usuarios'
     | '/_app/chegada-amostras/registro'
     | '/_app/modelos-relatorios/adensamento'
+    | '/_app/modelos-relatorios/asf-dap'
     | '/_app/modelos-relatorios/cisalhamento-direto'
+    | '/_app/modelos-relatorios/compressao-simples'
     | '/_app/modelos-relatorios/mesp-a-natural'
+    | '/_app/modelos-relatorios/modulo-resiliencia'
+    | '/_app/modelos-relatorios/perm-v'
     | '/_app/modelos-relatorios/triaxial-cid'
+    | '/_app/modelos-relatorios/triaxial-ciu'
+    | '/_app/modelos-relatorios/triaxial-uu'
+    | '/_app/modelos-relatorios/umidade-natural'
     | '/_app/programacao/central'
     | '/_app/programacao/compatibilidade'
     | '/_app/programacao/dashboard'
@@ -654,20 +886,31 @@ export interface FileRouteTypes {
     | '/_app/programacao/scan'
     | '/_app/programacao/tipos-ensaio'
     | '/_app/relatorio/adensamento'
+    | '/_app/relatorio/asf-dap'
     | '/_app/relatorio/cisalhamento-direto'
+    | '/_app/relatorio/compressao-simples'
     | '/_app/relatorio/digitalizacao'
     | '/_app/relatorio/emissoes'
     | '/_app/relatorio/mesp-a'
     | '/_app/relatorio/mesp-a-natural'
+    | '/_app/relatorio/modulo-resiliencia'
     | '/_app/relatorio/pendentes'
+    | '/_app/relatorio/perm-v'
     | '/_app/relatorio/triaxial-cid'
+    | '/_app/relatorio/umidade-natural'
+    | '/api/photo/$fileId'
     | '/_app/modelos-relatorios/'
     | '/_app/programacao/'
     | '/_app/relatorio/'
     | '/_app/relatorio/digitalizacao/adensamento'
+    | '/_app/relatorio/digitalizacao/asf-dap'
     | '/_app/relatorio/digitalizacao/capsulas'
+    | '/_app/relatorio/digitalizacao/compressao-simples'
     | '/_app/relatorio/digitalizacao/pendencias'
+    | '/_app/relatorio/digitalizacao/perm-v'
+    | '/_app/relatorio/especiais/$osNumero'
     | '/_app/relatorio/digitalizacao/'
+    | '/_app/relatorio/especiais/'
     | '/_app/relatorio/os/'
     | '/_app/relatorio/os/$osId/'
     | '/_app/relatorio/os/$osId/amostra/$amostraId/'
@@ -677,10 +920,12 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
+  AdminMigrarLabstateRoute: typeof AdminMigrarLabstateRoute
   AuthRoute: typeof AuthRoute
   PendenteRoute: typeof PendenteRoute
   RegistroAmostraRoute: typeof RegistroAmostraRoute
   RegistroChegadaRoute: typeof RegistroChegadaRoute
+  ApiPhotoFileIdRoute: typeof ApiPhotoFileIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -697,6 +942,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin-migrar-labstate': {
+      id: '/admin-migrar-labstate'
+      path: '/admin-migrar-labstate'
+      fullPath: '/admin-migrar-labstate'
+      preLoaderRoute: typeof AdminMigrarLabstateRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
@@ -860,11 +1112,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppModelosRelatoriosAdensamentoRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/modelos-relatorios/asf-dap': {
+      id: '/_app/modelos-relatorios/asf-dap'
+      path: '/modelos-relatorios/asf-dap'
+      fullPath: '/modelos-relatorios/asf-dap'
+      preLoaderRoute: typeof AppModelosRelatoriosAsfDapRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/modelos-relatorios/cisalhamento-direto': {
       id: '/_app/modelos-relatorios/cisalhamento-direto'
       path: '/modelos-relatorios/cisalhamento-direto'
       fullPath: '/modelos-relatorios/cisalhamento-direto'
       preLoaderRoute: typeof AppModelosRelatoriosCisalhamentoDiretoRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/modelos-relatorios/compressao-simples': {
+      id: '/_app/modelos-relatorios/compressao-simples'
+      path: '/modelos-relatorios/compressao-simples'
+      fullPath: '/modelos-relatorios/compressao-simples'
+      preLoaderRoute: typeof AppModelosRelatoriosCompressaoSimplesRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/modelos-relatorios/mesp-a-natural': {
@@ -874,11 +1140,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppModelosRelatoriosMespANaturalRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/modelos-relatorios/modulo-resiliencia': {
+      id: '/_app/modelos-relatorios/modulo-resiliencia'
+      path: '/modelos-relatorios/modulo-resiliencia'
+      fullPath: '/modelos-relatorios/modulo-resiliencia'
+      preLoaderRoute: typeof AppModelosRelatoriosModuloResilienciaRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/modelos-relatorios/perm-v': {
+      id: '/_app/modelos-relatorios/perm-v'
+      path: '/modelos-relatorios/perm-v'
+      fullPath: '/modelos-relatorios/perm-v'
+      preLoaderRoute: typeof AppModelosRelatoriosPermVRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/modelos-relatorios/triaxial-cid': {
       id: '/_app/modelos-relatorios/triaxial-cid'
       path: '/modelos-relatorios/triaxial-cid'
       fullPath: '/modelos-relatorios/triaxial-cid'
       preLoaderRoute: typeof AppModelosRelatoriosTriaxialCidRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/modelos-relatorios/triaxial-ciu': {
+      id: '/_app/modelos-relatorios/triaxial-ciu'
+      path: '/modelos-relatorios/triaxial-ciu'
+      fullPath: '/modelos-relatorios/triaxial-ciu'
+      preLoaderRoute: typeof AppModelosRelatoriosTriaxialCiuRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/modelos-relatorios/triaxial-uu': {
+      id: '/_app/modelos-relatorios/triaxial-uu'
+      path: '/modelos-relatorios/triaxial-uu'
+      fullPath: '/modelos-relatorios/triaxial-uu'
+      preLoaderRoute: typeof AppModelosRelatoriosTriaxialUuRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/modelos-relatorios/umidade-natural': {
+      id: '/_app/modelos-relatorios/umidade-natural'
+      path: '/modelos-relatorios/umidade-natural'
+      fullPath: '/modelos-relatorios/umidade-natural'
+      preLoaderRoute: typeof AppModelosRelatoriosUmidadeNaturalRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/programacao/': {
@@ -951,11 +1252,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRelatorioAdensamentoRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/relatorio/asf-dap': {
+      id: '/_app/relatorio/asf-dap'
+      path: '/relatorio/asf-dap'
+      fullPath: '/relatorio/asf-dap'
+      preLoaderRoute: typeof AppRelatorioAsfDapRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/relatorio/cisalhamento-direto': {
       id: '/_app/relatorio/cisalhamento-direto'
       path: '/relatorio/cisalhamento-direto'
       fullPath: '/relatorio/cisalhamento-direto'
       preLoaderRoute: typeof AppRelatorioCisalhamentoDiretoRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/relatorio/compressao-simples': {
+      id: '/_app/relatorio/compressao-simples'
+      path: '/relatorio/compressao-simples'
+      fullPath: '/relatorio/compressao-simples'
+      preLoaderRoute: typeof AppRelatorioCompressaoSimplesRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/relatorio/digitalizacao': {
@@ -986,11 +1301,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRelatorioMespANaturalRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/relatorio/modulo-resiliencia': {
+      id: '/_app/relatorio/modulo-resiliencia'
+      path: '/relatorio/modulo-resiliencia'
+      fullPath: '/relatorio/modulo-resiliencia'
+      preLoaderRoute: typeof AppRelatorioModuloResilienciaRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/relatorio/pendentes': {
       id: '/_app/relatorio/pendentes'
       path: '/relatorio/pendentes'
       fullPath: '/relatorio/pendentes'
       preLoaderRoute: typeof AppRelatorioPendentesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/relatorio/perm-v': {
+      id: '/_app/relatorio/perm-v'
+      path: '/relatorio/perm-v'
+      fullPath: '/relatorio/perm-v'
+      preLoaderRoute: typeof AppRelatorioPermVRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/relatorio/triaxial-cid': {
@@ -999,6 +1328,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/relatorio/triaxial-cid'
       preLoaderRoute: typeof AppRelatorioTriaxialCidRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/_app/relatorio/umidade-natural': {
+      id: '/_app/relatorio/umidade-natural'
+      path: '/relatorio/umidade-natural'
+      fullPath: '/relatorio/umidade-natural'
+      preLoaderRoute: typeof AppRelatorioUmidadeNaturalRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/api/photo/$fileId': {
+      id: '/api/photo/$fileId'
+      path: '/api/photo/$fileId'
+      fullPath: '/api/photo/$fileId'
+      preLoaderRoute: typeof ApiPhotoFileIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_app/relatorio/digitalizacao/': {
       id: '/_app/relatorio/digitalizacao/'
@@ -1014,11 +1357,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRelatorioDigitalizacaoAdensamentoRouteImport
       parentRoute: typeof AppRelatorioDigitalizacaoRoute
     }
+    '/_app/relatorio/digitalizacao/asf-dap': {
+      id: '/_app/relatorio/digitalizacao/asf-dap'
+      path: '/asf-dap'
+      fullPath: '/relatorio/digitalizacao/asf-dap'
+      preLoaderRoute: typeof AppRelatorioDigitalizacaoAsfDapRouteImport
+      parentRoute: typeof AppRelatorioDigitalizacaoRoute
+    }
     '/_app/relatorio/digitalizacao/capsulas': {
       id: '/_app/relatorio/digitalizacao/capsulas'
       path: '/capsulas'
       fullPath: '/relatorio/digitalizacao/capsulas'
       preLoaderRoute: typeof AppRelatorioDigitalizacaoCapsulasRouteImport
+      parentRoute: typeof AppRelatorioDigitalizacaoRoute
+    }
+    '/_app/relatorio/digitalizacao/compressao-simples': {
+      id: '/_app/relatorio/digitalizacao/compressao-simples'
+      path: '/compressao-simples'
+      fullPath: '/relatorio/digitalizacao/compressao-simples'
+      preLoaderRoute: typeof AppRelatorioDigitalizacaoCompressaoSimplesRouteImport
       parentRoute: typeof AppRelatorioDigitalizacaoRoute
     }
     '/_app/relatorio/digitalizacao/pendencias': {
@@ -1027,6 +1384,27 @@ declare module '@tanstack/react-router' {
       fullPath: '/relatorio/digitalizacao/pendencias'
       preLoaderRoute: typeof AppRelatorioDigitalizacaoPendenciasRouteImport
       parentRoute: typeof AppRelatorioDigitalizacaoRoute
+    }
+    '/_app/relatorio/digitalizacao/perm-v': {
+      id: '/_app/relatorio/digitalizacao/perm-v'
+      path: '/perm-v'
+      fullPath: '/relatorio/digitalizacao/perm-v'
+      preLoaderRoute: typeof AppRelatorioDigitalizacaoPermVRouteImport
+      parentRoute: typeof AppRelatorioDigitalizacaoRoute
+    }
+    '/_app/relatorio/especiais/': {
+      id: '/_app/relatorio/especiais/'
+      path: '/relatorio/especiais'
+      fullPath: '/relatorio/especiais/'
+      preLoaderRoute: typeof AppRelatorioEspeciaisIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/relatorio/especiais/$osNumero': {
+      id: '/_app/relatorio/especiais/$osNumero'
+      path: '/relatorio/especiais/$osNumero'
+      fullPath: '/relatorio/especiais/$osNumero'
+      preLoaderRoute: typeof AppRelatorioEspeciaisOsNumeroRouteImport
+      parentRoute: typeof AppRoute
     }
     '/_app/relatorio/os/': {
       id: '/_app/relatorio/os/'
@@ -1072,8 +1450,11 @@ const AppChegadaAmostrasRouteWithChildren =
 
 interface AppRelatorioDigitalizacaoRouteChildren {
   AppRelatorioDigitalizacaoAdensamentoRoute: typeof AppRelatorioDigitalizacaoAdensamentoRoute
+  AppRelatorioDigitalizacaoAsfDapRoute: typeof AppRelatorioDigitalizacaoAsfDapRoute
   AppRelatorioDigitalizacaoCapsulasRoute: typeof AppRelatorioDigitalizacaoCapsulasRoute
+  AppRelatorioDigitalizacaoCompressaoSimplesRoute: typeof AppRelatorioDigitalizacaoCompressaoSimplesRoute
   AppRelatorioDigitalizacaoPendenciasRoute: typeof AppRelatorioDigitalizacaoPendenciasRoute
+  AppRelatorioDigitalizacaoPermVRoute: typeof AppRelatorioDigitalizacaoPermVRoute
   AppRelatorioDigitalizacaoIndexRoute: typeof AppRelatorioDigitalizacaoIndexRoute
 }
 
@@ -1081,10 +1462,14 @@ const AppRelatorioDigitalizacaoRouteChildren: AppRelatorioDigitalizacaoRouteChil
   {
     AppRelatorioDigitalizacaoAdensamentoRoute:
       AppRelatorioDigitalizacaoAdensamentoRoute,
+    AppRelatorioDigitalizacaoAsfDapRoute: AppRelatorioDigitalizacaoAsfDapRoute,
     AppRelatorioDigitalizacaoCapsulasRoute:
       AppRelatorioDigitalizacaoCapsulasRoute,
+    AppRelatorioDigitalizacaoCompressaoSimplesRoute:
+      AppRelatorioDigitalizacaoCompressaoSimplesRoute,
     AppRelatorioDigitalizacaoPendenciasRoute:
       AppRelatorioDigitalizacaoPendenciasRoute,
+    AppRelatorioDigitalizacaoPermVRoute: AppRelatorioDigitalizacaoPermVRoute,
     AppRelatorioDigitalizacaoIndexRoute: AppRelatorioDigitalizacaoIndexRoute,
   }
 
@@ -1111,9 +1496,16 @@ interface AppRouteChildren {
   AppSaturacaoRoute: typeof AppSaturacaoRoute
   AppAdminUsuariosRoute: typeof AppAdminUsuariosRoute
   AppModelosRelatoriosAdensamentoRoute: typeof AppModelosRelatoriosAdensamentoRoute
+  AppModelosRelatoriosAsfDapRoute: typeof AppModelosRelatoriosAsfDapRoute
   AppModelosRelatoriosCisalhamentoDiretoRoute: typeof AppModelosRelatoriosCisalhamentoDiretoRoute
+  AppModelosRelatoriosCompressaoSimplesRoute: typeof AppModelosRelatoriosCompressaoSimplesRoute
   AppModelosRelatoriosMespANaturalRoute: typeof AppModelosRelatoriosMespANaturalRoute
+  AppModelosRelatoriosModuloResilienciaRoute: typeof AppModelosRelatoriosModuloResilienciaRoute
+  AppModelosRelatoriosPermVRoute: typeof AppModelosRelatoriosPermVRoute
   AppModelosRelatoriosTriaxialCidRoute: typeof AppModelosRelatoriosTriaxialCidRoute
+  AppModelosRelatoriosTriaxialCiuRoute: typeof AppModelosRelatoriosTriaxialCiuRoute
+  AppModelosRelatoriosTriaxialUuRoute: typeof AppModelosRelatoriosTriaxialUuRoute
+  AppModelosRelatoriosUmidadeNaturalRoute: typeof AppModelosRelatoriosUmidadeNaturalRoute
   AppProgramacaoCentralRoute: typeof AppProgramacaoCentralRoute
   AppProgramacaoCompatibilidadeRoute: typeof AppProgramacaoCompatibilidadeRoute
   AppProgramacaoDashboardRoute: typeof AppProgramacaoDashboardRoute
@@ -1122,16 +1514,23 @@ interface AppRouteChildren {
   AppProgramacaoScanRoute: typeof AppProgramacaoScanRoute
   AppProgramacaoTiposEnsaioRoute: typeof AppProgramacaoTiposEnsaioRoute
   AppRelatorioAdensamentoRoute: typeof AppRelatorioAdensamentoRoute
+  AppRelatorioAsfDapRoute: typeof AppRelatorioAsfDapRoute
   AppRelatorioCisalhamentoDiretoRoute: typeof AppRelatorioCisalhamentoDiretoRoute
+  AppRelatorioCompressaoSimplesRoute: typeof AppRelatorioCompressaoSimplesRoute
   AppRelatorioDigitalizacaoRoute: typeof AppRelatorioDigitalizacaoRouteWithChildren
   AppRelatorioEmissoesRoute: typeof AppRelatorioEmissoesRoute
   AppRelatorioMespARoute: typeof AppRelatorioMespARoute
   AppRelatorioMespANaturalRoute: typeof AppRelatorioMespANaturalRoute
+  AppRelatorioModuloResilienciaRoute: typeof AppRelatorioModuloResilienciaRoute
   AppRelatorioPendentesRoute: typeof AppRelatorioPendentesRoute
+  AppRelatorioPermVRoute: typeof AppRelatorioPermVRoute
   AppRelatorioTriaxialCidRoute: typeof AppRelatorioTriaxialCidRoute
+  AppRelatorioUmidadeNaturalRoute: typeof AppRelatorioUmidadeNaturalRoute
   AppModelosRelatoriosIndexRoute: typeof AppModelosRelatoriosIndexRoute
   AppProgramacaoIndexRoute: typeof AppProgramacaoIndexRoute
   AppRelatorioIndexRoute: typeof AppRelatorioIndexRoute
+  AppRelatorioEspeciaisOsNumeroRoute: typeof AppRelatorioEspeciaisOsNumeroRoute
+  AppRelatorioEspeciaisIndexRoute: typeof AppRelatorioEspeciaisIndexRoute
   AppRelatorioOsIndexRoute: typeof AppRelatorioOsIndexRoute
   AppRelatorioOsOsIdIndexRoute: typeof AppRelatorioOsOsIdIndexRoute
   AppRelatorioOsOsIdAmostraAmostraIdIndexRoute: typeof AppRelatorioOsOsIdAmostraAmostraIdIndexRoute
@@ -1156,10 +1555,20 @@ const AppRouteChildren: AppRouteChildren = {
   AppSaturacaoRoute: AppSaturacaoRoute,
   AppAdminUsuariosRoute: AppAdminUsuariosRoute,
   AppModelosRelatoriosAdensamentoRoute: AppModelosRelatoriosAdensamentoRoute,
+  AppModelosRelatoriosAsfDapRoute: AppModelosRelatoriosAsfDapRoute,
   AppModelosRelatoriosCisalhamentoDiretoRoute:
     AppModelosRelatoriosCisalhamentoDiretoRoute,
+  AppModelosRelatoriosCompressaoSimplesRoute:
+    AppModelosRelatoriosCompressaoSimplesRoute,
   AppModelosRelatoriosMespANaturalRoute: AppModelosRelatoriosMespANaturalRoute,
+  AppModelosRelatoriosModuloResilienciaRoute:
+    AppModelosRelatoriosModuloResilienciaRoute,
+  AppModelosRelatoriosPermVRoute: AppModelosRelatoriosPermVRoute,
   AppModelosRelatoriosTriaxialCidRoute: AppModelosRelatoriosTriaxialCidRoute,
+  AppModelosRelatoriosTriaxialCiuRoute: AppModelosRelatoriosTriaxialCiuRoute,
+  AppModelosRelatoriosTriaxialUuRoute: AppModelosRelatoriosTriaxialUuRoute,
+  AppModelosRelatoriosUmidadeNaturalRoute:
+    AppModelosRelatoriosUmidadeNaturalRoute,
   AppProgramacaoCentralRoute: AppProgramacaoCentralRoute,
   AppProgramacaoCompatibilidadeRoute: AppProgramacaoCompatibilidadeRoute,
   AppProgramacaoDashboardRoute: AppProgramacaoDashboardRoute,
@@ -1168,16 +1577,23 @@ const AppRouteChildren: AppRouteChildren = {
   AppProgramacaoScanRoute: AppProgramacaoScanRoute,
   AppProgramacaoTiposEnsaioRoute: AppProgramacaoTiposEnsaioRoute,
   AppRelatorioAdensamentoRoute: AppRelatorioAdensamentoRoute,
+  AppRelatorioAsfDapRoute: AppRelatorioAsfDapRoute,
   AppRelatorioCisalhamentoDiretoRoute: AppRelatorioCisalhamentoDiretoRoute,
+  AppRelatorioCompressaoSimplesRoute: AppRelatorioCompressaoSimplesRoute,
   AppRelatorioDigitalizacaoRoute: AppRelatorioDigitalizacaoRouteWithChildren,
   AppRelatorioEmissoesRoute: AppRelatorioEmissoesRoute,
   AppRelatorioMespARoute: AppRelatorioMespARoute,
   AppRelatorioMespANaturalRoute: AppRelatorioMespANaturalRoute,
+  AppRelatorioModuloResilienciaRoute: AppRelatorioModuloResilienciaRoute,
   AppRelatorioPendentesRoute: AppRelatorioPendentesRoute,
+  AppRelatorioPermVRoute: AppRelatorioPermVRoute,
   AppRelatorioTriaxialCidRoute: AppRelatorioTriaxialCidRoute,
+  AppRelatorioUmidadeNaturalRoute: AppRelatorioUmidadeNaturalRoute,
   AppModelosRelatoriosIndexRoute: AppModelosRelatoriosIndexRoute,
   AppProgramacaoIndexRoute: AppProgramacaoIndexRoute,
   AppRelatorioIndexRoute: AppRelatorioIndexRoute,
+  AppRelatorioEspeciaisOsNumeroRoute: AppRelatorioEspeciaisOsNumeroRoute,
+  AppRelatorioEspeciaisIndexRoute: AppRelatorioEspeciaisIndexRoute,
   AppRelatorioOsIndexRoute: AppRelatorioOsIndexRoute,
   AppRelatorioOsOsIdIndexRoute: AppRelatorioOsOsIdIndexRoute,
   AppRelatorioOsOsIdAmostraAmostraIdIndexRoute:
@@ -1191,10 +1607,12 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
+  AdminMigrarLabstateRoute: AdminMigrarLabstateRoute,
   AuthRoute: AuthRoute,
   PendenteRoute: PendenteRoute,
   RegistroAmostraRoute: RegistroAmostraRoute,
   RegistroChegadaRoute: RegistroChegadaRoute,
+  ApiPhotoFileIdRoute: ApiPhotoFileIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
