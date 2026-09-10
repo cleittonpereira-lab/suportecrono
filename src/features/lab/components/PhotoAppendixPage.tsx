@@ -13,6 +13,8 @@ export function PhotoAppendixPage({
   title,
   norms,
   photos,
+  agruparPorCategoria = true,
+  subtitulo,
 }: {
   sample: ReportSample;
   page: number;
@@ -20,15 +22,25 @@ export function PhotoAppendixPage({
   title: string;
   norms: ReportNorm[];
   photos: Photo[];
+  /**
+   * `false` desenha uma grade 2×2 simples, com a categoria na legenda de cada
+   * foto. Quem pagina o anexo em fatias de 4 fotos precisa disso: agrupando
+   * por categoria, uma fatia com moldagem + ruptura + outro vira três seções
+   * de uma fileira cada e passa do espaço da página.
+   */
+  agruparPorCategoria?: boolean;
+  subtitulo?: string;
 }) {
   const hasSpecimen = photos.some((p) => p.specimenId);
 
   return (
     <ReportPage sample={sample} page={page} total={total} title={title} norms={norms}>
       <div className="mt-1 text-[10.5px] font-semibold uppercase tracking-wide text-[#141414]">
-        Registro Fotográfico
+        Registro Fotográfico{subtitulo ? ` — ${subtitulo}` : ""}
       </div>
-      {hasSpecimen ? (
+      {!agruparPorCategoria ? (
+        <PhotoSection heading="" items={photos} />
+      ) : hasSpecimen ? (
         // Triaxial: agrupa por CP e, dentro do CP, por categoria.
         Object.entries(groupBy(photos, (p) => p.specimenId ?? "—")).map(([cp, list]) => (
           <div key={cp} className="mt-2">
@@ -58,11 +70,17 @@ function groupBy<T, K extends string>(arr: T[], key: (item: T) => K): Record<K, 
   return out;
 }
 
+const ROTULO_CATEGORIA: Record<Photo["kind"], string> = {
+  moldagem: "Moldagem do CP",
+  ruptura: "Ruptura do CP",
+  outro: "Outros registros",
+};
+
 function PhotoSection({ heading, items }: { heading: string; items: Photo[] }) {
   if (items.length === 0) return null;
   return (
     <div className="mt-2">
-      <div className="mb-1 text-[10px] font-semibold text-[#141414]">{heading}</div>
+      {heading && <div className="mb-1 text-[10px] font-semibold text-[#141414]">{heading}</div>}
       <div className="grid grid-cols-2 gap-2">
         {items.map((p) => (
           <figure key={p.id} className="overflow-hidden rounded border border-[#141414]/40">
@@ -75,7 +93,7 @@ function PhotoSection({ heading, items }: { heading: string; items: Photo[] }) {
               />
             </div>
             <figcaption className="border-t border-[#141414]/30 px-2 py-1 text-[8.5px] leading-tight text-[#141414]/80">
-              {p.caption || heading}
+              {p.caption || heading || ROTULO_CATEGORIA[p.kind] || "Registro fotográfico"}
             </figcaption>
           </figure>
         ))}

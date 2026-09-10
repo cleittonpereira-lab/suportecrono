@@ -31,7 +31,7 @@ import { ReportVersionsPanel } from "@/components/report/ReportVersionsPanel";
 import {
   listApprovals, requestApproval, verifyApproval, decideApproval, type ApprovalRow,
 } from "@/lib/approvals.functions";
-import { getWorkflowStatuses, listStorageRevisions, getRevisionPdfBase64 } from "@/lib/driveSync.functions";
+import { getWorkflowStatuses, listDriveRevisions, getRevisionPdfBase64 } from "@/lib/driveSync.functions";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -418,8 +418,8 @@ export function CompressaoSimplesPage() {
 
   /**
    * O IndexedDB local (report-versions.ts) é só um cache rápido — a fonte
-   * de verdade de quais versões existem é o bucket privado no servidor
-   * (listStorageRevisions). Sem essa reconciliação, abrir o mesmo
+   * de verdade de quais versões existem é a pasta `relatorios` do ensaio no
+   * Drive (listDriveRevisions). Sem essa reconciliação, abrir o mesmo
    * relatório em outro navegador/aparelho mostrava a lista de versões
    * vazia mesmo com os PDFs já salvos no servidor. Qualquer revisão que o
    * servidor conhece mas este navegador ainda não tem em cache é baixada
@@ -430,7 +430,7 @@ export function CompressaoSimplesPage() {
     const local = await listVersions(scopeId);
     setVersions(local);
     try {
-      const { revisions } = await listStorageRevisions({ data: { scopeId } });
+      const { revisions } = await listDriveRevisions({ data: { scopeId } });
       const localRevs = new Set(local.map((v) => v.rev));
       const missing = revisions.filter((r) => !localRevs.has(r.rev));
       if (missing.length === 0) return;

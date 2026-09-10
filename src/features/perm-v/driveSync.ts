@@ -23,6 +23,8 @@ export interface SyncRevisionArgs {
   ctxAmostra?: { code?: string; description?: string };
   ctxEnsaio?: { tipo?: string; nome?: string };
   fotos?: DrivePhotoInput[];
+  /** Reenvio deliberado do mesmo PDF já emitido: autoriza sobrescrever a mesma revisão no Drive. */
+  reemissao?: boolean;
 }
 
 export async function syncRevision(args: SyncRevisionArgs) {
@@ -52,6 +54,7 @@ export async function syncRevision(args: SyncRevisionArgs) {
       pdf: { filename: args.pdfFilename, base64: pdfBase64 },
       dadosJson: JSON.stringify(dados),
       fotos: args.fotos ?? [],
+      reemissao: args.reemissao,
       manifest: {
         operador: args.sample.operator,
         digitadoPor: args.sample.typedBy ?? "",
