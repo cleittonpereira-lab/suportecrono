@@ -11,7 +11,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
-import { ensureFolderPath, readDriveJson, readDriveJsonById, writeDriveJson, listFilesInFolder, findFileInFolder, deleteDriveFile } from "@/lib/driveStorage";
+import { ensureFolderPath, readDriveJson, readDriveJsonById, writeDriveJson, listFilesInFolder, findFileInFolder, deleteDriveFile, withKeyLock } from "@/lib/driveStorage";
+import { aplicarStatusPendencia, escolherPendenciaDoEnsaio, proximaPendencia } from "@/lib/pendencia-match";
 
 type JsonValue = string | number | boolean | null | { [k: string]: JsonValue } | JsonValue[];
 
@@ -44,13 +45,6 @@ function displayName(claims: { email?: string; user_metadata?: { full_name?: str
     (claims?.user_metadata?.name as string | undefined) ||
     (claims?.email ? claims.email.split("@")[0] : "Operador")
   );
-}
-
-function asJsonObject(val: JsonValue | null | undefined): Record<string, unknown> {
-  if (val && typeof val === "object" && !Array.isArray(val)) {
-    return val as Record<string, unknown>;
-  }
-  return {};
 }
 
 const FOLDER_PENDENCIAS = ["lab-pendencias"];
@@ -187,50 +181,71 @@ export const atualizarStatusPendencia = createServerFn({ method: "POST" })
     const now = new Date().toISOString();
     const folderId = await ensureFolderPath(FOLDER_PENDENCIAS);
     const name = `${data.id}.json`;
-    const existing = await readDriveJson<PendenciaDigitacao>(name, folderId);
-    if (!existing) {
-      throw new Error("Pendência não encontrada.");
-    }
-
-    const prevPayload = asJsonObject(existing.payload);
-    const incomingPayload = data.payload ?? {};
-    const nextPayload = {
-      ...prevPayload,
-      ...incomingPayload,
-      ...(data.status === "em_digitacao" ? { digitacao_started_at: prevPayload.digitacao_started_at || now } : {}),
-      ...(data.status === "digitado" ? { digitacao_finished_at: now } : {}),
-      ...(data.status === "verificado" ? { verificado_at: now } : {}),
-      ...(data.status === "aprovado" ? { aprovado_at: now } : {}),
-      ...(data.status === "concluido_externo" ? { concluido_externo_at: now } : {}),
-    };
-
-    const patch: Partial<PendenciaDigitacao> = {
-      status: data.status,
-      payload: nextPayload as JsonValue,
-      updated_at: now,
-    };
-    if (data.observacao !== undefined) patch.observacao = data.observacao;
     const actorName = displayName((context as { claims?: { email?: string; user_metadata?: { full_name?: string; name?: string } } }).claims);
-    if (data.status === "em_digitacao" || data.status === "digitado") {
-      patch.digitador_user_id = context.userId;
-      patch.digitador_nome = actorName;
-    }
-    if (data.status === "verificado") {
-      patch.verificador_user_id = context.userId;
-      patch.verificador_nome = actorName;
-    }
-    if (data.status === "aprovado") {
-      patch.aprovador_user_id = context.userId;
-      patch.aprovador_nome = actorName;
-    }
 
-    const nextRecord: PendenciaDigitacao = { ...existing, ...patch, rev: (existing.rev ?? 0) + 1 };
-    await writeDriveJson(name, nextRecord, folderId);
+    await withKeyLock(`rmw:${folderId}:${name}`, async () => {
+      const existing = await readDriveJson<PendenciaDigitacao>(name, folderId);
+      if (!existing) {
+        throw new Error("Pendência não encontrada.");
+      }
+      const nextRecord = aplicarStatusPendencia(existing, data.status, { userId: context.userId, nome: actorName }, now, {
+        observacao: data.observacao,
+        payload: data.payload,
+      });
+      await writeDriveJson(name, nextRecord, folderId);
+    });
 
     return { ok: true };
   });
 
 export const atualizarPendenciaDigitacao = atualizarStatusPendencia;
+
+export type ResultadoSincronizacao = "atualizada" | "inalterada" | "nao_encontrada" | "ambigua";
+
+/**
+ * Leva o avanço do fluxo de aprovação do ensaio para a pendência vinculada.
+ *
+ * A aprovação é gravada no arquivo do ensaio, mas quando o ensaio não chega ao
+ * labStore a Central de Relatórios monta a linha pela pendência — e nada
+ * atualizava a pendência: na OS 17960-26, 6 de 8 laudos aprovados continuavam
+ * "em_digitacao" nela, aparecendo como rascunho e sem furo/profundidade.
+ *
+ * Escolha da pendência sem chute (ver `escolherPendenciaDoEnsaio`): ambígua ou
+ * inexistente não atualiza nada. Leitura e escrita no mesmo lock.
+ */
+export async function sincronizarPendenciaDoEnsaio(alvo: {
+  ensaioId: string;
+  osNumero: string | null | undefined;
+  amostraCodigos: (string | null | undefined)[];
+  tipoEnsaio: string | null | undefined;
+  status: PendenciaDigitacao["status"];
+  ator: { userId: string; nome: string };
+}): Promise<ResultadoSincronizacao> {
+  const folderId = await ensureFolderPath(FOLDER_PENDENCIAS);
+  const files = await listFilesInFolder(folderId);
+  const todas = (await mapWithConcurrency(files, 8, (f) => readDriveJsonById<PendenciaDigitacao>(f.id, f.name))).filter(
+    (p): p is PendenciaDigitacao => !!p,
+  );
+
+  const escolha = escolherPendenciaDoEnsaio(todas, alvo);
+  if (escolha.tipo === "nenhuma") return "nao_encontrada";
+  if (escolha.tipo === "ambigua") {
+    console.warn(
+      `[lab-pendencias] Ensaio ${alvo.ensaioId}: mais de uma pendência candidata (${escolha.ids.join(", ")}); nenhuma foi alterada.`,
+    );
+    return "ambigua";
+  }
+
+  const name = `${escolha.pendencia.id}.json`;
+  return withKeyLock(`rmw:${folderId}:${name}`, async () => {
+    const atual = await readDriveJson<PendenciaDigitacao>(name, folderId);
+    if (!atual) return "nao_encontrada";
+    const proxima = proximaPendencia(atual, alvo.status, alvo.ator, new Date().toISOString());
+    if (!proxima) return "inalterada";
+    await writeDriveJson(name, proxima, folderId);
+    return "atualizada";
+  });
+}
 
 const ConcluirExternoInput = z.object({
   id: z.string().min(1),
@@ -271,6 +286,13 @@ export const criarRelatorioAvulso = createServerFn({ method: "POST" })
     const folderId = await ensureFolderPath(FOLDER_PENDENCIAS);
     const name = `${key}.json`;
 
+    // Idempotente, como criarPendenciaDigitacao: criar um avulso para um
+    // (OS, amostra, ensaio) que já tem pendência regravava o registro do zero —
+    // voltava o status para "em_digitacao" e apagava digitador, verificador,
+    // aprovador e a revisão.
+    const existente = await readDriveJson<PendenciaDigitacao>(name, folderId);
+    if (existente) return { ok: true, id: existente.id, created: false };
+
     const payload = {
       cliente: data.cliente || "",
       obra: data.obra || "",
@@ -299,7 +321,7 @@ export const criarRelatorioAvulso = createServerFn({ method: "POST" })
     };
 
     await writeDriveJson(name, record, folderId);
-    return { ok: true, id: key };
+    return { ok: true, id: key, created: true };
   });
 
 const DeleteInput = z.object({ id: z.string().min(1) });

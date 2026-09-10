@@ -21,12 +21,56 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { ensureFolderPath, readDriveJson, writeDriveJson } from "@/lib/driveStorage";
 import {
+  FOLDER_AMOSTRAS,
   FOLDER_ENSAIOS,
+  FOLDER_OS,
+  amostraFileName,
   ensaioFileName,
+  osFileName,
   type EnsaioFile,
   type ReportApprovalRow,
   type ReportApprovalCommentRow,
 } from "@/lib/lab-entities.functions";
+import { sincronizarPendenciaDoEnsaio, type PendenciaDigitacao } from "@/lib/lab-pendencias.functions";
+
+/**
+ * Propaga o avanço do fluxo para a pendência vinculada ao ensaio.
+ *
+ * Roda DEPOIS de a aprovação estar gravada no arquivo do ensaio, que é a fonte
+ * de verdade. Por isso uma falha aqui não desfaz nem esconde a aprovação: é
+ * registrada no log e devolvida ao cliente no campo `pendencia`, em vez de
+ * sumir em silêncio.
+ */
+async function propagarParaPendencia(
+  ids: { osId: string; amostraId: string; ensaioId: string },
+  ensaio: EnsaioFile,
+  status: PendenciaDigitacao["status"],
+  ator: { userId: string; nome: string },
+): Promise<string> {
+  try {
+    const [osFile, amFile] = await Promise.all([
+      ensureFolderPath(FOLDER_OS).then((f) => readDriveJson<{ numero?: string | null }>(osFileName(ids.osId), f)),
+      ensureFolderPath(FOLDER_AMOSTRAS).then((f) =>
+        readDriveJson<{ reportNumber?: string | null; code?: string | null }>(amostraFileName(ids.osId, ids.amostraId), f),
+      ),
+    ]);
+    const resultado = await sincronizarPendenciaDoEnsaio({
+      ensaioId: ids.ensaioId,
+      osNumero: osFile?.numero ?? null,
+      amostraCodigos: [amFile?.reportNumber, amFile?.code],
+      tipoEnsaio: ensaio.tipo,
+      status,
+      ator,
+    });
+    if (resultado === "nao_encontrada" || resultado === "ambigua") {
+      console.warn(`[approvals] Pendência do ensaio ${ids.ensaioId} não sincronizada: ${resultado}.`);
+    }
+    return resultado;
+  } catch (err) {
+    console.error(`[approvals] Aprovação gravada, mas a pendência do ensaio ${ids.ensaioId} não foi sincronizada:`, err);
+    return "falhou";
+  }
+}
 
 /** Roda `fn` sobre `items` com no máximo `limit` chamadas em voo — ver o mesmo helper em lab-pendencias.functions.ts. */
 async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
@@ -126,6 +170,13 @@ export const requestApproval = createServerFn({ method: "POST" })
 
     const found = await readEnsaio(data.scopeId);
     if (!found) throw new Error(`scopeId inválido: ${data.scopeId}`);
+    // Sem o arquivo do ensaio não há o que enviar para verificação. Antes, um
+    // arquivo ilegível virava `existing = null` e esta função gravava um ensaio
+    // novo com `payload: null` — apagando o laudo digitado no exato momento em
+    // que ele era enviado. Mesmo critério de verifyApproval/decideApproval.
+    if (!found.file) {
+      throw new Error("Ensaio não encontrado no Drive. Salve o rascunho antes de enviar para verificação.");
+    }
     const { ids, file: existing, folderId } = found;
 
     const targetStatus: ApprovalStatus = data.skipVerification ? "pendente_aprovacao" : "pendente_verificacao";
@@ -196,7 +247,11 @@ export const requestApproval = createServerFn({ method: "POST" })
 
     await writeEnsaio(ids, folderId, file);
 
-    return row;
+    const pendencia = await propagarParaPendencia(ids, file, data.skipVerification ? "verificado" : "digitado", {
+      userId,
+      nome: name,
+    });
+    return { ...row, pendencia };
   });
 
 /* ─────────────────────────────── VERIFICAÇÃO ─────────────────────────────── */
@@ -271,7 +326,14 @@ export const verifyApproval = createServerFn({ method: "POST" })
     };
     await writeEnsaio(ids, folderId, file);
 
-    return updatedRow;
+    // Rejeitado na verificação volta para a digitação.
+    const pendencia = await propagarParaPendencia(
+      ids,
+      file,
+      data.decision === "verificado" ? "verificado" : "em_digitacao",
+      { userId, nome: name },
+    );
+    return { ...updatedRow, pendencia };
   });
 
 /* ─────────────────────────────── APROVAÇÃO RT ─────────────────────────────── */
@@ -350,7 +412,12 @@ export const decideApproval = createServerFn({ method: "POST" })
     };
     await writeEnsaio(ids, folderId, file);
 
-    return updatedRow;
+    // Rejeitado pelo RT volta a aguardar verificação.
+    const pendencia = await propagarParaPendencia(ids, file, data.decision === "aprovado" ? "aprovado" : "digitado", {
+      userId,
+      nome: name,
+    });
+    return { ...updatedRow, pendencia };
   });
 
 /* ─────────────────────────────── LISTAGEM ─────────────────────────────── */
@@ -405,29 +472,18 @@ export const addApprovalComment = createServerFn({ method: "POST" })
       created_at: nowIso,
     };
 
-    const comments = (existing?.approvalComments as ApprovalCommentRow[] | undefined) ?? [];
-    const nextRev = (existing?.rev ?? 0) + 1;
-    const file: EnsaioFile = existing
-      ? { ...existing, updatedAt: nowIso, rev: nextRev, approvalComments: [commentRow, ...comments].slice(0, 200) }
-      : {
-          id: ids.ensaioId,
-          amostraId: ids.amostraId,
-          tipo: "cisalhamento-direto",
-          status: null,
-          label: null,
-          nome: null,
-          sigla: null,
-          operator: null,
-          photos: [],
-          payload: null,
-          createdAt: nowIso,
-          updatedAt: nowIso,
-          rev: 1,
-          workflowStatus: "digitacao",
-          approvals: [],
-          draftHistory: [],
-          approvalComments: [commentRow],
-        };
+    // Comentar num ensaio que não existe não pode criar um ensaio-fantasma
+    // (tipo "cisalhamento-direto", payload vazio) no lugar do verdadeiro.
+    if (!existing) throw new Error("Ensaio não encontrado no Drive; o comentário não foi salvo.");
+
+    const comments = (existing.approvalComments as ApprovalCommentRow[] | undefined) ?? [];
+    const nextRev = (existing.rev ?? 0) + 1;
+    const file: EnsaioFile = {
+      ...existing,
+      updatedAt: nowIso,
+      rev: nextRev,
+      approvalComments: [commentRow, ...comments].slice(0, 200),
+    };
 
     await writeEnsaio(ids, folderId, file);
     return commentRow;
@@ -492,25 +548,20 @@ export const getWorkflowStatuses = createServerFn({ method: "POST" })
     if (!data.scopeIds || data.scopeIds.length === 0) return { statuses: {} as Record<string, string> };
 
     const out: Record<string, string> = {};
-    try {
-      const folderId = await ensureFolderPath(FOLDER_ENSAIOS);
-      await mapWithConcurrency(data.scopeIds, 8, async (scopeId) => {
-        const ids = parseScope(scopeId);
-        if (!ids) {
-          out[scopeId] = "digitacao";
-          return;
-        }
-        try {
-          const file = await readDriveJson<EnsaioFile>(ensaioFileName(ids.amostraId, ids.ensaioId), folderId);
-          out[scopeId] = deriveWorkflowStatus(file);
-        } catch {
-          out[scopeId] = "digitacao";
-        }
-      });
-    } catch (err: any) {
-      console.warn("[getWorkflowStatuses] Aviso:", err);
-      for (const id of data.scopeIds) out[id] = out[id] || "digitacao";
-    }
+    // Uma leitura que falhou NÃO é "digitação": respondia isso para laudos já
+    // aprovados, e o farol rebaixava o ensaio na tela. Deixa estourar — quem
+    // chama mantém o último status bom em vez de mostrar um status falso.
+    // (readDriveJson já repete as falhas transitórias antes de desistir.)
+    const folderId = await ensureFolderPath(FOLDER_ENSAIOS);
+    await mapWithConcurrency(data.scopeIds, 8, async (scopeId) => {
+      const ids = parseScope(scopeId);
+      if (!ids) {
+        out[scopeId] = "digitacao";
+        return;
+      }
+      const file = await readDriveJson<EnsaioFile>(ensaioFileName(ids.amostraId, ids.ensaioId), folderId);
+      out[scopeId] = deriveWorkflowStatus(file);
+    });
     return { statuses: out };
   });
 
@@ -532,29 +583,20 @@ export async function setWorkflowStatus(
   const found = await readEnsaio(scopeId);
   if (!found) throw new Error(`scopeId inválido: ${scopeId}`);
   const { ids, file: existing, folderId } = found;
+  // Mesmo critério das demais escritas de aprovação: sem o arquivo, não fabrica
+  // um ensaio vazio no lugar dele.
+  if (!existing) throw new Error(`Ensaio não encontrado no Drive: ${scopeId}`);
   const nowIso = new Date().toISOString();
-  const nextRev = (existing?.rev ?? 0) + 1;
 
-  const file: EnsaioFile = existing
-    ? { ...existing, updatedAt: nowIso, rev: nextRev, workflowStatus: status }
-    : {
-        id: ids.ensaioId,
-        amostraId: ids.amostraId,
-        tipo: index?.ensaio_tipo || "cisalhamento-direto",
-        status: null,
-        label: null,
-        nome: index?.ensaio_nome ?? null,
-        sigla: null,
-        operator: null,
-        photos: [],
-        payload: null,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-        rev: nextRev,
-        workflowStatus: status,
-        approvals: [],
-        draftHistory: [],
-      };
+  const file: EnsaioFile = {
+    ...existing,
+    updatedAt: nowIso,
+    rev: (existing.rev ?? 0) + 1,
+    workflowStatus: status,
+    // Grava `status` junto: verifyApproval/decideApproval já fazem isso, e só
+    // este caminho ainda deixava os dois campos divergirem.
+    status,
+  };
 
   await writeEnsaio(ids, folderId, file);
 }

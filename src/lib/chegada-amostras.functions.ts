@@ -137,7 +137,13 @@ export async function readLocalChegadaState(): Promise<SharedChegadaState> {
       };
     }
   } catch (e) {
-    console.warn("[readLocalChegadaState] Erro ao ler do Drive:", e);
+    // Falha de leitura NÃO pode virar o quadro padrão: quem chama grava em
+    // cima do que recebe. `handleCreateSharedChegadaTask` acrescentava o
+    // registro novo a um quadro vazio e gravava — apagando todas as chegadas
+    // já registradas. E com `rev: 0`, a trava otimista do salvamento nunca
+    // detectava conflito. Só o arquivo realmente ausente cai no padrão abaixo.
+    console.error("[readLocalChegadaState] Erro ao ler do Drive:", e);
+    throw e;
   }
 
   return {

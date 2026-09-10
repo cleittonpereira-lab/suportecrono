@@ -22,6 +22,7 @@ import { loadLabTree, upsertOSFn, upsertAmostraFn, upsertEnsaioFn, deleteOSFn, d
 import { loadLabStateFromDrive } from "@/lib/labState.functions";
 import { trackSave, markDirty as markDirtyGlobal, markClean as markCleanGlobal, waitUntilSaved } from "@/lib/save-in-flight";
 import type { LabEnsaioSnapshot } from "@/lib/lab-ensaios.functions";
+import { mergeRemote } from "./merge-remote";
 
 const STORAGE_KEY = "lab://os-store/v1";
 const REMOTE_SAVE_DEBOUNCE_MS = 600;
@@ -267,12 +268,17 @@ async function hydrate(): Promise<void> {
       // Se as tabelas novas ainda não existem no banco (migration SQL não
       // aplicada ainda), loadLabTree lança erro — tratamos igual a "vazio"
       // em vez de deixar propagar, para cair na ponte de segurança abaixo.
+      const falha = { msg: null as string | null };
       const res = await loadLabTree().catch((err) => {
-        console.warn("[lab/store] lab_os/lab_amostras/lab_ensaios ainda não disponíveis:", err);
+        falha.msg = err instanceof Error ? err.message : String(err);
+        console.warn("[lab/store] Falha ao carregar a árvore do Drive:", err);
         return { state: null };
       });
       if (res.state && !isEmptyState(res.state)) {
-        state = res.state;
+        // Funde em vez de substituir: entidades criadas nesta tela entre o
+        // carregamento da página e o fim do hydrate eram descartadas da memória
+        // (embora já agendadas para o Drive), virando fantasmas.
+        state = isEmptyState(state) ? res.state : mergeRemote(state, res.state, dirtyIds);
       } else if (isEmptyState(state)) {
         // As tabelas novas (lab_os/lab_amostras/lab_ensaios) ainda não têm
         // dados — pode ser instalação nova, ou a migração dos dados antigos
@@ -296,7 +302,9 @@ async function hydrate(): Promise<void> {
       }
       hydrated = true;
       persistLocal();
-      setStatus("salvo");
+      // Se o carregamento falhou, a tela está mostrando a cópia local (ou a
+      // semente) — dizer "salvo" aqui escondia que os dados podem estar velhos.
+      setStatus(falha.msg ? "erro" : "salvo", falha.msg);
       listeners.forEach((l) => l());
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -308,90 +316,21 @@ async function hydrate(): Promise<void> {
   return hydrationPromise;
 }
 
-/**
- * Reaproveita a referência local quando o conteúdo é idêntico ao que veio do
- * servidor. Sem isso, cada refresh (a cada 8s) trocava toda entidade "limpa"
- * por um objeto novo mesmo sem nenhuma mudança real — e como vários efeitos
- * (ex.: autosave do rascunho) dependem da identidade desses objetos, isso
- * disparava gravações repetidas no Drive o tempo todo, sem edição nenhuma.
- */
-function reuseIfUnchanged<T>(local: T | undefined, remote: T): T {
-  if (local !== undefined && JSON.stringify(local) === JSON.stringify(remote)) return local;
-  return remote;
-}
-
-/**
- * O Drive não é fortemente consistente logo após uma gravação — a busca
- * usada por `findFileInFolder` pode devolver a versão anterior do arquivo
- * por alguns segundos mesmo depois do `writeDriveJson` ter retornado
- * sucesso e o `clearDirty` correspondente já ter rodado. Sem isso, o
- * refresh periódico (a cada 8s) podia pegar essa leitura atrasada e
- * sobrescrever uma edição local recém-salva (foto ou texto) com dado
- * velho — ela "sumia" e só "reaparecia" no próximo ciclo, quando o Drive
- * já tinha se atualizado. Comparar `updatedAt` cobre essa janela mesmo
- * depois da entidade já não estar mais em `dirtyIds`.
- */
-function isLocalNewer(local: { updatedAt: string } | undefined, remote: { updatedAt: string }): boolean {
-  return !!local && local.updatedAt > remote.updatedAt;
-}
-
-/** Funde o snapshot do servidor com o estado local, preservando entidades com escrita pendente/em voo ou mais recentes que o snapshot. */
-function mergeRemote(local: LabState, remote: LabState): LabState {
-  const localOSMap = new Map(local.os.map((o) => [o.id, o]));
-  const remoteOSIds = new Set(remote.os.map((o) => o.id));
-
-  const mergedOS = remote.os.map((remoteO) => {
-    const localO = localOSMap.get(remoteO.id);
-    const osIsDirty = dirtyIds.has(remoteO.id) || isLocalNewer(localO, remoteO);
-    const baseOS = osIsDirty && localO ? localO : remoteO;
-
-    const localAmMap = new Map((localO?.amostras ?? []).map((a) => [a.id, a]));
-    const remoteAmIds = new Set(remoteO.amostras.map((a) => a.id));
-
-    const mergedAmostras = remoteO.amostras.map((remoteA) => {
-      const localA = localAmMap.get(remoteA.id);
-      const amIsDirty = dirtyIds.has(remoteA.id) || isLocalNewer(localA, remoteA);
-      const baseAm = amIsDirty && localA ? localA : remoteA;
-
-      const localEnMap = new Map((localA?.ensaios ?? []).map((e) => [e.id, e]));
-      const remoteEnIds = new Set(remoteA.ensaios.map((e) => e.id));
-
-      const mergedEnsaios = remoteA.ensaios.map((remoteE) => {
-        const localE = localEnMap.get(remoteE.id);
-        if ((dirtyIds.has(remoteE.id) || isLocalNewer(localE, remoteE)) && localE) return localE;
-        return reuseIfUnchanged(localE, remoteE);
-      });
-      // Ensaios que só existem localmente ainda (criados agora, gravação em voo).
-      const localOnlyEnsaios = (localA?.ensaios ?? []).filter(
-        (e) => !remoteEnIds.has(e.id) && dirtyIds.has(e.id),
-      );
-
-      const mergedAmostra = { ...baseAm, ensaios: [...mergedEnsaios, ...localOnlyEnsaios] };
-      return reuseIfUnchanged(localA, mergedAmostra);
-    });
-    const localOnlyAmostras = (localO?.amostras ?? []).filter(
-      (a) => !remoteAmIds.has(a.id) && dirtyIds.has(a.id),
-    );
-
-    const mergedOSEntry = { ...baseOS, amostras: [...mergedAmostras, ...localOnlyAmostras] };
-    return reuseIfUnchanged(localO, mergedOSEntry);
-  });
-
-  const localOnlyOS = local.os.filter((o) => !remoteOSIds.has(o.id) && dirtyIds.has(o.id));
-  return { os: [...mergedOS, ...localOnlyOS] };
-}
+// Fusão local × servidor: ver `merge-remote.ts` (extraída para ser testável).
 
 async function refreshFromRemote(): Promise<void> {
   if (typeof window === "undefined") return;
   try {
     const res = await loadLabTree();
     if (res.state) {
-      state = mergeRemote(state, res.state);
+      state = mergeRemote(state, res.state, dirtyIds);
       persistLocal();
       listeners.forEach((l) => l());
     }
-  } catch {
-    // silencioso: mantém o estado local, tenta de novo no próximo ciclo
+  } catch (err) {
+    // Mantém o estado local e tenta de novo no próximo ciclo — mas registra:
+    // antes esta falha era totalmente silenciosa.
+    console.warn("[lab/store] Falha ao atualizar do Drive; mantendo o estado local:", err);
   }
 }
 

@@ -58,34 +58,123 @@ const writeChain = new Map<string, Promise<unknown>>();
  * isolates. Degrada em silêncio: sem Supabase configurado, tudo continua
  * funcionando como antes, só sem a proteção entre isolates.
  */
+/**
+ * Disjuntor do cache durável. Enquanto a tabela `drive_file_cache` não existir
+ * (migração ainda não aplicada) ou o Supabase estiver fora, cada chamada custava
+ * uma ida e volta inteira que sempre falhava — em TODA leitura por nome. Foi o
+ * que deixou a abertura de um ensaio lenta. O supabase-js não lança quando a
+ * tabela não existe: devolve `{ error }`, então o `catch` sozinho nunca
+ * disparava. Na primeira falha, desliga o cache durável pelo resto da vida desta
+ * isolate; a proteção entre isolates volta sozinha numa isolate nova.
+ */
+let cacheDuravelAtivo = true;
+
+function desligarCacheDuravel(motivo: unknown): void {
+  if (!cacheDuravelAtivo) return;
+  cacheDuravelAtivo = false;
+  console.warn(
+    "[DriveStorage] Cache durável (drive_file_cache) indisponível, seguindo só com o Drive:",
+    motivo instanceof Error ? motivo.message : motivo,
+  );
+}
+
+type ErroSupabase = { message: string } | null;
+
+/** Só as operações usadas aqui, sobre a tabela `drive_file_cache`. */
+type TabelaCacheDuravel = {
+  select(colunas: string): TabelaCacheDuravel;
+  eq(coluna: string, valor: string): TabelaCacheDuravel;
+  maybeSingle(): Promise<{ data: unknown; error: ErroSupabase }>;
+  upsert(linha: Record<string, unknown>): Promise<{ error: ErroSupabase }>;
+  delete(): { eq(coluna: string, valor: string): Promise<{ error: ErroSupabase }> };
+};
+
+/**
+ * `drive_file_cache` ainda não existe nos tipos gerados do Supabase (a migração
+ * não foi aplicada e os tipos não foram regenerados), então o cliente tipado
+ * recusa o nome da tabela. Acesso sem tipo, restrito a esta única tabela, em vez
+ * de espalhar `as any` pelas três funções.
+ */
+async function tabelaCacheDuravel(): Promise<TabelaCacheDuravel> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  return (supabaseAdmin as unknown as { from(tabela: string): TabelaCacheDuravel }).from("drive_file_cache");
+}
+
 async function supabaseFileId(key: string): Promise<string | null> {
+  if (!cacheDuravelAtivo) return null;
   try {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data } = await supabaseAdmin
-      .from("drive_file_cache")
-      .select("file_id")
-      .eq("key", key)
-      .maybeSingle();
+    const { data, error } = await (await tabelaCacheDuravel()).select("file_id").eq("key", key).maybeSingle();
+    if (error) {
+      desligarCacheDuravel(error.message);
+      return null;
+    }
     return (data as { file_id?: string } | null)?.file_id ?? null;
-  } catch {
+  } catch (err) {
+    desligarCacheDuravel(err);
     return null;
   }
 }
 
 async function rememberFileId(key: string, fileId: string, parentId: string, name: string): Promise<void> {
+  if (!cacheDuravelAtivo) return;
   try {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    await supabaseAdmin.from("drive_file_cache").upsert({
+    const { error } = await (await tabelaCacheDuravel()).upsert({
       key, file_id: fileId, parent_id: parentId, name, updated_at: new Date().toISOString(),
     });
-  } catch { /* melhor esforço: a escrita no Drive não pode falhar por causa do cache */ }
+    if (error) desligarCacheDuravel(error.message);
+  } catch (err) {
+    // Melhor esforço: a escrita no Drive não pode falhar por causa do cache.
+    desligarCacheDuravel(err);
+  }
 }
 
 async function forgetFileId(key: string): Promise<void> {
+  if (!cacheDuravelAtivo) return;
   try {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    await supabaseAdmin.from("drive_file_cache").delete().eq("key", key);
-  } catch { /* idem */ }
+    const { error } = await (await tabelaCacheDuravel()).delete().eq("key", key);
+    if (error) desligarCacheDuravel(error.message);
+  } catch (err) {
+    desligarCacheDuravel(err);
+  }
+}
+
+/**
+ * Só vale repetir o que pode dar certo na segunda vez: queda de rede, excesso
+ * de requisições (429) e erro do servidor (5xx). 400/401/403 não mudam com
+ * insistência — repetir só multiplicava a espera de quem estava na tela.
+ */
+class FalhaDefinitiva extends Error {}
+
+function statusTransitorio(status: number): boolean {
+  return status === 429 || status >= 500;
+}
+
+/** Converte uma resposta não-ok em erro, marcando como definitivo o que não adianta repetir. */
+function exigirOk(res: Response): void {
+  if (res.ok) return;
+  const msg = `HTTP ${res.status}`;
+  if (!statusTransitorio(res.status)) throw new FalhaDefinitiva(msg);
+  throw new Error(msg);
+}
+
+/**
+ * Executa uma chamada ao Drive repetindo só as falhas que podem passar sozinhas.
+ * Esgotadas as tentativas, ESTOURA — nunca devolve um valor "vazio" no lugar do
+ * erro, porque é exatamente esse vazio que as camadas de cima confundiam com
+ * "o arquivo não existe" e gravavam por cima.
+ */
+async function comRetentativa<T>(rotulo: string, fn: () => Promise<T>): Promise<T> {
+  let ultimoErro: unknown;
+  for (let tentativa = 0; tentativa < 3; tentativa++) {
+    if (tentativa > 0) await new Promise((r) => setTimeout(r, 150 * tentativa));
+    try {
+      return await fn();
+    } catch (err) {
+      ultimoErro = err;
+      if (err instanceof FalhaDefinitiva) break;
+    }
+  }
+  throw new Error(`${rotulo}: ${ultimoErro instanceof Error ? ultimoErro.message : String(ultimoErro)}`);
 }
 
 /**
@@ -139,6 +228,16 @@ function escQ(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
+/** Hash curto e estável (FNV-1a de 32 bits), para ids offline determinísticos. */
+function hashCurto(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36);
+}
+
 /** Local disk fallback helper */
 function getLocalPath(filename: string): string {
   const safe = filename.replace(/[^\w.-]+/g, "_");
@@ -163,25 +262,30 @@ export async function findFileEntriesInFolder(
   name: string,
   parentId: string,
 ): Promise<{ id: string; modifiedTime?: string }[]> {
-  if (!hasDriveCredentials()) return [];
-  try {
-    const params = new URLSearchParams({
-      q: `name = '${escQ(name)}' and '${parentId}' in parents and trashed = false`,
-      fields: "files(id,name,modifiedTime)",
-      orderBy: "modifiedTime desc",
-      pageSize: "100",
-      supportsAllDrives: "true",
-      includeItemsFromAllDrives: "true",
-      corpora: "drive",
-      driveId: DRIVE_ROOT_FOLDER_ID,
-    });
-    const res = await fetch(`${DRIVE_V3}/files?${params.toString()}`, { method: "GET", headers: await driveHeaders() });
-    if (!res.ok) return [];
-    const data = (await res.json()) as { files?: { id: string; modifiedTime?: string }[] };
-    return data.files ?? [];
-  } catch {
-    return [];
+  if (!hasDriveCredentials()) {
+    // Offline, o "arquivo" é `.data/${pasta}_${nome}` — o mesmo nome que
+    // `uploadBytesToDrive` grava e que `listFilesInFolder` lista. Antes isto
+    // devolvia sempre vazio, e apagar/renomear offline nunca achava nada.
+    const local = getLocalPath(`${parentId}_${name}`);
+    return fs.existsSync(local) ? [{ id: path.basename(local) }] : [];
   }
+  // Uma busca que FALHOU não pode responder "nenhum arquivo com esse nome":
+  // quem escreve concluiria que o arquivo não existe e criaria outro. Era um dos
+  // caminhos por onde nasciam os homônimos.
+  const params = new URLSearchParams({
+    q: `name = '${escQ(name)}' and '${parentId}' in parents and trashed = false`,
+    fields: "files(id,name,modifiedTime)",
+    orderBy: "modifiedTime desc",
+    pageSize: "100",
+    supportsAllDrives: "true",
+    includeItemsFromAllDrives: "true",
+    corpora: "drive",
+    driveId: DRIVE_ROOT_FOLDER_ID,
+  });
+  const res = await fetch(`${DRIVE_V3}/files?${params.toString()}`, { method: "GET", headers: await driveHeaders() });
+  if (!res.ok) throw new Error(`Falha ao buscar "${name}" no Drive: HTTP ${res.status}`);
+  const data = (await res.json()) as { files?: { id: string; modifiedTime?: string }[] };
+  return data.files ?? [];
 }
 
 /**
@@ -221,28 +325,30 @@ export async function findFileInFolder(name: string, parentId: string): Promise<
  */
 export async function findFolder(name: string, parentId: string): Promise<string | null> {
   if (!hasDriveCredentials()) return null;
-  try {
-    const params = new URLSearchParams({
-      q: `name = '${escQ(name)}' and '${parentId}' in parents and mimeType = '${FOLDER_MIME}' and trashed = false`,
-      fields: "files(id,name,createdTime)",
-      orderBy: "createdTime",
-      pageSize: "100",
-      supportsAllDrives: "true",
-      includeItemsFromAllDrives: "true",
-      corpora: "drive",
-      driveId: DRIVE_ROOT_FOLDER_ID,
-    });
-    const res = await fetch(`${DRIVE_V3}/files?${params.toString()}`, { method: "GET", headers: await driveHeaders() });
-    if (!res.ok) return null;
-    const data = (await res.json()) as { files?: { id: string }[] };
-    return data.files?.[0]?.id ?? null;
-  } catch {
-    return null;
-  }
+  // Mesmo raciocínio da busca de arquivos: se a busca falha e isto responde
+  // "não existe", `ensureFolderPath` cria uma pasta nova com o mesmo nome.
+  const params = new URLSearchParams({
+    q: `name = '${escQ(name)}' and '${parentId}' in parents and mimeType = '${FOLDER_MIME}' and trashed = false`,
+    fields: "files(id,name,createdTime)",
+    orderBy: "createdTime",
+    pageSize: "100",
+    supportsAllDrives: "true",
+    includeItemsFromAllDrives: "true",
+    corpora: "drive",
+    driveId: DRIVE_ROOT_FOLDER_ID,
+  });
+  const res = await fetch(`${DRIVE_V3}/files?${params.toString()}`, { method: "GET", headers: await driveHeaders() });
+  if (!res.ok) throw new Error(`Falha ao buscar a pasta "${name}" no Drive: HTTP ${res.status}`);
+  const data = (await res.json()) as { files?: { id: string }[] };
+  return data.files?.[0]?.id ?? null;
 }
 
 export async function createFolder(name: string, parentId: string): Promise<string> {
-  if (!hasDriveCredentials()) return `local_folder_${Date.now()}`;
+  // Sem credenciais (desenvolvimento local), o id precisa ser o MESMO a cada
+  // reinício do servidor: os arquivos offline são gravados como
+  // `.data/${pastaId}_${nome}`, e com um id novo por reinício (`Date.now()`)
+  // tudo o que tinha sido gravado antes sumia da listagem.
+  if (!hasDriveCredentials()) return `local_folder_${hashCurto(`${parentId}/${name}`)}`;
   const res = await fetch(`${DRIVE_V3}/files?fields=id&supportsAllDrives=true`, {
     method: "POST",
     headers: await driveHeaders({ "Content-Type": "application/json" }),
@@ -329,21 +435,27 @@ export async function listFilesInFolder(parentId: string): Promise<{ id: string;
     });
     if (pageToken) params.set("pageToken", pageToken);
 
-    let data: { files?: { id: string; name: string }[]; nextPageToken?: string } | null = null;
+    type PaginaListagem = { files?: { id: string; name: string }[]; nextPageToken?: string };
+    let data: PaginaListagem | null = null;
     let ultimoErro: unknown;
     for (let tentativa = 0; tentativa < 3 && !data; tentativa++) {
       if (tentativa > 0) await new Promise((r) => setTimeout(r, 150 * tentativa));
       try {
         const res = await fetch(`${DRIVE_V3}/files?${params.toString()}`, { method: "GET", headers: await driveHeaders() });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        data = (await res.json()) as typeof data;
+        if (!res.ok) {
+          const msg = `HTTP ${res.status}`;
+          if (!statusTransitorio(res.status)) throw new FalhaDefinitiva(msg);
+          throw new Error(msg);
+        }
+        data = (await res.json()) as PaginaListagem;
       } catch (err) {
         ultimoErro = err;
+        if (err instanceof FalhaDefinitiva) break;
       }
     }
     if (!data) {
       throw new Error(
-        `Falha ao listar a pasta ${parentId} no Drive apos 3 tentativas: ${
+        `Falha ao listar a pasta ${parentId} no Drive: ${
           ultimoErro instanceof Error ? ultimoErro.message : String(ultimoErro)
         }`,
       );
@@ -357,11 +469,22 @@ export async function listFilesInFolder(parentId: string): Promise<{ id: string;
 
 /** Apaga um arquivo do Drive pelo seu fileId. */
 export async function deleteDriveFile(fileId: string): Promise<void> {
-  if (!hasDriveCredentials()) return;
-  try {
-    await fetch(`${DRIVE_V3}/files/${fileId}?supportsAllDrives=true`, { method: "DELETE", headers: await driveHeaders() });
-  } catch (err) {
-    console.warn("[DriveStorage] Erro ao apagar arquivo:", err);
+  if (!hasDriveCredentials()) {
+    // Offline, o id é o nome do arquivo em `.data/` (ver listFilesInFolder).
+    try {
+      fs.unlinkSync(path.join(process.cwd(), ".data", path.basename(fileId)));
+    } catch {}
+    return;
+  }
+  // Falha ao apagar ESTOURA: antes era engolida, e quem chamava informava
+  // "excluído" com o arquivo ainda no Drive — que voltava a aparecer no
+  // carregamento seguinte. 404 = já não existe, que é o resultado desejado.
+  const res = await fetch(`${DRIVE_V3}/files/${fileId}?supportsAllDrives=true`, {
+    method: "DELETE",
+    headers: await driveHeaders(),
+  });
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`Falha ao apagar o arquivo ${fileId} no Drive: HTTP ${res.status}`);
   }
 }
 
@@ -559,15 +682,20 @@ export async function readDriveJsonById<T>(fileId: string, name?: string): Promi
       // sumia da lista e a linha caía para "Em Digitação". Foi assim que laudos
       // aprovados apareceram como rascunho, sem erro nenhum na tela.
       if (res.status === 404) return null;
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const msg = `HTTP ${res.status}`;
+        if (!statusTransitorio(res.status)) throw new FalhaDefinitiva(msg);
+        throw new Error(msg);
+      }
       const text = await res.text();
       return text ? (JSON.parse(text) as T) : null;
     } catch (err) {
       ultimoErro = err;
+      if (err instanceof FalhaDefinitiva) break;
     }
   }
   throw new Error(
-    `Falha ao ler ${name ?? fileId} do Drive apos 3 tentativas: ${
+    `Falha ao ler ${name ?? fileId} do Drive: ${
       ultimoErro instanceof Error ? ultimoErro.message : String(ultimoErro)
     }`,
   );
@@ -589,38 +717,42 @@ export async function readDriveJson<T>(filename: string, parentId: string = DRIV
     return mem.data as T;
   }
 
-  // 1. Tenta carregar do Google Drive
+  // 1. Google Drive
+  //
+  // `null` aqui significa UMA coisa só: o arquivo não existe. Antes, qualquer
+  // falha (rede, 5xx, Worker sem CPU) também virava `null`, e todo
+  // read-modify-write tratava isso como "arquivo novo" e gravava por cima — foi
+  // assim que laudos aprovados perderam `reportApprovals`, fotos e payload.
+  // Agora a falha estoura, e quem ia gravar por cima não grava.
   if (hasDriveCredentials()) {
-    try {
-      // `resolveFileId` consulta memória e Supabase antes da busca por nome —
-      // uma chamada a menos ao Drive na maioria das leituras.
-      const fileId = await resolveFileId(filename, parentId);
-      if (fileId) {
-        const res = await fetch(`${DRIVE_V3}/files/${fileId}?alt=media&supportsAllDrives=true`, {
-          method: "GET",
-          headers: await driveHeaders(),
-        });
-        if (res.ok) {
-          const text = await res.text();
-          if (text) {
-            const parsed = JSON.parse(text) as T;
-            memoryCache.set(cacheKey, { data: parsed, timestamp: Date.now() });
-            // Atualiza backup local
-            try {
-              fs.writeFileSync(getLocalPath(filename), text, "utf8");
-            } catch {}
-            return parsed;
-          }
-        }
-      }
-    } catch (err) {
-      console.warn(`[DriveStorage] Aviso ao ler ${filename} do Drive:`, err);
+    // `resolveFileId` consulta memória e Supabase antes da busca por nome.
+    const fileId = await resolveFileId(filename, parentId);
+    if (!fileId) return null;
+
+    let parsed = await readDriveJsonById<T>(fileId, filename);
+    if (parsed === null) {
+      // O id resolvido (em cache) aponta para um arquivo que sumiu — apagado ou
+      // movido por fora. Isso não prova que o arquivo não existe: busca de novo.
+      fileIdCache.delete(cacheKey);
+      void forgetFileId(cacheKey);
+      const freshId = await findFileInFolder(filename, parentId);
+      if (!freshId || freshId === fileId) return null;
+      fileIdCache.set(cacheKey, freshId);
+      parsed = await readDriveJsonById<T>(freshId, filename);
+      if (parsed === null) return null;
     }
+
+    memoryCache.set(cacheKey, { data: parsed, timestamp: Date.now() });
+    return parsed;
   }
 
-  // 2. Fallback no disco local
+  // 2. Sem credenciais do Drive (desenvolvimento local): disco em `.data/`.
   try {
-    const local = getLocalPath(filename);
+    // Mesmo nome que `uploadBytesToDrive` grava offline: prefixado pela pasta.
+    // A cópia sem prefixo (de versões anteriores) só serve de reserva: ela
+    // colidia entre pastas que têm arquivos de mesmo nome.
+    const prefixado = getLocalPath(`${parentId}_${filename}`);
+    const local = fs.existsSync(prefixado) ? prefixado : getLocalPath(filename);
     if (fs.existsSync(local)) {
       const text = fs.readFileSync(local, "utf8");
       if (text) {
@@ -644,14 +776,10 @@ export async function writeDriveJson<T>(
   const jsonStr = JSON.stringify(data, null, 2);
   const bytes = new TextEncoder().encode(jsonStr);
 
-  // Atualiza cache em memória e disco local imediatamente
-  memoryCache.set(cacheKey, { data, timestamp: Date.now() });
-  try {
-    fs.writeFileSync(getLocalPath(filename), jsonStr, "utf8");
-  } catch {}
-
   // Grava no Google Drive — erro é propagado (não mascarado como sucesso),
-  // para que quem chamou perceba a falha e tente novamente.
+  // para que quem chamou perceba a falha e tente novamente. Offline,
+  // `uploadBytesToDrive` grava em `.data/${pasta}_${nome}`. (A cópia sem
+  // prefixo de pasta que existia aqui colidia entre pastas.)
   const fileId = await uploadBytesToDrive({
     parentId,
     name: filename,
@@ -659,5 +787,44 @@ export async function writeDriveJson<T>(
     bytes,
     overwrite: true,
   });
+  // Cache só depois de gravado: antes era atualizado ANTES do upload, e uma
+  // gravação que falhava ainda era servida como salva nas leituras seguintes.
+  memoryCache.set(cacheKey, { data, timestamp: Date.now() });
   return { ok: true, fileId };
+}
+
+/**
+ * Ler-alterar-gravar um JSON com a leitura e a escrita no mesmo lock.
+ *
+ * Vários caminhos gravam o MESMO arquivo de ensaio (rascunho, aprovações,
+ * comentários, labStore), cada um com seu próprio "lê, altera, grava". Quem
+ * tinha lido antes de outro gravar regravava a versão antiga por cima — foi
+ * um caminho por onde aprovações sumiam. Aqui:
+ *  - a leitura acontece dentro do lock, depois de qualquer escrita anterior
+ *    na mesma chave ter terminado;
+ *  - a leitura ignora o cache de 2s, que pode estar servindo uma versão
+ *    anterior a uma escrita feita em outra isolate.
+ *
+ * `alterar` recebe o conteúdo atual (null = arquivo não existe) e devolve o
+ * novo conteúdo, ou null para não gravar nada. Pode lançar para abortar.
+ * NÃO chame `atualizarDriveJson` para o mesmo arquivo de dentro de `alterar`:
+ * a mesma chave espera por si mesma e trava.
+ *
+ * A chave usa o prefixo `rmw:` porque `uploadBytesToDrive` (chamado por
+ * `writeDriveJson`) já trava com `${pasta}:${nome}` por dentro; reusar essa
+ * chave faria o lock externo esperar o interno para sempre.
+ */
+export async function atualizarDriveJson<T>(
+  filename: string,
+  parentId: string,
+  alterar: (atual: T | null) => T | null | Promise<T | null>,
+): Promise<T | null> {
+  return withKeyLock(`rmw:${parentId}:${filename}`, async () => {
+    memoryCache.delete(`${parentId}:${filename}`);
+    const atual = await readDriveJson<T>(filename, parentId);
+    const proximo = await alterar(atual);
+    if (proximo === null) return atual;
+    await writeDriveJson(filename, proximo, parentId);
+    return proximo;
+  });
 }

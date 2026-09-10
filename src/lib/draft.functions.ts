@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { ensureFolderPath, readDriveJson, writeDriveJson } from "@/lib/driveStorage";
+import { atualizarDriveJson, ensureFolderPath, readDriveJson, writeDriveJson } from "@/lib/driveStorage";
 import type { SerializableJson } from "@/lib/lab-entities.functions";
 import { FOLDER_ENSAIOS, ensaioFileName, toSerializableJson, type EnsaioFile, type DraftHistoryEntry } from "@/lib/lab-entities.functions";
 
@@ -127,22 +127,46 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
 
       const folderId = await ensureFolderPath(FOLDER_ENSAIOS);
       const name = ensaioFileName(ids.amostraId, ids.ensaioId);
-      const existing = await readDriveJson<EnsaioFile>(name, folderId);
 
+      // Leitura, checagem de revisão e escrita no MESMO lock (ver
+      // atualizarDriveJson). Antes eram passos soltos: uma aprovação gravada
+      // entre a leitura e a escrita deste autosave era apagada por ele.
+      type Desfecho =
+        | { tipo: "conflito"; currentRev: number; currentPayload: SerializableJson | null; message: string }
+        | { tipo: "gravado"; rev: number };
+      const desfecho: { v: Desfecho | null } = { v: null };
+
+      await atualizarDriveJson<EnsaioFile>(name, folderId, (existing) => {
       // Verificação de Concorrência Otimista (Optimistic Locking) — usa um
       // contador dedicado ao rascunho (draftRev), separado do rev geral da
       // entidade (que também é incrementado por fotos/status/aprovações).
       // Comparar contra o rev geral fazia esse aviso disparar sem ninguém
       // mais de fato ter editado o rascunho.
       const currentDraftRev = existing?.draftRev ?? existing?.rev ?? 0;
+      // Cliente que não sabe em que revisão está (`expectedRev` indefinido) não
+      // pode sobrescrever um rascunho que já tem conteúdo. Acontecia numa
+      // máquina nova: o usuário digitava antes de o rascunho remoto terminar de
+      // carregar, o autosave saía sem `expectedRev` e pulava a checagem —
+      // apagando o que outra pessoa tinha digitado. Protegido aqui, no servidor,
+      // vale para os draftStores de todos os módulos de uma vez.
+      const semRevisaoConhecida = typeof data.expectedRev !== "number";
+      if (existing && existing.payload != null && semRevisaoConhecida) {
+        desfecho.v = {
+          tipo: "conflito",
+          currentRev: currentDraftRev,
+          currentPayload: toSerializableJson(existing.payload) ?? null,
+          message: "O rascunho no servidor ainda não tinha sido carregado nesta tela. Recarregue antes de continuar.",
+        };
+        return null;
+      }
       if (existing && typeof data.expectedRev === "number" && currentDraftRev > data.expectedRev) {
-        return {
-          success: false,
-          conflict: true,
+        desfecho.v = {
+          tipo: "conflito",
           currentRev: currentDraftRev,
           currentPayload: toSerializableJson(existing.payload) ?? null,
           message: "Este relatório foi alterado em outro computador enquanto você digitava.",
         };
+        return null;
       }
 
       const nextRev = currentDraftRev + 1;
@@ -161,7 +185,13 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
         if (history.length > MAX_HISTORY) history.length = MAX_HISTORY;
       }
 
+      // Parte do arquivo que já existe e só substitui o que o rascunho controla.
+      // Reconstruir campo a campo era frágil: qualquer campo novo que alguém
+      // acrescentasse ao ensaio (e não lembrasse de copiar aqui) era apagado a
+      // cada autosave. `existing` só é null quando o arquivo de fato não existe
+      // — uma falha de leitura agora estoura antes de chegar aqui.
       const file: EnsaioFile = {
+        ...(existing ?? ({} as EnsaioFile)),
         id: ids.ensaioId,
         amostraId: ids.amostraId,
         tipo: existing?.tipo || "cisalhamento-direto",
@@ -189,9 +219,21 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
         draftHistory: history,
       };
 
-      await writeDriveJson(name, file, folderId);
+      desfecho.v = { tipo: "gravado", rev: nextRev };
+      return file;
+      });
 
-      return { success: true, rev: nextRev };
+      const d = desfecho.v;
+      if (d?.tipo === "conflito") {
+        return {
+          success: false,
+          conflict: true,
+          currentRev: d.currentRev,
+          currentPayload: d.currentPayload,
+          message: d.message,
+        };
+      }
+      return { success: true, rev: d?.tipo === "gravado" ? d.rev : 0 };
     } catch (err: any) {
       console.error("[saveSharedDraft] Erro fatal:", err);
       return { success: false, error: err?.message || String(err) };

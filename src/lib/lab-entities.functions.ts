@@ -4,20 +4,20 @@
  * Isso elimina a colisão de escrita entre usuários mexendo em entidades
  * diferentes ao mesmo tempo — cada um toca um arquivo diferente.
  *
- * Cada arquivo carrega um campo `rev` (revisão). Escritas fazem
- * read-modify-write: leem o arquivo atual, comparam a rev esperada, e só
- * sobrescrevem se bater — senão devolvem conflito. O Google Drive não tem
- * transação real, então isso reduz a janela de colisão mas não elimina
- * 100% (duas escritas quase simultâneas no MESMO arquivo ainda podem
- * colidir) — é a mesma limitação de qualquer read-modify-write sem lock
- * de banco, aceita conscientemente ao optar por Drive em vez de um banco
- * relacional.
+ * Cada arquivo carrega um campo `rev` (revisão), incrementado a cada escrita.
+ * Escritas fazem read-modify-write com a leitura e a gravação dentro do mesmo
+ * `withKeyLock`, então duas escritas no MESMO arquivo, na mesma isolate, não se
+ * atropelam. Entre isolates diferentes do Worker não há lock — o Google Drive
+ * não tem transação real —, então duas escritas quase simultâneas no mesmo
+ * arquivo vindas de isolates distintas ainda podem colidir (a última vence).
+ * (Este comentário dizia antes que a rev esperada era comparada e a gravação
+ * recusada em conflito; essa comparação nunca existiu no código.)
  */
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import type { Amostra, Coords, Ensaio, EnsaioStatus, EnsaioTipo, LabState, OS, Photo } from "@/features/lab/types";
-import { ensureFolderPath, listFilesInFolder, readDriveJson, readDriveJsonById, writeDriveJson, deleteDriveFile, findFileInFolder, DRIVE_ROOT_FOLDER_ID } from "@/lib/driveStorage";
+import { ensureFolderPath, listFilesInFolder, readDriveJson, readDriveJsonById, deleteDriveFile, findFileInFolder, atualizarDriveJson, DRIVE_ROOT_FOLDER_ID } from "@/lib/driveStorage";
 
 /**
  * Roda `fn` sobre `items` com no máximo `limit` chamadas em voo ao mesmo
@@ -161,12 +161,12 @@ export type EnsaioFile = {
   approvalComments?: ReportApprovalCommentRow[];
 };
 
-const FOLDER_OS = ["lab-os"];
-const FOLDER_AMOSTRAS = ["lab-amostras"];
+export const FOLDER_OS = ["lab-os"];
+export const FOLDER_AMOSTRAS = ["lab-amostras"];
 export const FOLDER_ENSAIOS = ["lab-ensaios"];
 
-const osFileName = (id: string) => `${id}.json`;
-const amostraFileName = (osId: string, id: string) => `${osId}__${id}.json`;
+export const osFileName = (id: string) => `${id}.json`;
+export const amostraFileName = (osId: string, id: string) => `${osId}__${id}.json`;
 export const ensaioFileName = (amostraId: string, id: string) => `${amostraId}__${id}.json`;
 
 function osToPublic(f: OSFile): Omit<OS, "amostras"> {
@@ -340,22 +340,24 @@ export const upsertOSFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const folderId = await ensureFolderPath(FOLDER_OS);
     const name = osFileName(data.id);
-    const existing = await readDriveJson<OSFile>(name, folderId);
-    const nextRev = (existing?.rev ?? 0) + 1;
-    const file: OSFile = {
-      id: data.id,
-      numero: data.numero,
-      client: data.client ?? null,
-      workNumber: data.workNumber ?? null,
-      local: data.local ?? null,
-      operator: data.operator ?? null,
-      technicalResp: data.technicalResp ?? null,
-      revision: data.revision ?? null,
-      createdAt: data.createdAt,
-      updatedAt: data.updatedAt,
-      rev: nextRev,
-    };
-    await writeDriveJson(name, file, folderId);
+    // Ver upsertEnsaioFn: leitura e escrita no mesmo lock.
+    await atualizarDriveJson<OSFile>(name, folderId, (existing) => {
+      const nextRev = (existing?.rev ?? 0) + 1;
+      const file: OSFile = {
+        id: data.id,
+        numero: data.numero,
+        client: data.client ?? null,
+        workNumber: data.workNumber ?? null,
+        local: data.local ?? null,
+        operator: data.operator ?? null,
+        technicalResp: data.technicalResp ?? null,
+        revision: data.revision ?? null,
+        createdAt: existing?.createdAt ?? data.createdAt,
+        updatedAt: data.updatedAt,
+        rev: nextRev,
+      };
+      return file;
+    });
     return { ok: true };
   });
 
@@ -395,26 +397,30 @@ export const upsertAmostraFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const folderId = await ensureFolderPath(FOLDER_AMOSTRAS);
     const name = amostraFileName(data.osId, data.id);
-    const existing = await readDriveJson<AmostraFile>(name, folderId);
-    const nextRev = (existing?.rev ?? 0) + 1;
-    const file: AmostraFile = {
-      id: data.id,
-      osId: data.osId,
-      reportNumber: data.reportNumber ?? null,
-      borehole: data.borehole ?? null,
-      depth: data.depth ?? null,
-      description: data.description ?? null,
-      granulometricDescription: data.granulometricDescription ?? null,
-      code: data.code ?? null,
-      sampleType: data.sampleType ?? null,
-      materialType: data.materialType ?? null,
-      coords: (data.coords ?? null) as Coords | null,
-      photos: (data.photos ?? []) as unknown as Photo[],
-      createdAt: data.createdAt,
-      updatedAt: data.updatedAt,
-      rev: nextRev,
-    };
-    await writeDriveJson(name, file, folderId);
+    // Ver upsertEnsaioFn: leitura e escrita no mesmo lock.
+    await atualizarDriveJson<AmostraFile>(name, folderId, (existing) => {
+      const nextRev = (existing?.rev ?? 0) + 1;
+      const file: AmostraFile = {
+        id: data.id,
+        osId: data.osId,
+        reportNumber: data.reportNumber ?? null,
+        borehole: data.borehole ?? null,
+        depth: data.depth ?? null,
+        description: data.description ?? null,
+        granulometricDescription: data.granulometricDescription ?? null,
+        code: data.code ?? null,
+        sampleType: data.sampleType ?? null,
+        materialType: data.materialType ?? null,
+        // Campo omitido pelo cliente não significa "apagar": antes, uma gravação
+        // sem `photos`/`coords` zerava as fotos e as coordenadas da amostra.
+        coords: (data.coords !== undefined ? data.coords : (existing?.coords ?? null)) as Coords | null,
+        photos: (data.photos ?? existing?.photos ?? []) as unknown as Photo[],
+        createdAt: existing?.createdAt ?? data.createdAt,
+        updatedAt: data.updatedAt,
+        rev: nextRev,
+      };
+      return file;
+    });
     return { ok: true };
   });
 
@@ -446,34 +452,51 @@ const EnsaioInput = z.object({
   updatedAt: z.string(),
 });
 
+/**
+ * Mescla uma gravação vinda do labStore com o arquivo de ensaio existente.
+ * Preserva workflowStatus/approvals/draftHistory (geridos por
+ * draft.functions.ts/approvals.functions.ts) e nunca apaga por omissão.
+ *
+ * O `payload` só é aceito por aqui enquanto o ensaio NÃO tem rascunho
+ * compartilhado (`draftRev`). Os editores gravam o payload por dois caminhos:
+ * `saveSharedDraft`, com trava de revisão, e `ctx.onPayloadChange` → labStore →
+ * aqui, sem trava nenhuma. Se a tela abrisse com o formulário vazio (leitura
+ * remota falhou), este segundo caminho gravava o vazio por cima do rascunho
+ * real, contornando a trava do primeiro. Havendo `draftRev`, o rascunho é o
+ * dono do payload.
+ */
+export function mesclarEnsaio(existing: EnsaioFile | null, data: z.infer<typeof EnsaioInput>): EnsaioFile {
+  const temRascunhoCompartilhado = typeof existing?.draftRev === "number";
+  return {
+    ...(existing ?? ({} as EnsaioFile)),
+    id: data.id,
+    amostraId: data.amostraId,
+    tipo: data.tipo,
+    status: data.status ?? existing?.status ?? null,
+    label: data.label ?? existing?.label ?? null,
+    nome: data.nome ?? existing?.nome ?? null,
+    sigla: data.sigla ?? existing?.sigla ?? null,
+    operator: data.operator ?? existing?.operator ?? null,
+    photos: (data.photos ?? existing?.photos ?? []) as unknown as Photo[],
+    payload:
+      data.payload !== undefined && !temRascunhoCompartilhado ? data.payload : (existing?.payload ?? null),
+    createdAt: existing?.createdAt ?? data.createdAt,
+    updatedAt: data.updatedAt,
+    rev: (existing?.rev ?? 0) + 1,
+  };
+}
+
 export const upsertEnsaioFn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator((v: unknown) => EnsaioInput.parse(v))
   .handler(async ({ data }) => {
     const folderId = await ensureFolderPath(FOLDER_ENSAIOS);
     const name = ensaioFileName(data.amostraId, data.id);
-    const existing = await readDriveJson<EnsaioFile>(name, folderId);
-    const nextRev = (existing?.rev ?? 0) + 1;
-    // Mescla com o existente: preserva workflowStatus/approvals/draftHistory
-    // (geridos por draft.functions.ts/approvals.functions.ts) e só troca o
-    // payload se um novo de fato foi enviado - nunca apaga por omissão.
-    const file: EnsaioFile = {
-      ...existing,
-      id: data.id,
-      amostraId: data.amostraId,
-      tipo: data.tipo,
-      status: data.status ?? existing?.status ?? null,
-      label: data.label ?? existing?.label ?? null,
-      nome: data.nome ?? existing?.nome ?? null,
-      sigla: data.sigla ?? existing?.sigla ?? null,
-      operator: data.operator ?? existing?.operator ?? null,
-      photos: (data.photos ?? existing?.photos ?? []) as unknown as Photo[],
-      payload: data.payload !== undefined ? data.payload : (existing?.payload ?? null),
-      createdAt: existing?.createdAt ?? data.createdAt,
-      updatedAt: data.updatedAt,
-      rev: nextRev,
-    };
-    await writeDriveJson(name, file, folderId);
+    // A leitura precisa estar DENTRO do lock, junto com a escrita. Antes, só o
+    // upload era serializado: duas gravações seguidas liam o mesmo `existing`,
+    // e a segunda regravava por cima o que a primeira tinha acabado de salvar
+    // (ex.: uma aprovação gravada entre a leitura e a escrita de um autosave).
+    await atualizarDriveJson<EnsaioFile>(name, folderId, (existing) => mesclarEnsaio(existing, data));
     return { ok: true };
   });
 

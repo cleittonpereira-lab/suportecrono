@@ -50,6 +50,8 @@ function EnsaioEditor() {
   const sync = useLabSyncStatus();
   const [restoring, setRestoring] = useState(false);
   const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [naoEncontrado, setNaoEncontrado] = useState(false);
+  const [tentativa, setTentativa] = useState(0);
 
   const registerFn = useServerFn(registerEnsaioDraft);
   const snapshotFn = useServerFn(getLabEnsaioSnapshot);
@@ -57,42 +59,26 @@ function EnsaioEditor() {
   const restoreRef = useRef<string | null>(null);
   const scopeId = `os/${osId}/amostra/${amostraId}/ensaio/${ensaioId}`;
 
-  // Detecta o tipo de ensaio a partir do ensaioId
-  function detectTipo(): EnsaioTipo {
-    const id = ensaioId.toLowerCase();
-    if (id.includes("aden")) return "adensamento";
-    if (id.includes("resil") || id.includes("modulo") || id.includes("mr.")) return "modulo-resiliencia";
-    if (id.includes("umid")) return "umidade-natural";
-    if (id.includes("triaxial-uu") || id.includes("tri.uu") || /\buu\b/.test(id)) return "triaxial-uu";
-    if (id.includes("triaxial-ciu") || id.includes("tri.ciu") || /\bciu\b/.test(id)) return "triaxial-ciu";
-    if (id.includes("tri") || id.includes("cid")) return "triaxial-cid";
-    if (id.includes("mesp")) return "mesp-a";
-    if (id.includes("asf") || id.includes("dap")) return "asf-dap";
-    if (id.includes("perm")) return "perm-v";
-    if (id.includes("compress") || id.includes("comp.")) return "compressao-simples";
-    return "cisalhamento-direto";
+  // Havia aqui um "auto-heal" que, quando o ensaio não era achado, criava uma
+  // OS + amostra + ensaio NOVOS. Os ids dessas entidades são aleatórios e nunca
+  // coincidiam com os da URL, então o editor continuava sem achar nada — e o
+  // timer de 15s criava outro trio, indefinidamente, gravando entidades-fantasma
+  // no Drive ("Nao informado"). Agora a tela diz o que houve e oferece tentar
+  // de novo; nada é criado.
+  function tentarDeNovo() {
+    restoreRef.current = null;
+    setRestoreError(null);
+    setNaoEncontrado(false);
+    setTentativa((t) => t + 1);
   }
 
-  // Auto-heal: cria a estrutura minima usando os IDs da URL para nao bloquear o usuario
-  function forceAutoHeal() {
-    const s = labStore.get();
-    let o = s.os.find((x) => x.id === osId);
-    if (!o) o = labStore.createOS({ numero: osId, client: "Nao informado" });
-    let a = (o?.amostras ?? []).find((x) => x.id === amostraId);
-    if (!a) a = labStore.addAmostra(o!.id, { reportNumber: amostraId, code: amostraId });
-    const e = (a?.ensaios ?? []).find((x) => x.id === ensaioId);
-    if (!e) {
-      const tipo = detectTipo();
-      labStore.addEnsaio(o!.id, a!.id, tipo, ENSAIO_LABEL[tipo] || tipo);
-    }
-  }
-
-  // Restaura a partir do snapshot no Supabase quando os/amostra/ensaio nao estao no store
+  // Restaura a partir do snapshot no Drive quando os/amostra/ensaio nao estao no store
   useEffect(() => {
     if (os && amostra && ensaio) return;
     if (sync.status !== "salvo" && sync.status !== "erro") return;
-    if (restoreRef.current === scopeId) return;
-    restoreRef.current = scopeId;
+    const chave = `${scopeId}#${tentativa}`;
+    if (restoreRef.current === chave) return;
+    restoreRef.current = chave;
     setRestoring(true);
     setRestoreError(null);
 
@@ -106,14 +92,12 @@ function EnsaioEditor() {
           labStore.ensureEnsaioFromSnapshot(snapshot);
           return;
         }
-        // Snapshot nao encontrado no lab_index - executa auto-heal
-        forceAutoHeal();
+        setNaoEncontrado(true);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
         console.warn("[EnsaioEditor] Falha ao obter snapshot:", err);
         setRestoreError(err instanceof Error ? err.message : "Falha ao recuperar o ensaio.");
-        forceAutoHeal();
       })
       .finally(() => {
         if (!cancelled) setRestoring(false);
@@ -123,21 +107,20 @@ function EnsaioEditor() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [amostra, amostraId, ensaio, ensaioId, os, osId, scopeId, snapshotFn, sync.status]);
+  }, [amostra, amostraId, ensaio, ensaioId, os, osId, scopeId, snapshotFn, sync.status, tentativa]);
 
-  // Timeout de seguranca: apenas se a chamada de rede travar completamente (15s)
+  // Se a chamada travar por completo, para de girar e avisa — sem criar nada.
   useEffect(() => {
     if (os && amostra && ensaio) return;
     const timer = setTimeout(() => {
       if (!os || !amostra || !ensaio) {
-        console.warn("[EnsaioEditor] Timeout de carregamento atingido, acionando inicialização segura.");
         setRestoring(false);
-        forceAutoHeal();
+        setRestoreError((atual) => atual ?? "O carregamento do ensaio passou de 15 segundos.");
       }
     }, 15000);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [os, amostra, ensaio]);
+  }, [os, amostra, ensaio, tentativa]);
 
   // loadLabTree (o carregamento em massa que popula os/amostra/ensaio a
   // partir do labStore) devolve fotos "leves" (sem dataUrl) — o conteúdo
@@ -196,24 +179,24 @@ function EnsaioEditor() {
       <div className="w-full px-6 py-8">
         <Card>
           <CardContent className="py-12 text-center text-sm text-muted-foreground space-y-3">
-            <span className="inline-flex items-center gap-2 font-medium">
-              <Loader2 className="h-4 w-4 animate-spin text-primary" /> Inicializando editor do ensaio...
-            </span>
+            {naoEncontrado ? (
+              <p className="font-medium text-foreground">Este ensaio não foi encontrado no Drive.</p>
+            ) : (
+              <span className="inline-flex items-center gap-2 font-medium">
+                {(restoring || !restoreError) && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+                {restoreError ? "Não foi possível carregar o ensaio." : "Carregando o ensaio..."}
+              </span>
+            )}
             {restoreError && (
               <p className="text-xs text-destructive">{restoreError}</p>
             )}
-            <p className="text-xs text-muted-foreground">
-              Se continuar carregando, clique abaixo para forcar a abertura.
-            </p>
-            <div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={forceAutoHeal}
-              >
-                Forcar Inicializacao Imediata
-              </Button>
-            </div>
+            {(restoreError || naoEncontrado) && (
+              <div>
+                <Button size="sm" variant="outline" onClick={tentarDeNovo} disabled={restoring}>
+                  Tentar de novo
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
