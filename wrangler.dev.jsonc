@@ -1,6 +1,13 @@
-// Só para desenvolvimento local (`npm run dev`): o nitro simula o D1 em
-// .wrangler/state/v3. NÃO se chama wrangler.jsonc de propósito — assim a
-// publicação no Cloudflare continua usando só a configuração gerada pelo nitro.
+// Banco D1 LOCAL (simulado em .wrangler/state/v3), para os comandos de
+// desenvolvimento — nada aqui chega à produção:
+//   npx wrangler d1 migrations apply DB --local --config wrangler.dev.jsonc
+//   node scripts/preview-d1.mjs   (app compilado no runtime do Cloudflare + este banco)
+//
+// O `npm run dev` (vite) NÃO usa este arquivo: nele o app roda em Node, sem os
+// recursos do Cloudflare, e continua com o Drive/modo offline.
+//
+// NÃO se chama wrangler.jsonc de propósito: a publicação usa só a configuração
+// gerada pelo nitro, e um wrangler.jsonc na raiz seria misturado a ela.
 {
   "name": "gestao-dev",
   "compatibility_date": "2025-09-01",
