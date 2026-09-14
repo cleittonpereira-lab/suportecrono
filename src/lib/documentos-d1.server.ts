@@ -12,7 +12,11 @@
  *  - consulta: listar uma pasta é uma query, não uma chamada por arquivo;
  *  - consistência imediata: o que foi gravado aparece na leitura seguinte.
  */
-import { AsyncLocalStorage } from "node:async_hooks";
+// Import do módulo inteiro, sem tocar em nada no carregamento: este arquivo
+// chega ao pacote do navegador (via driveStorage.ts), onde os módulos do Node
+// são substitutos que estouram ao primeiro acesso. `import { AsyncLocalStorage }`
+// acessava na hora e travava o app inteiro na tela de carregamento.
+import * as asyncHooks from "node:async_hooks";
 
 /** Só a parte da API do D1 usada aqui (evita depender dos tipos do Workers). */
 export interface D1Resultado<T = Record<string, unknown>> {
@@ -35,10 +39,16 @@ type Ambiente = { DB?: D1Banco; DADOS_NO_D1?: string };
  * Dentro de `lendoDoDrive`, o desvio para o D1 fica desligado — é assim que a
  * importação lê os arquivos originais do Drive com o D1 já ligado.
  */
-const escopoDrive = new AsyncLocalStorage<boolean>();
+let escopoDrive: asyncHooks.AsyncLocalStorage<boolean> | null = null;
+
+/** Criado no primeiro uso — sempre no servidor (ver o comentário do import). */
+function escopo(): asyncHooks.AsyncLocalStorage<boolean> {
+  escopoDrive ??= new asyncHooks.AsyncLocalStorage<boolean>();
+  return escopoDrive;
+}
 
 export function lendoDoDrive<T>(fn: () => Promise<T>): Promise<T> {
-  return escopoDrive.run(true, fn);
+  return escopo().run(true, fn);
 }
 
 /** O binding `DB` do Worker — o nitro publica o `env` da requisição em `globalThis.__env__`. */
@@ -50,7 +60,7 @@ export function obterD1(): D1Banco | null {
 
 /** D1 como fonte dos documentos: binding presente E `DADOS_NO_D1=1` (a chave de liga/desliga). */
 export function d1Ativo(): boolean {
-  if (escopoDrive.getStore()) return false;
+  if (escopoDrive?.getStore()) return false;
   const env = (globalThis as { __env__?: Ambiente }).__env__;
   const chave = env?.DADOS_NO_D1 ?? (typeof process !== "undefined" ? process.env?.DADOS_NO_D1 : undefined);
   return String(chave) === "1" && obterD1() !== null;
