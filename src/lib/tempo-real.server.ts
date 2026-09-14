@@ -5,11 +5,21 @@
  */
 import { coletandoMudancas } from "./avisos-mudanca";
 
-type Ambiente = { SALA_TEMPO_REAL?: DurableObjectNamespace };
+type Ambiente = { SALA_TEMPO_REAL?: DurableObjectNamespace; TEMPO_REAL?: string };
 
-/** A sala única do laboratório; `null` num servidor sem o Durable Object configurado. */
+/**
+ * A sala única do laboratório; `null` num servidor sem o Durable Object
+ * configurado ou com o tempo real desligado.
+ *
+ * Chave de desligar: a variável `TEMPO_REAL=0` no painel do Cloudflare. Depois
+ * que a sala existe, o painel não volta mais para uma versão anterior a ela;
+ * esta chave desliga o tempo real sem publicar nada — as telas voltam à
+ * consulta periódica de antes.
+ */
 export function salaTempoReal(): DurableObjectStub | null {
-  const ns = (globalThis as { __env__?: Ambiente }).__env__?.SALA_TEMPO_REAL;
+  const env = (globalThis as { __env__?: Ambiente }).__env__;
+  if (String(env?.TEMPO_REAL ?? "") === "0") return null;
+  const ns = env?.SALA_TEMPO_REAL;
   if (!ns || typeof ns.idFromName !== "function") return null;
   return ns.get(ns.idFromName("laboratorio"));
 }
@@ -21,10 +31,11 @@ export function salaTempoReal(): DurableObjectStub | null {
  * na consulta periódica.
  */
 export async function comAvisosDeMudanca<T>(request: Request, next: () => Promise<T>): Promise<T> {
+  // Sem a sala (ou desligada): a requisição segue exatamente como antes.
+  const sala = salaTempoReal();
+  if (!sala) return next();
   const { resultado, docs } = await coletandoMudancas(next);
   if (docs.length === 0) return resultado;
-  const sala = salaTempoReal();
-  if (!sala) return resultado;
   const envio = sala
     .fetch("https://sala/aviso", {
       method: "POST",
