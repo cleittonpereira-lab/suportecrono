@@ -59,13 +59,14 @@ import { useAuth } from "@/hooks/use-auth";
 import { syncRevision, fetchDriveStatus } from "@/features/triaxial-cid/driveSync";
 import { getWorkflowStatuses } from "@/lib/driveSync.functions";
 import { buildScopeId } from "@/lib/scope";
+import { marcarAssinaturasNoPdf } from "@/lib/assinaturas-pdf";
 import {
   listApprovals,
   requestApproval,
   verifyApproval,
   decideApproval,
   type ApprovalRow,
-} from "@/lib/approvals.functions";
+} from "@/lib/approvals-com-pdf";
 import { supabase } from "@/integrations/supabase/client";
 import { CheckCircle2,
   MessageSquareQuote, XCircle, Clock, Send } from "lucide-react";
@@ -739,6 +740,7 @@ export function TriaxialCidPage() {
       if (i > 0) pdf.addPage("a4", "portrait");
       pdf.addImage(dataUrl, "PNG", 0, 0, W, H, undefined, "FAST");
     }
+    marcarAssinaturasNoPdf(pdf, pages);
     return pdf.output("blob");
   };
 

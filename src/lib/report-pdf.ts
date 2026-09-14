@@ -19,6 +19,7 @@
  * para os laudos.
  */
 import { toPng } from "html-to-image";
+import { marcarAssinaturasNoPdf } from "./assinaturas-pdf";
 
 /** Estilo aplicado pelo html-to-image a cada página no momento da captura. */
 type EstiloDeCaptura = Partial<CSSStyleDeclaration>;
@@ -352,6 +353,7 @@ export async function rasterizarRelatorioParaPdf(
       onProgressoPagina?.(i + 1, paginas.length);
     }
 
+    marcarAssinaturasNoPdf(pdf, paginas);
     const blob = pdf.output("blob");
     await assertPdfValido(blob, "Geração do laudo", paginas.length);
     return { blob, fotosQueFalharam: pre.falharam, folhasCortadas };

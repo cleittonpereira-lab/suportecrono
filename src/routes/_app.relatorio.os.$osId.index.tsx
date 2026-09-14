@@ -26,6 +26,23 @@ function OSDetail() {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [form, setForm] = useState<Partial<Amostra>>({});
 
+  // Agrupa por (reportNumber || "" ) + "@@" + (depth || ""). Fica antes do
+  // retorno "OS não encontrada": depois dele, a página aberta antes de a árvore
+  // do laboratório carregar chamava um hook a mais quando a OS chegava, e o
+  // React derrubava a página ("Rendered more hooks").
+  const grupos = useMemo(() => {
+    const m = new Map<string, { key: string; reportNumber: string; depth: string; borehole?: string; amostras: Amostra[] }>();
+    for (const a of os?.amostras ?? []) {
+      const rn = (a.reportNumber ?? "").trim();
+      const dp = (a.depth ?? "").trim();
+      const key = `${rn}@@${dp}`;
+      const g = m.get(key);
+      if (g) g.amostras.push(a);
+      else m.set(key, { key, reportNumber: rn || "—", depth: dp, borehole: a.borehole, amostras: [a] });
+    }
+    return Array.from(m.values());
+  }, [os?.amostras]);
+
   if (!os) {
     return (
       <div className="px-6 py-6">
@@ -57,20 +74,6 @@ function OSDetail() {
       navigate({ to: "/relatorio/os/$osId/amostra/$amostraId", params: { osId: os.id, amostraId: am.id } });
     }
   };
-
-  // Agrupa por (reportNumber || "" ) + "@@" + (depth || "")
-  const grupos = useMemo(() => {
-    const m = new Map<string, { key: string; reportNumber: string; depth: string; borehole?: string; amostras: Amostra[] }>();
-    for (const a of os.amostras) {
-      const rn = (a.reportNumber ?? "").trim();
-      const dp = (a.depth ?? "").trim();
-      const key = `${rn}@@${dp}`;
-      const g = m.get(key);
-      if (g) g.amostras.push(a);
-      else m.set(key, { key, reportNumber: rn || "—", depth: dp, borehole: a.borehole, amostras: [a] });
-    }
-    return Array.from(m.values());
-  }, [os.amostras]);
 
   const toggleGroup = (k: string) => setOpenGroups((s) => ({ ...s, [k]: !s[k] }));
 

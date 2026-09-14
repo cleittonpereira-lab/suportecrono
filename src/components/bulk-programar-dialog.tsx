@@ -1821,13 +1821,9 @@ function MiniGantt({
   incluirFds: boolean;
   programacoes: Programacao[];
 }) {
-  if (plano.length === 0) return null;
-  const ensaioById = new Map(ensaios.map((e) => [e.id, e]));
-
-  const parse = (iso: string) => new Date(iso + "T00:00:00").getTime();
-  const DAY = 86_400_000;
-
-  // Filtrar programações passadas para o equipamento
+  // Filtrar programações passadas para o equipamento. Antes do retorno
+  // antecipado: depois dele, o primeiro plano montado chamava um hook a mais
+  // que a renderização anterior e o React derrubava o diálogo.
   const pastItemsByEquip = useMemo(() => {
     const map = new Map<string, Array<{ inicio: string; fim: string; label: string; dur: number }>>();
     for (const prog of programacoes) {
@@ -1844,6 +1840,11 @@ function MiniGantt({
     return map;
   }, [programacoes]);
 
+  if (plano.length === 0) return null;
+  const ensaioById = new Map(ensaios.map((e) => [e.id, e]));
+
+  const parse = (iso: string) => new Date(iso + "T00:00:00").getTime();
+  const DAY = 86_400_000;
 
   const minMs = plano.reduce((m, p) => Math.min(m, parse(p.inicio)), parse(plano[0].inicio));
   const maxMs = plano.reduce((m, p) => Math.max(m, parse(p.fim)), parse(plano[0].fim));

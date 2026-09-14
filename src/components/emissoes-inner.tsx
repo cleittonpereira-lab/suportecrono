@@ -7,8 +7,10 @@ import {
   decideApproval,
   listApprovalComments,
   addApprovalComment,
+  completarPdfDaRevisao,
   type ApprovalCommentRow,
-} from "@/lib/approvals.functions";
+} from "@/lib/approvals-com-pdf";
+import { corEtapa, normalizarEtapa, rotuloEtapa } from "@/lib/etapa-laudo";
 import { useAuth } from "@/hooks/use-auth";
 import { getRevisionPdfBase64 } from "@/lib/driveSync.functions";
 import { getLabEnsaioSnapshot, type LabEnsaioSnapshot } from "@/lib/lab-ensaios.functions";
@@ -497,18 +499,18 @@ function SlaCell({ row }: { row: EmissaoRow }) {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, { label: string; cls: string }> = {
-    digitacao: { label: "Em digitação", cls: "bg-slate-500/15 text-slate-700 dark:text-slate-300 border-slate-500/30" },
-    aguardando_verificacao: { label: "Aguardando verificação", cls: "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30" },
-    aguardando_aprovacao: { label: "Aguardando aprovação", cls: "bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30" },
-    pendente_verificacao: { label: "Aguardando verificação", cls: "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30" },
-    pendente_aprovacao: { label: "Aguardando aprovação", cls: "bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30" },
-    aprovado: { label: "Aprovado", cls: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30" },
-    rejeitado_verificacao: { label: "Rejeitado (verificação)", cls: "bg-destructive/15 text-destructive border-destructive/30" },
-    rejeitado: { label: "Rejeitado", cls: "bg-destructive/15 text-destructive border-destructive/30" },
-  };
-  const s = map[status] ?? { label: status, cls: "" };
-  return <Badge variant="outline" className={`text-[10px] ${s.cls}`}>{s.label}</Badge>;
+  // Rejeição tem destaque próprio; o resto usa a etapa comum a todas as telas
+  // (src/lib/etapa-laudo.ts), com o mesmo rótulo e a mesma cor.
+  if (status === "rejeitado" || status === "rejeitado_verificacao") {
+    return (
+      <Badge variant="outline" className="text-[10px] bg-destructive/15 text-destructive border-destructive/30">
+        {status === "rejeitado" ? "Rejeitado" : "Rejeitado (verificação)"}
+      </Badge>
+    );
+  }
+  const etapa = normalizarEtapa(status);
+  if (!etapa) return <Badge variant="outline" className="text-[10px]">{status}</Badge>;
+  return <Badge variant="outline" className={`text-[10px] ${corEtapa(etapa)}`}>{rotuloEtapa(etapa)}</Badge>;
 }
 
 function RowActions({
@@ -667,9 +669,23 @@ function PreviewDialog({ row, onClose }: { row: EmissaoRow | null; onClose: () =
           data: { scopeId: row.scope_id, rev: row.rev ?? undefined },
         });
         if (cancelled) return;
-        const bin = atob(r.base64);
-        const bytes = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        // Completa as assinaturas que faltarem (e regrava no Drive) antes de
+        // mostrar: a prévia é a revisão com quem verificou e aprovou.
+        let bytes: Uint8Array | null = null;
+        const rev = r.rev ?? row.rev;
+        if (rev != null) {
+          try {
+            bytes = (await completarPdfDaRevisao(row.scope_id, rev, row, r.base64)).bytes;
+          } catch {
+            // Mostra o PDF como está no Drive.
+          }
+        }
+        if (cancelled) return;
+        if (!bytes) {
+          const bin = atob(r.base64);
+          bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        }
         const arrayBuffer = new ArrayBuffer(bytes.byteLength);
         new Uint8Array(arrayBuffer).set(bytes);
         const blob = new Blob([arrayBuffer], { type: "application/pdf" });

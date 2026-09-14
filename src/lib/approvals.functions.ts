@@ -32,6 +32,7 @@ import {
   type ReportApprovalCommentRow,
 } from "@/lib/lab-entities.functions";
 import { sincronizarPendenciaDoEnsaio, type PendenciaDigitacao } from "@/lib/lab-pendencias.functions";
+import { etapaDasAprovacoes } from "@/lib/etapa-laudo";
 
 /**
  * Propaga o avanço do fluxo para a pendência vinculada ao ensaio.
@@ -528,13 +529,7 @@ export const listApprovalComments = createServerFn({ method: "GET" })
  */
 function deriveWorkflowStatus(file: EnsaioFile | null): string {
   const approvals = (file?.reportApprovals as ApprovalRow[] | undefined) ?? [];
-  if (approvals.length > 0) {
-    const latest = approvals.reduce((a, b) => (b.rev > a.rev ? b : a));
-    if (latest.status === "aprovado") return "aprovado";
-    if (latest.status === "pendente_aprovacao" || latest.status === "verificado") return "aguardando_aprovacao";
-    if (latest.status === "pendente_verificacao" || latest.status === "rejeitado_verificacao" || latest.status === "rejeitado") return "aguardando_verificacao";
-  }
-  return file?.workflowStatus || "digitacao";
+  return etapaDasAprovacoes(approvals) ?? (file?.workflowStatus || "digitacao");
 }
 
 /* ─────────────────────────────── FARÓIS / WORKFLOW STATUSES ─────────────────────────────── */

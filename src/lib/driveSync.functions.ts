@@ -668,6 +668,77 @@ export const registerEnsaioDraft = createServerFn({ method: "POST" })
   });
 
 /**
+ * Arquivo do PDF de uma revisão na pasta `relatorios` do ensaio no Drive
+ * (deduzida a partir dos arquivos lab-os/lab-amostras/lab-ensaios, sem
+ * depender de nenhum log). Sem `rev`, a mais recente.
+ */
+async function acharPdfDaRevisao(scopeId: string, rev?: number): Promise<{ id: string; name: string }> {
+  if (!parseScope(scopeId)) throw new Error("scopeId inválido.");
+  const parts = await partesDaPastaDoEnsaio(scopeId);
+  if (!parts) throw new Error("Ensaio não encontrado.");
+  const relFolderId = await resolveFolderPath([...parts, "relatorios"]);
+  if (!relFolderId) throw new Error("Nenhum PDF encontrado no Drive para este ensaio.");
+  const files = (await listFilesInFolder(relFolderId)).filter((f) => f.name.toLowerCase().endsWith(".pdf"));
+  if (files.length === 0) throw new Error("Nenhum PDF encontrado no Drive para este ensaio.");
+
+  // Pedida a revisão N, devolve a N ou falha. Antes caía em `files[0]` quando
+  // não achava, e a tela de compressão simples gravava esse PDF no histórico
+  // local COMO se fosse a revisão N.
+  const revDoArquivo = (nome: string) => {
+    const m = /Rev-?(\d+)\.pdf$/i.exec(nome);
+    return m ? Number(m[1]) : null;
+  };
+  const comRev = files.filter((f) => revDoArquivo(f.name) != null);
+  if (typeof rev === "number") {
+    const alvo = comRev.find((f) => revDoArquivo(f.name) === rev);
+    if (!alvo) throw new Error(`A revisão ${rev} não foi encontrada no Drive para este ensaio.`);
+    return alvo;
+  }
+  const alvo = [...comRev].sort((a, b) => (revDoArquivo(b.name) ?? 0) - (revDoArquivo(a.name) ?? 0))[0];
+  if (!alvo) throw new Error("Nenhum PDF de revisão encontrado no Drive para este ensaio.");
+  return alvo;
+}
+
+const SubstituirPdfInput = z.object({
+  scopeId: z.string().min(1),
+  rev: z.number().int().nonnegative(),
+  base64: z.string().min(1),
+});
+
+/**
+ * Regrava o PDF de uma revisão já emitida com as assinaturas de verificação e
+ * aprovação (ver src/lib/assinaturas-pdf.ts). Fora a reemissão, é a única
+ * escrita por cima de uma revisão existente — e só vale para revisão que está
+ * no fluxo de aprovação.
+ */
+export const substituirPdfDaRevisao = createServerFn({ method: "POST" })
+  .middleware([exigirLogin])
+  .inputValidator((v: unknown) => SubstituirPdfInput.parse(v))
+  .handler(async ({ data }) => {
+    const rotulo = `Rev-${String(data.rev).padStart(2, "0")}`;
+    const bytes = b64ToBytes(data.base64);
+    if (!pdfValido(bytes)) {
+      throw new Error(`O PDF da ${rotulo} está vazio ou corrompido (${bytes.length} bytes) e não foi gravado.`);
+    }
+    if (!isGoogleAuthConfigured()) {
+      throw new Error(`O PDF da ${rotulo} não foi gravado: o Google Drive não está configurado neste servidor.`);
+    }
+    const ids = parseScope(data.scopeId);
+    if (!ids) throw new Error("scopeId inválido.");
+    const { ensureFolderPath: ensureFolderPathShared, readDriveJson } = await import("@/lib/driveStorage");
+    const en = await readDriveJson<ArquivoLab>(
+      `${ids.amostraId}__${ids.ensaioId}.json`,
+      await ensureFolderPathShared(["lab-ensaios"]),
+    );
+    if (!(en?.reportApprovals ?? []).some((a) => a.rev === data.rev)) {
+      throw new Error(`A ${rotulo} não está no fluxo de aprovação; o PDF não foi alterado.`);
+    }
+    const alvo = await acharPdfDaRevisao(data.scopeId, data.rev);
+    await uploadBytesOverwrite({ mimeType: "application/pdf", bytes }, alvo.id);
+    return { ok: true, fileId: alvo.id };
+  });
+
+/**
  * Baixa o PDF da revisão informada (ou da última) do Drive e devolve em
  * base64 para pré-visualização em pop-up, direto da pasta `relatorios` do
  * ensaio no Drive.
@@ -685,34 +756,7 @@ export const getRevisionPdfBase64 = createServerFn({ method: "POST" })
       throw new Error("Prévia indisponível: o Google Drive não está configurado neste servidor.");
     }
 
-    // Busca direto na pasta do Drive deste ensaio (deduzida a partir dos
-    // arquivos lab-os/lab-amostras/lab-ensaios), sem depender de nenhum log.
-    const ids = parseScope(data.scopeId);
-    if (!ids) throw new Error("scopeId inválido.");
-
-    const parts = await partesDaPastaDoEnsaio(data.scopeId);
-    if (!parts) throw new Error("Ensaio não encontrado.");
-    const relFolderId = await resolveFolderPath([...parts, "relatorios"]);
-    if (!relFolderId) throw new Error("Nenhum PDF encontrado no Drive para este ensaio.");
-    const files = (await listFilesInFolder(relFolderId)).filter((f) => f.name.toLowerCase().endsWith(".pdf"));
-    if (files.length === 0) throw new Error("Nenhum PDF encontrado no Drive para este ensaio.");
-
-    // Pedida a revisão N, devolve a N ou falha. Antes caía em `files[0]` quando
-    // não achava, e a tela de compressão simples gravava esse PDF no histórico
-    // local COMO se fosse a revisão N.
-    const revDoArquivo = (nome: string) => {
-      const m = /Rev-?(\d+)\.pdf$/i.exec(nome);
-      return m ? Number(m[1]) : null;
-    };
-    const comRev = files.filter((f) => revDoArquivo(f.name) != null);
-    let target: { id: string; name: string } | undefined;
-    if (typeof data.rev === "number") {
-      target = comRev.find((f) => revDoArquivo(f.name) === data.rev);
-      if (!target) throw new Error(`A revisão ${data.rev} não foi encontrada no Drive para este ensaio.`);
-    } else {
-      target = [...comRev].sort((a, b) => (revDoArquivo(b.name) ?? 0) - (revDoArquivo(a.name) ?? 0))[0];
-      if (!target) throw new Error("Nenhum PDF de revisão encontrado no Drive para este ensaio.");
-    }
+    const target = await acharPdfDaRevisao(data.scopeId, data.rev);
 
     const res = await fetch(`${DRIVE_V3}/files/${target.id}?alt=media&supportsAllDrives=true`, {
       method: "GET",

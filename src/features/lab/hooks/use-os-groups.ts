@@ -10,6 +10,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { detectMethodology } from "@/features/mesp-natural/calc";
 import { normOs } from "@/lib/schedule-utils";
 import { parseGanttSampleData } from "@/lib/sample-parser";
+import { combinarEtapas, normalizarEtapa, type EtapaComBancada, type EtapaLaudo } from "@/lib/etapa-laudo";
 
 export interface EnsaioItemOS {
   id: string;
@@ -21,7 +22,8 @@ export interface EnsaioItemOS {
   codigo?: string;
   ensaio: string;
   tipo: EnsaioTipo;
-  status: "programado" | "execucao" | "em_digitacao" | "verificacao" | "aprovado" | "concluido_externo";
+  /** Etapa comum a todas as telas — ver src/lib/etapa-laudo.ts. */
+  status: EtapaComBancada;
   tecnico?: string;
   digitador?: string;
   verificador?: string;
@@ -164,6 +166,10 @@ export function useOsGroups() {
       return `${amKey}::${m}`;
     };
 
+    // Etapa vinda do arquivo do ensaio (fluxo de aprovação), guardada à parte
+    // para ser combinada com a da pendência pela regra única.
+    const etapaDoEnsaio = new Map<EnsaioItemOS, EtapaLaudo>();
+
     // 1. Inclui ensaios do labStore
     for (const os of labState.os) {
       if (deletedOs.has(normOs(os.numero))) continue;
@@ -195,6 +201,10 @@ export function useOsGroups() {
           const sampleIdent = am.code || details.codigo || am.reportNumber || "AM-01";
           const testKey = getTestKey(sampleIdent, en.tipo);
 
+          // en.status vem do labStore (loadLabTree), já derivado do fluxo de
+          // aprovações. Antes, "aguardando aprovação" e "aguardando
+          // verificação" viravam a mesma etapa aqui.
+          const etapa = normalizarEtapa(en.status) ?? "em_digitacao";
           const item: EnsaioItemOS = {
             id: en.id,
             amostraId: am.id,
@@ -204,19 +214,13 @@ export function useOsGroups() {
             codigo: am.code || details.codigo || "",
             ensaio: siglaEnsaio,
             tipo: en.tipo,
-            // en.status vem do labStore (loadLabTree), que já deriva o
-            // status real a partir do histórico de aprovações — comparar
-            // com "concluido" aqui era um bug antigo (o valor real gravado
-            // é "aprovado"), fazendo todo ensaio já aprovado cair sempre
-            // no "em_digitacao" abaixo, mesmo aprovado de verdade.
-            status: en.status === "aprovado" ? "aprovado"
-              : (en.status === "aguardando_aprovacao" || en.status === "aguardando_verificacao") ? "verificacao"
-              : "em_digitacao",
+            status: etapa,
             digitador: en.operator || currentUserName,
             revisao: os.revision || "0",
           };
 
           itemsMap.set(testKey, item);
+          etapaDoEnsaio.set(item, etapa);
         }
       }
     }
@@ -241,10 +245,7 @@ export function useOsGroups() {
         amMap.get(p.amostra || "");
       const details = extractSampleDetails(amProg);
 
-      let st: EnsaioItemOS["status"] = "em_digitacao";
-      if (p.status === "digitado") st = "verificacao";
-      if (p.status === "aprovado") st = "aprovado";
-      if (p.status === "concluido_externo") st = "concluido_externo";
+      const etapaPendencia = normalizarEtapa(p.status);
 
       const sampleIdent = details.codigo || p.amostra || "AM-01";
       const testKey = getTestKey(sampleIdent, tipo);
@@ -260,11 +261,10 @@ export function useOsGroups() {
         if (p.ensaio && (!existing.ensaio || existing.ensaio === existing.tipo || existing.ensaio.includes("cisalhamento-direto"))) {
           existing.ensaio = p.ensaio;
         }
-        if (st === "aprovado" || st === "concluido_externo" || st === "verificacao" || st === "em_digitacao") {
-          if (existing.status !== "aprovado" && existing.status !== "concluido_externo") {
-            existing.status = st;
-          }
-        }
+        // Regra única (src/lib/etapa-laudo.ts): o fluxo formal do ensaio vence;
+        // fora dele, a etapa mais avançada. Antes a pendência sobrescrevia o
+        // ensaio e rebaixava "aguardando aprovação" para "aguardando verificação".
+        existing.status = combinarEtapas(etapaDoEnsaio.get(existing) ?? null, etapaPendencia);
         if (p.operador_nome) existing.tecnico = p.operador_nome;
         if (p.digitador_nome) existing.digitador = p.digitador_nome;
         if (p.verificador_nome) existing.verificador = p.verificador_nome;
@@ -279,7 +279,7 @@ export function useOsGroups() {
           codigo: details.codigo,
           ensaio: p.ensaio,
           tipo,
-          status: st,
+          status: combinarEtapas(null, etapaPendencia),
           tecnico: p.operador_nome || undefined,
           digitador: p.digitador_nome || undefined,
           verificador: p.verificador_nome || undefined,
@@ -326,7 +326,8 @@ export function useOsGroups() {
       } else {
         const concluiu = !!prog.data_fim_real || prog.status === "concluido";
         const iniciou = !!prog.data_inicio_real || prog.status === "em_execucao";
-        const st: EnsaioItemOS["status"] = concluiu ? "em_digitacao" : iniciou ? "execucao" : "programado";
+        // Saiu da bancada e ainda não tem laudo nem pendência: falta digitar.
+        const st: EnsaioItemOS["status"] = concluiu ? "pendente" : iniciou ? "execucao" : "programado";
 
         itemsMap.set(testKey, {
           id: prog.id,

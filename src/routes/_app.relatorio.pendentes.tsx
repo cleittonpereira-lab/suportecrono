@@ -85,6 +85,15 @@ import {
   Eye,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  ETAPAS_DO_LAUDO,
+  combinarEtapas,
+  corEtapa,
+  etapaParaPendencia,
+  normalizarEtapa,
+  pendenciaParaEtapa,
+  rotuloEtapa,
+} from "@/lib/etapa-laudo";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useCadastroByOs } from "@/hooks/use-cadastro-by-os";
@@ -112,23 +121,15 @@ export const Route = createFileRoute("/_app/relatorio/pendentes")({
   component: CentralRelatoriosPage,
 });
 
-const STATUS_LABEL: Record<PendenciaDigitacao["status"], string> = {
-  pendente: "Pendente de Digitação",
-  em_digitacao: "Em Digitação",
-  digitado: "Aguardando Verificação",
-  verificado: "Aguardando Aprovação",
-  aprovado: "Aprovado / Emitido",
-  concluido_externo: "Concluído fora da Central (Excel)",
-};
-
-const STATUS_COLOR: Record<PendenciaDigitacao["status"], string> = {
-  pendente: "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30",
-  em_digitacao: "bg-sky-500/15 text-sky-700 dark:text-sky-400 border-sky-500/30",
-  digitado: "bg-violet-500/15 text-violet-700 dark:text-violet-400 border-violet-500/30",
-  verificado: "bg-indigo-500/15 text-indigo-700 dark:text-indigo-400 border-indigo-500/30",
-  aprovado: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30",
-  concluido_externo: "bg-slate-500/15 text-slate-700 dark:text-slate-400 border-slate-500/30",
-};
+// Rótulos e cores de src/lib/etapa-laudo.ts (os mesmos da visão por OS, da
+// página da OS e da Central de Emissões), no vocabulário gravado nas pendências.
+const STATUS_PENDENCIA = ETAPAS_DO_LAUDO.map(etapaParaPendencia);
+const STATUS_LABEL = Object.fromEntries(
+  STATUS_PENDENCIA.map((s) => [s, rotuloEtapa(pendenciaParaEtapa(s))]),
+) as Record<PendenciaDigitacao["status"], string>;
+const STATUS_COLOR = Object.fromEntries(
+  STATUS_PENDENCIA.map((s) => [s, corEtapa(pendenciaParaEtapa(s))]),
+) as Record<PendenciaDigitacao["status"], string>;
 
 const SLA_BADGE_COLOR: Record<SlaStatus, string> = {
   no_prazo: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30",
@@ -221,13 +222,7 @@ function CentralRelatoriosPage() {
   });
 
   function mapWorkflowStatus(status?: string | null): PendenciaDigitacao["status"] {
-    if (!status) return "em_digitacao";
-    const s = status.toLowerCase().trim();
-    if (s === "aprovado" || s === "concluido") return "aprovado";
-    if (s === "verificado" || s === "aguardando_aprovacao" || s === "pendente_aprovacao") return "verificado";
-    if (s === "digitado" || s === "aguardando_verificacao" || s === "pendente_verificacao" || s === "verificacao") return "digitado";
-    if (s === "concluido_externo") return "concluido_externo";
-    return "em_digitacao";
+    return etapaParaPendencia(normalizarEtapa(status) ?? "em_digitacao");
   }
 
   // Lista unificada de pendências (Supabase + Estado soberano labState)
@@ -236,8 +231,12 @@ function CentralRelatoriosPage() {
 
     for (const r of rows) {
       const key = `${normOs(r.os)}::${normAmostra(r.amostra || "")}::${normMethod(r.ensaio || r.tipo_ensaio)}`;
-      map.set(key, { ...r, status: mapWorkflowStatus(r.status) });
-      map.set(r.id, { ...r, status: mapWorkflowStatus(r.status) });
+      // Um objeto só para as duas chaves. Eram duas cópias: o labStore abaixo
+      // atualizava uma, e a deduplicação no fim podia ficar com a outra, ainda
+      // com o status antigo.
+      const item = { ...r, status: mapWorkflowStatus(r.status) };
+      map.set(key, item);
+      map.set(r.id, item);
     }
 
     if (labState?.os) {
@@ -245,16 +244,19 @@ function CentralRelatoriosPage() {
         for (const a of o.amostras) {
           for (const e of a.ensaios) {
             const hasData = e.payload && Object.keys(e.payload).length > 0;
-            const targetStatus = mapWorkflowStatus(e.status);
-            const isEmProgresso = targetStatus !== "em_digitacao" || hasData || e.status === "em_digitacao" || e.status === "processando";
+            const etapaEnsaio = normalizarEtapa(e.status) ?? "em_digitacao";
+            const isEmProgresso = etapaEnsaio !== "em_digitacao" || hasData || e.status === "em_digitacao" || e.status === "processando";
             if (!isEmProgresso) continue;
 
             const key = `${normOs(o.numero)}::${normAmostra(a.reportNumber || a.code || "")}::${normMethod(e.sigla || e.nome || e.tipo)}`;
             const existing = map.get(key) || map.get(e.id);
 
             if (existing) {
-              // Atualiza com o status mais recente do labState
-              existing.status = targetStatus;
+              // Regra única (src/lib/etapa-laudo.ts): o fluxo formal do ensaio
+              // vence; fora dele, a etapa mais avançada. Antes o status do
+              // ensaio sobrescrevia sempre: um rascunho com dados apagava um
+              // "Concluído fora (Excel)" ou um "Aguardando verificação" da pendência.
+              existing.status = etapaParaPendencia(combinarEtapas(etapaEnsaio, pendenciaParaEtapa(existing.status)));
               if (e.payload) existing.payload = e.payload as any;
               if (e.operator || o.operator) existing.operador_nome = e.operator || o.operator || existing.operador_nome;
             } else {
@@ -266,7 +268,7 @@ function CentralRelatoriosPage() {
                 tipo_ensaio: e.tipo,
                 equipamento: null,
                 data_conclusao: new Date().toISOString(),
-                status: targetStatus,
+                status: etapaParaPendencia(combinarEtapas(etapaEnsaio, null)),
                 origem: "avulso",
                 operador_user_id: null,
                 operador_nome: e.operator || o.operator || null,
@@ -385,7 +387,8 @@ function CentralRelatoriosPage() {
       doProgs.map((g) => `${normOs(g.os)}::${normAmostra(g.amostra)}::${normMethod(g.ensaio || g.tipoEnsaioNome)}`),
     );
     const doPendencias = allPendencias
-      .filter((r) => r.status === "em_digitacao")
+      // "pendente" era convertido em "em_digitacao" na leitura; agora fica como está.
+      .filter((r) => r.status === "em_digitacao" || r.status === "pendente")
       .filter((r) => !jaProgramado.has(`${normOs(r.os)}::${normAmostra(r.amostra || "")}::${normMethod(r.ensaio || r.tipo_ensaio)}`))
       .map((r) => ({
         id: `pend_${r.id}`,

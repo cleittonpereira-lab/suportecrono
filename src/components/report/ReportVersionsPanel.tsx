@@ -34,6 +34,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import type { ApprovalRow } from "@/lib/approvals.functions";
+import { completarPdfDaRevisao } from "@/lib/approvals-com-pdf";
 
 export interface ReportVersionLike {
   id: string;
@@ -63,7 +64,7 @@ interface ReportVersionsPanelProps {
 }
 
 export function ReportVersionsPanel({
-  scopeId: _scopeId,
+  scopeId,
   versions,
   approvals,
   driveFolderUrl,
@@ -74,12 +75,64 @@ export function ReportVersionsPanel({
   onDownloadVersion,
   onDeleteVersion,
 }: ReportVersionsPanelProps) {
-  const [previewVersion, setPreviewVersion] = useState<{ url: string; filename: string; rev: number } | null>(null);
+  const [previewVersion, setPreviewVersion] = useState<{
+    url: string;
+    filename: string;
+    rev: number;
+    doDrive: boolean;
+  } | null>(null);
+  const [abrindo, setAbrindo] = useState<string | null>(null);
 
-  const openPreviewVersion = (v: ReportVersionLike) => {
-    if (previewVersion) URL.revokeObjectURL(previewVersion.url);
-    const url = URL.createObjectURL(v.pdfBlob);
-    setPreviewVersion({ url, filename: v.filename, rev: v.rev });
+  /**
+   * Versão que já entrou no fluxo de aprovação: vale a cópia do Drive, que é
+   * a oficial e a que recebe "Verificado por"/"Aprovado por" a cada etapa. A
+   * cópia deste navegador é a do momento da geração, só com o digitador —
+   * era ela que o "Ver" mostrava. Sem acesso ao Drive, cai na cópia local.
+   */
+  const pdfDaVersao = async (v: ReportVersionLike): Promise<{ blob: Blob; doDrive: boolean }> => {
+    const appr = approvals.find((a) => a.rev === v.rev) ?? null;
+    if (appr && scopeId) {
+      try {
+        const { bytes } = await completarPdfDaRevisao(scopeId, v.rev, appr);
+        const buf = new ArrayBuffer(bytes.byteLength);
+        new Uint8Array(buf).set(bytes);
+        return { blob: new Blob([buf], { type: "application/pdf" }), doDrive: true };
+      } catch {
+        // Sem a cópia do Drive: mostra a deste navegador.
+      }
+    }
+    return { blob: v.pdfBlob, doDrive: false };
+  };
+
+  const openPreviewVersion = async (v: ReportVersionLike) => {
+    setAbrindo(v.id);
+    try {
+      const { blob, doDrive } = await pdfDaVersao(v);
+      if (previewVersion) URL.revokeObjectURL(previewVersion.url);
+      setPreviewVersion({ url: URL.createObjectURL(blob), filename: v.filename, rev: v.rev, doDrive });
+    } finally {
+      setAbrindo(null);
+    }
+  };
+
+  const baixarVersao = async (v: ReportVersionLike) => {
+    if (!approvals.some((a) => a.rev === v.rev)) return onDownloadVersion(v);
+    setAbrindo(v.id);
+    try {
+      const { blob, doDrive } = await pdfDaVersao(v);
+      if (!doDrive) return onDownloadVersion(v);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = v.filename;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+    } finally {
+      setAbrindo(null);
+    }
   };
   const closePreviewVersion = () => {
     if (previewVersion) URL.revokeObjectURL(previewVersion.url);
@@ -95,9 +148,10 @@ export function ReportVersionsPanel({
           <div>
             <CardTitle className="text-sm">Histórico de Versões do Relatório</CardTitle>
             <CardDescription>
-              Cada versão é uma cópia estática (arquivo PDF) salva num momento — <b>não</b> muda depois. Pra ver os
-              dados atuais da tela (mesmo sem salvar), use <b>Pré-visualizar Dados Atuais</b>. As ações de enviar,
-              verificar e aprovar ficam nos botões no topo do relatório, não aqui.
+              Cada versão é o PDF gerado num momento — os dados <b>não</b> mudam depois; o PDF só recebe o nome de
+              quem verificou e de quem aprovou, a cada etapa (a cópia oficial fica no Drive). Pra ver os dados atuais
+              da tela (mesmo sem salvar), use <b>Pré-visualizar Dados Atuais</b>. As ações de enviar, verificar e
+              aprovar ficam nos botões no topo do relatório, não aqui.
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
@@ -173,10 +227,17 @@ export function ReportVersionsPanel({
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
-                          <Button size="sm" variant="outline" className="gap-1" onClick={() => openPreviewVersion(v)} title="Ver o PDF salvo desta versão">
-                            <Eye className="h-3 w-3" /> Ver
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-1"
+                            disabled={abrindo === v.id}
+                            onClick={() => void openPreviewVersion(v)}
+                            title="Ver o PDF desta versão, com as assinaturas de verificação e aprovação"
+                          >
+                            <Eye className="h-3 w-3" /> {abrindo === v.id ? "Abrindo…" : "Ver"}
                           </Button>
-                          <Button size="sm" variant="secondary" className="gap-1" onClick={() => onDownloadVersion(v)}>
+                          <Button size="sm" variant="secondary" className="gap-1" disabled={abrindo === v.id} onClick={() => void baixarVersao(v)}>
                             <Download className="h-3 w-3" /> Baixar
                           </Button>
                           <Button size="sm" variant="ghost" className="text-destructive" onClick={() => void onDeleteVersion(v.id)}>
@@ -200,7 +261,9 @@ export function ReportVersionsPanel({
               Versão {String(previewVersion?.rev ?? 0).padStart(2, "0")} · {previewVersion?.filename}
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Arquivo PDF salvo neste momento — não reflete nenhuma edição feita depois.
+              {previewVersion?.doDrive
+                ? "Cópia oficial do Drive, com as assinaturas de verificação e aprovação desta revisão."
+                : "Cópia salva neste navegador no momento da geração — não reflete nenhuma edição feita depois."}
             </DialogDescription>
           </DialogHeader>
           {previewVersion && <iframe src={previewVersion.url} title="Relatório PDF" className="flex-1 w-full border-0" />}

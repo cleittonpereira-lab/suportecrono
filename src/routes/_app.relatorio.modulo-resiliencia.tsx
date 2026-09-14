@@ -46,13 +46,14 @@ import {
 } from "@/features/modulo-resiliencia/report-versions";
 import { syncRevision, fetchDriveStatus } from "@/features/modulo-resiliencia/driveSync";
 import { ReportVersionsPanel } from "@/components/report/ReportVersionsPanel";
+import { marcarAssinaturasNoPdf } from "@/lib/assinaturas-pdf";
 import {
   listApprovals,
   requestApproval,
   verifyApproval,
   decideApproval,
   type ApprovalRow,
-} from "@/lib/approvals.functions";
+} from "@/lib/approvals-com-pdf";
 import { getWorkflowStatuses } from "@/lib/driveSync.functions";
 import { Textarea } from "@/components/ui/textarea";
 import { PhotoUploader } from "@/features/lab/components/PhotoUploader";
@@ -567,6 +568,7 @@ export function MRPage() {
         pdf.addImage(dataUrl, "PNG", 0, 0, W, H, undefined, "FAST");
       }
 
+      marcarAssinaturasNoPdf(pdf, pages);
       return pdf.output("blob");
     } finally {
       Object.assign(el.style, prevStyle);

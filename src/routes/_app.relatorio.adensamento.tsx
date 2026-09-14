@@ -143,7 +143,7 @@ import { useDraftActivity } from "@/hooks/use-draft-activity";
 import { EditingPresenceBanner, DraftHistoryButton } from "@/components/DraftActivityInfo";
 import { listPendenciasDigitacao, atualizarPendenciaDigitacao } from "@/lib/lab-pendencias.functions";
 import { findMatchingPendencia } from "@/lib/pendencia-match";
-import { requestApproval, verifyApproval, decideApproval, listApprovals, getWorkflowStatuses } from "@/lib/approvals.functions";
+import { requestApproval, verifyApproval, decideApproval, listApprovals, getWorkflowStatuses } from "@/lib/approvals-com-pdf";
 import { buildScopeId } from "@/lib/scope";
 import { WorkflowFarol } from "@/features/lab/components/WorkflowFarol";
 import { PickerWithCreate } from "@/features/cisalhamento-direto/PickerWithCreate";
@@ -4721,8 +4721,11 @@ function ReportFooter({ sample }: { sample: SampleProps }) {
           </div>
           <div className="mt-[2px] space-y-[1px] text-[7.5px] leading-[1.2] text-[#141414]/80">
             <div><span className="text-[#141414]/60">Digitado por:</span> {sample.operator}</div>
-            <div><span className="text-[#141414]/60">Verificado por:</span></div>
-            <div><span className="text-[#141414]/60">Aprovado por:</span> Engº Geotécnico Cleitton Pereira</div>
+            {/* Os dois campos saem em branco e são preenchidos no PDF a cada etapa
+                (src/lib/assinaturas-pdf.ts). "Aprovado por" vinha com o nome fixo
+                do RT, em todo PDF — inclusive nos que nunca foram aprovados. */}
+            <div><span className="text-[#141414]/60">Verificado por:</span> <span data-assinatura="verificado" /></div>
+            <div><span className="text-[#141414]/60">Aprovado por:</span> <span data-assinatura="aprovado" /></div>
             <div><span className="text-[#141414]/60">Gerente de Laboratório:</span> Tecnº Geotécnico Carlos Christian da Silva</div>
           </div>
         </div>

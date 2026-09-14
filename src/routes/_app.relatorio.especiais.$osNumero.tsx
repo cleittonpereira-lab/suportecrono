@@ -59,6 +59,7 @@ import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useCadastroByOs } from "@/hooks/use-cadastro-by-os";
 import { useOsGroups, abrirEnsaioNaCentral, type EnsaioItemOS } from "@/features/lab/hooks/use-os-groups";
+import { ETAPAS_COM_BANCADA, corEtapa, rotuloEtapa } from "@/lib/etapa-laudo";
 import { ENSAIO_LABEL } from "@/features/lab/types";
 import { normOs, splitSetores, splitEscopo } from "@/lib/schedule-utils";
 import { useSchedule } from "@/hooks/use-schedule";
@@ -85,23 +86,15 @@ function parseLocalDate(dateOnly: string): Date {
   return new Date(y, (m || 1) - 1, d || 1);
 }
 
-const STATUS_LABEL: Record<EnsaioItemOS["status"], string> = {
-  programado: "Programado (Gantt)",
-  execucao: "Em Bancada",
-  em_digitacao: "Em Digitação",
-  verificacao: "Aguardando Verificação",
-  aprovado: "Laudo Aprovado",
-  concluido_externo: "Concluído Externo",
-};
-
-const STATUS_COLOR: Record<EnsaioItemOS["status"], string> = {
-  programado: "bg-slate-500/15 text-slate-700 dark:text-slate-400 border-slate-500/30",
-  execucao: "bg-sky-500/15 text-sky-700 dark:text-sky-400 border-sky-500/30",
-  em_digitacao: "bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/30",
-  verificacao: "bg-violet-500/15 text-violet-700 dark:text-violet-400 border-violet-500/30",
-  aprovado: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30",
-  concluido_externo: "bg-teal-500/15 text-teal-700 dark:text-teal-400 border-teal-500/30",
-};
+// Rótulos e cores de src/lib/etapa-laudo.ts — os mesmos da Central e da visão por OS.
+const STATUS_LABEL = Object.fromEntries(ETAPAS_COM_BANCADA.map((e) => [e, rotuloEtapa(e)])) as Record<
+  EnsaioItemOS["status"],
+  string
+>;
+const STATUS_COLOR = Object.fromEntries(ETAPAS_COM_BANCADA.map((e) => [e, corEtapa(e)])) as Record<
+  EnsaioItemOS["status"],
+  string
+>;
 
 function SectionCard({
   icon: Icon,

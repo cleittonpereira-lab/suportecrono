@@ -58,15 +58,12 @@ import {
 import { normOs } from "@/lib/schedule-utils";
 import { toast } from "sonner";
 import JSZip from "jszip";
+import { ETAPAS_COM_BANCADA, corEtapa, rotuloEtapa } from "@/lib/etapa-laudo";
 
-const STATUS_BADGE: Record<EnsaioItemOS["status"], { label: string; color: string }> = {
-  programado: { label: "Programado (Gantt)", color: "bg-slate-500/15 text-slate-700 dark:text-slate-400 border-slate-500/30" },
-  execucao: { label: "Em Bancada", color: "bg-sky-500/15 text-sky-700 dark:text-sky-400 border-sky-500/30" },
-  em_digitacao: { label: "Em Digitação", color: "bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/30" },
-  verificacao: { label: "Aguardando Verificação", color: "bg-violet-500/15 text-violet-700 dark:text-violet-400 border-violet-500/30" },
-  aprovado: { label: "✓ Laudo Aprovado", color: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30" },
-  concluido_externo: { label: "✓ Concluído Externo (Excel)", color: "bg-teal-500/15 text-teal-700 dark:text-teal-400 border-teal-500/30" },
-};
+// Rótulos e cores de src/lib/etapa-laudo.ts — os mesmos da Central e da página da OS.
+const STATUS_BADGE = Object.fromEntries(
+  ETAPAS_COM_BANCADA.map((e) => [e, { label: rotuloEtapa(e), color: corEtapa(e) }]),
+) as Record<EnsaioItemOS["status"], { label: string; color: string }>;
 
 export function OsReportsView() {
   const qc = useQueryClient();
@@ -454,7 +451,15 @@ export function OsReportsView() {
       }
       totalEnsaios += gTotal;
       ensaiosAprovados += gAprov;
-      ensaiosEmDigitacao += g.ensaios.filter((e) => e.status === "em_digitacao" || e.status === "verificacao" || e.pendenciaId).length;
+      // Laudo em andamento: da digitação até a aprovação. Contava também todo
+      // ensaio com pendência — inclusive os já aprovados.
+      ensaiosEmDigitacao += g.ensaios.filter(
+        (e) =>
+          e.status === "pendente" ||
+          e.status === "em_digitacao" ||
+          e.status === "aguardando_verificacao" ||
+          e.status === "aguardando_aprovacao",
+      ).length;
       ensaiosFilaGantt += g.ensaios.filter((e) => e.status === "programado" || e.status === "execucao").length;
     }
 

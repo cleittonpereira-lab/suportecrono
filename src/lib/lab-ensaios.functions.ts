@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { EnsaioStatus, EnsaioTipo, Coords, Photo } from "@/features/lab/types";
+import { etapaDasAprovacoes } from "@/lib/etapa-laudo";
 
 export type SerializableJson =
   | string
@@ -59,13 +60,7 @@ function workflowToStatus(status: unknown): EnsaioStatus {
  */
 function deriveStatus(foundEn: { status?: unknown; workflowStatus?: unknown; reportApprovals?: unknown }): EnsaioStatus {
   const approvals = Array.isArray(foundEn.reportApprovals) ? (foundEn.reportApprovals as { rev: number; status: string }[]) : [];
-  if (approvals.length > 0) {
-    const latest = approvals.reduce((a, b) => (b.rev > a.rev ? b : a));
-    if (latest.status === "aprovado") return "aprovado";
-    if (latest.status === "pendente_aprovacao" || latest.status === "verificado") return "aguardando_aprovacao";
-    if (latest.status === "pendente_verificacao" || latest.status === "rejeitado_verificacao" || latest.status === "rejeitado") return "aguardando_verificacao";
-  }
-  return (foundEn.status as EnsaioStatus) || workflowToStatus(foundEn.workflowStatus);
+  return etapaDasAprovacoes(approvals) ?? ((foundEn.status as EnsaioStatus) || workflowToStatus(foundEn.workflowStatus));
 }
 
 function asObject(value: unknown): Record<string, unknown> {

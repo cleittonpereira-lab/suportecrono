@@ -50,6 +50,7 @@ import { detectMethodology } from "@/features/mesp-natural/calc";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
+import { corEtapa, pendenciaParaEtapa, rotuloEtapa } from "@/lib/etapa-laudo";
 
 function extractSampleDetails(a: any) {
   if (!a) return { furo: "", prof: "" };
@@ -232,7 +233,8 @@ export function EnsaioListByType({ tipo }: { tipo: EnsaioTipo }) {
     const prontosBancada = ganttItems.filter((g) => g.stage === "concluido").length;
     const emBancada = ganttItems.filter((g) => g.stage === "execucao").length;
     const emDigitacao = laudosItems.filter((l) => l.status === "em_digitacao" || l.status === "pendente").length;
-    const emVerificacao = laudosItems.filter((l) => l.status === "digitado").length;
+    // "verificado" (aguardando aprovação) não entrava em contador nenhum.
+    const emVerificacao = laudosItems.filter((l) => l.status === "digitado" || l.status === "verificado").length;
     const aprovados = laudosItems.filter((l) => l.status === "aprovado" || l.status === "concluido_externo").length;
     return { prontosBancada, emBancada, emDigitacao, emVerificacao, aprovados };
   }, [ganttItems, laudosItems]);
@@ -570,8 +572,9 @@ export function EnsaioListByType({ tipo }: { tipo: EnsaioTipo }) {
                       <TableCell className="font-bold text-xs">{r.os}</TableCell>
                       <TableCell className="text-xs">{r.amostra || "—"}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="text-[10px]">
-                          {r.status}
+                        {/* Mostrava o valor gravado ("digitado") sem tradução. */}
+                        <Badge variant="outline" className={`text-[10px] ${corEtapa(pendenciaParaEtapa(r.status))}`}>
+                          {rotuloEtapa(pendenciaParaEtapa(r.status))}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">{r.digitador_nome || "—"}</TableCell>

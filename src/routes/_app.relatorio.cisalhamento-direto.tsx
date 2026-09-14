@@ -68,13 +68,14 @@ import {
   type ReportVersion,
 } from "@/features/cisalhamento-direto/report-versions";
 import { syncRevision, fetchDriveStatus } from "@/features/cisalhamento-direto/driveSync";
+import { marcarAssinaturasNoPdf } from "@/lib/assinaturas-pdf";
 import {
   listApprovals,
   requestApproval,
   verifyApproval,
   decideApproval,
   type ApprovalRow,
-} from "@/lib/approvals.functions";
+} from "@/lib/approvals-com-pdf";
 import { getWorkflowStatuses } from "@/lib/driveSync.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { Textarea } from "@/components/ui/textarea";
@@ -689,6 +690,7 @@ export function CDPage() {
         pdf.addImage(dataUrl, "PNG", 0, 0, W, H, undefined, "FAST");
       }
 
+      marcarAssinaturasNoPdf(pdf, pages);
       return pdf.output("blob");
     } finally {
       // Restaura estilos originais do container

@@ -1,21 +1,8 @@
 import type { CSSProperties, ReactNode } from "react";
 import assinaturaMauricio from "@/assets/assinatura-mauricio.png";
+import { formatSignerName } from "@/lib/assinaturas-pdf";
 
 const logoUrl = "/suporte-infra-logo.png";
-
-/**
- * Formata o nome de quem assinou (Verificado por / Aprovado por).
- * Se o nome corresponder a signatários com título profissional conhecido,
- * prefixa o título correspondente. Caso contrário, devolve o próprio nome.
- */
-function formatSignerName(name?: string | null): string {
-  const raw = (name ?? "").trim();
-  if (!raw) return "";
-  if (/cleitton/i.test(raw) && /pereira/i.test(raw)) {
-    return "Engº Geotécnico Cleitton Pereira";
-  }
-  return raw;
-}
 
 /**
  * ReportShell — cabeçalho + rodapé A4 padrão Suporte Infra.
@@ -205,8 +192,9 @@ export function ReportFooter({ sample }: { sample: ReportSample }) {
           <div className="mt-[2px] space-y-[1px] text-[7.5px] leading-[1.2] text-[#141414]/80">
             <div><span className="text-[#141414]/60">Operador (Laboratorista):</span> {sample.operator ?? ""}</div>
             <div><span className="text-[#141414]/60">Digitado por:</span> {sample.typedBy ?? ""}</div>
-            <div><span className="text-[#141414]/60">Verificado por:</span> {formatSignerName(sample.verifiedBy)}</div>
-            <div><span className="text-[#141414]/60">Aprovado por:</span> {formatSignerName(sample.approvedBy)}</div>
+            {/* data-assinatura: campo que o PDF recebe depois, a cada etapa (src/lib/assinaturas-pdf.ts). */}
+            <div><span className="text-[#141414]/60">Verificado por:</span> <span data-assinatura="verificado">{formatSignerName(sample.verifiedBy)}</span></div>
+            <div><span className="text-[#141414]/60">Aprovado por:</span> <span data-assinatura="aprovado">{formatSignerName(sample.approvedBy)}</span></div>
             <div><span className="text-[#141414]/60">Gerente de Laboratório:</span> Tecnº Geotécnico Carlos Christian da Silva</div>
           </div>
         </div>

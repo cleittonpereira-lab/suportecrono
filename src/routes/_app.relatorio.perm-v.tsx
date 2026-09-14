@@ -33,7 +33,7 @@ import { syncRevision, fetchDriveStatus } from "@/features/perm-v/driveSync";
 import { ReportVersionsPanel } from "@/components/report/ReportVersionsPanel";
 import {
   listApprovals, requestApproval, verifyApproval, decideApproval, type ApprovalRow,
-} from "@/lib/approvals.functions";
+} from "@/lib/approvals-com-pdf";
 import { getWorkflowStatuses, getProximaRevisao } from "@/lib/driveSync.functions";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,

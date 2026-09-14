@@ -7,6 +7,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { ensureFolderPath, lerJsonsDaPasta, type ArquivoListado } from "@/lib/driveStorage";
 import { FOLDER_ENSAIOS, type EnsaioFile } from "@/lib/lab-entities.functions";
+import { etapaDasAprovacoes } from "@/lib/etapa-laudo";
 
 /**
  * Índice id → conteúdo. Havendo cópias homônimas do mesmo registro, fica a
@@ -32,14 +33,7 @@ function maisRecentePorId<T extends { id?: string }>(lidos: { arquivo: ArquivoLi
  * retroativamente ensaios já aprovados antes deste fix).
  */
 function deriveWorkflowStatus(en: EnsaioFile): string {
-  const approvals = (en.reportApprovals ?? []).slice();
-  if (approvals.length > 0) {
-    const latest = approvals.reduce((a, b) => (b.rev > a.rev ? b : a));
-    if (latest.status === "aprovado") return "aprovado";
-    if (latest.status === "pendente_aprovacao" || latest.status === "verificado") return "aguardando_aprovacao";
-    if (latest.status === "pendente_verificacao" || latest.status === "rejeitado_verificacao" || latest.status === "rejeitado") return "aguardando_verificacao";
-  }
-  return en.workflowStatus || "digitacao";
+  return etapaDasAprovacoes(en.reportApprovals) ?? (en.workflowStatus || "digitacao");
 }
 
 export interface EmissaoRow {

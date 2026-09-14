@@ -19,6 +19,7 @@ import { z } from "zod";
 import type { Amostra, Coords, Ensaio, EnsaioStatus, EnsaioTipo, LabState, OS, Photo } from "@/features/lab/types";
 import { ensureFolderPath, listFilesInFolder, readDriveJson, lerJsonsListados, deleteDriveFile, findFileInFolder, atualizarDriveJson, DRIVE_ROOT_FOLDER_ID, type ArquivoListado } from "@/lib/driveStorage";
 import { aplicarSync, arvoreDoCache, cacheVazio, type Arvore, type LinhaAmostra, type LinhaEnsaio, type LinhaOS, type LinhaSync, type RespostaSync } from "@/features/lab/arvore";
+import { etapaDasAprovacoes } from "@/lib/etapa-laudo";
 
 export type SerializableJson = string | number | boolean | null | SerializableJson[] | { [key: string]: SerializableJson };
 export function toSerializableJson(value: unknown): SerializableJson | undefined {
@@ -199,21 +200,7 @@ type SerializableEnsaio = Omit<Ensaio, "payload"> & { payload?: SerializableJson
  */
 function deriveEnsaioStatus(f: EnsaioFile): EnsaioStatus {
   const approvals = (f.reportApprovals as ReportApprovalRow[] | undefined) ?? [];
-  if (approvals.length === 0) return (f.status as EnsaioStatus) || "rascunho";
-  const latest = approvals.reduce((a, b) => (b.rev > a.rev ? b : a));
-  switch (latest.status) {
-    case "aprovado":
-      return "aprovado";
-    case "pendente_aprovacao":
-    case "verificado":
-      return "aguardando_aprovacao";
-    case "pendente_verificacao":
-    case "rejeitado_verificacao":
-    case "rejeitado":
-      return "aguardando_verificacao";
-    default:
-      return (f.status as EnsaioStatus) || "rascunho";
-  }
+  return etapaDasAprovacoes(approvals) ?? ((f.status as EnsaioStatus) || "rascunho");
 }
 
 /**

@@ -35,6 +35,12 @@ function parseDate(v: unknown): Date | null {
   return isValid(d) ? d : null;
 }
 
+function parseDateSafe(v?: string | null): Date | null {
+  if (!v) return null;
+  const d = parseISO(v);
+  return isValid(d) ? d : null;
+}
+
 function fmt(d: Date) {
   return format(d, "dd/MM", { locale: ptBR });
 }
@@ -125,24 +131,10 @@ export function OsGanttMini({
 
   const equipamentosUnicos = useMemo(() => Array.from(new Set(rows.map((r) => r.equipamento))), [rows]);
 
-  if (rows.length === 0) {
-    return <div className="text-sm text-muted-foreground py-2">Nenhum item de programação (bancada) encontrado pra essa OS.</div>;
-  }
-
-  const trackWidth = expandido ? totalDays * DAY_PX : undefined;
-  const pct = (d: number) => (expandido ? d * DAY_PX : (d / totalDays) * 100);
-  const unit = expandido ? "px" : "%";
-  const hojeOffset = differenceInCalendarDays(hoje, rangeStart);
-
-  const parseDateSafe = (v?: string | null) => {
-    if (!v) return null;
-    const d = parseISO(v);
-    return isValid(d) ? d : null;
-  };
-
-  const dataOriginalParsed = parseDateSafe(dataOriginal);
-  const dataOriginalOffset = dataOriginalParsed ? differenceInCalendarDays(dataOriginalParsed, rangeStart) : null;
-
+  // Todos os hooks antes do retorno antecipado abaixo. Este useMemo ficava
+  // depois dele: a primeira renderização (programações ainda carregando, 0
+  // linhas) chamava 6 hooks, a seguinte 7, e o React derrubava a página da OS
+  // inteira ("Rendered more hooks than during the previous render").
   const reprogramacoesParsed = useMemo(() => {
     return (historicoData || [])
       .map((h, idx) => ({
@@ -153,6 +145,18 @@ export function OsGanttMini({
       }))
       .filter((h): h is typeof h & { date: Date } => h.date !== null);
   }, [historicoData]);
+
+  if (rows.length === 0) {
+    return <div className="text-sm text-muted-foreground py-2">Nenhum item de programação (bancada) encontrado pra essa OS.</div>;
+  }
+
+  const trackWidth = expandido ? totalDays * DAY_PX : undefined;
+  const pct = (d: number) => (expandido ? d * DAY_PX : (d / totalDays) * 100);
+  const unit = expandido ? "px" : "%";
+  const hojeOffset = differenceInCalendarDays(hoje, rangeStart);
+
+  const dataOriginalParsed = parseDateSafe(dataOriginal);
+  const dataOriginalOffset = dataOriginalParsed ? differenceInCalendarDays(dataOriginalParsed, rangeStart) : null;
 
   return (
     <div className="space-y-2">
