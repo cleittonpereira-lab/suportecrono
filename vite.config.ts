@@ -22,6 +22,10 @@ export default defineConfig({
       // documentos-d1.server.ts). Sem `vars` aqui de propósito: a publicação
       // substituiria variáveis definidas no painel do Cloudflare.
       wrangler: {
+        // Variáveis criadas no painel do Cloudflare (ex.: DADOS_NO_D1) não podem
+        // sumir numa publicação — sem isto, cada versão nova as descartaria e o
+        // app voltaria ao Drive em silêncio, com o que foi gravado só no banco.
+        keep_vars: true,
         d1_databases: [
           {
             binding: "DB",
