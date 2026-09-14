@@ -8,7 +8,6 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import {
   createUser,
-  getGuestTabs as getGuestTabsStore,
   getUserByEmail,
   getUserByUsername,
   toPublicUser,
@@ -128,11 +127,6 @@ export const getSessionUser = createServerFn({ method: "GET" }).handler(
 export const logout = createServerFn({ method: "POST" }).handler(async () => {
   clearSession();
   return { ok: true };
-});
-
-/** Público (usado no modo Convidado, sem login). */
-export const getPublicGuestTabs = createServerFn({ method: "GET" }).handler(async (): Promise<string[]> => {
-  return getGuestTabsStore();
 });
 
 // ---- perfil próprio (usado por src/routes/_app.perfil.tsx) ----

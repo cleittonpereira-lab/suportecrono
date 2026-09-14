@@ -67,12 +67,12 @@ function AppLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isHome = pathname === "/" || pathname === "/dashboard";
   const nav = useNavigate();
-  const { loading, user, profile, isGuest, canAccess } = useAuth();
+  const { loading, user, profile, canAccess } = useAuth();
 
-  // Guard: sem sessão e sem convidado → /auth
+  // Guard: sem sessão → /auth (desde a Fase 4 não há modo convidado)
   useEffect(() => {
     if (loading) return;
-    if (!user && !isGuest) {
+    if (!user) {
       nav({ to: "/auth", replace: true });
       return;
     }
@@ -87,9 +87,9 @@ function AppLayout() {
         nav({ to: "/entregas", replace: true });
       }
     }
-  }, [loading, user, profile, isGuest, pathname, canAccess, nav]);
+  }, [loading, user, profile, pathname, canAccess, nav]);
 
-  if (loading || (!user && !isGuest)) {
+  if (loading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />

@@ -152,7 +152,7 @@ const pendingRuns = new Map<string, () => Promise<void>>();
 /** Recusa de login/permissão não se resolve tentando de novo. */
 function ehRecusaDePermissao(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
-  return /não autenticado|nao autenticado|HTTP 401|HTTP 403/i.test(msg);
+  return /não autenticado|nao autenticado|sem permissão|sem permissao|HTTP 401|HTTP 403/i.test(msg);
 }
 
 function runEntitySave(id: string, run: () => Promise<void>) {

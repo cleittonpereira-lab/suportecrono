@@ -6,9 +6,12 @@
 // funções de gravação nem usavam middleware. Qualquer um com a URL do Worker
 // gravava, aprovava laudo e apagava dados como qualquer pessoa.
 //
-//   - `requireSupabaseAuth` → LEITURA. Sem sessão verificada, segue como
-//     convidado: o modo "Entrar sem login" é de visualização.
+//   - `requireSupabaseAuth` → LEITURA. Sem sessão verificada de conta ativa,
+//     recusa (desde a Fase 4 não há modo convidado).
 //   - `exigirLogin` → GRAVAÇÃO. Sem sessão verificada de conta ativa, recusa.
+//
+// Funções sem middleware são as públicas de propósito: login/cadastro e o
+// formulário de chegada de amostras (que não devolve o quadro a quem não entrou).
 //
 // Como a identidade é verificada: ver `auth-identidade.server.ts`. Aquele
 // módulo usa APIs só de servidor, e este arquivo é alcançável pelo navegador —
@@ -16,7 +19,7 @@
 // que o compilador remove do lado do cliente.
 import { createMiddleware } from '@tanstack/react-start'
 
-/** Leitura: identidade verificada se houver; senão, convidado (nunca um usuário real). */
+/** Leitura: exige sessão verificada de conta ativa. */
 export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server(async ({ next }) => {
   const { contextoDeLeitura } = await import('./auth-identidade.server')
   return next({ context: await contextoDeLeitura() })

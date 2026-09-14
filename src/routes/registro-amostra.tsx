@@ -27,7 +27,7 @@ import {
   formatDateToday,
   formatTimeNow,
   createChegadaRegistroAsync,
-  useChegadaRealtimeSync,
+  useChegadaOpcoesSync,
   gerarNumeroControle,
   deriveFlatFieldsFromAmostras,
   CHEGADA_OPTIONS_EVENT,
@@ -66,8 +66,9 @@ export function RegistroAmostraStandalonePage() {
   const [tipoOptions, setTipoOptions] = useState<Option[]>(() => getTipoAmostraOptions());
   const [recebidoOptions, setRecebidoOptions] = useState<Option[]>(() => getRecebidoOptions());
 
-  // Sincronização em tempo real entre dispositivos
-  useChegadaRealtimeSync();
+  // Página pública (funciona sem login): busca só as listas de opções, nunca o
+  // quadro de chegada inteiro.
+  useChegadaOpcoesSync();
 
   // Form State
   const [osCliente, setOsCliente] = useState("");

@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { sheetsGetValues } from "./sheets-read.server";
 
 const SPREADSHEET_ID = "1Qg_PG2EH7tjXXpLrlj5whc7qBdx3UdTKyJY7M05Zk_k";
@@ -190,7 +191,7 @@ function generateFallbackCadastro(): CadastroRow[] {
 
 import { isGoogleAuthConfigured } from "./google-auth.server";
 
-export const fetchCadastroOs = createServerFn({ method: "GET" }).handler(
+export const fetchCadastroOs = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth]).handler(
   async () => {
     const lovableKey = process.env.LOVABLE_API_KEY ?? "";
     const sheetsKey = process.env.GOOGLE_SHEETS_API_KEY ?? "";

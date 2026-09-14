@@ -66,11 +66,15 @@ const fotoLeve = (p: Photo): Photo => ({ ...p, dataUrl: "" });
 describe("fotos leves do carregamento em massa", () => {
   it("troca de status pela Central NÃO apaga a imagem de foto antiga (só dataUrl)", () => {
     // O labStore manda as fotos como vieram do loadLabTree: sem conteúdo.
-    const r = mesclarEnsaio(existente({ photos: [fotoAntiga] }), {
-      ...base,
-      status: "concluido_externo",
-      photos: [fotoLeve(fotoAntiga)] as unknown as Record<string, unknown>[],
-    });
+    const r = mesclarEnsaio(
+      existente({ photos: [fotoAntiga] }),
+      {
+        ...base,
+        status: "concluido_externo",
+        photos: [fotoLeve(fotoAntiga)] as unknown as Record<string, unknown>[],
+      },
+      { podeConcluirFora: true },
+    );
     expect(r.photos[0].dataUrl).toBe(fotoAntiga.dataUrl);
     expect(r.status).toBe("concluido_externo");
   });

@@ -159,6 +159,7 @@ export const atualizarStatusPendencia = createServerFn({ method: "POST" })
     // mesma regra do fluxo (lib/papeis.ts), conferida no servidor.
     if (data.status === "verificado") exigirPermissaoNoFluxo(context as PapelDoUsuario, "verificar");
     if (data.status === "aprovado") exigirPermissaoNoFluxo(context as PapelDoUsuario, "aprovar");
+    if (data.status === "concluido_externo") exigirPermissaoNoFluxo(context as PapelDoUsuario, "concluir_fora");
     const now = new Date().toISOString();
     const folderId = await ensureFolderPath(FOLDER_PENDENCIAS);
     const name = `${data.id}.json`;

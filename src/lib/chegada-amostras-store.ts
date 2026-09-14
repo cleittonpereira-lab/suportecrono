@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { toast } from "sonner";
 import {
   fetchSharedChegadaStateSeMudou,
+  fetchChegadaOpcoes,
   saveSharedChegadaState,
   createSharedChegadaTask,
   addSharedChegadaOption,
@@ -619,6 +620,33 @@ export function addRecebidoOption(name: string): Option[] {
   });
 
   return updated;
+}
+
+/**
+ * Só as listas de opções (tipo de amostra, recebido por) — para o formulário
+ * público de chegada, que funciona sem login e não recebe o quadro (Fase 4).
+ */
+export function useChegadaOpcoesSync() {
+  useEffect(() => {
+    let vivo = true;
+    fetchChegadaOpcoes()
+      .then((r) => {
+        if (!vivo || typeof window === "undefined") return;
+        if (Array.isArray(r.tipoOptions) && r.tipoOptions.length > 0) {
+          localStorage.setItem(TIPO_AMOSTRA_STORAGE_KEY, JSON.stringify(r.tipoOptions));
+        }
+        if (Array.isArray(r.recebidoOptions) && r.recebidoOptions.length > 0) {
+          localStorage.setItem(RECEBIDO_STORAGE_KEY, JSON.stringify(r.recebidoOptions));
+        }
+        window.dispatchEvent(new CustomEvent(CHEGADA_OPTIONS_EVENT));
+      })
+      .catch(() => {
+        // fica com as opções já guardadas no aparelho
+      });
+    return () => {
+      vivo = false;
+    };
+  }, []);
 }
 
 /** Hook de Sincronização em Tempo Real */

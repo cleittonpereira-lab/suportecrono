@@ -3,13 +3,13 @@
  * Todas as OS, amostras e ensaios ficam sincronizados em tempo real entre todas as máquinas do laboratório.
  */
 import { createServerFn } from "@tanstack/react-start";
-import { exigirLogin } from "@/integrations/supabase/auth-middleware";
+import { exigirLogin, requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { readDriveJson, writeDriveJson, DRIVE_ROOT_FOLDER_ID } from "./driveStorage";
 
 const STATE_FILENAME = "_lab-state.json";
 
-export const loadLabStateFromDrive = createServerFn({ method: "GET" })
+export const loadLabStateFromDrive = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth])
   .handler(async () => {
     // 1. Tenta carregar do Google Drive (Fonte Primária Soberana)
     try {

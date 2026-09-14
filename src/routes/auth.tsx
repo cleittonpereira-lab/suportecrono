@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Loader2, LogIn, UserPlus, Eye, Lock, Mail, User as UserIcon } from "lucide-react";
+import { Loader2, LogIn, UserPlus, Lock, Mail, User as UserIcon } from "lucide-react";
 import { loginWithPassword, loginWithGoogle, signUpSelf } from "@/lib/auth.functions";
 import { SuporteLogo } from "@/components/suporte-logo";
 
@@ -23,7 +23,7 @@ export const Route = createFileRoute("/auth")({
 });
 
 function AuthPage() {
-  const { user, profile, enterGuest, loading } = useAuth();
+  const { user, profile, loading } = useAuth();
 
   useEffect(() => {
     if (loading) return;
@@ -46,7 +46,7 @@ function AuthPage() {
         <Card className="shadow-lg border-border/80">
           <CardHeader className="space-y-1 pb-4">
             <CardTitle className="text-xl font-bold tracking-tight">Acessar sistema</CardTitle>
-            <CardDescription>Entre com sua conta corporativa ou continue como convidado.</CardDescription>
+            <CardDescription>Entre com sua conta corporativa.</CardDescription>
           </CardHeader>
           <CardContent>
             <Tabs defaultValue="signin">
@@ -68,19 +68,6 @@ function AuthPage() {
               </div>
             </div>
             <GoogleButton />
-            <Button
-              variant="outline"
-              className="w-full mt-2"
-              onClick={() => {
-                enterGuest();
-                window.location.replace("/entregas");
-              }}
-            >
-              <Eye className="mr-2 h-4 w-4" /> Entrar sem login
-            </Button>
-            <p className="mt-2.5 text-[11px] text-muted-foreground text-center">
-              Modo convidado tem acesso de visualização a todas as abas do sistema.
-            </p>
           </CardContent>
         </Card>
       </div>

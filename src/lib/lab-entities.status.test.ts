@@ -27,8 +27,17 @@ describe("gravação do laudo não aprova por fora do fluxo", () => {
     expect(mesclarEnsaio(existente(), gravacao("processando")).status).toBe("processando");
   });
 
-  it("'concluído fora (Excel)', ao arquivar a OS, continua sendo gravado", () => {
-    expect(mesclarEnsaio(existente(), gravacao("concluido_externo")).status).toBe("concluido_externo");
+  it("'concluído fora (Excel)', ao arquivar a OS, é gravado para quem verifica", () => {
+    expect(mesclarEnsaio(existente(), gravacao("concluido_externo"), { podeConcluirFora: true }).status).toBe(
+      "concluido_externo",
+    );
+  });
+
+  it("'concluído fora (Excel)' de quem não verifica é ignorado", () => {
+    expect(mesclarEnsaio(existente(), gravacao("concluido_externo")).status).toBe("rascunho");
+    expect(mesclarEnsaio(existente(), gravacao("concluido_externo"), { podeConcluirFora: false }).status).toBe(
+      "rascunho",
+    );
   });
 
   it("o status que o fluxo gravou não é desfeito por uma gravação da tela", () => {

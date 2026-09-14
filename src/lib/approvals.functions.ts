@@ -546,7 +546,7 @@ const WorkflowStatusesInput = z.object({
   scopeIds: z.array(z.string().min(1)).max(200),
 });
 
-export const getWorkflowStatuses = createServerFn({ method: "POST" })
+export const getWorkflowStatuses = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth])
   .validator((v: unknown) => WorkflowStatusesInput.parse(v))
   .handler(async ({ data }) => {
     if (!data.scopeIds || data.scopeIds.length === 0) return { statuses: {} as Record<string, string> };

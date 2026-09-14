@@ -113,7 +113,7 @@ export type LabEnsaioSnapshot = {
  * Usado quando o usuário abre direto o botão "Ir para ensaio" e o estado local
  * de OS/Amostras ainda não foi hidratado no navegador.
  */
-export const getLabEnsaioSnapshot = createServerFn({ method: "POST" })
+export const getLabEnsaioSnapshot = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth])
   .inputValidator((v: unknown) => SnapshotInput.parse(v))
   .handler(async ({ data }): Promise<LabEnsaioSnapshot | null> => {
     const ids = parseScope(data.scopeId);

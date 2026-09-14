@@ -14,19 +14,8 @@ import {
 import { LogIn, LogOut, Shield, UserRound } from "lucide-react";
 
 export function UserMenu() {
-  const { user, profile, role, isGuest, displayName, signOut } = useAuth();
+  const { user, profile, role, displayName, signOut } = useAuth();
   const nav = useNavigate();
-
-  if (isGuest) {
-    return (
-      <div className="flex items-center gap-2">
-        <Badge variant="outline" className="hidden sm:inline-flex">Convidado</Badge>
-        <Button size="sm" variant="outline" onClick={() => nav({ to: "/auth" })}>
-          <LogIn className="mr-1.5 h-3.5 w-3.5" /> Entrar
-        </Button>
-      </div>
-    );
-  }
 
   if (!user) {
     return (

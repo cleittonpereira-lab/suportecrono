@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { exigirLogin } from "@/integrations/supabase/auth-middleware";
+import { exigirLogin, requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import fs from "fs";
 import path from "path";
 import { getGoogleAccessToken, isGoogleAuthConfigured } from "./google-auth.server";
@@ -118,7 +118,7 @@ function ensureLocalDirs(osKey: string) {
 
 /* --------------------------------- RPCs ---------------------------------- */
 
-export const listOsFiles = createServerFn({ method: "GET" })
+export const listOsFiles = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth])
   .inputValidator((d: { os: string }) => d)
   .handler(async ({ data }) => {
     if (hasDriveAuth()) {
@@ -252,7 +252,7 @@ export const deleteOsFile = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-export const fetchOsFileContent = createServerFn({ method: "GET" })
+export const fetchOsFileContent = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth])
   .inputValidator((d: { fileId: string }) => d)
   .handler(async ({ data }) => {
     if (hasDriveAuth() && !data.fileId.includes(":::")) {
@@ -302,7 +302,7 @@ export const fetchOsFileContent = createServerFn({ method: "GET" })
     throw new Error("Arquivo não encontrado");
   });
 
-export const getOsNotes = createServerFn({ method: "GET" })
+export const getOsNotes = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth])
   .inputValidator((d: { os: string }) => d)
   .handler(async ({ data }) => {
     if (hasDriveAuth()) {

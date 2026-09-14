@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { exigirLogin } from "@/integrations/supabase/auth-middleware";
+import { exigirLogin, requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import type { ChegadaTask, ChegadaColumn, Option } from "./chegada-amostras-store";
 
@@ -391,12 +391,26 @@ export async function handleAddSharedChegadaOption(data: {
 }
 
 // Server Functions exportadas para o TanStack Start / SSR
+//
+// O quadro inteiro (clientes, OS, fotos, assinaturas) só para quem entrou. O
+// formulário público de chegada (sem login — Fase 4) usa só `fetchChegadaOpcoes`,
+// `createSharedChegadaTask` e `addSharedChegadaOption`.
 export const fetchSharedChegadaState = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
   .handler(async (): Promise<SharedChegadaState> => {
     return handleFetchSharedChegadaState();
   });
 
+/** Pública: só as listas de opções do formulário de chegada. */
+export const fetchChegadaOpcoes = createServerFn({ method: "GET" }).handler(
+  async (): Promise<{ tipoOptions: Option[]; recebidoOptions: Option[] }> => {
+    const { tipoOptions, recebidoOptions } = await readLocalChegadaState({ soLeitura: true });
+    return { tipoOptions, recebidoOptions };
+  },
+);
+
 export const fetchSharedChegadaStateSeMudou = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
   .validator((d: { knownRev?: number } | undefined) => d ?? {})
   .handler(async ({ data }): Promise<SharedChegadaState | { unchanged: true; rev: number }> => {
     return handleFetchSharedChegadaStateSeMudou(data.knownRev);
@@ -419,8 +433,12 @@ export const saveSharedChegadaState = createServerFn({ method: "POST" })
 
 export const createSharedChegadaTask = createServerFn({ method: "POST" })
   .validator((task: Omit<ChegadaTask, "id" | "criadoEm"> & { id?: string; criadoEm?: string }) => task)
-  .handler(async ({ data }): Promise<{ success: boolean; task: ChegadaTask; fullState: SharedChegadaState }> => {
-    return handleCreateSharedChegadaTask(data);
+  .handler(async ({ data }): Promise<{ success: boolean; task: ChegadaTask; fullState?: SharedChegadaState }> => {
+    const res = await handleCreateSharedChegadaTask(data);
+    // Pública (formulário de chegada): quem registra sem login não recebe o quadro de volta.
+    const { sessaoVerificada } = await import("@/integrations/supabase/auth-identidade.server");
+    if (await sessaoVerificada()) return res;
+    return { success: res.success, task: res.task };
   });
 
 export const addSharedChegadaOption = createServerFn({ method: "POST" })

@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { exigirLogin } from "@/integrations/supabase/auth-middleware";
+import { exigirLogin, requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { fetchDirectGoogleSheet, invalidateSheetsCache as invalidateReadCache } from "./sheets-read.server.ts";
 import { sheetsApiRequest } from "./sheets-client.server.ts";
 import { readScheduleStore, writeScheduleStore } from "./schedule-store.server.ts";
@@ -95,7 +95,7 @@ const DEFAULT_SCHEDULE_ROWS: ScheduleRow[] = [
   { rowIndex: 27, delta: "", dataPostagem: "15/08/2026", tomador: "Motiva RioSP", os: "17592-26", setor: "Dosagem / Especiais", laboratorio: "Contenção de Encosta", dataEntrega: "28/08/2026", volumeComp: "", volumeCaract: "", mctc: "", mrs: "", escopo: "MR / DP / Triaxiais Mec. Solos" },
 ];
 
-export const fetchSchedule = createServerFn({ method: "GET" }).handler(
+export const fetchSchedule = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth]).handler(
   async () => {
     if (scheduleCache && Date.now() - scheduleCache.timestamp < CACHE_TTL_MS) {
       return scheduleCache.data;
@@ -216,7 +216,7 @@ export interface EntregueRow {
   escopo: string;
 }
 
-export const fetchEntregues = createServerFn({ method: "GET" }).handler(
+export const fetchEntregues = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth]).handler(
   async () => {
     let parsed: EntregueRow[] = [];
     if (isGoogleAuthConfigured()) {

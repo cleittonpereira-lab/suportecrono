@@ -59,6 +59,8 @@ import { normOs } from "@/lib/schedule-utils";
 import { toast } from "sonner";
 import JSZip from "jszip";
 import { ETAPAS_COM_BANCADA, corEtapa, rotuloEtapa } from "@/lib/etapa-laudo";
+import { useAuth } from "@/hooks/use-auth";
+import { podeConcluirFora } from "@/lib/papeis";
 
 // Rótulos e cores de src/lib/etapa-laudo.ts — os mesmos da Central e da página da OS.
 const STATUS_BADGE = Object.fromEntries(
@@ -68,6 +70,9 @@ const STATUS_BADGE = Object.fromEntries(
 export function OsReportsView() {
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const { role, profile } = useAuth();
+  // Arquivar como "Concluído fora (Excel)": só quem verifica (lib/papeis.ts; o servidor confere).
+  const podeMarcarFora = podeConcluirFora({ role, labRole: profile?.labRole });
   const {
     osGroups,
     pendencias,
@@ -758,7 +763,7 @@ export function OsReportsView() {
                       </TooltipProvider>
 
                       {/* Botão Arquivar OS (Entregue fora da Central) */}
-                      {pct < 100 && (
+                      {pct < 100 && podeMarcarFora && (
                         <Button
                           size="sm"
                           variant="secondary"

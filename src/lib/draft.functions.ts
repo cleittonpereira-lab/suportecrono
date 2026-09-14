@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { exigirLogin } from "@/integrations/supabase/auth-middleware";
+import { exigirLogin, requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { atualizarDriveJson, ensureFolderPath, readDriveJson, writeDriveJson } from "@/lib/driveStorage";
 import type { SerializableJson } from "@/lib/lab-entities.functions";
@@ -242,7 +242,7 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
     }
   });
 
-export const loadSharedDraft = createServerFn({ method: "GET" })
+export const loadSharedDraft = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth])
   .validator((d: { scopeId: string; osNum?: string; amCode?: string; ensaioTipo?: string }) => d)
   .handler(async ({ data }) => {
     try {
@@ -275,7 +275,7 @@ export const loadSharedDraft = createServerFn({ method: "GET" })
     }
   });
 
-export const listDraftHistory = createServerFn({ method: "GET" })
+export const listDraftHistory = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth])
   .validator((d: { scopeId: string }) => d)
   .handler(async ({ data }) => {
     try {

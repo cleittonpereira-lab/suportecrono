@@ -25,7 +25,7 @@ export const Route = createFileRoute("/_app/perfil")({
 });
 
 function PerfilPage() {
-  const { user, profile, role, displayName, refresh, isGuest } = useAuth();
+  const { user, profile, role, displayName, refresh } = useAuth();
   const uploadPhotoFn = useServerFn(uploadPhoto);
   const setOwnAvatarFn = useServerFn(setOwnAvatar);
   const updateOwnProfileFn = useServerFn(updateOwnProfile);
@@ -47,7 +47,7 @@ function PerfilPage() {
     setAvatarUrl(profile?.avatar_url ?? null);
   }, [profile?.nome, profile?.cargo, profile?.avatar_url]);
 
-  if (isGuest || !user) {
+  if (!user) {
     return (
       <div className="mx-auto max-w-2xl p-6">
         <Card>

@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { ALL_TABS, TAB_META, type TabKey } from "@/lib/tab-permissions";
-import { getSessionUser, getPublicGuestTabs, logout as logoutFn } from "@/lib/auth.functions";
+import { getSessionUser, logout as logoutFn } from "@/lib/auth.functions";
 import type { PublicUser } from "@/lib/user-store.server";
 
 export type Role = "admin" | "gestor" | "usuario" | "verificador";
@@ -29,19 +29,17 @@ type AuthState = {
   profile: Profile | null;
   role: Role | null;
   allowedTabs: Set<TabKey> | null; // null = todas (default do role)
-  isGuest: boolean;
   isAuthenticated: boolean;
   canAccess: (tab: TabKey) => boolean;
   displayName: string;
-  enterGuest: () => void;
-  exitGuest: () => void;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
 };
 
 const Ctx = createContext<AuthState | null>(null);
 
-const GUEST_KEY = "labflow:guest";
+/** Marca do antigo modo "Entrar sem login" (removido na Fase 4) — apagada ao abrir. */
+const GUEST_KEY_ANTIGA = "labflow:guest";
 const LOCAL_SESSION_KEY = "labflow:auth_session";
 
 /**
@@ -83,7 +81,6 @@ function toAppUserAndProfile(u: PublicUser): { user: AppUser; profile: Profile; 
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const getSessionUserFn = useServerFn(getSessionUser);
-  const getPublicGuestTabsFn = useServerFn(getPublicGuestTabs);
   const logoutServerFn = useServerFn(logoutFn);
 
   const [user, setUser] = useState<AppUser | null>(null);
@@ -91,8 +88,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<Role | null>(null);
   const [allowedTabs, setAllowedTabs] = useState<Set<TabKey> | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isGuest, setIsGuest] = useState(false);
-  const [guestTabs, setGuestTabs] = useState<Set<TabKey> | null>(null);
 
   const applySession = (raw: PublicUser | null) => {
     if (!raw) {
@@ -111,15 +106,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     persistLocalIdentity(u, p, r);
   };
 
-  const loadGuestTabs = async () => {
-    try {
-      const tabs = await getPublicGuestTabsFn();
-      setGuestTabs(tabs.length > 0 ? new Set(tabs as TabKey[]) : null);
-    } catch {
-      setGuestTabs(null);
-    }
-  };
-
   const refresh = async () => {
     try {
       const { user: raw } = await getSessionUserFn();
@@ -130,10 +116,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      setIsGuest(sessionStorage.getItem(GUEST_KEY) === "1");
-    }
-    void loadGuestTabs();
+    try {
+      sessionStorage.removeItem(GUEST_KEY_ANTIGA);
+    } catch {}
     (async () => {
       await refresh();
       setLoading(false);
@@ -147,11 +132,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const canAccess = (tab: TabKey): boolean => {
       const meta = TAB_META[tab];
-      if (isGuest) {
-        if (meta.adminOnly) return false;
-        if (guestTabs) return guestTabs.has(tab);
-        return true;
-      }
       if (!user) return false;
 
       if (role === "admin") return true;
@@ -162,7 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return true;
     };
 
-    const displayName = isGuest ? "Convidado" : profile?.nome || user?.email?.split("@")[0] || "Usuário";
+    const displayName = profile?.nome || user?.email?.split("@")[0] || "Usuário";
 
     return {
       loading,
@@ -170,34 +150,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profile,
       role,
       allowedTabs,
-      isGuest,
       isAuthenticated: authed,
       canAccess,
       displayName,
-      enterGuest: () => {
-        sessionStorage.setItem(GUEST_KEY, "1");
-        setIsGuest(true);
-      },
-      exitGuest: () => {
-        sessionStorage.removeItem(GUEST_KEY);
-        setIsGuest(false);
-      },
       signOut: async () => {
         try {
           await logoutServerFn();
         } catch {}
         clearLocalIdentity();
-        sessionStorage.removeItem(GUEST_KEY);
         setUser(null);
         setProfile(null);
         setRole(null);
         setAllowedTabs(null);
-        setIsGuest(false);
       },
       refresh,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, user, profile, role, allowedTabs, isGuest, guestTabs]);
+  }, [loading, user, profile, role, allowedTabs]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { exigirLogin } from "@/integrations/supabase/auth-middleware";
+import { exigirLogin, requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { fetchDirectGoogleSheet } from "./sheets-read.server";
 import { getGoogleAccessToken } from "./google-auth.server";
 import { readStore, writeStore, type ProgramacaoData } from "./programacao-store.server";
@@ -118,7 +118,7 @@ async function getAllValues(sheet: string): Promise<Record<string, string>[]> {
 
 /* --------------------------------- CRUD ---------------------------------- */
 
-export const listRows = createServerFn({ method: "GET" })
+export const listRows = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth])
   .inputValidator((d: { sheet: string }) => d)
   .handler(async ({ data }) => {
     return getAllValues(data.sheet);
@@ -250,7 +250,7 @@ export const ensureColumns = createServerFn({ method: "POST" })
     return { header: data.columns };
   });
 
-export const listEquipamentos = createServerFn({ method: "GET" })
+export const listEquipamentos = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth])
   .handler(async () => {
     return getAllValues("Equipamentos");
   });

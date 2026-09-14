@@ -13,17 +13,15 @@
 // saiu do ar em 25/08 e cada validação era uma ida à rede que só falhava. Os
 // cabeçalhos `x-local-user-*` enviados pelo navegador também não contam.
 
-export const CONVIDADO_ID = 'convidado'
+//
+// Sem sessão, nada é lido nem gravado (Fase 4, decisão do usuário em 14/09): o
+// modo "Entrar sem login" deixou de existir. O único acesso sem conta é o
+// formulário público de chegada de amostras, cujas funções não usam estes
+// contextos (ver chegada-amostras.functions.ts e photo-upload.functions.ts).
 
 type Claims = { sub: string; email?: string; user_metadata?: { full_name?: string; name?: string } }
 /** `role`/`labRole` vêm do registro da conta: são o que o servidor confere no fluxo (lib/papeis.ts). */
 type Identidade = { userId: string; claims: Claims; convidado: boolean; role?: string; labRole?: string }
-
-const CONVIDADO: Identidade = {
-  userId: CONVIDADO_ID,
-  claims: { sub: CONVIDADO_ID, user_metadata: { full_name: 'Convidado' } },
-  convidado: true,
-}
 
 /**
  * Registro do usuário por isolate, por até 60s. Validar a assinatura do cookie
@@ -69,16 +67,13 @@ function contexto(ident: Identidade) {
   }
 }
 
-/** Leitura: identidade verificada se houver; senão, convidado (nunca um usuário real). */
+/** Leitura: exige sessão verificada de conta ativa. */
 export async function contextoDeLeitura() {
-  let ident: Identidade | null = null
-  try {
-    ident = await identidadeDoCookie()
-  } catch (err) {
-    // Numa leitura, a identidade só serve para registro; não derruba a tela.
-    console.warn('[auth] Não foi possível conferir a sessão; seguindo como convidado:', err)
+  const ident = await identidadeDoCookie()
+  if (!ident) {
+    throw new Error('Não autenticado: entre no sistema com uma conta ativa para ver os dados.')
   }
-  return contexto(ident ?? CONVIDADO)
+  return contexto(ident)
 }
 
 /** Gravação: exige sessão verificada de conta ativa. */

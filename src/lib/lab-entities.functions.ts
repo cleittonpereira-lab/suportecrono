@@ -14,7 +14,8 @@
  * recusada em conflito; essa comparação nunca existiu no código.)
  */
 import { createServerFn } from "@tanstack/react-start";
-import { exigirLogin } from "@/integrations/supabase/auth-middleware";
+import { exigirLogin, requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { podeConcluirFora, type PapelDoUsuario } from "./papeis";
 import { z } from "zod";
 import type { Amostra, Coords, Ensaio, EnsaioStatus, EnsaioTipo, LabState, OS, Photo } from "@/features/lab/types";
 import { ensureFolderPath, listFilesInFolder, readDriveJson, lerJsonsListados, deleteDriveFile, findFileInFolder, atualizarDriveJson, DRIVE_ROOT_FOLDER_ID, type ArquivoListado } from "@/lib/driveStorage";
@@ -277,12 +278,12 @@ export async function montarRespostaSync(conhecidos: Record<string, string>): Pr
 const SyncInput = z.object({ conhecidos: z.record(z.string()).optional() });
 
 /** Árvore incremental: só o que mudou desde `conhecidos` — ver `montarRespostaSync`. */
-export const syncLabTree = createServerFn({ method: "POST" })
+export const syncLabTree = createServerFn({ method: "POST" }).middleware([requireSupabaseAuth])
   .validator((v: unknown) => SyncInput.parse(v ?? {}))
   .handler(async ({ data }): Promise<RespostaSync> => montarRespostaSync(data.conhecidos ?? {}));
 
 /** Árvore inteira de uma vez. Mantida por compatibilidade; o labStore usa `syncLabTree`. */
-export const loadLabTree = createServerFn({ method: "GET" }).handler(async (): Promise<{ state: Arvore | null }> => {
+export const loadLabTree = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth]).handler(async (): Promise<{ state: Arvore | null }> => {
   const resp = await montarRespostaSync({});
   if (resp.ordem.os.length === 0) {
     return { state: null };
@@ -473,12 +474,24 @@ const STATUS_SO_DO_FLUXO = new Set(["aguardando_verificacao", "aguardando_aprova
  * real, contornando a trava do primeiro. Havendo `draftRev`, o rascunho é o
  * dono do payload.
  */
-export function mesclarEnsaio(existing: EnsaioFile | null, data: z.infer<typeof EnsaioInput>): EnsaioFile {
+export function mesclarEnsaio(
+  existing: EnsaioFile | null,
+  data: z.infer<typeof EnsaioInput>,
+  opcoes: { podeConcluirFora?: boolean } = {},
+): EnsaioFile {
   const temRascunhoCompartilhado = typeof existing?.draftRev === "number";
   // Status do fluxo formal só o fluxo grava (approvals.functions.ts, com o papel
   // conferido): por aqui, um ensaio sem revisão enviada podia ser gravado direto
   // como "aprovado" e aparecer aprovado em todas as abas.
-  const statusRecebido = data.status && !STATUS_SO_DO_FLUXO.has(data.status) ? data.status : null;
+  // "Concluído fora (Excel)" tira o laudo das filas sem o fluxo: só de quem
+  // verifica (lib/papeis.ts). Ignorado em silêncio, como os status do fluxo —
+  // recusar um autosave faria a tela repetir a gravação.
+  const statusRecebido =
+    data.status &&
+    !STATUS_SO_DO_FLUXO.has(data.status) &&
+    (data.status !== "concluido_externo" || opcoes.podeConcluirFora === true)
+      ? data.status
+      : null;
   return {
     ...(existing ?? ({} as EnsaioFile)),
     id: data.id,
@@ -503,9 +516,10 @@ export function mesclarEnsaio(existing: EnsaioFile | null, data: z.infer<typeof 
 export const upsertEnsaioFn = createServerFn({ method: "POST" })
   .middleware([exigirLogin])
   .validator((v: unknown) => EnsaioInput.parse(v))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const folderId = await ensureFolderPath(FOLDER_ENSAIOS);
     const name = ensaioFileName(data.amostraId, data.id);
+    const podeFora = podeConcluirFora(context as PapelDoUsuario);
     // A leitura precisa estar DENTRO do lock, junto com a escrita. Antes, só o
     // upload era serializado: duas gravações seguidas liam o mesmo `existing`,
     // e a segunda regravava por cima o que a primeira tinha acabado de salvar
@@ -515,7 +529,7 @@ export const upsertEnsaioFn = createServerFn({ method: "POST" })
     // com rascunho compartilhado, que mesclarEnsaio ignora. Era uma segunda
     // gravação completa do mesmo arquivo a cada autosave do editor.
     await atualizarDriveJson<EnsaioFile>(name, folderId, (existing) => {
-      const proximo = mesclarEnsaio(existing, data);
+      const proximo = mesclarEnsaio(existing, data, { podeConcluirFora: podeFora });
       return mudaAlgo(existing, proximo) ? proximo : null;
     });
     return { ok: true };

@@ -1,7 +1,7 @@
 /**
  * Conexão de tempo real (Fase 3): repassa o WebSocket da aba para a sala
  * (Durable Object), com a identidade conferida aqui pelo cookie de sessão.
- * Convidado também conecta: recebe só "tal documento mudou" e a presença.
+ * Só conta ativa conecta (Fase 4): sem login não há modo convidado.
  */
 import { createFileRoute } from "@tanstack/react-router";
 
@@ -10,7 +10,7 @@ function nomeDe(claims: { email?: string; user_metadata?: { full_name?: string; 
     claims?.user_metadata?.full_name ||
     claims?.user_metadata?.name ||
     (claims?.email ? claims.email.split("@")[0] : "") ||
-    "Convidado"
+    "Usuário"
   );
 }
 
@@ -31,7 +31,12 @@ export const Route = createFileRoute("/api/tempo-real")({
         if (!sala) return new Response("Tempo real indisponível neste servidor.", { status: 503 });
 
         const { contextoDeLeitura } = await import("@/integrations/supabase/auth-identidade.server");
-        const quem = await contextoDeLeitura();
+        let quem: Awaited<ReturnType<typeof contextoDeLeitura>>;
+        try {
+          quem = await contextoDeLeitura();
+        } catch {
+          return new Response("Entre no sistema para receber avisos ao vivo.", { status: 401 });
+        }
         const destino = new URL(request.url);
         destino.pathname = "/ws";
         destino.search = new URLSearchParams({ uid: quem.userId, nome: nomeDe(quem.claims) }).toString();

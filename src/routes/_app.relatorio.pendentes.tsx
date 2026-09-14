@@ -85,7 +85,7 @@ import {
   Eye,
 } from "lucide-react";
 import { toast } from "sonner";
-import { podeVerificar } from "@/lib/papeis";
+import { podeConcluirFora, podeVerificar } from "@/lib/papeis";
 import {
   ETAPAS_DO_LAUDO,
   combinarEtapas,
@@ -169,6 +169,8 @@ function CentralRelatoriosPage() {
   const { user, role, profile } = useAuth();
   // Mesma regra do servidor (lib/papeis.ts): quem verifica ou aprova vê as filas.
   const canSeeQueues = podeVerificar({ role, labRole: profile?.labRole });
+  // "Legado Excel" (concluído fora da Central): só quem verifica — o servidor também confere.
+  const podeMarcarFora = podeConcluirFora({ role, labRole: profile?.labRole });
 
   const [queueCounts, setQueueCounts] = useState<{ verif: number; aprov: number } | null>(null);
   const listEmissoesFn = useServerFn(listEmissoes);
@@ -1173,6 +1175,7 @@ function CentralRelatoriosPage() {
                             })()}
 
                             {/* Botão Relatório Concluído fora da Central */}
+                            {podeMarcarFora && (
                             <TooltipProvider>
                               <Tooltip>
                                 <TooltipTrigger asChild>
@@ -1215,6 +1218,7 @@ function CentralRelatoriosPage() {
                                 </TooltipContent>
                               </Tooltip>
                             </TooltipProvider>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -1277,7 +1281,7 @@ function CentralRelatoriosPage() {
                         onAction={() => abrirDigitacao(r)}
                         actionLabel="Continuar Digitação"
                         actionIcon={Play}
-                        onExterno={() => setExternoModal(r)}
+                        onExterno={podeMarcarFora ? () => setExternoModal(r) : undefined}
                         onDelete={() => setDeleteConfirm(r)}
                       />
                     ))}

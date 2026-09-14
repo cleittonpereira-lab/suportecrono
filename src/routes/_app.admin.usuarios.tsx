@@ -95,7 +95,7 @@ function AdminUsuariosPage() {
     queryKey: ["admin-users"],
     enabled: role === "admin",
     queryFn: async (): Promise<Row[]> => {
-      const { users, guestTabs } = await listAdminUsersFn();
+      const { users } = await listAdminUsersFn();
       const userRows: Row[] = (users as PublicUser[]).map((u) => ({
         id: u.id,
         email: u.email,
@@ -110,20 +110,9 @@ function AdminUsuariosPage() {
         emailConfirmedAt: u.emailConfirmedAt,
         lastSignInAt: u.lastSignInAt,
       }));
-      const guestRow: Row = {
-        id: GUEST_ROW_ID,
-        email: "acesso público sem cadastro",
-        nome: "Usuário sem login",
-        cargo: "Convidado",
-        titulo: null,
-        username: null,
-        labRole: "nenhum",
-        status: "ativo",
-        role: "usuario",
-        tabs: guestTabs,
-        isGuest: true,
-      };
-      return [guestRow, ...userRows];
+      // Sem a linha "Usuário sem login": o modo convidado saiu na Fase 4 — sem
+      // conta, só o formulário público de chegada de amostras funciona.
+      return userRows;
     },
   });
 

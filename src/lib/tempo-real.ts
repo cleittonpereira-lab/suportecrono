@@ -57,7 +57,7 @@ function agendarReconexao(): void {
   const espera = Math.min(60_000, 1000 * 2 ** Math.min(tentativas, 6));
   tentativas++;
   timerReconexao = setTimeout(() => {
-    if (document.visibilityState === "visible") conectar();
+    if (iniciado && document.visibilityState === "visible") conectar();
   }, espera);
 }
 
@@ -109,14 +109,38 @@ function conectar(): void {
   };
 }
 
-/** Abre a conexão da aba (uma vez só, no navegador). */
+function aoVoltarParaAba(): void {
+  if (iniciado && document.visibilityState === "visible" && !socket) conectar();
+}
+
+/** Abre a conexão da aba (uma vez só, no navegador). Só com conta: sem login o servidor recusa. */
 export function iniciarTempoReal(): void {
   if (iniciado || typeof window === "undefined" || typeof WebSocket === "undefined") return;
   iniciado = true;
   conectar();
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && !socket) conectar();
-  });
+  document.addEventListener("visibilitychange", aoVoltarParaAba);
+}
+
+/** Fecha a conexão sem reconectar — ao sair da conta. */
+export function pararTempoReal(): void {
+  if (!iniciado) return;
+  iniciado = false;
+  document.removeEventListener("visibilitychange", aoVoltarParaAba);
+  clearTimeout(timerReconexao);
+  clearInterval(timerPing);
+  tentativas = 0;
+  const s = socket;
+  socket = null;
+  if (s) {
+    s.onclose = null;
+    s.onerror = null;
+    try {
+      s.close();
+    } catch {
+      // já fechada
+    }
+  }
+  mudarEstado({ conectado: false, presentes: [], eu: null });
 }
 
 /** Chamado a cada aviso de "estes documentos mudaram". Devolve a função que para de ouvir. */
