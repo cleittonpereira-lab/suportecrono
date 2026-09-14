@@ -106,97 +106,14 @@ const fileIdCache = new Map<string, string>();
  */
 const writeChain = new Map<string, Promise<unknown>>();
 
-/**
- * O cache acima vive na memória de UMA isolate do Worker, e o Cloudflare
- * distribui as requisições entre várias. Isso não bastou: a isolate A criava o
- * arquivo, o autosave seguinte caía na isolate B com cache vazio, a busca por
- * nome do Drive ainda não enxergava o arquivo de A, e B criava um segundo. As
- * duas passavam a escrever cada uma no seu arquivo e o trabalho digitado numa
- * delas se perdia.
- *
- * O Postgres é fortemente consistente, então serve de ponto de encontro entre
- * isolates. Degrada em silêncio: sem Supabase configurado, tudo continua
- * funcionando como antes, só sem a proteção entre isolates.
+/*
+ * O cache acima vive na memória de UMA isolate do Worker. Havia um segundo
+ * nível, numa tabela do Supabase, para as isolates se enxergarem — o Supabase
+ * saiu do ar em 25/08 e a tabela nunca existiu, então cada isolate pagava uma
+ * ida à rede que só falhava. Saiu: os dados do app estão no banco (D1), com
+ * trava atômica entre servidores; por aqui só passam fotos, PDFs e o que ainda
+ * mora no Drive.
  */
-/**
- * Disjuntor do cache durável. Enquanto a tabela `drive_file_cache` não existir
- * (migração ainda não aplicada) ou o Supabase estiver fora, cada chamada custava
- * uma ida e volta inteira que sempre falhava — em TODA leitura por nome. Foi o
- * que deixou a abertura de um ensaio lenta. O supabase-js não lança quando a
- * tabela não existe: devolve `{ error }`, então o `catch` sozinho nunca
- * disparava. Na primeira falha, desliga o cache durável pelo resto da vida desta
- * isolate; a proteção entre isolates volta sozinha numa isolate nova.
- */
-let cacheDuravelAtivo = true;
-
-function desligarCacheDuravel(motivo: unknown): void {
-  if (!cacheDuravelAtivo) return;
-  cacheDuravelAtivo = false;
-  console.warn(
-    "[DriveStorage] Cache durável (drive_file_cache) indisponível, seguindo só com o Drive:",
-    motivo instanceof Error ? motivo.message : motivo,
-  );
-}
-
-type ErroSupabase = { message: string } | null;
-
-/** Só as operações usadas aqui, sobre a tabela `drive_file_cache`. */
-type TabelaCacheDuravel = {
-  select(colunas: string): TabelaCacheDuravel;
-  eq(coluna: string, valor: string): TabelaCacheDuravel;
-  maybeSingle(): Promise<{ data: unknown; error: ErroSupabase }>;
-  upsert(linha: Record<string, unknown>): Promise<{ error: ErroSupabase }>;
-  delete(): { eq(coluna: string, valor: string): Promise<{ error: ErroSupabase }> };
-};
-
-/**
- * `drive_file_cache` ainda não existe nos tipos gerados do Supabase (a migração
- * não foi aplicada e os tipos não foram regenerados), então o cliente tipado
- * recusa o nome da tabela. Acesso sem tipo, restrito a esta única tabela, em vez
- * de espalhar `as any` pelas três funções.
- */
-async function tabelaCacheDuravel(): Promise<TabelaCacheDuravel> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  return (supabaseAdmin as unknown as { from(tabela: string): TabelaCacheDuravel }).from("drive_file_cache");
-}
-
-async function supabaseFileId(key: string): Promise<string | null> {
-  if (!cacheDuravelAtivo) return null;
-  try {
-    const { data, error } = await (await tabelaCacheDuravel()).select("file_id").eq("key", key).maybeSingle();
-    if (error) {
-      desligarCacheDuravel(error.message);
-      return null;
-    }
-    return (data as { file_id?: string } | null)?.file_id ?? null;
-  } catch (err) {
-    desligarCacheDuravel(err);
-    return null;
-  }
-}
-
-async function rememberFileId(key: string, fileId: string, parentId: string, name: string): Promise<void> {
-  if (!cacheDuravelAtivo) return;
-  try {
-    const { error } = await (await tabelaCacheDuravel()).upsert({
-      key, file_id: fileId, parent_id: parentId, name, updated_at: new Date().toISOString(),
-    });
-    if (error) desligarCacheDuravel(error.message);
-  } catch (err) {
-    // Melhor esforço: a escrita no Drive não pode falhar por causa do cache.
-    desligarCacheDuravel(err);
-  }
-}
-
-async function forgetFileId(key: string): Promise<void> {
-  if (!cacheDuravelAtivo) return;
-  try {
-    const { error } = await (await tabelaCacheDuravel()).delete().eq("key", key);
-    if (error) desligarCacheDuravel(error.message);
-  } catch (err) {
-    desligarCacheDuravel(err);
-  }
-}
 
 /**
  * Só vale repetir o que pode dar certo na segunda vez: queda de rede, excesso
@@ -238,27 +155,16 @@ async function comRetentativa<T>(rotulo: string, fn: () => Promise<T>): Promise<
 }
 
 /**
- * Resolve (pasta, nome) -> fileId na ordem mais confiável primeiro:
- * memória desta isolate, depois Supabase (consistente entre isolates), e só
- * então a busca por nome do Drive — que é a única das três que pode "não ver"
- * um arquivo recém-criado e provocar uma duplicata.
+ * Resolve (pasta, nome) -> fileId: memória desta isolate primeiro, e só então
+ * a busca por nome do Drive.
  */
 async function resolveFileId(name: string, parentId: string): Promise<string | null> {
   const key = `${parentId}:${name}`;
   const emMemoria = fileIdCache.get(key);
   if (emMemoria) return emMemoria;
 
-  const doSupabase = await supabaseFileId(key);
-  if (doSupabase) {
-    fileIdCache.set(key, doSupabase);
-    return doSupabase;
-  }
-
   const doDrive = await findFileInFolder(name, parentId);
-  if (doDrive) {
-    fileIdCache.set(key, doDrive);
-    void rememberFileId(key, doDrive, parentId, name);
-  }
+  if (doDrive) fileIdCache.set(key, doDrive);
   return doDrive;
 }
 
@@ -734,22 +640,16 @@ export async function uploadBytesToDrive(opts: {
     try {
       const id = await enviarBytes({ ...opts, existingId });
       fileIdCache.set(key, id);
-      // Grava o id sempre — inclusive numa criação, que é justamente o momento
-      // em que a busca por nome do Drive ainda não enxerga o arquivo e outra
-      // isolate criaria uma duplicata.
-      void rememberFileId(key, id, opts.parentId, opts.name);
       return id;
     } catch (err) {
       // Um id resolvido pode ter sido apagado ou movido por fora deste
-      // processo. Nesse caso o PATCH falha: esquece o id nos dois caches,
-      // busca no Drive e repete. Sem isso, o arquivo ficaria inacessível.
+      // processo. Nesse caso o PATCH falha: esquece o id, busca no Drive e
+      // repete. Sem isso, o arquivo ficaria inacessível.
       if (!existingId) throw err;
       fileIdCache.delete(key);
-      await forgetFileId(key);
       const freshId = await findFileInFolder(opts.name, opts.parentId);
       const id = await enviarBytes({ ...opts, existingId: freshId });
       fileIdCache.set(key, id);
-      void rememberFileId(key, id, opts.parentId, opts.name);
       return id;
     }
   });
@@ -1014,7 +914,7 @@ export async function readDriveJson<T>(filename: string, parentId: string = DRIV
   // assim que laudos aprovados perderam `reportApprovals`, fotos e payload.
   // Agora a falha estoura, e quem ia gravar por cima não grava.
   if (hasDriveCredentials()) {
-    // `resolveFileId` consulta memória e Supabase antes da busca por nome.
+    // `resolveFileId` consulta a memória antes da busca por nome.
     const fileId = await resolveFileId(filename, parentId);
     if (!fileId) return null;
 
@@ -1023,7 +923,6 @@ export async function readDriveJson<T>(filename: string, parentId: string = DRIV
       // O id resolvido (em cache) aponta para um arquivo que sumiu — apagado ou
       // movido por fora. Isso não prova que o arquivo não existe: busca de novo.
       fileIdCache.delete(cacheKey);
-      void forgetFileId(cacheKey);
       const freshId = await findFileInFolder(filename, parentId);
       if (!freshId || freshId === fileId) return null;
       fileIdCache.set(cacheKey, freshId);

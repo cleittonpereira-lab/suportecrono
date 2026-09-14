@@ -7,18 +7,6 @@ vi.mock("./google-auth.server", () => ({
   isGoogleAuthConfigured: () => true,
 }));
 
-// Cache durável desligado de saída: aqui só interessa o comportamento do Drive.
-vi.mock("@/integrations/supabase/client.server", () => {
-  const erro = { data: null, error: { message: "sem tabela" } };
-  const q = {
-    select: () => q,
-    eq: () => q,
-    maybeSingle: async () => erro,
-    upsert: async () => erro,
-    delete: () => ({ eq: async () => erro }),
-  };
-  return { supabaseAdmin: { from: () => q } };
-});
 
 type Resposta = { status: number; body?: unknown };
 

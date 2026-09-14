@@ -38,7 +38,6 @@ import { beginSave, endSave } from "@/lib/save-in-flight";
 import { MEspAReport, renderMEspAPdfBlob } from "@/features/mesp-natural/report";
 import { useCadastroByOs } from "@/hooks/use-cadastro-by-os";
 import { useAuth } from "@/hooks/use-auth";
-import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";

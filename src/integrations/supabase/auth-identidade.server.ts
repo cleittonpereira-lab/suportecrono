@@ -1,20 +1,17 @@
 // Resolução de identidade dos server functions — SÓ SERVIDOR.
 //
-// Fica separado de `auth-middleware.ts` porque usa `getRequest()` de
-// `@tanstack/react-start/server`, que não pode entrar no pacote do navegador.
-// `auth-middleware.ts` é alcançável pelo cliente (os server functions o
-// importam), então lá este módulo só é carregado com `import()` dinâmico dentro
-// dos callbacks `.server()`, que o compilador remove do lado do cliente.
+// Fica separado de `auth-middleware.ts` porque usa módulos só de servidor, que
+// não podem entrar no pacote do navegador. `auth-middleware.ts` é alcançável
+// pelo cliente (os server functions o importam), então lá este módulo só é
+// carregado com `import()` dinâmico dentro dos callbacks `.server()`, que o
+// compilador remove do lado do cliente. (A pasta ainda se chama `supabase` por
+// histórico: ~30 arquivos importam o middleware por este caminho.)
 //
-// A identidade vem só do que o servidor consegue verificar:
-//   1. token do Supabase, validado com `auth.getUser`; ou
-//   2. o cookie de sessão assinado (`si_session`) que os logins do app emitem
-//      (senha, cadastro e Google — ver auth.functions.ts / auth-session.server.ts).
-// Os cabeçalhos `x-local-user-*` enviados pelo navegador não contam: antes eles
-// definiam quem estava agindo, e sem eles o servidor assumia o admin.
-import { getRequest } from '@tanstack/react-start/server'
-import { createClient } from '@supabase/supabase-js'
-import type { Database } from './types'
+// A identidade vem só do cookie de sessão assinado (`si_session`) que os
+// logins do app emitem — senha, cadastro e Google (ver auth.functions.ts /
+// auth-session.server.ts). O token do Supabase Auth deixou de valer: o projeto
+// saiu do ar em 25/08 e cada validação era uma ida à rede que só falhava. Os
+// cabeçalhos `x-local-user-*` enviados pelo navegador também não contam.
 
 export const CONVIDADO_ID = 'convidado'
 
@@ -27,59 +24,10 @@ const CONVIDADO: Identidade = {
   convidado: true,
 }
 
-function isNewSupabaseApiKey(value: string): boolean {
-  return value.startsWith('sb_publishable_') || value.startsWith('sb_secret_')
-}
-
-function createSupabaseFetch(supabaseKey: string): typeof fetch {
-  return (input, init) => {
-    const headers = new Headers(
-      typeof Request !== 'undefined' && input instanceof Request ? input.headers : undefined,
-    )
-    if (init?.headers) {
-      new Headers(init.headers).forEach((value, key) => headers.set(key, value))
-    }
-    // New Supabase API keys are opaque strings, not bearer JWTs.
-    if (isNewSupabaseApiKey(supabaseKey) && headers.get('Authorization') === `Bearer ${supabaseKey}`) {
-      headers.delete('Authorization')
-    }
-    headers.set('apikey', supabaseKey)
-    return fetch(input, { ...init, headers })
-  }
-}
-
-/** Identidade de um token do Supabase, validado no próprio Supabase. */
-async function identidadeSupabase(): Promise<Identidade | null> {
-  const authHeader = getRequest()?.headers?.get('authorization')
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null
-  const token = authHeader.slice('Bearer '.length).trim()
-  if (!token) return null
-
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
-  const key = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY
-  if (!url || !key) return null
-
-  const supabase = createClient<Database>(url, key, {
-    global: { fetch: createSupabaseFetch(key), headers: { Authorization: `Bearer ${token}` } },
-    auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
-  })
-  try {
-    const { data, error } = await supabase.auth.getUser(token)
-    if (error || !data?.user) return null
-    return {
-      userId: data.user.id,
-      claims: { sub: data.user.id, email: data.user.email, user_metadata: data.user.user_metadata },
-      convidado: false,
-    }
-  } catch {
-    return null
-  }
-}
-
 /**
  * Registro do usuário por isolate, por até 60s. Validar a assinatura do cookie
  * é só criptografia local, mas saber se a conta está ativa exige ler o
- * registro no Drive — sem este cache, cada autosave pagaria essa leitura.
+ * registro no banco — sem este cache, cada autosave pagaria essa leitura.
  * Um bloqueio feito pelo admin leva no máximo 60s para valer.
  */
 const cacheUsuarios = new Map<string, { em: number; ident: Identidade | null }>()
@@ -108,10 +56,8 @@ async function identidadeDoCookie(): Promise<Identidade | null> {
   return ident
 }
 
-async function contexto(ident: Identidade) {
-  const { supabaseAdmin } = await import('@/integrations/supabase/client.server')
+function contexto(ident: Identidade) {
   return {
-    supabase: supabaseAdmin as any,
     userId: ident.userId,
     claims: ident.claims as any,
     convidado: ident.convidado,
@@ -120,21 +66,19 @@ async function contexto(ident: Identidade) {
 
 /** Leitura: identidade verificada se houver; senão, convidado (nunca um usuário real). */
 export async function contextoDeLeitura() {
-  let ident = await identidadeSupabase()
-  if (!ident) {
-    try {
-      ident = await identidadeDoCookie()
-    } catch (err) {
-      // Numa leitura, a identidade só serve para registro; não derruba a tela.
-      console.warn('[auth] Não foi possível conferir a sessão; seguindo como convidado:', err)
-    }
+  let ident: Identidade | null = null
+  try {
+    ident = await identidadeDoCookie()
+  } catch (err) {
+    // Numa leitura, a identidade só serve para registro; não derruba a tela.
+    console.warn('[auth] Não foi possível conferir a sessão; seguindo como convidado:', err)
   }
   return contexto(ident ?? CONVIDADO)
 }
 
 /** Gravação: exige sessão verificada de conta ativa. */
 export async function contextoDeGravacao() {
-  const ident = (await identidadeSupabase()) ?? (await identidadeDoCookie())
+  const ident = await identidadeDoCookie()
   if (!ident) {
     throw new Error('Não autenticado: entre no sistema com uma conta ativa para gravar alterações.')
   }
@@ -147,5 +91,5 @@ export async function contextoDeGravacao() {
  * apenas as fotos do formulário público de chegada.
  */
 export async function sessaoVerificada(): Promise<boolean> {
-  return !!((await identidadeSupabase()) ?? (await identidadeDoCookie()))
+  return !!(await identidadeDoCookie())
 }

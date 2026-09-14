@@ -5,11 +5,6 @@ vi.mock("./google-auth.server", () => ({
   getGoogleAccessToken: vi.fn(async () => "token-de-teste"),
   isGoogleAuthConfigured: () => true,
 }));
-vi.mock("@/integrations/supabase/client.server", () => {
-  const semTabela = { data: null, error: { message: "sem tabela" } };
-  const consulta = { select: () => consulta, eq: () => consulta, maybeSingle: async () => semTabela, upsert: async () => semTabela, delete: () => ({ eq: async () => semTabela }) };
-  return { supabaseAdmin: { from: () => consulta } };
-});
 
 type Arquivo = { id: string; name: string; version: string; modifiedTime: string; conteudo: unknown };
 

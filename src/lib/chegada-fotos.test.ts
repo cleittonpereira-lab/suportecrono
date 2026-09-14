@@ -6,11 +6,6 @@ vi.mock("./google-auth.server", () => ({
   getGoogleAccessToken: vi.fn(async () => "token-de-teste"),
   isGoogleAuthConfigured: () => true,
 }));
-vi.mock("@/integrations/supabase/client.server", () => {
-  const semTabela = { data: null, error: { message: "sem tabela" } };
-  const consulta = { select: () => consulta, eq: () => consulta, maybeSingle: async () => semTabela, upsert: async () => semTabela, delete: () => ({ eq: async () => semTabela }) };
-  return { supabaseAdmin: { from: () => consulta } };
-});
 
 const FOTO = "data:image/jpeg;base64," + "A".repeat(20_000);
 const ASSINATURA = "data:image/png;base64," + "B".repeat(12_000);

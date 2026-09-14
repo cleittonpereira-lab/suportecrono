@@ -71,20 +71,8 @@ async function ensureFolderPath(parts: string[]): Promise<string> {
       continue;
     }
 
-    // Tenta ler do Supabase se disponível
-    try {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      const { data: cached } = await supabaseAdmin
-        .from("drive_folder_cache")
-        .select("folder_id")
-        .eq("path", currentAccum)
-        .maybeSingle();
-      if (cached?.folder_id) {
-        driveFolderMemCache.set(currentAccum, cached.folder_id);
-        parent = cached.folder_id;
-        continue;
-      }
-    } catch {}
+    // (Havia aqui uma consulta a uma tabela de pastas no Supabase, fora do ar
+    // desde 25/08: cada pasta nova pagava uma ida à rede que só falhava.)
 
     // Encadeia por caminho: duas requisições simultâneas para a mesma pasta não
     // podem mais buscar em paralelo, não achar e criar duas.
@@ -98,19 +86,6 @@ async function ensureFolderPath(parts: string[]): Promise<string> {
 
     driveFolderMemCache.set(currentAccum, id);
     parent = id;
-
-    // Grava no Supabase cache de forma assíncrona/não-bloqueante.
-    // `parent_id` recebia `parent`, que nesta altura já tinha sido reatribuído
-    // para o próprio `id` — a coluna guardava o id da própria pasta.
-    try {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      await supabaseAdmin.from("drive_folder_cache").upsert({
-        path: currentAccum,
-        folder_id: id,
-        parent_id: parentId,
-        updated_at: new Date().toISOString(),
-      });
-    } catch {}
   }
 
   driveFolderMemCache.set(pathKey, parent);

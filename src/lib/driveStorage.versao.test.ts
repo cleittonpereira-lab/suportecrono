@@ -6,18 +6,6 @@ vi.mock("./google-auth.server", () => ({
   isGoogleAuthConfigured: () => true,
 }));
 
-// Como em produção hoje: a tabela drive_file_cache não existe.
-vi.mock("@/integrations/supabase/client.server", () => {
-  const semTabela = { data: null, error: { message: 'relation "drive_file_cache" does not exist' } };
-  const consulta = {
-    select: () => consulta,
-    eq: () => consulta,
-    maybeSingle: async () => semTabela,
-    upsert: async () => semTabela,
-    delete: () => ({ eq: async () => semTabela }),
-  };
-  return { supabaseAdmin: { from: () => consulta } };
-});
 
 type Arquivo = { id: string; name: string; version: string; conteudo: unknown };
 

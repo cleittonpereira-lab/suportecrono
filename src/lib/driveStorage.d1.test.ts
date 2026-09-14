@@ -6,11 +6,6 @@ vi.mock("./google-auth.server", () => ({
   getGoogleAccessToken: vi.fn(async () => "token-de-teste"),
   isGoogleAuthConfigured: () => true,
 }));
-vi.mock("@/integrations/supabase/client.server", () => {
-  const semTabela = { data: null, error: { message: "sem tabela" } };
-  const consulta = { select: () => consulta, eq: () => consulta, maybeSingle: async () => semTabela, upsert: async () => semTabela, delete: () => ({ eq: async () => semTabela }) };
-  return { supabaseAdmin: { from: () => consulta } };
-});
 
 const RAIZ = "0AB6VPuj1fWHEUk9PVA";
 let chamadasAoDrive: string[];

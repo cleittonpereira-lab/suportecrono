@@ -77,7 +77,6 @@ import {
   type ApprovalRow,
 } from "@/lib/approvals-com-pdf";
 import { getWorkflowStatuses } from "@/lib/driveSync.functions";
-import { supabase } from "@/integrations/supabase/client";
 import { Textarea } from "@/components/ui/textarea";
 import { PhotoUploader } from "@/features/lab/components/PhotoUploader";
 import { WorkflowFarol } from "@/features/lab/components/WorkflowFarol";

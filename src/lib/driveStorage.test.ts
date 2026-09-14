@@ -6,32 +6,6 @@ vi.mock("./google-auth.server", () => ({
   isGoogleAuthConfigured: () => true,
 }));
 
-// Supabase como está em produção hoje: a tabela drive_file_cache não existe.
-// O supabase-js NÃO lança nesse caso — devolve { error }.
-const chamadasSupabase = { total: 0 };
-vi.mock("@/integrations/supabase/client.server", () => {
-  const semTabela = { data: null, error: { message: 'relation "drive_file_cache" does not exist' } };
-  const consulta = {
-    select: () => consulta,
-    eq: () => consulta,
-    maybeSingle: async () => {
-      chamadasSupabase.total++;
-      return semTabela;
-    },
-    upsert: async () => {
-      chamadasSupabase.total++;
-      return semTabela;
-    },
-    delete: () => ({
-      eq: async () => {
-        chamadasSupabase.total++;
-        return semTabela;
-      },
-    }),
-  };
-  return { supabaseAdmin: { from: () => consulta } };
-});
-
 type Resposta = { status: number; body?: unknown };
 
 /** Mock de fetch roteado por tipo de chamada do Drive, com fila de respostas. */
@@ -57,33 +31,14 @@ function mockDrive(opts: { busca?: Resposta[]; download?: Resposta[] }) {
   return chamadas;
 }
 
-/** Cada teste recebe um módulo novo: o disjuntor é estado de módulo. */
+/** Cada teste recebe um módulo novo: os caches em memória são estado de módulo. */
 async function carregar() {
   vi.resetModules();
   return import("./driveStorage");
 }
 
-beforeEach(() => {
-  chamadasSupabase.total = 0;
-});
-
-describe("Fase 0 — disjuntor do cache durável", () => {
-  it("consulta o Supabase uma única vez quando a tabela não existe", async () => {
-    mockDrive({
-      busca: [{ status: 200, body: { files: [{ id: "arquivo-1" }] } }],
-      download: [{ status: 200, body: { ok: true } }],
-    });
-    const { readDriveJson } = await carregar();
-
-    for (let i = 0; i < 5; i++) {
-      await readDriveJson(`ensaio-${i}.json`, "pasta-teste");
-    }
-
-    // Antes: 5 leituras = 5 idas ao Supabase (+5 upserts). Agora: 1, e desliga.
-    expect(chamadasSupabase.total).toBe(1);
-  });
-
-  it("continua lendo do Drive normalmente com o cache desligado", async () => {
+describe("Leitura pelo Drive", () => {
+  it("lê do Drive normalmente, sem cache externo", async () => {
     mockDrive({
       busca: [{ status: 200, body: { files: [{ id: "arquivo-1" }] } }],
       download: [{ status: 200, body: { valor: 42 } }],

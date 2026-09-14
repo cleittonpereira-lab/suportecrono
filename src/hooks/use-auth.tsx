@@ -45,10 +45,8 @@ const GUEST_KEY = "labflow:guest";
 const LOCAL_SESSION_KEY = "labflow:auth_session";
 
 /**
- * Grava a mesma chave/formato que `src/integrations/supabase/auth-attacher.ts`
- * já lê — é o que faz os server functions que só precisam de "quem fez a
- * ação" (chat de OS, aprovações, pendências etc.) continuarem funcionando
- * sem nenhuma mudança neles.
+ * Cópia local de quem está logado, para a tela abrir já identificada. O
+ * servidor não usa isto: a identidade dele vem do cookie de sessão.
  */
 function persistLocalIdentity(user: AppUser, profile: Profile, role: Role) {
   try {

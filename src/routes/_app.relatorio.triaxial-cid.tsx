@@ -67,7 +67,6 @@ import {
   decideApproval,
   type ApprovalRow,
 } from "@/lib/approvals-com-pdf";
-import { supabase } from "@/integrations/supabase/client";
 import { CheckCircle2,
   MessageSquareQuote, XCircle, Clock, Send } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";

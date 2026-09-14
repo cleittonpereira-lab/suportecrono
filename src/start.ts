@@ -1,7 +1,6 @@
 import { createStart, createMiddleware, createCsrfMiddleware } from "@tanstack/react-start";
 
 import { renderErrorPage } from "./lib/error-page";
-import { attachSupabaseAuth } from "@/integrations/supabase/auth-attacher";
 
 const errorMiddleware = createMiddleware().server(async ({ next }) => {
   try {
@@ -27,7 +26,10 @@ const csrfMiddleware = createCsrfMiddleware({
   filter: (ctx) => ctx.handlerType === "serverFn",
 });
 
+// Sem middleware de cliente: havia um que, antes de TODA chamada ao servidor,
+// pedia a sessão ao Supabase Auth (fora do ar desde 25/08) — com uma sessão
+// antiga guardada no navegador, tentava renová-la na rede antes de liberar a
+// chamada. O servidor já não usava nada disso: a identidade vem do cookie.
 export const startInstance = createStart(() => ({
-  functionMiddleware: [attachSupabaseAuth],
   requestMiddleware: [csrfMiddleware, errorMiddleware],
 }));
