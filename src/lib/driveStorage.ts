@@ -396,8 +396,15 @@ export async function ensureFolderPath(parts: string[]): Promise<string> {
   return parent;
 }
 
+/**
+ * Arquivo listado numa pasta. `version` é o contador do próprio Drive, que sobe
+ * a cada alteração do arquivo — é o que permite saber, sem baixar nada, se o
+ * conteúdo mudou desde a última leitura (ver `readDriveJsonListado`).
+ */
+export type ArquivoListado = { id: string; name: string; version?: string; modifiedTime?: string };
+
 /** Lista todos os arquivos (não-pasta) dentro de uma pasta do Drive, com paginação. */
-export async function listFilesInFolder(parentId: string): Promise<{ id: string; name: string }[]> {
+export async function listFilesInFolder(parentId: string): Promise<ArquivoListado[]> {
   if (!hasDriveCredentials()) {
     // Sem credenciais do Drive (dev local): `uploadBytesToDrive`/`writeDriveJson` já gravam uma
     // cópia local prefixada por `${parentId}_` especificamente para isso — sem essa listagem,
@@ -420,13 +427,13 @@ export async function listFilesInFolder(parentId: string): Promise<{ id: string;
   // no meio da paginação devolvia silenciosamente as páginas já lidas, e o
   // catch devolvia o que tinha dado tempo de acumular. Agora, ou a lista sai
   // inteira, ou estoura.
-  const out: { id: string; name: string }[] = [];
+  const out: ArquivoListado[] = [];
   let pageToken: string | undefined;
   do {
     const q = `'${parentId}' in parents and trashed = false and mimeType != '${FOLDER_MIME}'`;
     const params = new URLSearchParams({
       q,
-      fields: "nextPageToken,files(id,name)",
+      fields: "nextPageToken,files(id,name,version,modifiedTime)",
       pageSize: "1000",
       supportsAllDrives: "true",
       includeItemsFromAllDrives: "true",
@@ -435,7 +442,7 @@ export async function listFilesInFolder(parentId: string): Promise<{ id: string;
     });
     if (pageToken) params.set("pageToken", pageToken);
 
-    type PaginaListagem = { files?: { id: string; name: string }[]; nextPageToken?: string };
+    type PaginaListagem = { files?: ArquivoListado[]; nextPageToken?: string };
     let data: PaginaListagem | null = null;
     let ultimoErro: unknown;
     for (let tentativa = 0; tentativa < 3 && !data; tentativa++) {
@@ -536,6 +543,60 @@ async function uploadBytesResumable(opts: {
   return result.id;
 }
 
+/**
+ * Até este tamanho, o envio vai em UMA requisição (upload multipart; o limite
+ * do Drive para ele é 5 MB) em vez das duas do resumível. Toda gravação de
+ * rascunho, status, aprovação ou pendência pagava uma ida e volta a mais.
+ */
+const LIMITE_MULTIPART = 4 * 1024 * 1024;
+
+async function uploadBytesMultipart(opts: {
+  parentId: string;
+  name: string;
+  mimeType: string;
+  bytes: Uint8Array;
+  existingId: string | null;
+}): Promise<string> {
+  const isUpdate = !!opts.existingId;
+  const url = isUpdate
+    ? `${DRIVE_UPLOAD}/${opts.existingId}?uploadType=multipart&supportsAllDrives=true`
+    : `${DRIVE_UPLOAD}?uploadType=multipart&supportsAllDrives=true`;
+  const metadata = isUpdate ? {} : { name: opts.name, parents: [opts.parentId] };
+
+  const fronteira = `suportecrono_${Date.now().toString(36)}${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+  const enc = new TextEncoder();
+  const inicio = enc.encode(
+    `--${fronteira}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
+      `--${fronteira}\r\nContent-Type: ${opts.mimeType}\r\n\r\n`,
+  );
+  const fim = enc.encode(`\r\n--${fronteira}--`);
+  const corpo = new Uint8Array(inicio.length + opts.bytes.length + fim.length);
+  corpo.set(inicio, 0);
+  corpo.set(opts.bytes, inicio.length);
+  corpo.set(fim, inicio.length + opts.bytes.length);
+
+  const res = await fetch(url, {
+    method: isUpdate ? "PATCH" : "POST",
+    headers: await driveHeaders({ "Content-Type": `multipart/related; boundary=${fronteira}` }),
+    body: corpo as BodyInit,
+  });
+  if (!res.ok) {
+    throw new Error(`Drive multipart upload error ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  }
+  return ((await res.json()) as { id: string }).id;
+}
+
+/** Envia pelo caminho mais curto que o tamanho permite. */
+function enviarBytes(opts: {
+  parentId: string;
+  name: string;
+  mimeType: string;
+  bytes: Uint8Array;
+  existingId: string | null;
+}): Promise<string> {
+  return opts.bytes.length <= LIMITE_MULTIPART ? uploadBytesMultipart(opts) : uploadBytesResumable(opts);
+}
+
 export async function uploadBytesToDrive(opts: {
   parentId: string;
   name: string;
@@ -554,14 +615,14 @@ export async function uploadBytesToDrive(opts: {
   // `overwrite: false` é upload de arquivo novo por definição (ex.: cada foto
   // é um arquivo próprio) — não resolve nome nem entra na fila.
   if (opts.overwrite === false) {
-    return uploadBytesResumable({ ...opts, existingId: null });
+    return enviarBytes({ ...opts, existingId: null });
   }
 
   const key = `${opts.parentId}:${opts.name}`;
   return withKeyLock(key, async () => {
     const existingId = await resolveFileId(opts.name, opts.parentId);
     try {
-      const id = await uploadBytesResumable({ ...opts, existingId });
+      const id = await enviarBytes({ ...opts, existingId });
       fileIdCache.set(key, id);
       // Grava o id sempre — inclusive numa criação, que é justamente o momento
       // em que a busca por nome do Drive ainda não enxerga o arquivo e outra
@@ -576,7 +637,7 @@ export async function uploadBytesToDrive(opts: {
       fileIdCache.delete(key);
       await forgetFileId(key);
       const freshId = await findFileInFolder(opts.name, opts.parentId);
-      const id = await uploadBytesResumable({ ...opts, existingId: freshId });
+      const id = await enviarBytes({ ...opts, existingId: freshId });
       fileIdCache.set(key, id);
       void rememberFileId(key, id, opts.parentId, opts.name);
       return id;
@@ -609,7 +670,7 @@ export async function uploadPhotoBytes(opts: {
     } catch {}
     return id;
   }
-  return uploadBytesResumable({ ...opts, existingId: null });
+  return enviarBytes({ ...opts, existingId: null });
 }
 
 /** Lê os bytes brutos (não-JSON) de um arquivo do Drive pelo seu fileId — usado para servir fotos. */
@@ -699,6 +760,105 @@ export async function readDriveJsonById<T>(fileId: string, name?: string): Promi
       ultimoErro instanceof Error ? ultimoErro.message : String(ultimoErro)
     }`,
   );
+}
+
+/**
+ * Conteúdo já baixado nesta isolate, por fileId, com a `version` do Drive de
+ * quando foi baixado.
+ *
+ * A árvore do laboratório, a Central de Emissões e as pendências liam TODOS os
+ * arquivos da pasta a cada consulta — ~215 downloads a cada 8s por aba aberta,
+ * 4,7 MB só em lab-ensaios (77% disso fotos em base64). A listagem já traz a
+ * `version` de cada arquivo; se ela não mudou, o conteúdo também não, e o
+ * download é dispensável. A validação é exata (a `version` sobe a cada
+ * alteração), não por tempo.
+ *
+ * O objeto devolvido é compartilhado entre requisições: quem lê NÃO pode
+ * alterá-lo.
+ */
+const conteudoPorVersao = new Map<string, { version: string; data: unknown }>();
+const LIMITE_CONTEUDO_EM_CACHE = 2000;
+
+function guardarConteudo(fileId: string, version: string, data: unknown): void {
+  // Reinserir move a entrada para o fim: a mais antiga é a primeira a sair.
+  conteudoPorVersao.delete(fileId);
+  conteudoPorVersao.set(fileId, { version, data });
+  if (conteudoPorVersao.size > LIMITE_CONTEUDO_EM_CACHE) {
+    const maisAntiga = conteudoPorVersao.keys().next().value;
+    if (maisAntiga !== undefined) conteudoPorVersao.delete(maisAntiga);
+  }
+}
+
+/** Lê um JSON já listado, baixando só se a `version` for diferente da que está em cache. */
+export async function readDriveJsonListado<T>(arquivo: ArquivoListado): Promise<T | null> {
+  const emCache = arquivo.version ? conteudoPorVersao.get(arquivo.id) : undefined;
+  if (emCache && emCache.version === arquivo.version) return emCache.data as T;
+  const data = await readDriveJsonById<T>(arquivo.id, arquivo.name);
+  if (data !== null && arquivo.version) guardarConteudo(arquivo.id, arquivo.version, data);
+  return data;
+}
+
+/** Roda `fn` sobre `items` com no máximo `limite` chamadas em voo ao mesmo tempo. */
+export async function mapComConcorrencia<T, R>(items: T[], limite: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const resultados: R[] = new Array(items.length);
+  let proximo = 0;
+  async function trabalhador() {
+    while (proximo < items.length) {
+      const i = proximo++;
+      resultados[i] = await fn(items[i]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limite, items.length) }, () => trabalhador()));
+  return resultados;
+}
+
+/**
+ * Lê os JSONs de `arquivos` (8 downloads em voo), reaproveitando o que não
+ * mudou. Arquivo apagado entre a listagem e o download (404) fica de fora.
+ */
+export async function lerJsonsListados<T>(arquivos: ArquivoListado[]): Promise<{ arquivo: ArquivoListado; data: T }[]> {
+  const lidos = await mapComConcorrencia(
+    arquivos,
+    8,
+    async (arquivo): Promise<{ arquivo: ArquivoListado; data: T } | null> => {
+      const data = await readDriveJsonListado<T>(arquivo);
+      return data === null ? null : { arquivo, data };
+    },
+  );
+  return lidos.filter((x): x is { arquivo: ArquivoListado; data: T } => x !== null);
+}
+
+/** Lista a pasta e lê todos os JSONs dela — ver `lerJsonsListados`. */
+export async function lerJsonsDaPasta<T>(folderId: string): Promise<{ arquivo: ArquivoListado; data: T }[]> {
+  return lerJsonsListados<T>(await listFilesInFolder(folderId));
+}
+
+/** `version` atual de um arquivo — resposta de poucos bytes. null = o arquivo não existe. */
+async function lerVersao(fileId: string): Promise<string | null> {
+  const res = await fetch(`${DRIVE_V3}/files/${fileId}?fields=version&supportsAllDrives=true`, {
+    method: "GET",
+    headers: await driveHeaders(),
+  });
+  if (res.status === 404) return null;
+  exigirOk(res);
+  return ((await res.json()) as { version?: string }).version ?? null;
+}
+
+/**
+ * Como `readDriveJson`, para arquivo grande consultado com frequência — o quadro
+ * de Chegada de Amostras (1,7 MB) era baixado inteiro a cada 2,5s por aba
+ * aberta. Pergunta ao Drive só a `version` e baixa o conteúdo apenas se ele
+ * mudou desde a última leitura nesta isolate. A consulta é por id, então é
+ * consistente: nunca devolve uma versão anterior a uma gravação concluída.
+ */
+export async function readDriveJsonSeMudou<T>(filename: string, parentId: string = DRIVE_ROOT_FOLDER_ID): Promise<T | null> {
+  if (!hasDriveCredentials()) return readDriveJson<T>(filename, parentId);
+  const fileId = await resolveFileId(filename, parentId);
+  if (!fileId) return null;
+  const version = await comRetentativa(`Falha ao consultar ${filename} no Drive`, () => lerVersao(fileId));
+  // Id em cache apontando para um arquivo que sumiu: o caminho completo resolve de novo.
+  if (version === null) return readDriveJson<T>(filename, parentId);
+  return readDriveJsonListado<T>({ id: fileId, name: filename, version });
 }
 
 /** Lê um arquivo JSON do Google Drive com fallback em cache */

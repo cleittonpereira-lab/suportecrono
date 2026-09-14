@@ -5,21 +5,22 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
-import { ensureFolderPath, listFilesInFolder, readDriveJson, readDriveJsonById } from "@/lib/driveStorage";
+import { ensureFolderPath, lerJsonsDaPasta, type ArquivoListado } from "@/lib/driveStorage";
 import { FOLDER_ENSAIOS, type EnsaioFile } from "@/lib/lab-entities.functions";
 
-/** Roda `fn` sobre `items` com no máximo `limit` chamadas em voo — ver o mesmo helper em lab-pendencias.functions.ts. */
-async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let next = 0;
-  async function worker() {
-    while (next < items.length) {
-      const idx = next++;
-      results[idx] = await fn(items[idx]);
-    }
+/**
+ * Índice id → conteúdo. Havendo cópias homônimas do mesmo registro, fica a
+ * modificada por último — o mesmo critério de `readDriveJson`.
+ */
+function maisRecentePorId<T extends { id?: string }>(lidos: { arquivo: ArquivoListado; data: T }[]): Map<string, T> {
+  const porId = new Map<string, { data: T; quando: string }>();
+  for (const { arquivo, data } of lidos) {
+    if (!data?.id) continue;
+    const quando = arquivo.modifiedTime ?? "";
+    const atual = porId.get(data.id);
+    if (!atual || quando > atual.quando) porId.set(data.id, { data, quando });
   }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
-  return results;
+  return new Map([...porId].map(([id, v]) => [id, v.data]));
 }
 
 /**
@@ -86,10 +87,8 @@ export const listEmissoes = createServerFn({ method: "POST" })
       const amFolderId = await ensureFolderPath(["lab-amostras"]);
       const osFolderId = await ensureFolderPath(["lab-os"]);
 
-      const files = await listFilesInFolder(enFolderId);
-      const ensaios = (
-        await mapWithConcurrency(files, 8, (f) => readDriveJsonById<EnsaioFile>(f.id, f.name))
-      ).filter((e): e is EnsaioFile => e !== null);
+      // Só baixa os ensaios que mudaram desde a última leitura (ver lerJsonsDaPasta).
+      const ensaios = (await lerJsonsDaPasta<EnsaioFile>(enFolderId)).map((l) => l.data);
 
       const filtered = data.workflowStatuses && data.workflowStatuses.length > 0
         ? ensaios.filter((e) => data.workflowStatuses!.includes(deriveWorkflowStatus(e)))
@@ -97,37 +96,22 @@ export const listEmissoes = createServerFn({ method: "POST" })
 
       if (filtered.length === 0) return [];
 
-      // Índice de nome de arquivo -> amostraId, montado uma vez (evita
-      // listar a pasta de amostras de novo para cada ensaio).
-      const amFiles = await listFilesInFolder(amFolderId);
-      const amFileByAmostraId = new Map<string, string>();
-      for (const f of amFiles) {
-        const amId = f.name.replace(/\.json$/, "").split("__").slice(1).join("__");
-        if (amId) amFileByAmostraId.set(amId, f.name);
-      }
+      // Amostras e OS lidas uma vez cada, pela listagem, em vez de uma busca
+      // por nome + download para cada ensaio.
+      const [amLidas, osLidas] = await Promise.all([
+        lerJsonsDaPasta<{ id?: string; osId?: string; code?: string; reportNumber?: string }>(amFolderId),
+        lerJsonsDaPasta<{ id?: string; numero?: string; client?: string }>(osFolderId),
+      ]);
+      const amostraPorId = maisRecentePorId(amLidas);
+      const osPorId = maisRecentePorId(osLidas);
 
-      const amostraCache = new Map<string, any>();
-      const osCache = new Map<string, any>();
-
-      const rows = await mapWithConcurrency(
-        filtered,
-        8,
-        async (en): Promise<EmissaoRow> => {
+      const rows = filtered.map(
+        (en): EmissaoRow => {
           const approvals = (en.reportApprovals ?? []).slice().sort((a, b) => b.rev - a.rev);
           const latest = approvals[0];
 
-          let amostra: any = amostraCache.get(en.amostraId);
-          if (amostra === undefined) {
-            const fname = amFileByAmostraId.get(en.amostraId);
-            amostra = fname ? await readDriveJson<any>(fname, amFolderId) : null;
-            amostraCache.set(en.amostraId, amostra);
-          }
-
-          let os: any = amostra?.osId ? osCache.get(amostra.osId) : null;
-          if (amostra?.osId && os === undefined) {
-            os = await readDriveJson<any>(`${amostra.osId}.json`, osFolderId);
-            osCache.set(amostra.osId, os);
-          }
+          const amostra = amostraPorId.get(en.amostraId) ?? null;
+          const os = amostra?.osId ? (osPorId.get(amostra.osId) ?? null) : null;
 
           const scopeId = amostra?.osId
             ? `os/${amostra.osId}/amostra/${en.amostraId}/ensaio/${en.id}`

@@ -17,28 +17,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { exigirLogin } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import type { Amostra, Coords, Ensaio, EnsaioStatus, EnsaioTipo, LabState, OS, Photo } from "@/features/lab/types";
-import { ensureFolderPath, listFilesInFolder, readDriveJson, readDriveJsonById, deleteDriveFile, findFileInFolder, atualizarDriveJson, DRIVE_ROOT_FOLDER_ID } from "@/lib/driveStorage";
-
-/**
- * Roda `fn` sobre `items` com no máximo `limit` chamadas em voo ao mesmo
- * tempo — mesmo motivo do helper em lab-pendencias.functions.ts:
- * `readAllInFolder` (usada por `loadLabTree`, que roda em TODO carregamento
- * do app) lia todos os arquivos de uma pasta em paralelo sem limite. Ensaios
- * agora podem carregar fotos em base64 embutidas, então cada arquivo pode
- * ser bem maior do que antes — piorando um padrão que já era arriscado.
- */
-async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let next = 0;
-  async function worker() {
-    while (next < items.length) {
-      const idx = next++;
-      results[idx] = await fn(items[idx]);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
-  return results;
-}
+import { ensureFolderPath, listFilesInFolder, readDriveJson, lerJsonsListados, deleteDriveFile, findFileInFolder, atualizarDriveJson, DRIVE_ROOT_FOLDER_ID, type ArquivoListado } from "@/lib/driveStorage";
+import { aplicarSync, arvoreDoCache, cacheVazio, type Arvore, type LinhaAmostra, type LinhaEnsaio, type LinhaOS, type LinhaSync, type RespostaSync } from "@/features/lab/arvore";
 
 export type SerializableJson = string | number | boolean | null | SerializableJson[] | { [key: string]: SerializableJson };
 export function toSerializableJson(value: unknown): SerializableJson | undefined {
@@ -268,55 +248,59 @@ function ensaioToPublic(f: EnsaioFile): SerializableEnsaio {
   };
 }
 
-async function readAllInFolder<T>(folderParts: string[]): Promise<{ fileId: string; name: string; data: T }[]> {
-  const folderId = await ensureFolderPath(folderParts);
-  const files = await listFilesInFolder(folderId);
-  const results: ({ fileId: string; name: string; data: T } | null)[] = await mapWithConcurrency(
-    files,
-    8,
-    async (f) => {
-      const data = await readDriveJsonById<T>(f.id, f.name);
-      if (!data) return null;
-      return { fileId: f.id, name: f.name, data };
-    },
-  );
-  const out: { fileId: string; name: string; data: T }[] = [];
-  for (const r of results) {
-    if (r) out.push(r);
-  }
-  return out;
+function linhaSync<T>(arquivo: ArquivoListado, dados: T): LinhaSync<T> {
+  return { fileId: arquivo.id, version: arquivo.version ?? null, dados };
 }
 
-type SerializableAmostra = Omit<Amostra, "ensaios"> & { ensaios: SerializableEnsaio[] };
-type SerializableOS = Omit<OS, "amostras"> & { amostras: SerializableAmostra[] };
+/**
+ * Lista as três pastas da árvore do laboratório e lê só os arquivos que o
+ * cliente ainda não tem na versão atual (`conhecidos`: fileId → version). O
+ * cliente monta a árvore com `aplicarSync` + `arvoreDoCache`
+ * (features/lab/arvore.ts).
+ *
+ * Antes, cada atualização — a cada 8s, por aba, e uma vez para cada componente
+ * que usava o labStore — baixava TODOS os ~215 arquivos e devolvia a árvore
+ * inteira, com os payloads e suas fotos em base64. Agora, sem mudança, custa 3
+ * listagens no Drive e devolve só ids.
+ */
+export async function montarRespostaSync(conhecidos: Record<string, string>): Promise<RespostaSync> {
+  const listar = async (partes: string[]) => listFilesInFolder(await ensureFolderPath(partes));
+  const [osArqs, amArqs, enArqs] = await Promise.all([listar(FOLDER_OS), listar(FOLDER_AMOSTRAS), listar(FOLDER_ENSAIOS)]);
 
-export const loadLabTree = createServerFn({ method: "GET" }).handler(async (): Promise<{ state: { os: SerializableOS[] } | null }> => {
-  const [osRows, amRows, enRows] = await Promise.all([
-    readAllInFolder<OSFile>(FOLDER_OS),
-    readAllInFolder<AmostraFile>(FOLDER_AMOSTRAS),
-    readAllInFolder<EnsaioFile>(FOLDER_ENSAIOS),
+  // Sem `version` (modo offline), não há como saber: vai sempre.
+  const mudou = (a: ArquivoListado) => !a.version || conhecidos[a.id] !== a.version;
+  const [osLidos, amLidos, enLidos] = await Promise.all([
+    lerJsonsListados<OSFile>(osArqs.filter(mudou)),
+    lerJsonsListados<AmostraFile>(amArqs.filter(mudou)),
+    lerJsonsListados<EnsaioFile>(enArqs.filter(mudou)),
   ]);
 
-  if (osRows.length === 0) {
+  return {
+    os: osLidos.map(({ arquivo, data }) => linhaSync<LinhaOS>(arquivo, osToPublic(data))),
+    amostras: amLidos.map(({ arquivo, data }) =>
+      linhaSync<LinhaAmostra>(arquivo, { ...amostraToPublic(data), osId: data.osId }),
+    ),
+    ensaios: enLidos.map(({ arquivo, data }) =>
+      linhaSync<LinhaEnsaio>(arquivo, { ...ensaioToPublic(data), amostraId: data.amostraId }),
+    ),
+    ordem: { os: osArqs.map((a) => a.id), amostras: amArqs.map((a) => a.id), ensaios: enArqs.map((a) => a.id) },
+  };
+}
+
+const SyncInput = z.object({ conhecidos: z.record(z.string()).optional() });
+
+/** Árvore incremental: só o que mudou desde `conhecidos` — ver `montarRespostaSync`. */
+export const syncLabTree = createServerFn({ method: "POST" })
+  .validator((v: unknown) => SyncInput.parse(v ?? {}))
+  .handler(async ({ data }): Promise<RespostaSync> => montarRespostaSync(data.conhecidos ?? {}));
+
+/** Árvore inteira de uma vez. Mantida por compatibilidade; o labStore usa `syncLabTree`. */
+export const loadLabTree = createServerFn({ method: "GET" }).handler(async (): Promise<{ state: Arvore | null }> => {
+  const resp = await montarRespostaSync({});
+  if (resp.ordem.os.length === 0) {
     return { state: null };
   }
-
-  const ensaiosByAmostra = new Map<string, SerializableEnsaio[]>();
-  for (const { data } of enRows) {
-    const list = ensaiosByAmostra.get(data.amostraId) ?? [];
-    list.push(ensaioToPublic(data));
-    ensaiosByAmostra.set(data.amostraId, list);
-  }
-
-  const amostrasByOS = new Map<string, SerializableAmostra[]>();
-  for (const { data } of amRows) {
-    const list = amostrasByOS.get(data.osId) ?? [];
-    list.push({ ...amostraToPublic(data), ensaios: ensaiosByAmostra.get(data.id) ?? [] });
-    amostrasByOS.set(data.osId, list);
-  }
-
-  const os: SerializableOS[] = osRows.map(({ data }) => ({ ...osToPublic(data), amostras: amostrasByOS.get(data.id) ?? [] }));
-  return { state: { os } };
+  return { state: arvoreDoCache(aplicarSync(cacheVazio(), resp).cache) };
 });
 
 /* ─────────────────────────────── OS ─────────────────────────────── */
@@ -356,7 +340,7 @@ export const upsertOSFn = createServerFn({ method: "POST" })
         updatedAt: data.updatedAt,
         rev: nextRev,
       };
-      return file;
+      return mudaAlgo(existing, file) ? file : null;
     });
     return { ok: true };
   });
@@ -419,7 +403,7 @@ export const upsertAmostraFn = createServerFn({ method: "POST" })
         updatedAt: data.updatedAt,
         rev: nextRev,
       };
-      return file;
+      return mudaAlgo(existing, file) ? file : null;
     });
     return { ok: true };
   });
@@ -453,6 +437,41 @@ const EnsaioInput = z.object({
 });
 
 /**
+ * A gravação mudaria o arquivo além de `rev`/`updatedAt`? Sem mudança real, não
+ * grava: cada gravação é um ciclo completo no Drive (ler, enviar) e sobe a
+ * `version` do arquivo, o que obriga todas as abas abertas a baixá-lo de novo.
+ */
+export function mudaAlgo<T extends object>(existente: T | null, proximo: T): boolean {
+  if (!existente) return true;
+  const semControle = (o: T) => {
+    const copia: Record<string, unknown> = { ...(o as Record<string, unknown>) };
+    delete copia.rev;
+    delete copia.updatedAt;
+    return JSON.stringify(copia);
+  };
+  return semControle(existente) !== semControle(proximo);
+}
+
+/**
+ * O carregamento em massa entrega as fotos sem o conteúdo (`dataUrl: ""`, ver
+ * `photoToLightweight`), e o labStore devolve essas fotos "leves" em toda
+ * gravação do ensaio — inclusive numa simples troca de status feita na Central
+ * de Relatórios, sem o editor aberto. Foto antiga, que só existe em `dataUrl`
+ * (sem `url` de arquivo no Drive), perdia a imagem nessa gravação. Aqui, foto
+ * que chega sem conteúdo nenhum mantém o `dataUrl` que o arquivo já tinha para
+ * o mesmo id. Foto removida pelo cliente continua removida.
+ */
+export function preservarConteudoDasFotos(recebidas: Photo[], existentes: Photo[] | null | undefined): Photo[] {
+  if (!existentes?.length) return recebidas;
+  const porId = new Map(existentes.map((p) => [p.id, p]));
+  return recebidas.map((p) => {
+    if (p.dataUrl || p.url) return p;
+    const antiga = porId.get(p.id);
+    return antiga?.dataUrl ? { ...p, dataUrl: antiga.dataUrl } : p;
+  });
+}
+
+/**
  * Mescla uma gravação vinda do labStore com o arquivo de ensaio existente.
  * Preserva workflowStatus/approvals/draftHistory (geridos por
  * draft.functions.ts/approvals.functions.ts) e nunca apaga por omissão.
@@ -477,7 +496,9 @@ export function mesclarEnsaio(existing: EnsaioFile | null, data: z.infer<typeof 
     nome: data.nome ?? existing?.nome ?? null,
     sigla: data.sigla ?? existing?.sigla ?? null,
     operator: data.operator ?? existing?.operator ?? null,
-    photos: (data.photos ?? existing?.photos ?? []) as unknown as Photo[],
+    photos: data.photos
+      ? preservarConteudoDasFotos(data.photos as unknown as Photo[], existing?.photos)
+      : (existing?.photos ?? []),
     payload:
       data.payload !== undefined && !temRascunhoCompartilhado ? data.payload : (existing?.payload ?? null),
     createdAt: existing?.createdAt ?? data.createdAt,
@@ -496,7 +517,14 @@ export const upsertEnsaioFn = createServerFn({ method: "POST" })
     // upload era serializado: duas gravações seguidas liam o mesmo `existing`,
     // e a segunda regravava por cima o que a primeira tinha acabado de salvar
     // (ex.: uma aprovação gravada entre a leitura e a escrita de um autosave).
-    await atualizarDriveJson<EnsaioFile>(name, folderId, (existing) => mesclarEnsaio(existing, data));
+    //
+    // Gravação que não muda nada não vai ao Drive — ex.: o payload de um ensaio
+    // com rascunho compartilhado, que mesclarEnsaio ignora. Era uma segunda
+    // gravação completa do mesmo arquivo a cada autosave do editor.
+    await atualizarDriveJson<EnsaioFile>(name, folderId, (existing) => {
+      const proximo = mesclarEnsaio(existing, data);
+      return mudaAlgo(existing, proximo) ? proximo : null;
+    });
     return { ok: true };
   });
 

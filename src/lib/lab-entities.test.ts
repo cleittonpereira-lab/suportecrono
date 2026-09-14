@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { mesclarEnsaio, type EnsaioFile } from "./lab-entities.functions";
+import { mesclarEnsaio, mudaAlgo, preservarConteudoDasFotos, type EnsaioFile } from "./lab-entities.functions";
+import type { Photo } from "@/features/lab/types";
 
 const base = {
   id: "en_1",
@@ -56,5 +57,49 @@ describe("mesclarEnsaio", () => {
     const r = mesclarEnsaio(null, { ...base, payload: { x: 1 } });
     expect(r.rev).toBe(1);
     expect(r.payload).toEqual({ x: 1 });
+  });
+});
+
+const fotoAntiga: Photo = { id: "ph_1", dataUrl: "data:image/jpeg;base64,AAAA", createdAt: base.createdAt, kind: "ruptura" };
+const fotoLeve = (p: Photo): Photo => ({ ...p, dataUrl: "" });
+
+describe("fotos leves do carregamento em massa", () => {
+  it("troca de status pela Central NÃO apaga a imagem de foto antiga (só dataUrl)", () => {
+    // O labStore manda as fotos como vieram do loadLabTree: sem conteúdo.
+    const r = mesclarEnsaio(existente({ photos: [fotoAntiga] }), {
+      ...base,
+      status: "concluido",
+      photos: [fotoLeve(fotoAntiga)] as unknown as Record<string, unknown>[],
+    });
+    expect(r.photos[0].dataUrl).toBe(fotoAntiga.dataUrl);
+    expect(r.status).toBe("concluido");
+  });
+
+  it("foto com arquivo no Drive (url) não recebe o base64 antigo de volta", () => {
+    const migrada: Photo = { ...fotoAntiga, dataUrl: "", url: "/api/photo/abc" };
+    expect(preservarConteudoDasFotos([migrada], [fotoAntiga])[0].dataUrl).toBe("");
+  });
+
+  it("foto removida pelo cliente continua removida", () => {
+    expect(preservarConteudoDasFotos([], [fotoAntiga])).toEqual([]);
+  });
+});
+
+describe("mudaAlgo", () => {
+  it("só rev/updatedAt diferentes não é mudança", () => {
+    const a = existente();
+    expect(mudaAlgo(a, { ...a, rev: 99, updatedAt: "2026-09-13T00:00:00.000Z" })).toBe(false);
+  });
+
+  it("payload ignorado por rascunho compartilhado não gera gravação", () => {
+    const atual = existente({ draftRev: 3 });
+    const proximo = mesclarEnsaio(atual, { ...base, payload: { outro: 1 }, updatedAt: "2026-09-13T00:00:00.000Z" });
+    expect(mudaAlgo(atual, proximo)).toBe(false);
+  });
+
+  it("mudança de status é mudança; arquivo novo também", () => {
+    const atual = existente();
+    expect(mudaAlgo(atual, mesclarEnsaio(atual, { ...base, status: "rascunho" }))).toBe(true);
+    expect(mudaAlgo(null, atual)).toBe(true);
   });
 });

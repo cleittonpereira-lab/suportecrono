@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { toast } from "sonner";
 import {
-  fetchSharedChegadaState,
+  fetchSharedChegadaStateSeMudou,
   saveSharedChegadaState,
   createSharedChegadaTask,
   addSharedChegadaOption,
@@ -626,9 +626,17 @@ export function useChegadaRealtimeSync(
   onTasksUpdated?: (tasks: Record<string, ChegadaTask[]>) => void,
   onColumnsUpdated?: (columns: ChegadaColumn[]) => void
 ) {
-  const syncFromServer = useCallback(async () => {
+  const ciclo = useRef(0);
+  const syncFromServer = useCallback(async (completo: boolean) => {
     try {
-      const serverState = await fetchSharedChegadaState();
+      // Na maioria dos ciclos só pergunta se o quadro mudou (resposta de poucos
+      // bytes); o quadro inteiro — 1,7 MB, com fotos em base64 — só vem quando
+      // mudou. A leitura completa de vez em quando corrige a tela se ela tiver
+      // divergido do servidor sem a revisão mudar (ex.: gravação local que falhou).
+      const knownRev = completo ? undefined : getKnownChegadaRev() || undefined;
+      const resposta = await fetchSharedChegadaStateSeMudou({ data: { knownRev } });
+      if ("unchanged" in resposta) return;
+      const serverState = resposta;
       if (serverState && typeof window !== "undefined") {
         // 1. Colunas
         if (Array.isArray(serverState.columns) && serverState.columns.length > 0) {
@@ -677,16 +685,22 @@ export function useChegadaRealtimeSync(
   }, [onTasksUpdated, onColumnsUpdated]);
 
   useEffect(() => {
-    // 1. Sincroniza imediatamente na montagem
-    syncFromServer();
+    // 1. Sincroniza imediatamente na montagem (leitura completa)
+    void syncFromServer(true);
 
-    // 2. Polling ativo a cada 2.5 segundos para captura imediata entre dispositivos
-    const interval = setInterval(syncFromServer, 2500);
+    // 2. A cada 4s, com a aba visível, pergunta se o quadro mudou; a cada 8
+    //    ciclos (~30s), leitura completa. Antes: o quadro inteiro a cada 2,5s,
+    //    inclusive com a aba em segundo plano.
+    const interval = setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      ciclo.current += 1;
+      void syncFromServer(ciclo.current % 8 === 0);
+    }, 4000);
 
     // 3. Sincroniza ao focar na janela/aba ou quando a tela se torna visível
-    const handleFocus = () => syncFromServer();
+    const handleFocus = () => void syncFromServer(false);
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") syncFromServer();
+      if (document.visibilityState === "visible") void syncFromServer(false);
     };
 
     window.addEventListener("focus", handleFocus);

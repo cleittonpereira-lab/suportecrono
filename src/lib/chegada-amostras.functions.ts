@@ -41,7 +41,7 @@ function gerarNumeroControleServer(): string {
   const p = getSaoPauloPartsServer();
   return `REC-${p.year}${p.month}${p.day}-${p.hour}${p.minute}${p.second}`;
 }
-import { readDriveJson, writeDriveJson, DRIVE_ROOT_FOLDER_ID } from "@/lib/driveStorage";
+import { readDriveJson, readDriveJsonSeMudou, writeDriveJson, DRIVE_ROOT_FOLDER_ID } from "@/lib/driveStorage";
 
 export const DEFAULT_COLUMNS: ChegadaColumn[] = [
   { id: "registro", title: "Registro", subtitle: "Chegada de amostras", isSystem: true },
@@ -112,10 +112,17 @@ export interface SharedChegadaState {
 
 const CHEGADA_DRIVE_FILENAME = "_chegada-amostras.json";
 
-/** Lê o estado compartilhado direto do Drive (fonte de verdade), com fallback para os padrões na primeira execução. */
-export async function readLocalChegadaState(): Promise<SharedChegadaState> {
+/**
+ * Lê o estado compartilhado direto do Drive (fonte de verdade), com fallback para os padrões na primeira execução.
+ *
+ * `soLeitura`: quem só vai exibir o quadro (não grava em cima dele) reaproveita
+ * o conteúdo já baixado enquanto o arquivo não muda — ver `readDriveJsonSeMudou`.
+ * O objeto devolvido nesse caso é compartilhado entre requisições: não altere.
+ */
+export async function readLocalChegadaState(opts: { soLeitura?: boolean } = {}): Promise<SharedChegadaState> {
   try {
-    const parsed = await readDriveJson<SharedChegadaState>(CHEGADA_DRIVE_FILENAME, DRIVE_ROOT_FOLDER_ID);
+    const ler = opts.soLeitura ? readDriveJsonSeMudou : readDriveJson;
+    const parsed = await ler<SharedChegadaState>(CHEGADA_DRIVE_FILENAME, DRIVE_ROOT_FOLDER_ID);
     if (parsed && typeof parsed === "object" && parsed.tasks) {
       const columns = Array.isArray(parsed.columns) && parsed.columns.length > 0 ? parsed.columns : DEFAULT_COLUMNS;
       const tasks: Record<string, ChegadaTask[]> = {};
@@ -162,9 +169,23 @@ export async function writeLocalChegadaState(state: SharedChegadaState): Promise
   await writeDriveJson(CHEGADA_DRIVE_FILENAME, state, DRIVE_ROOT_FOLDER_ID);
 }
 
-/** Handler puro de busca de estado */
+/** Handler puro de busca de estado (só exibe: reaproveita o conteúdo se o arquivo não mudou). */
 export async function handleFetchSharedChegadaState(): Promise<SharedChegadaState> {
-  return readLocalChegadaState();
+  return readLocalChegadaState({ soLeitura: true });
+}
+
+/**
+ * Como `handleFetchSharedChegadaState`, mas responde só `{ unchanged, rev }`
+ * quando o quadro ainda está na revisão que o cliente já tem. O quadro tem
+ * 1,7 MB (fotos em base64) e cada aba aberta o recebia inteiro a cada 2,5s —
+ * ~40 MB por minuto por aba para dizer "nada mudou".
+ */
+export async function handleFetchSharedChegadaStateSeMudou(
+  knownRev?: number,
+): Promise<SharedChegadaState | { unchanged: true; rev: number }> {
+  const state = await readLocalChegadaState({ soLeitura: true });
+  if (typeof knownRev === "number" && state.rev === knownRev) return { unchanged: true, rev: state.rev };
+  return state;
 }
 
 /**
@@ -373,6 +394,12 @@ export async function handleAddSharedChegadaOption(data: {
 export const fetchSharedChegadaState = createServerFn({ method: "GET" })
   .handler(async (): Promise<SharedChegadaState> => {
     return handleFetchSharedChegadaState();
+  });
+
+export const fetchSharedChegadaStateSeMudou = createServerFn({ method: "GET" })
+  .validator((d: { knownRev?: number } | undefined) => d ?? {})
+  .handler(async ({ data }): Promise<SharedChegadaState | { unchanged: true; rev: number }> => {
+    return handleFetchSharedChegadaStateSeMudou(data.knownRev);
   });
 
 export const saveSharedChegadaState = createServerFn({ method: "POST" })

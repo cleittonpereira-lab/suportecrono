@@ -175,11 +175,16 @@ function CentralRelatoriosPage() {
     let cancelled = false;
     void (async () => {
       try {
-        const [v, a] = await Promise.all([
-          listEmissoesFn({ data: { workflowStatuses: ["aguardando_verificacao"] } }),
-          listEmissoesFn({ data: { workflowStatuses: ["aguardando_aprovacao"] } }),
-        ]);
-        if (!cancelled) setQueueCounts({ verif: v.length, aprov: a.length });
+        // Uma consulta só: eram duas, e cada uma varria todos os ensaios do Drive.
+        const filas = await listEmissoesFn({
+          data: { workflowStatuses: ["aguardando_verificacao", "aguardando_aprovacao"] },
+        });
+        if (!cancelled) {
+          setQueueCounts({
+            verif: filas.filter((r) => r.workflow_status === "aguardando_verificacao").length,
+            aprov: filas.filter((r) => r.workflow_status === "aguardando_aprovacao").length,
+          });
+        }
       } catch {}
     })();
     return () => {
@@ -210,7 +215,9 @@ function CentralRelatoriosPage() {
   const { data: rows = [], isLoading, refetch } = useQuery({
     queryKey: ["lab-pendencias"],
     queryFn: () => listFn(),
-    refetchInterval: 15_000,
+    // Mesmo intervalo das outras telas que usam esta consulta (visão por OS,
+    // lista por tipo): o menor intervalo entre elas é o que vale.
+    refetchInterval: 30_000,
   });
 
   function mapWorkflowStatus(status?: string | null): PendenciaDigitacao["status"] {

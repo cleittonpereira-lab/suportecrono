@@ -1,9 +1,9 @@
 /**
- * Store do laboratório — fonte da verdade: Supabase, em 3 tabelas
- * relacionais (`lab_os`, `lab_amostras`, `lab_ensaios`) — uma linha por
- * entidade, não mais um único arquivo JSON com tudo.
+ * Store do laboratório — fonte da verdade: um arquivo por entidade no Google
+ * Drive (`lab-os/`, `lab-amostras/`, `lab-ensaios/`), lido pelo servidor.
  *
- * - Hidrata do Supabase na primeira montagem do app.
+ * - Hidrata do servidor na primeira montagem do app; depois pede só o que
+ *   mudou (`syncLabTree`).
  * - Mantém o estado em memória com useSyncExternalStore (reatividade local
  *   instantânea — nenhuma mudança de UI espera rede).
  * - Cada mutação persiste SÓ a entidade que mudou (debounce curto por
@@ -18,15 +18,21 @@
  */
 import { useEffect, useSyncExternalStore } from "react";
 import type { Amostra, Ensaio, EnsaioTipo, LabState, OS, Photo } from "./types";
-import { loadLabTree, upsertOSFn, upsertAmostraFn, upsertEnsaioFn, deleteOSFn, deleteAmostraFn, deleteEnsaioFn } from "@/lib/lab-entities.functions";
+import { syncLabTree, upsertOSFn, upsertAmostraFn, upsertEnsaioFn, deleteOSFn, deleteAmostraFn, deleteEnsaioFn } from "@/lib/lab-entities.functions";
 import { loadLabStateFromDrive } from "@/lib/labState.functions";
 import { trackSave, markDirty as markDirtyGlobal, markClean as markCleanGlobal, waitUntilSaved } from "@/lib/save-in-flight";
 import type { LabEnsaioSnapshot } from "@/lib/lab-ensaios.functions";
 import { mergeRemote } from "./merge-remote";
+import { aplicarSync, arvoreDoCache, cacheVazio, versoesConhecidas } from "./arvore";
 
 const STORAGE_KEY = "lab://os-store/v1";
 const REMOTE_SAVE_DEBOUNCE_MS = 600;
-const REFRESH_INTERVAL_MS = 8000;
+// Com a leitura incremental, uma atualização sem mudança custa 3 listagens no
+// Drive e devolve só ids. Uma única rotina por aba (ver
+// ligarAtualizacaoPeriodica), pausada com a aba em segundo plano.
+const REFRESH_INTERVAL_MS = 15_000;
+/** Voltar à aba não dispara outra atualização se a última foi há menos disso. */
+const REFRESH_FOCO_MIN_MS = 5_000;
 
 function nowIso() {
   return new Date().toISOString();
@@ -142,10 +148,24 @@ const saveTimers = new Map<string, ReturnType<typeof setTimeout>>();
 // `flushPendingSaves` poder rodá-la na hora em vez de esperar o debounce.
 const pendingRuns = new Map<string, () => Promise<void>>();
 
+/** Recusa de login/permissão não se resolve tentando de novo. */
+function ehRecusaDePermissao(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /não autenticado|nao autenticado|HTTP 401|HTTP 403/i.test(msg);
+}
+
 function runEntitySave(id: string, run: () => Promise<void>) {
   void trackSave(run)
     .then(() => clearDirty(id))
     .catch((err) => {
+      if (ehRecusaDePermissao(err)) {
+        // Sem conta ativa (modo "Entrar sem login") ou sem permissão: repetir a
+        // cada 3s enchia o log para sempre e prendia o aviso de saída da aba.
+        console.warn(`[lab/store] Gravação de ${id} recusada; não será repetida:`, err);
+        clearDirty(id);
+        setStatus("erro", err instanceof Error ? err.message : String(err));
+        return;
+      }
       console.warn(`[lab/store] Falha ao salvar ${id}, tentando novamente:`, err);
       // Mantém dirty e tenta de novo em breve — não perde a mudança local.
       setTimeout(() => scheduleEntitySave(id, run), 3000);
@@ -258,6 +278,20 @@ async function tryLoadLegacyState(): Promise<LabState | null> {
   }
 }
 
+/**
+ * Cópia local das linhas que o servidor já mandou, com a versão do arquivo de
+ * cada uma. É o que permite pedir ao `syncLabTree` só o que mudou.
+ */
+let cacheRemoto = cacheVazio();
+
+async function buscarArvoreRemota(): Promise<{ state: LabState | null; mudou: boolean }> {
+  const resp = await syncLabTree({ data: { conhecidos: versoesConhecidas(cacheRemoto) } });
+  const { cache, mudou } = aplicarSync(cacheRemoto, resp);
+  cacheRemoto = cache;
+  if (cache.ordem.os.length === 0) return { state: null, mudou };
+  return { state: arvoreDoCache(cache), mudou };
+}
+
 async function hydrate(): Promise<void> {
   if (typeof window === "undefined") return;
   if (hydrated) return;
@@ -269,10 +303,10 @@ async function hydrate(): Promise<void> {
       // aplicada ainda), loadLabTree lança erro — tratamos igual a "vazio"
       // em vez de deixar propagar, para cair na ponte de segurança abaixo.
       const falha = { msg: null as string | null };
-      const res = await loadLabTree().catch((err) => {
+      const res = await buscarArvoreRemota().catch((err) => {
         falha.msg = err instanceof Error ? err.message : String(err);
         console.warn("[lab/store] Falha ao carregar a árvore do Drive:", err);
-        return { state: null };
+        return { state: null, mudou: false };
       });
       if (res.state && !isEmptyState(res.state)) {
         // Funde em vez de substituir: entidades criadas nesta tela entre o
@@ -318,20 +352,69 @@ async function hydrate(): Promise<void> {
 
 // Fusão local × servidor: ver `merge-remote.ts` (extraída para ser testável).
 
+let ultimaAtualizacao = 0;
+let atualizacaoEmVoo: Promise<void> | null = null;
+
 async function refreshFromRemote(): Promise<void> {
   if (typeof window === "undefined") return;
-  try {
-    const res = await loadLabTree();
-    if (res.state) {
-      state = mergeRemote(state, res.state, dirtyIds);
-      persistLocal();
-      listeners.forEach((l) => l());
+  // Antes do primeiro carregamento, quem responde é o hydrate.
+  if (!hydrated) return hydrate();
+  // Pedidos simultâneos (timer, foco, ação da tela) aproveitam o que já está em voo.
+  if (atualizacaoEmVoo) return atualizacaoEmVoo;
+  atualizacaoEmVoo = (async () => {
+    try {
+      const res = await buscarArvoreRemota();
+      // Nada mudou no Drive: não refaz a fusão nem redesenha a tela.
+      if (res.mudou && res.state) {
+        state = mergeRemote(state, res.state, dirtyIds);
+        persistLocal();
+        listeners.forEach((l) => l());
+      }
+    } catch (err) {
+      // Mantém o estado local e tenta de novo no próximo ciclo — mas registra:
+      // antes esta falha era totalmente silenciosa.
+      console.warn("[lab/store] Falha ao atualizar do Drive; mantendo o estado local:", err);
+    } finally {
+      ultimaAtualizacao = Date.now();
+      atualizacaoEmVoo = null;
     }
-  } catch (err) {
-    // Mantém o estado local e tenta de novo no próximo ciclo — mas registra:
-    // antes esta falha era totalmente silenciosa.
-    console.warn("[lab/store] Falha ao atualizar do Drive; mantendo o estado local:", err);
+  })();
+  return atualizacaoEmVoo;
+}
+
+function atualizarSeVisivel(intervaloMinimoMs: number): void {
+  if (document.visibilityState === "hidden") return;
+  if (Date.now() - ultimaAtualizacao < intervaloMinimoMs) return;
+  void refreshFromRemote();
+}
+
+const aoVoltarParaAba = () => atualizarSeVisivel(REFRESH_FOCO_MIN_MS);
+
+let assinantesDaAtualizacao = 0;
+let timerAtualizacao: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Uma única rotina de atualização por aba, não importa quantos componentes usem
+ * o labStore. Antes, cada `useLabState` montava o seu próprio setInterval e o
+ * seu listener de foco: a Central de Relatórios (página + visão por OS + ...)
+ * pedia a árvore inteira várias vezes a cada 8s, mesmo em segundo plano.
+ */
+function ligarAtualizacaoPeriodica(): () => void {
+  if (typeof window === "undefined") return () => {};
+  assinantesDaAtualizacao++;
+  if (assinantesDaAtualizacao === 1) {
+    timerAtualizacao = setInterval(() => atualizarSeVisivel(REFRESH_INTERVAL_MS / 2), REFRESH_INTERVAL_MS);
+    window.addEventListener("focus", aoVoltarParaAba);
+    document.addEventListener("visibilitychange", aoVoltarParaAba);
   }
+  return () => {
+    assinantesDaAtualizacao--;
+    if (assinantesDaAtualizacao > 0) return;
+    if (timerAtualizacao) clearInterval(timerAtualizacao);
+    timerAtualizacao = null;
+    window.removeEventListener("focus", aoVoltarParaAba);
+    document.removeEventListener("visibilitychange", aoVoltarParaAba);
+  };
 }
 
 function notify() {
@@ -749,21 +832,7 @@ export const labStore = {
 export function useLabState(): LabState {
   useEffect(() => {
     void labStore.hydrate();
-    const interval = setInterval(() => {
-      void labStore.refreshFromRemote();
-    }, REFRESH_INTERVAL_MS);
-    const onFocus = () => {
-      void labStore.refreshFromRemote();
-    };
-    if (typeof window !== "undefined") {
-      window.addEventListener("focus", onFocus);
-    }
-    return () => {
-      clearInterval(interval);
-      if (typeof window !== "undefined") {
-        window.removeEventListener("focus", onFocus);
-      }
-    };
+    return ligarAtualizacaoPeriodica();
   }, []);
   return useSyncExternalStore(
     labStore.subscribe,

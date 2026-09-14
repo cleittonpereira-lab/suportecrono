@@ -11,33 +11,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth, exigirLogin } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
-import { ensureFolderPath, readDriveJson, readDriveJsonById, writeDriveJson, listFilesInFolder, findFileInFolder, deleteDriveFile, withKeyLock } from "@/lib/driveStorage";
+import { ensureFolderPath, readDriveJson, writeDriveJson, lerJsonsDaPasta, findFileInFolder, deleteDriveFile, withKeyLock } from "@/lib/driveStorage";
 import { aplicarStatusPendencia, escolherPendenciaDoEnsaio, proximaPendencia } from "@/lib/pendencia-match";
 
 type JsonValue = string | number | boolean | null | { [k: string]: JsonValue } | JsonValue[];
-
-/**
- * Roda `fn` sobre `items` com no máximo `limit` chamadas em voo ao mesmo
- * tempo. `readDriveJson` faz 2 requisições HTTP por arquivo (acha o id +
- * baixa o conteúdo) — sem isso, `Promise.all(files.map(readDriveJson))`
- * disparava 2×N requisições simultâneas numa única invocação do Worker.
- * Com a pasta de pendências crescendo (uso normal do dia a dia), isso
- * passou a estourar o limite de subrequests/CPU do Cloudflare Workers
- * ("Error 1102: Worker exceeded resource limits") em qualquer tela que
- * chamasse `listPendenciasDigitacao` — ou seja, quase todas.
- */
-async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let next = 0;
-  async function worker() {
-    while (next < items.length) {
-      const idx = next++;
-      results[idx] = await fn(items[idx]);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
-  return results;
-}
 
 function displayName(claims: { email?: string; user_metadata?: { full_name?: string; name?: string } } | undefined) {
   return (
@@ -149,10 +126,9 @@ export const listPendenciasDigitacao = createServerFn({ method: "GET" })
     // Query mantém os últimos dados bons na tela em vez de trocar por
     // uma lista vazia.
     const folderId = await ensureFolderPath(FOLDER_PENDENCIAS);
-    const files = await listFilesInFolder(folderId);
-    const rows = await mapWithConcurrency(files, 8, (f) =>
-      readDriveJsonById<PendenciaDigitacao>(f.id, f.name),
-    );
+    // Consultada a cada 30s por aba aberta: baixa só as pendências que mudaram
+    // desde a última leitura (ver lerJsonsDaPasta), 8 em voo por vez.
+    const rows = (await lerJsonsDaPasta<PendenciaDigitacao>(folderId)).map((l) => l.data);
     // O nome do arquivo é determinístico por (os, amostra, ensaio), mas o
     // Drive não impede dois arquivos com o mesmo nome na mesma pasta — uma
     // condição de corrida (dois scans quase simultâneos) pode criar dois
@@ -222,10 +198,7 @@ export async function sincronizarPendenciaDoEnsaio(alvo: {
   ator: { userId: string; nome: string };
 }): Promise<ResultadoSincronizacao> {
   const folderId = await ensureFolderPath(FOLDER_PENDENCIAS);
-  const files = await listFilesInFolder(folderId);
-  const todas = (await mapWithConcurrency(files, 8, (f) => readDriveJsonById<PendenciaDigitacao>(f.id, f.name))).filter(
-    (p): p is PendenciaDigitacao => !!p,
-  );
+  const todas = (await lerJsonsDaPasta<PendenciaDigitacao>(folderId)).map((l) => l.data);
 
   const escolha = escolherPendenciaDoEnsaio(todas, alvo);
   if (escolha.tipo === "nenhuma") return "nao_encontrada";
