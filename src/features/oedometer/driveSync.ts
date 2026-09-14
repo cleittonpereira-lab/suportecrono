@@ -19,16 +19,21 @@ export async function syncOedometerRevisionToDrive(args: {
   photos: Photo[];
   pdfBlob: Blob;
   revNumber: number;
+  /** scopeId por ids (`buildScopeId`) — o mesmo das aprovações e do rascunho. */
+  scopeId: string;
+  /** Reenvio deliberado da mesma revisão: autoriza sobrescrever o PDF no Drive. */
+  reemissao?: boolean;
 }): Promise<SyncDriveResult> {
   try {
-    const scopeId = `os/${args.sample.os || "OS"}/amostra/${args.sample.code || "AMOSTRA"}/ensaio/adensamento`;
-
+    // O scopeId era remontado aqui com os CÓDIGOS (`os/<número>/amostra/<código>/
+    // ensaio/adensamento`): o servidor não achava o ensaio por esses ids e
+    // criava uma pasta paralela no Drive, onde nenhuma tela procurava a revisão.
     const fotosPayload = args.photos.map((p, idx) => ({
       cpId: `AD-${idx + 1}`,
       filename: `FOTO_ADENSAMENTO_${idx + 1}.jpg`,
       mimeType: "image/jpeg",
-      base64: p.dataUrl.split(",")[1] || "",
-    }));
+      base64: (p.dataUrl || "").split(",")[1] || "",
+    })).filter((f) => f.base64.length > 0);
 
     const dadosJson = JSON.stringify(
       {
@@ -49,7 +54,8 @@ export async function syncOedometerRevisionToDrive(args: {
 
     const res = await syncRevisionToDrive({
       data: {
-        scopeId,
+        scopeId: args.scopeId,
+        reemissao: args.reemissao,
         os: { numero: args.sample.os || "OS", cliente: args.sample.client || "CLIENTE" },
         amostra: { code: args.sample.code || "AMOSTRA", descricao: args.sample.description || "" },
         ensaio: { tipo: "adensamento", nome: "Adensamento Edométrico" },

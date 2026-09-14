@@ -728,10 +728,21 @@ export function PermVPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remoteLoaded]);
 
+  // Último conteúdo gravado (ou carregado). Sem isso, só ABRIR o laudo já
+  // disparava uma gravação do ensaio inteiro — mesmo sem nenhuma alteração —,
+  // subindo a revisão do arquivo e, para quem está só olhando (convidado),
+  // gerando uma gravação recusada que ficava sendo tentada de novo.
+  const ultimoGravadoRef = useRef<string | null>(null);
   useEffect(() => {
     if (!remoteLoaded) return;
     const draftPhotos = ctx?.photos ?? (draft as any)?.photos ?? [];
     const draftData = { sample, photos: draftPhotos };
+    const serializado = JSON.stringify(draftData);
+    if (ultimoGravadoRef.current === null || ultimoGravadoRef.current === serializado) {
+      ultimoGravadoRef.current = serializado;
+      return;
+    }
+    ultimoGravadoRef.current = serializado;
     saveDraft(scopeId, draftData, { id: user?.id, name: displayName });
     if (ctx?.ensaio) ctx.onPayloadChange(draftData);
     // eslint-disable-next-line react-hooks/exhaustive-deps

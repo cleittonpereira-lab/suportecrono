@@ -46,6 +46,12 @@ try {
   page.setDefaultTimeout(120_000);
   const errosDoConsole = [];
   page.on("pageerror", (e) => errosDoConsole.push(String(e)));
+  // "Sair do site?" (beforeunload com gravação pendente) prende a navegação
+  // no headless até alguém responder.
+  page.on("dialog", (d) => {
+    errosDoConsole.push(`diálogo ${d.type()}: ${d.message()}`);
+    void d.accept();
+  });
   page.on("console", (msg) => {
     if (msg.type() === "error") errosDoConsole.push(msg.text().slice(0, 300));
   });
@@ -57,7 +63,9 @@ try {
 
   for (const v of VARIANTES) {
     const inicio = Date.now();
-    await page.goto(`${BASE}${v.url}`, { waitUntil: "networkidle2" });
+    // "networkidle2" nunca chega se a tela fica tentando gravar (convidado recebe
+    // "Não autenticado" e o labStore tenta de novo a cada 5s); espera o laudo.
+    await page.goto(`${BASE}${v.url}`, { waitUntil: "domcontentloaded" });
     try {
       await page.waitForSelector(".print-only-report .printable-report", { timeout: 60_000 });
     } catch {

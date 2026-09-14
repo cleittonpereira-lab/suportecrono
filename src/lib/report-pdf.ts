@@ -93,12 +93,15 @@ export class ConteudoCortado extends Error {
   }
 }
 
-/** Folhas cujo miolo tem mais conteúdo do que altura (o excedente seria cortado). */
+/**
+ * Folhas cujo miolo tem mais conteúdo do que altura (o excedente seria cortado).
+ * Sem `.report-content-area` (adensamento), mede a própria folha: ela tem
+ * altura fixa de 297mm e a captura só pega essa área.
+ */
 export function medirEstouro(paginas: HTMLElement[]): FolhaCortada[] {
   const out: FolhaCortada[] = [];
   paginas.forEach((p, i) => {
-    const area = p.querySelector<HTMLElement>(".report-content-area");
-    if (!area) return;
+    const area = p.querySelector<HTMLElement>(".report-content-area") ?? p;
     const excesso = area.scrollHeight - area.clientHeight;
     if (excesso > 1) out.push({ folha: i + 1, excessoPx: Math.ceil(excesso) });
   });

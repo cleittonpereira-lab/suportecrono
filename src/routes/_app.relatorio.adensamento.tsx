@@ -134,6 +134,8 @@ import { OedImportDialog } from "@/features/oedometer/components/OedImportDialog
 import { exportOedometerXlsx } from "@/features/oedometer/exportXlsx";
 import { syncOedometerRevisionToDrive } from "@/features/oedometer/driveSync";
 import { saveOedReportVersion, listOedReportVersions } from "@/features/oedometer/report-versions";
+import { rasterizarRelatorioParaPdf, waitForOffscreenEl } from "@/lib/report-pdf";
+import { getProximaRevisao } from "@/lib/driveSync.functions";
 import { saveOedDraft, loadOedDraft, fetchRemoteOedDraft, flushOedDraft } from "@/features/oedometer/draftStore";
 import { SaveNowButton } from "@/components/report/SaveNowButton";
 import { beginSave, endSave } from "@/lib/save-in-flight";
@@ -673,87 +675,68 @@ export function AdensamentoPage() {
   };
 
   // Salvar Versao e Google Drive com geracao real de PDF
+  /**
+   * Número da próxima revisão. Vinha só do IndexedDB deste navegador: em outro
+   * computador a lista começava vazia e a revisão voltava a ser Rev-00. Agora é
+   * o maior entre o histórico local e o que o servidor já registrou
+   * (aprovações e PDFs no Drive).
+   */
+  const proximaRevisao = async (): Promise<number> => {
+    const local = versions.length > 0 ? Math.max(...versions.map((v) => v.rev)) + 1 : 0;
+    try {
+      const { proxima } = await getProximaRevisao({ data: { scopeId } });
+      if (proxima != null) return Math.max(local, proxima);
+    } catch (err) {
+      console.warn("[adensamento] Falha ao consultar a próxima revisão no servidor:", err);
+    }
+    toast.warning("Não foi possível confirmar no servidor as revisões já emitidas; a numeração usa só o histórico deste computador.");
+    return local;
+  };
+
+  /** Falha de envio ao Drive fica na tela até alguém agir — antes era um aviso de poucos segundos. */
+  const avisarQueNaoChegouAoDrive = (
+    revisao: number,
+    motivo: string,
+    args: Parameters<typeof syncOedometerRevisionToDrive>[0],
+  ) => {
+    const rotulo = `Rev ${String(revisao).padStart(2, "0")}`;
+    toast.warning(`${rotulo} salva neste computador, mas NÃO chegou ao Drive: ${motivo}`, {
+      duration: Infinity,
+      action: {
+        label: "Tentar de novo",
+        onClick: () => {
+          // Reemissão: se a tentativa anterior chegou a gravar o PDF, o servidor
+          // recusaria sobrescrever a mesma revisão.
+          void syncOedometerRevisionToDrive({ ...args, reemissao: true }).then((r) => {
+            if (r.ok) toast.success(`${rotulo} enviada ao Drive.`);
+            else avisarQueNaoChegouAoDrive(revisao, r.error || "motivo desconhecido", args);
+          });
+        },
+      },
+    });
+  };
+
   const handleSaveVersion = async (opts?: { skipVerification?: boolean }) => {
     if (import.meta.env.SSR) return;
-    const targetStatus = opts?.skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao";
+    // Sem o ensaio aberto pela OS, o scopeId era montado com os CÓDIGOS da
+    // amostra: a revisão ia para uma pasta paralela no Drive e nenhuma tela a
+    // encontrava de novo.
+    if (!ctx?.os || !ctx?.amostra || !ctx?.ensaio) {
+      toast.error("Abra este ensaio pela OS (Central de Relatórios) para salvar uma revisão.");
+      return;
+    }
     // "Digitado por" passa a refletir quem realmente concluiu e enviou a
     // digitação agora — antes ficava travado na primeira pessoa que tinha
     // aberto o relatório, mesmo que outra tivesse feito o trabalho de fato.
     setSample((prev: any) => ({ ...prev, typedBy: currentUserName }));
-    setWfStatus(targetStatus);
     setSavingVersion(true);
     const saveToken = beginSave();
     const tid = toast.loading("Gerando laudo PDF e sincronizando com Google Drive…");
     try {
-      const revNumber = versions.length > 0 ? Math.max(...versions.map((v) => v.rev)) + 1 : 0;
-      let pdfBlob: Blob;
-      try {
-        const [{ toCanvas }, { default: jsPDF }] = await Promise.all([
-          import("html-to-image"),
-          import("jspdf"),
-        ]);
-        const elPre = printRef.current;
-        if (elPre) {
-          const origStyle = {
-            position: elPre.style.position,
-            top: elPre.style.top,
-            left: elPre.style.left,
-            width: elPre.style.width,
-            background: elPre.style.background,
-            pointerEvents: elPre.style.pointerEvents,
-            zIndex: elPre.style.zIndex,
-            opacity: elPre.style.opacity,
-            visibility: elPre.style.visibility,
-          };
-          Object.assign(elPre.style, {
-            position: "fixed",
-            top: "0",
-            left: "0",
-            width: "210mm",
-            background: "#ffffff",
-            pointerEvents: "none",
-            zIndex: "2147483647",
-            opacity: "1",
-            visibility: "visible",
-          });
-          flushSync(() => setPdfMount(true));
-          await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
-          await new Promise((r) => setTimeout(r, 150));
-          const el = printRef.current;
-          const pages = el ? await waitForReportPages(el).catch(() => []) : [];
-          const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true });
-          const W = 210, H = 297;
-          if (pages.length > 0) {
-            const images = await Promise.all(
-              pages.map(async (page) => {
-                const rect = page.getBoundingClientRect();
-                const canvas = await toCanvas(page, {
-                  backgroundColor: "#ffffff",
-                  pixelRatio: 2,
-                  width: Math.ceil(rect.width),
-                  height: Math.ceil(rect.height),
-                  cacheBust: false,
-                  skipAutoScale: true,
-                  style: { background: "#ffffff", color: "#0f172a", transform: "none" },
-                });
-                return canvas.toDataURL("image/png");
-              }),
-            );
-            for (let i = 0; i < images.length; i++) {
-              if (i > 0) pdf.addPage();
-              pdf.addImage(images[i], "PNG", 0, 0, W, H, undefined, "FAST");
-            }
-          }
-          Object.assign(elPre.style, origStyle);
-          setPdfMount(false);
-          pdfBlob = pdf.output("blob");
-        } else {
-          pdfBlob = new Blob(["%PDF-1.4 ... Relatório Oficial Suporte INFRA"], { type: "application/pdf" });
-        }
-      } catch (err) {
-        console.warn("Falha ao capturar canvas do laudo, usando fallback de blob:", err);
-        pdfBlob = new Blob(["%PDF-1.4 ... Relatório Oficial Suporte INFRA"], { type: "application/pdf" });
-      }
+      const revNumber = await proximaRevisao();
+      // Revisão oficial: foto que não carregou é erro. Antes, qualquer falha na
+      // captura virava um "PDF" de 45 bytes gravado como se fosse a revisão.
+      const pdfBlob = await gerarPdfDoAdensamento({ oficial: true, pixelRatio: 2 });
       const filename = `ADENSAMENTO_${sample.os || "OS"}_${sample.code || "AMOSTRA"}_Rev${String(revNumber).padStart(2, "0")}.pdf`;
 
       const newVer = {
@@ -786,7 +769,8 @@ export function AdensamentoPage() {
         };
       });
 
-      const syncRes = await syncOedometerRevisionToDrive({
+      const argsDoEnvio = {
+        scopeId,
         sample,
         stages: stages as any,
         phys,
@@ -805,7 +789,8 @@ export function AdensamentoPage() {
         photos: ctx?.photos || [],
         pdfBlob,
         revNumber,
-      });
+      };
+      const syncRes = await syncOedometerRevisionToDrive(argsDoEnvio);
 
       await requestApproval({
         data: {
@@ -880,7 +865,8 @@ export function AdensamentoPage() {
           { id: tid },
         );
       } else {
-        toast.warning(`Versão salva (${syncRes.error || "Drive pendente"})`, { id: tid });
+        toast.dismiss(tid);
+        avisarQueNaoChegouAoDrive(revNumber, syncRes.error || "motivo desconhecido", argsDoEnvio);
       }
     } catch (e: any) {
       console.error("Erro ao salvar versão / solicitar aprovação:", e);
@@ -1111,83 +1097,72 @@ export function AdensamentoPage() {
     return pages;
   };
 
+  /**
+   * Monta as páginas do laudo e rasteriza pelo módulo único de PDF
+   * (`lib/report-pdf.ts`: espera fotos com retentativa, teto de tempo, PDF
+   * validado). Substitui as duas cópias da captura (salvar versão e exportar).
+   */
+  const gerarPdfDoAdensamento = async ({ oficial, pixelRatio }: { oficial: boolean; pixelRatio: number }): Promise<Blob> => {
+    // Tema claro durante a captura: relatório com fundo branco.
+    const htmlEl = document.documentElement;
+    const wasDark = htmlEl.classList.contains("dark");
+    if (wasDark) htmlEl.classList.remove("dark");
+    htmlEl.classList.add("force-light");
+    const elPre = await waitForOffscreenEl(() => printRef.current, "Container do relatório não encontrado.");
+    const estiloAnterior = elPre.getAttribute("style");
+    // Container medível ANTES de montar as páginas: o ResponsiveContainer dos
+    // gráficos mede a largura na montagem e, com largura zero, não desenha.
+    Object.assign(elPre.style, {
+      position: "fixed",
+      top: "0",
+      left: "0",
+      width: "210mm",
+      background: "#ffffff",
+      pointerEvents: "none",
+      zIndex: "2147483647",
+      opacity: "1",
+      visibility: "visible",
+    });
+    try {
+      flushSync(() => setPdfMount(true));
+      const el = printRef.current;
+      if (!el) throw new Error("Container do relatório não encontrado.");
+      await waitForReportPages(el);
+      const { blob, fotosQueFalharam, folhasCortadas } = await rasterizarRelatorioParaPdf(el, {
+        seletorPagina: "[data-pdf-page]",
+        reposicionar: false,
+        pixelRatio,
+        estiloPagina: { background: "#ffffff", color: "#0f172a", transform: "none" },
+        fotosObrigatorias: oficial,
+        // Revisão oficial nunca sai cortada: se alguma folha estourar, é erro.
+        aoEstourar: oficial ? "erro" : "ignorar",
+      });
+      if (fotosQueFalharam.length > 0) {
+        toast.warning(`${fotosQueFalharam.length} imagem(ns) não carregaram e saíram em branco neste PDF de rascunho.`);
+      }
+      if (folhasCortadas.length > 0) {
+        toast.warning(
+          `Conteúdo cortado neste rascunho: ${folhasCortadas.map((f) => `folha ${f.folha} (+${f.excessoPx}px)`).join(", ")}. Avise o suporte.`,
+        );
+      }
+      return blob;
+    } finally {
+      if (estiloAnterior == null) elPre.removeAttribute("style");
+      else elPre.setAttribute("style", estiloAnterior);
+      flushSync(() => setPdfMount(false));
+      htmlEl.classList.remove("force-light");
+      if (wasDark) htmlEl.classList.add("dark");
+    }
+  };
+
   const handleExportPDF = async () => {
     if (import.meta.env.SSR) return;
     if (isExportingPDF) return;
     setIsExportingPDF(true);
     toast.loading("Gerando relatório PDF...", { id: "pdf" });
-    let originalPrintStyle: Partial<CSSStyleDeclaration> | null = null;
-    // Força tema claro durante a captura para garantir relatório com fundo branco.
-    const htmlEl = document.documentElement;
-    const wasDark = htmlEl.classList.contains("dark");
-    if (wasDark) htmlEl.classList.remove("dark");
-    htmlEl.classList.add("force-light");
     try {
-      const [{ toCanvas }, { default: jsPDF }] = await Promise.all([
-        import("html-to-image"),
-        import("jspdf"),
-      ]);
-      // Make container measurable BEFORE mounting so Recharts ResponsiveContainer
-      // gets a non-zero width and actually paints the charts.
-      const elPre = printRef.current;
-      if (!elPre) throw new Error("Container do relatório não encontrado");
-      originalPrintStyle = {
-        position: elPre.style.position,
-        top: elPre.style.top,
-        left: elPre.style.left,
-        width: elPre.style.width,
-        background: elPre.style.background,
-        pointerEvents: elPre.style.pointerEvents,
-        zIndex: elPre.style.zIndex,
-        opacity: elPre.style.opacity,
-        visibility: elPre.style.visibility,
-      };
-      Object.assign(elPre.style, {
-        position: "fixed",
-        top: "0",
-        left: "0",
-        width: "210mm",
-        background: "#ffffff",
-        pointerEvents: "none",
-        zIndex: "2147483647",
-        opacity: "1",
-        visibility: "visible",
-      });
-      flushSync(() => setPdfMount(true));
-      // Allow Recharts ResponsiveContainer + ResizeObserver to settle and paint.
-      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
-      await new Promise((r) => setTimeout(r, 150));
-      const el = printRef.current;
-      if (!el) throw new Error("Container do relatório não encontrado");
-      const pages = await waitForReportPages(el);
-      const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true });
-      const W = 210, H = 297;
-      // Capture all pages in parallel for speed; high pixelRatio for sharpness.
-      const images = await Promise.all(
-        pages.map(async (page) => {
-          const rect = page.getBoundingClientRect();
-          const canvas = await toCanvas(page, {
-            backgroundColor: "#ffffff",
-            pixelRatio: 3,
-            width: Math.ceil(rect.width),
-            height: Math.ceil(rect.height),
-            cacheBust: false,
-            skipAutoScale: true,
-            style: {
-              background: "#ffffff",
-              color: "#0f172a",
-              transform: "none",
-            },
-          });
-          return canvas.toDataURL("image/png");
-        }),
-      );
-      for (let i = 0; i < images.length; i++) {
-        if (i > 0) pdf.addPage();
-        pdf.addImage(images[i], "PNG", 0, 0, W, H, undefined, "FAST");
-      }
+      const blob = await gerarPdfDoAdensamento({ oficial: false, pixelRatio: 3 });
       const filename = `Adensamento_${sample.borehole}_${sample.revision}.pdf`;
-      const blob = pdf.output("blob");
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -1202,11 +1177,6 @@ export function AdensamentoPage() {
       console.error(e);
       toast.error(`Erro ao gerar PDF: ${(e as Error)?.message ?? "desconhecido"}`, { id: "pdf" });
     } finally {
-      const elPost = printRef.current;
-      if (elPost && originalPrintStyle) Object.assign(elPost.style, originalPrintStyle);
-      flushSync(() => setPdfMount(false));
-      htmlEl.classList.remove("force-light");
-      if (wasDark) htmlEl.classList.add("dark");
       setIsExportingPDF(false);
     }
   };
