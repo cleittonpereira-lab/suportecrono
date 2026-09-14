@@ -15,12 +15,72 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { getGoogleAccessToken, isGoogleAuthConfigured } from "./google-auth.server";
+import {
+  apagarDocumento,
+  atualizarDocumento,
+  d1Ativo,
+  exigirD1,
+  gravarDocumento,
+  lerDocumento,
+  lerDocumentos,
+  listarDocumentos,
+} from "./documentos-d1.server";
 
 export const DRIVE_ROOT_FOLDER_ID = "0AB6VPuj1fWHEUk9PVA";
 const DRIVE_V3 = "https://www.googleapis.com/drive/v3";
 const DRIVE_UPLOAD = "https://www.googleapis.com/upload/drive/v3/files";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 const DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive"];
+
+/**
+ * Pastas de DADOS do app. Com o D1 ligado (`d1Ativo`), os JSON delas viram
+ * registros no banco (documentos-d1.server.ts); fotos, PDFs e as pastas das OS
+ * continuam no Drive. Para elas, `ensureFolderPath` devolve um id lógico
+ * (`d1:<pasta>`), e cada função deste arquivo desvia pelo prefixo — quem chama
+ * não muda nada.
+ */
+export const PASTAS_DE_DADOS: readonly string[] = [
+  "lab-os",
+  "lab-amostras",
+  "lab-ensaios",
+  "lab-pendencias",
+  "lab-kv",
+  "usuarios",
+  "os-hub",
+  "sample-uploads",
+  "lab-capsulas",
+];
+/** JSON soltos na raiz do Drive que também são dados do app. */
+export const DOCUMENTOS_DA_RAIZ: readonly string[] = [
+  "_chegada-amostras.json",
+  "programacao_db.json",
+  "schedule_edits.json",
+  "_lab-state.json",
+];
+export const PASTA_D1_DA_RAIZ = "raiz";
+const PREFIXO_PASTA_D1 = "d1:";
+const PREFIXO_DOC_D1 = "d1doc:";
+
+/** Onde este JSON mora no D1 (pasta, nome) — ou null se ele mora no Drive. */
+function docNoD1(parentId: string, nome: string): { pasta: string; nome: string } | null {
+  if (parentId.startsWith(PREFIXO_PASTA_D1)) return { pasta: parentId.slice(PREFIXO_PASTA_D1.length), nome };
+  if (parentId === DRIVE_ROOT_FOLDER_ID && DOCUMENTOS_DA_RAIZ.includes(nome) && d1Ativo()) {
+    return { pasta: PASTA_D1_DA_RAIZ, nome };
+  }
+  return null;
+}
+
+function idDocD1(pasta: string, nome: string): string {
+  return `${PREFIXO_DOC_D1}${pasta}/${nome}`;
+}
+
+/** O inverso de `idDocD1`: null quando o id é de um arquivo do Drive. */
+function docDoId(fileId: string): { pasta: string; nome: string } | null {
+  if (!fileId.startsWith(PREFIXO_DOC_D1)) return null;
+  const resto = fileId.slice(PREFIXO_DOC_D1.length);
+  const barra = resto.indexOf("/");
+  return barra > 0 ? { pasta: resto.slice(0, barra), nome: resto.slice(barra + 1) } : null;
+}
 
 // Cache em memória
 const memoryCache = new Map<string, { data: any; timestamp: number }>();
@@ -262,6 +322,11 @@ export async function findFileEntriesInFolder(
   name: string,
   parentId: string,
 ): Promise<{ id: string; modifiedTime?: string }[]> {
+  const noD1 = docNoD1(parentId, name);
+  if (noD1) {
+    const doc = await lerDocumento(exigirD1(), noD1.pasta, noD1.nome);
+    return doc ? [{ id: idDocD1(noD1.pasta, noD1.nome) }] : [];
+  }
   if (!hasDriveCredentials()) {
     // Offline, o "arquivo" é `.data/${pasta}_${nome}` — o mesmo nome que
     // `uploadBytesToDrive` grava e que `listFilesInFolder` lista. Antes isto
@@ -360,6 +425,10 @@ export async function createFolder(name: string, parentId: string): Promise<stri
 }
 
 export async function ensureFolderPath(parts: string[]): Promise<string> {
+  // Pasta de dados com o D1 ligado: id lógico, sem ir ao Drive.
+  if (parts.length === 1 && PASTAS_DE_DADOS.includes(parts[0].trim()) && d1Ativo()) {
+    return `${PREFIXO_PASTA_D1}${parts[0].trim()}`;
+  }
   const pathKey = parts.filter(Boolean).map((p) => p.trim()).join("/");
   if (folderIdCache.has(pathKey)) {
     return folderIdCache.get(pathKey)!;
@@ -405,6 +474,17 @@ export type ArquivoListado = { id: string; name: string; version?: string; modif
 
 /** Lista todos os arquivos (não-pasta) dentro de uma pasta do Drive, com paginação. */
 export async function listFilesInFolder(parentId: string): Promise<ArquivoListado[]> {
+  if (parentId.startsWith(PREFIXO_PASTA_D1)) {
+    const pasta = parentId.slice(PREFIXO_PASTA_D1.length);
+    // `version` com a data: um documento apagado e recriado volta a rev 1, e o
+    // cliente que guardava "rev 1" do anterior não pode achar que nada mudou.
+    return (await listarDocumentos(exigirD1(), pasta)).map((d) => ({
+      id: idDocD1(pasta, d.nome),
+      name: d.nome,
+      version: `${d.rev}@${d.atualizadoEm}`,
+      modifiedTime: d.atualizadoEm,
+    }));
+  }
   if (!hasDriveCredentials()) {
     // Sem credenciais do Drive (dev local): `uploadBytesToDrive`/`writeDriveJson` já gravam uma
     // cópia local prefixada por `${parentId}_` especificamente para isso — sem essa listagem,
@@ -476,6 +556,11 @@ export async function listFilesInFolder(parentId: string): Promise<ArquivoListad
 
 /** Apaga um arquivo do Drive pelo seu fileId. */
 export async function deleteDriveFile(fileId: string): Promise<void> {
+  const doc = docDoId(fileId);
+  if (doc) {
+    await apagarDocumento(exigirD1(), doc.pasta, doc.nome);
+    return;
+  }
   if (!hasDriveCredentials()) {
     // Offline, o id é o nome do arquivo em `.data/` (ver listFilesInFolder).
     try {
@@ -604,6 +689,9 @@ export async function uploadBytesToDrive(opts: {
   bytes: Uint8Array;
   overwrite?: boolean;
 }): Promise<string> {
+  if (opts.parentId.startsWith(PREFIXO_PASTA_D1)) {
+    throw new Error(`"${opts.name}" é um arquivo, e a pasta ${opts.parentId} é de dados no banco. Arquivos vão para uma pasta do Drive.`);
+  }
   if (!hasDriveCredentials()) {
     const local = getLocalPath(`${opts.parentId}_${opts.name}`);
     try {
@@ -715,6 +803,8 @@ export async function readPhotoBytes(fileId: string): Promise<{ bytes: Uint8Arra
  * podia devolver um arquivo DIFERENTE do que a listagem tinha entregue.
  */
 export async function readDriveJsonById<T>(fileId: string, name?: string): Promise<T | null> {
+  const doc = docDoId(fileId);
+  if (doc) return (await lerDocumento<T>(exigirD1(), doc.pasta, doc.nome))?.dados ?? null;
   if (!hasDriveCredentials()) {
     // Sem credenciais, `listFilesInFolder` devolve o nome do arquivo local como id.
     const local = path.join(process.cwd(), ".data", fileId);
@@ -817,15 +907,29 @@ export async function mapComConcorrencia<T, R>(items: T[], limite: number, fn: (
  * mudou. Arquivo apagado entre a listagem e o download (404) fica de fora.
  */
 export async function lerJsonsListados<T>(arquivos: ArquivoListado[]): Promise<{ arquivo: ArquivoListado; data: T }[]> {
-  const lidos = await mapComConcorrencia(
-    arquivos,
-    8,
-    async (arquivo): Promise<{ arquivo: ArquivoListado; data: T } | null> => {
-      const data = await readDriveJsonListado<T>(arquivo);
-      return data === null ? null : { arquivo, data };
-    },
-  );
-  return lidos.filter((x): x is { arquivo: ArquivoListado; data: T } => x !== null);
+  // Documentos do D1: uma consulta por pasta (em lotes), não uma por arquivo.
+  const nomesPorPasta = new Map<string, string[]>();
+  for (const a of arquivos) {
+    const doc = docDoId(a.id);
+    if (doc) nomesPorPasta.set(doc.pasta, [...(nomesPorPasta.get(doc.pasta) ?? []), doc.nome]);
+  }
+  const lidos = new Map<string, T>();
+  for (const [pasta, nomes] of nomesPorPasta) {
+    for (const [nome, d] of await lerDocumentos<T>(exigirD1(), pasta, nomes)) lidos.set(idDocD1(pasta, nome), d.dados);
+  }
+
+  const doDrive = arquivos.filter((a) => !docDoId(a.id));
+  const baixados = await mapComConcorrencia(doDrive, 8, async (arquivo) => {
+    const data = await readDriveJsonListado<T>(arquivo);
+    if (data !== null) lidos.set(arquivo.id, data);
+  });
+  void baixados;
+
+  const out: { arquivo: ArquivoListado; data: T }[] = [];
+  for (const arquivo of arquivos) {
+    if (lidos.has(arquivo.id)) out.push({ arquivo, data: lidos.get(arquivo.id) as T });
+  }
+  return out;
 }
 
 /** Lista a pasta e lê todos os JSONs dela — ver `lerJsonsListados`. */
@@ -852,7 +956,8 @@ async function lerVersao(fileId: string): Promise<string | null> {
  * consistente: nunca devolve uma versão anterior a uma gravação concluída.
  */
 export async function readDriveJsonSeMudou<T>(filename: string, parentId: string = DRIVE_ROOT_FOLDER_ID): Promise<T | null> {
-  if (!hasDriveCredentials()) return readDriveJson<T>(filename, parentId);
+  // No D1 a leitura já é uma consulta barata e sempre atual.
+  if (docNoD1(parentId, filename) || !hasDriveCredentials()) return readDriveJson<T>(filename, parentId);
   const fileId = await resolveFileId(filename, parentId);
   if (!fileId) return null;
   const version = await comRetentativa(`Falha ao consultar ${filename} no Drive`, () => lerVersao(fileId));
@@ -863,6 +968,8 @@ export async function readDriveJsonSeMudou<T>(filename: string, parentId: string
 
 /** Lê um arquivo JSON do Google Drive com fallback em cache */
 export async function readDriveJson<T>(filename: string, parentId: string = DRIVE_ROOT_FOLDER_ID): Promise<T | null> {
+  const noD1 = docNoD1(parentId, filename);
+  if (noD1) return (await lerDocumento<T>(exigirD1(), noD1.pasta, noD1.nome))?.dados ?? null;
   const cacheKey = `${parentId}:${filename}`;
   const mem = memoryCache.get(cacheKey);
   // Esse cache é por-isolate do Cloudflare Worker — uma escrita numa isolate
@@ -932,6 +1039,11 @@ export async function writeDriveJson<T>(
   data: T,
   parentId: string = DRIVE_ROOT_FOLDER_ID,
 ): Promise<{ ok: boolean; fileId?: string }> {
+  const noD1 = docNoD1(parentId, filename);
+  if (noD1) {
+    await gravarDocumento(exigirD1(), noD1.pasta, noD1.nome, data);
+    return { ok: true, fileId: idDocD1(noD1.pasta, noD1.nome) };
+  }
   const cacheKey = `${parentId}:${filename}`;
   const jsonStr = JSON.stringify(data, null, 2);
   const bytes = new TextEncoder().encode(jsonStr);
@@ -979,6 +1091,9 @@ export async function atualizarDriveJson<T>(
   parentId: string,
   alterar: (atual: T | null) => T | null | Promise<T | null>,
 ): Promise<T | null> {
+  // No D1 a trava é do banco, entre qualquer servidor — não só desta isolate.
+  const noD1 = docNoD1(parentId, filename);
+  if (noD1) return atualizarDocumento<T>(exigirD1(), noD1.pasta, noD1.nome, alterar);
   return withKeyLock(`rmw:${parentId}:${filename}`, async () => {
     memoryCache.delete(`${parentId}:${filename}`);
     const atual = await readDriveJson<T>(filename, parentId);

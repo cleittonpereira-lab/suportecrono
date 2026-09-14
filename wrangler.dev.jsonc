@@ -1,0 +1,18 @@
+// Só para desenvolvimento local (`npm run dev`): o nitro simula o D1 em
+// .wrangler/state/v3. NÃO se chama wrangler.jsonc de propósito — assim a
+// publicação no Cloudflare continua usando só a configuração gerada pelo nitro.
+{
+  "name": "gestao-dev",
+  "compatibility_date": "2025-09-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "suportecrono-dados",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations/d1"
+    }
+  ],
+  "vars": {
+    "DADOS_NO_D1": "1"
+  }
+}

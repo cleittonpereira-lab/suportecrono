@@ -10,13 +10,7 @@
  * pro caso raro de dois arquivos com o mesmo id (condição de corrida no Drive).
  */
 import crypto from "node:crypto";
-import {
-  ensureFolderPath,
-  readDriveJson,
-  readDriveJsonById,
-  writeDriveJson,
-  listFilesInFolder,
-} from "@/lib/driveStorage";
+import { atualizarDriveJson, ensureFolderPath, lerJsonsDaPasta, readDriveJson, writeDriveJson } from "@/lib/driveStorage";
 
 const FOLDER_USUARIOS = ["usuarios"];
 const GUEST_TABS_FILE = "guest-tabs.json";
@@ -92,12 +86,9 @@ export async function getUserById(id: string): Promise<UserRecord | null> {
 
 export async function listUsers(): Promise<UserRecord[]> {
   const folderId = await ensureFolderPath(FOLDER_USUARIOS);
-  const files = await listFilesInFolder(folderId);
-  const rows = await Promise.all(
-    files
-      .filter((f) => f.name !== GUEST_TABS_FILE)
-      .map((f) => readDriveJsonById<UserRecord>(f.id, f.name)),
-  );
+  const rows = (await lerJsonsDaPasta<UserRecord>(folderId))
+    .filter((l) => l.arquivo.name !== GUEST_TABS_FILE)
+    .map((l) => l.data);
   const byId = new Map<string, UserRecord>();
   for (const r of rows) {
     if (!r) continue;
@@ -161,17 +152,20 @@ export async function createUser(input: {
 
 /** Aplica um patch parcial e grava, incrementando `rev`/`updatedAt`. */
 export async function updateUser(id: string, patch: Partial<UserRecord>): Promise<UserRecord> {
-  const current = await getUserById(id);
-  if (!current) throw new Error("Usuário não encontrado.");
-  const next: UserRecord = {
-    ...current,
-    ...patch,
-    id: current.id,
-    updatedAt: new Date().toISOString(),
-    rev: (current.rev ?? 0) + 1,
-  };
-  await saveUser(next);
-  return next;
+  // Ler-alterar-gravar com trava: um login (lastSignInAt) no mesmo instante em
+  // que o admin muda o papel não apaga mais a mudança do admin.
+  const folderId = await ensureFolderPath(FOLDER_USUARIOS);
+  const next = await atualizarDriveJson<UserRecord>(fileName(id), folderId, (current) => {
+    if (!current) throw new Error("Usuário não encontrado.");
+    return {
+      ...current,
+      ...patch,
+      id: current.id,
+      updatedAt: new Date().toISOString(),
+      rev: (current.rev ?? 0) + 1,
+    };
+  });
+  return next as UserRecord;
 }
 
 // ---- permissões de convidado (um único arquivo pequeno, escrita rara) ----

@@ -6,7 +6,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth, exigirLogin } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
-import { ensureFolderPath, readDriveJson, writeDriveJson } from "@/lib/driveStorage";
+import { atualizarDriveJson, ensureFolderPath, readDriveJson, writeDriveJson } from "@/lib/driveStorage";
 import { uploadPhoto } from "@/lib/photo-upload.functions";
 
 const FOLDER_OS_HUB = ["os-hub"];
@@ -77,16 +77,19 @@ export const atualizarDataAcordada = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const folderId = await ensureFolderPath(FOLDER_OS_HUB);
     const name = `${osKey(data.osNumero)}.json`;
-    const hub = (await readDriveJson<OsHubData>(name, folderId)) ?? emptyHub(data.osNumero);
     const nowIso = new Date().toISOString();
     const autor = displayName(context.claims);
 
-    if (!hub.dataAcordadaOriginal) hub.dataAcordadaOriginal = data.novaData;
-    hub.dataAcordadaAtual = data.novaData;
-    hub.historicoData.push({ data: data.novaData, alteradoPor: autor, alteradoEm: nowIso });
-
-    await writeDriveJson(name, hub, folderId);
-    return hub;
+    // Ler-alterar-gravar com trava: duas pessoas mexendo no mesmo hub (data e
+    // chat) não apagam mais a alteração uma da outra.
+    const hub = await atualizarDriveJson<OsHubData>(name, folderId, (atual) => {
+      const h = atual ?? emptyHub(data.osNumero);
+      if (!h.dataAcordadaOriginal) h.dataAcordadaOriginal = data.novaData;
+      h.dataAcordadaAtual = data.novaData;
+      h.historicoData.push({ data: data.novaData, alteradoPor: autor, alteradoEm: nowIso });
+      return h;
+    });
+    return hub as OsHubData;
   });
 
 export const arquivarOs = createServerFn({ method: "POST" })
@@ -95,12 +98,15 @@ export const arquivarOs = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const folderId = await ensureFolderPath(FOLDER_OS_HUB);
     const name = `${osKey(data.osNumero)}.json`;
-    const hub = (await readDriveJson<OsHubData>(name, folderId)) ?? emptyHub(data.osNumero);
-    hub.arquivada = true;
-    hub.arquivadaEm = new Date().toISOString();
-    hub.arquivadaPor = displayName(context.claims);
-    await writeDriveJson(name, hub, folderId);
-    return hub;
+    const quando = new Date().toISOString();
+    const quem = displayName(context.claims);
+    const hub = await atualizarDriveJson<OsHubData>(name, folderId, (atual) => ({
+      ...(atual ?? emptyHub(data.osNumero)),
+      arquivada: true,
+      arquivadaEm: quando,
+      arquivadaPor: quem,
+    }));
+    return hub as OsHubData;
   });
 
 export const desarquivarOs = createServerFn({ method: "POST" })
@@ -109,12 +115,13 @@ export const desarquivarOs = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const folderId = await ensureFolderPath(FOLDER_OS_HUB);
     const name = `${osKey(data.osNumero)}.json`;
-    const hub = (await readDriveJson<OsHubData>(name, folderId)) ?? emptyHub(data.osNumero);
-    hub.arquivada = false;
-    hub.arquivadaEm = undefined;
-    hub.arquivadaPor = undefined;
-    await writeDriveJson(name, hub, folderId);
-    return hub;
+    const hub = await atualizarDriveJson<OsHubData>(name, folderId, (atual) => ({
+      ...(atual ?? emptyHub(data.osNumero)),
+      arquivada: false,
+      arquivadaEm: undefined,
+      arquivadaPor: undefined,
+    }));
+    return hub as OsHubData;
   });
 
 const PostChatInput = z.object({
@@ -149,7 +156,6 @@ export const postOsChatMessage = createServerFn({ method: "POST" })
 
     const folderId = await ensureFolderPath(FOLDER_OS_HUB);
     const name = `${osKey(data.osNumero)}.json`;
-    const hub = (await readDriveJson<OsHubData>(name, folderId)) ?? emptyHub(data.osNumero);
 
     const message: ChatMessage = {
       id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -160,9 +166,12 @@ export const postOsChatMessage = createServerFn({ method: "POST" })
       attachment,
       createdAt: new Date().toISOString(),
     };
-    hub.messages.push(message);
-
-    await writeDriveJson(name, hub, folderId);
+    // Com trava: duas mensagens enviadas juntas não se apagam mais.
+    await atualizarDriveJson<OsHubData>(name, folderId, (atual) => {
+      const h = atual ?? emptyHub(data.osNumero);
+      h.messages.push(message);
+      return h;
+    });
     return message;
   });
 

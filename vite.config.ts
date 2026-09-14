@@ -17,6 +17,9 @@ export default defineConfig({
     cloudflare: {
       nodeCompat: true,
       deployConfig: true,
+      // Só no `npm run dev`: D1 simulado em .wrangler/state/v3. O arquivo tem
+      // nome próprio para a publicação não o usar.
+      dev: { configPath: "./wrangler.dev.jsonc" },
     },
   },
   tanstackStart: {

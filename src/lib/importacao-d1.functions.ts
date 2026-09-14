@@ -1,0 +1,37 @@
+/**
+ * Importação Drive → banco (D1), só para o administrador. A lógica está em
+ * importacao-d1.server.ts; aqui ficam só as funções chamadas pela tela.
+ */
+import { createServerFn } from "@tanstack/react-start";
+import { exigirLogin } from "@/integrations/supabase/auth-middleware";
+import { z } from "zod";
+import type { RelatorioPasta, SituacaoDoBanco } from "@/lib/importacao-d1.server";
+
+async function exigirAdministrador(): Promise<void> {
+  // Import dinâmico: módulo só de servidor (este arquivo é alcançável pelo navegador).
+  const { getSessionUserRecord } = await import("@/lib/auth-session.server");
+  const usuario = await getSessionUserRecord();
+  if (usuario?.role !== "admin") throw new Error("Só o administrador pode mexer na importação dos dados.");
+}
+
+export const situacaoDoBancoD1 = createServerFn({ method: "GET" })
+  .middleware([exigirLogin])
+  .handler(async (): Promise<SituacaoDoBanco> => {
+    await exigirAdministrador();
+    const { situacaoDoBanco } = await import("@/lib/importacao-d1.server");
+    return situacaoDoBanco();
+  });
+
+const ImportarInput = z.object({
+  modo: z.enum(["simular", "incluir", "sincronizar"]),
+  pasta: z.string().min(1),
+});
+
+export const importarDadosParaD1 = createServerFn({ method: "POST" })
+  .middleware([exigirLogin])
+  .validator((v: unknown) => ImportarInput.parse(v))
+  .handler(async ({ data }): Promise<RelatorioPasta> => {
+    await exigirAdministrador();
+    const { importarAlvo } = await import("@/lib/importacao-d1.server");
+    return importarAlvo(data.modo, data.pasta);
+  });

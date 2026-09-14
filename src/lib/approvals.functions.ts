@@ -19,7 +19,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth, exigirLogin } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
-import { ensureFolderPath, readDriveJson, writeDriveJson } from "@/lib/driveStorage";
+import { atualizarDriveJson, ensureFolderPath, readDriveJson } from "@/lib/driveStorage";
 import {
   FOLDER_AMOSTRAS,
   FOLDER_ENSAIOS,
@@ -112,8 +112,26 @@ async function readEnsaio(scopeId: string): Promise<{ ids: { osId: string; amost
   return { ids, file, folderId };
 }
 
-async function writeEnsaio(ids: { amostraId: string; ensaioId: string }, folderId: string, file: EnsaioFile): Promise<void> {
-  await writeDriveJson(ensaioFileName(ids.amostraId, ids.ensaioId), file, folderId);
+type IdsEnsaio = { osId: string; amostraId: string; ensaioId: string };
+
+/**
+ * Ler-alterar-gravar do arquivo do ensaio numa operação só, com trava — no
+ * banco, atômica entre servidores. Antes eram passos soltos (ler, montar,
+ * gravar): um autosave do rascunho gravado no meio era apagado pela aprovação,
+ * ou o contrário, porque cada um regravava o arquivo inteiro que tinha lido.
+ * `alterar` pode rodar de novo se outra gravação entrar no meio.
+ */
+async function alterarEnsaio(
+  scopeId: string,
+  alterar: (ids: IdsEnsaio, existing: EnsaioFile | null) => EnsaioFile,
+): Promise<{ ids: IdsEnsaio; file: EnsaioFile }> {
+  const ids = parseScope(scopeId);
+  if (!ids) throw new Error(`scopeId inválido: ${scopeId}`);
+  const folderId = await ensureFolderPath(FOLDER_ENSAIOS);
+  const file = await atualizarDriveJson<EnsaioFile>(ensaioFileName(ids.amostraId, ids.ensaioId), folderId, (existing) =>
+    alterar(ids, existing),
+  );
+  return { ids, file: file as EnsaioFile };
 }
 
 export type ApprovalStatus =
@@ -168,17 +186,6 @@ export const requestApproval = createServerFn({ method: "POST" })
     const name = displayName(claims);
     const nowIso = new Date().toISOString();
 
-    const found = await readEnsaio(data.scopeId);
-    if (!found) throw new Error(`scopeId inválido: ${data.scopeId}`);
-    // Sem o arquivo do ensaio não há o que enviar para verificação. Antes, um
-    // arquivo ilegível virava `existing = null` e esta função gravava um ensaio
-    // novo com `payload: null` — apagando o laudo digitado no exato momento em
-    // que ele era enviado. Mesmo critério de verifyApproval/decideApproval.
-    if (!found.file) {
-      throw new Error("Ensaio não encontrado no Drive. Salve o rascunho antes de enviar para verificação.");
-    }
-    const { ids, file: existing, folderId } = found;
-
     const targetStatus: ApprovalStatus = data.skipVerification ? "pendente_aprovacao" : "pendente_verificacao";
     const targetWorkflow = data.skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao";
 
@@ -202,10 +209,6 @@ export const requestApproval = createServerFn({ method: "POST" })
       updated_at: nowIso,
     };
 
-    const approvals = (existing?.reportApprovals as ApprovalRow[] | undefined) ?? [];
-    const nextApprovals = [row, ...approvals.filter((a) => a.rev !== data.rev)];
-
-    const comments = (existing?.approvalComments as ApprovalCommentRow[] | undefined) ?? [];
     const commentRow: ApprovalCommentRow = {
       id: rid("cmt"),
       scope_id: data.scopeId,
@@ -218,34 +221,42 @@ export const requestApproval = createServerFn({ method: "POST" })
       created_at: nowIso,
     };
 
-    const nextRev = (existing?.rev ?? 0) + 1;
-    const file: EnsaioFile = {
-      ...(existing as EnsaioFile),
-      id: ids.ensaioId,
-      amostraId: ids.amostraId,
-      tipo: existing?.tipo || data.index?.ensaio_tipo || "cisalhamento-direto",
-      // Ver comentário equivalente em verifyApproval/decideApproval — sem
-      // gravar `status` junto aqui, um ensaio já aprovado que ganha uma
-      // nova revisão ficava com o Kanban/labStore mostrando o status
-      // antigo ("aprovado") até que o patch otimista do cliente expirasse.
-      status: targetWorkflow,
-      label: existing?.label ?? null,
-      nome: existing?.nome ?? data.index?.ensaio_nome ?? null,
-      sigla: existing?.sigla ?? null,
-      operator: existing?.operator ?? null,
-      photos: existing?.photos ?? [],
-      payload: existing?.payload ?? null,
-      createdAt: existing?.createdAt || nowIso,
-      updatedAt: nowIso,
-      rev: nextRev,
-      workflowStatus: targetWorkflow,
-      approvals: existing?.approvals ?? [],
-      draftHistory: existing?.draftHistory ?? [],
-      reportApprovals: nextApprovals,
-      approvalComments: [commentRow, ...comments].slice(0, 200),
-    };
-
-    await writeEnsaio(ids, folderId, file);
+    const { ids, file } = await alterarEnsaio(data.scopeId, (ids, existing) => {
+      // Sem o arquivo do ensaio não há o que enviar para verificação. Antes, um
+      // arquivo ilegível virava `existing = null` e esta função gravava um ensaio
+      // novo com `payload: null` — apagando o laudo digitado no exato momento em
+      // que ele era enviado. Mesmo critério de verifyApproval/decideApproval.
+      if (!existing) {
+        throw new Error("Ensaio não encontrado. Salve o rascunho antes de enviar para verificação.");
+      }
+      const approvals = (existing.reportApprovals as ApprovalRow[] | undefined) ?? [];
+      const comments = (existing.approvalComments as ApprovalCommentRow[] | undefined) ?? [];
+      return {
+        ...existing,
+        id: ids.ensaioId,
+        amostraId: ids.amostraId,
+        tipo: existing.tipo || data.index?.ensaio_tipo || "cisalhamento-direto",
+        // Ver comentário equivalente em verifyApproval/decideApproval — sem
+        // gravar `status` junto aqui, um ensaio já aprovado que ganha uma
+        // nova revisão ficava com o Kanban/labStore mostrando o status
+        // antigo ("aprovado") até que o patch otimista do cliente expirasse.
+        status: targetWorkflow,
+        label: existing.label ?? null,
+        nome: existing.nome ?? data.index?.ensaio_nome ?? null,
+        sigla: existing.sigla ?? null,
+        operator: existing.operator ?? null,
+        photos: existing.photos ?? [],
+        payload: existing.payload ?? null,
+        createdAt: existing.createdAt || nowIso,
+        updatedAt: nowIso,
+        rev: (existing.rev ?? 0) + 1,
+        workflowStatus: targetWorkflow,
+        approvals: existing.approvals ?? [],
+        draftHistory: existing.draftHistory ?? [],
+        reportApprovals: [row, ...approvals.filter((a) => a.rev !== data.rev)],
+        approvalComments: [commentRow, ...comments].slice(0, 200),
+      };
+    });
 
     const pendencia = await propagarParaPendencia(ids, file, data.skipVerification ? "verificado" : "digitado", {
       userId,
@@ -276,27 +287,6 @@ export const verifyApproval = createServerFn({ method: "POST" })
     const nextStatus: ApprovalStatus = data.decision === "verificado" ? "pendente_aprovacao" : "rejeitado_verificacao";
     const nextWorkflow = data.decision === "verificado" ? "aguardando_aprovacao" : "aguardando_verificacao";
 
-    const found = await readEnsaio(data.scopeId);
-    if (!found || !found.file) throw new Error("Registro de aprovação não encontrado.");
-    const { ids, file: existing, folderId } = found;
-
-    const approvals = (existing?.reportApprovals as ApprovalRow[] | undefined) ?? [];
-    const idx = approvals.findIndex((a) => a.rev === data.rev);
-    if (idx === -1) throw new Error("Solicitação de aprovação para esta revisão não encontrada.");
-
-    const updatedRow: ApprovalRow = {
-      ...approvals[idx],
-      status: nextStatus,
-      verified_by: userId,
-      verified_by_name: name,
-      verified_at: nowIso,
-      verification_comment: data.comment ?? null,
-      updated_at: nowIso,
-    };
-    const nextApprovals = [...approvals];
-    nextApprovals[idx] = updatedRow;
-
-    const comments = (existing?.approvalComments as ApprovalCommentRow[] | undefined) ?? [];
     const commentRow: ApprovalCommentRow = {
       id: rid("cmt"),
       scope_id: data.scopeId,
@@ -309,22 +299,41 @@ export const verifyApproval = createServerFn({ method: "POST" })
       created_at: nowIso,
     };
 
-    const nextRev = (existing.rev ?? 0) + 1;
-    const file: EnsaioFile = {
-      ...existing,
-      updatedAt: nowIso,
-      rev: nextRev,
-      workflowStatus: nextWorkflow,
-      // `status` (o EnsaioStatus visto pelo labStore/Kanban/Central de
-      // Relatórios) é um campo SEPARADO de `workflowStatus` (o que o editor
-      // lê) — sem gravar os dois juntos aqui, verificar/aprovar nunca
-      // avançava o status que essas outras telas mostram, deixando ensaios
-      // já aprovados aparecendo pra sempre como "Em Digitação" nelas.
-      status: nextWorkflow,
-      reportApprovals: nextApprovals,
-      approvalComments: [commentRow, ...comments].slice(0, 200),
-    };
-    await writeEnsaio(ids, folderId, file);
+    let updatedRow!: ApprovalRow;
+    const { ids, file } = await alterarEnsaio(data.scopeId, (_ids, existing) => {
+      if (!existing) throw new Error("Registro de aprovação não encontrado.");
+      const approvals = (existing.reportApprovals as ApprovalRow[] | undefined) ?? [];
+      const idx = approvals.findIndex((a) => a.rev === data.rev);
+      if (idx === -1) throw new Error("Solicitação de aprovação para esta revisão não encontrada.");
+
+      updatedRow = {
+        ...approvals[idx],
+        status: nextStatus,
+        verified_by: userId,
+        verified_by_name: name,
+        verified_at: nowIso,
+        verification_comment: data.comment ?? null,
+        updated_at: nowIso,
+      };
+      const nextApprovals = [...approvals];
+      nextApprovals[idx] = updatedRow;
+      const comments = (existing.approvalComments as ApprovalCommentRow[] | undefined) ?? [];
+
+      return {
+        ...existing,
+        updatedAt: nowIso,
+        rev: (existing.rev ?? 0) + 1,
+        workflowStatus: nextWorkflow,
+        // `status` (o EnsaioStatus visto pelo labStore/Kanban/Central de
+        // Relatórios) é um campo SEPARADO de `workflowStatus` (o que o editor
+        // lê) — sem gravar os dois juntos aqui, verificar/aprovar nunca
+        // avançava o status que essas outras telas mostram, deixando ensaios
+        // já aprovados aparecendo pra sempre como "Em Digitação" nelas.
+        status: nextWorkflow,
+        reportApprovals: nextApprovals,
+        approvalComments: [commentRow, ...comments].slice(0, 200),
+      };
+    });
 
     // Rejeitado na verificação volta para a digitação.
     const pendencia = await propagarParaPendencia(
@@ -359,14 +368,6 @@ export const decideApproval = createServerFn({ method: "POST" })
     const persistedStatus: ApprovalStatus = data.decision === "aprovado" ? "aprovado" : "pendente_verificacao";
     const nextWorkflow = data.decision === "aprovado" ? "aprovado" : "aguardando_verificacao";
 
-    const found = await readEnsaio(data.scopeId);
-    if (!found || !found.file) throw new Error("Registro de aprovação não encontrado.");
-    const { ids, file: existing, folderId } = found;
-
-    const approvals = (existing?.reportApprovals as ApprovalRow[] | undefined) ?? [];
-    const idx = approvals.findIndex((a) => a.rev === data.rev);
-    if (idx === -1) throw new Error("Solicitação de aprovação para esta revisão não encontrada.");
-
     const patch: Partial<ApprovalRow> = {
       status: persistedStatus,
       decided_by: data.decision === "aprovado" ? userId : null,
@@ -382,11 +383,6 @@ export const decideApproval = createServerFn({ method: "POST" })
       patch.verification_comment = null;
     }
 
-    const updatedRow: ApprovalRow = { ...approvals[idx], ...patch };
-    const nextApprovals = [...approvals];
-    nextApprovals[idx] = updatedRow;
-
-    const comments = (existing?.approvalComments as ApprovalCommentRow[] | undefined) ?? [];
     const commentRow: ApprovalCommentRow = {
       id: rid("cmt"),
       scope_id: data.scopeId,
@@ -399,18 +395,29 @@ export const decideApproval = createServerFn({ method: "POST" })
       created_at: nowIso,
     };
 
-    const nextRev = (existing.rev ?? 0) + 1;
-    const file: EnsaioFile = {
-      ...existing,
-      updatedAt: nowIso,
-      rev: nextRev,
-      workflowStatus: nextWorkflow,
-      // Ver comentário equivalente em verifyApproval.
-      status: nextWorkflow,
-      reportApprovals: nextApprovals,
-      approvalComments: [commentRow, ...comments].slice(0, 200),
-    };
-    await writeEnsaio(ids, folderId, file);
+    let updatedRow!: ApprovalRow;
+    const { ids, file } = await alterarEnsaio(data.scopeId, (_ids, existing) => {
+      if (!existing) throw new Error("Registro de aprovação não encontrado.");
+      const approvals = (existing.reportApprovals as ApprovalRow[] | undefined) ?? [];
+      const idx = approvals.findIndex((a) => a.rev === data.rev);
+      if (idx === -1) throw new Error("Solicitação de aprovação para esta revisão não encontrada.");
+
+      updatedRow = { ...approvals[idx], ...patch };
+      const nextApprovals = [...approvals];
+      nextApprovals[idx] = updatedRow;
+      const comments = (existing.approvalComments as ApprovalCommentRow[] | undefined) ?? [];
+
+      return {
+        ...existing,
+        updatedAt: nowIso,
+        rev: (existing.rev ?? 0) + 1,
+        workflowStatus: nextWorkflow,
+        // Ver comentário equivalente em verifyApproval.
+        status: nextWorkflow,
+        reportApprovals: nextApprovals,
+        approvalComments: [commentRow, ...comments].slice(0, 200),
+      };
+    });
 
     // Rejeitado pelo RT volta a aguardar verificação.
     const pendencia = await propagarParaPendencia(ids, file, data.decision === "aprovado" ? "aprovado" : "digitado", {
@@ -456,10 +463,6 @@ export const addApprovalComment = createServerFn({ method: "POST" })
     const name = displayName(claims);
     const nowIso = new Date().toISOString();
 
-    const found = await readEnsaio(data.scopeId);
-    if (!found) throw new Error(`scopeId inválido: ${data.scopeId}`);
-    const { ids, file: existing, folderId } = found;
-
     const commentRow: ApprovalCommentRow = {
       id: rid("cmt"),
       scope_id: data.scopeId,
@@ -472,20 +475,18 @@ export const addApprovalComment = createServerFn({ method: "POST" })
       created_at: nowIso,
     };
 
-    // Comentar num ensaio que não existe não pode criar um ensaio-fantasma
-    // (tipo "cisalhamento-direto", payload vazio) no lugar do verdadeiro.
-    if (!existing) throw new Error("Ensaio não encontrado no Drive; o comentário não foi salvo.");
-
-    const comments = (existing.approvalComments as ApprovalCommentRow[] | undefined) ?? [];
-    const nextRev = (existing.rev ?? 0) + 1;
-    const file: EnsaioFile = {
-      ...existing,
-      updatedAt: nowIso,
-      rev: nextRev,
-      approvalComments: [commentRow, ...comments].slice(0, 200),
-    };
-
-    await writeEnsaio(ids, folderId, file);
+    await alterarEnsaio(data.scopeId, (_ids, existing) => {
+      // Comentar num ensaio que não existe não pode criar um ensaio-fantasma
+      // (tipo "cisalhamento-direto", payload vazio) no lugar do verdadeiro.
+      if (!existing) throw new Error("Ensaio não encontrado; o comentário não foi salvo.");
+      const comments = (existing.approvalComments as ApprovalCommentRow[] | undefined) ?? [];
+      return {
+        ...existing,
+        updatedAt: nowIso,
+        rev: (existing.rev ?? 0) + 1,
+        approvalComments: [commentRow, ...comments].slice(0, 200),
+      };
+    });
     return commentRow;
   });
 
@@ -580,23 +581,19 @@ export async function setWorkflowStatus(
     ensaio_nome?: string | null;
   },
 ) {
-  const found = await readEnsaio(scopeId);
-  if (!found) throw new Error(`scopeId inválido: ${scopeId}`);
-  const { ids, file: existing, folderId } = found;
-  // Mesmo critério das demais escritas de aprovação: sem o arquivo, não fabrica
-  // um ensaio vazio no lugar dele.
-  if (!existing) throw new Error(`Ensaio não encontrado no Drive: ${scopeId}`);
   const nowIso = new Date().toISOString();
-
-  const file: EnsaioFile = {
-    ...existing,
-    updatedAt: nowIso,
-    rev: (existing.rev ?? 0) + 1,
-    workflowStatus: status,
-    // Grava `status` junto: verifyApproval/decideApproval já fazem isso, e só
-    // este caminho ainda deixava os dois campos divergirem.
-    status,
-  };
-
-  await writeEnsaio(ids, folderId, file);
+  await alterarEnsaio(scopeId, (_ids, existing) => {
+    // Mesmo critério das demais escritas de aprovação: sem o arquivo, não fabrica
+    // um ensaio vazio no lugar dele.
+    if (!existing) throw new Error(`Ensaio não encontrado: ${scopeId}`);
+    return {
+      ...existing,
+      updatedAt: nowIso,
+      rev: (existing.rev ?? 0) + 1,
+      workflowStatus: status,
+      // Grava `status` junto: verifyApproval/decideApproval já fazem isso, e só
+      // este caminho ainda deixava os dois campos divergirem.
+      status,
+    };
+  });
 }

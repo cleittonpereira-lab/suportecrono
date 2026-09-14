@@ -11,7 +11,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth, exigirLogin } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
-import { ensureFolderPath, readDriveJson, writeDriveJson, lerJsonsDaPasta, findFileInFolder, deleteDriveFile, withKeyLock } from "@/lib/driveStorage";
+import { ensureFolderPath, readDriveJson, writeDriveJson, atualizarDriveJson, lerJsonsDaPasta, findFileInFolder, deleteDriveFile } from "@/lib/driveStorage";
 import { aplicarStatusPendencia, escolherPendenciaDoEnsaio, proximaPendencia } from "@/lib/pendencia-match";
 
 type JsonValue = string | number | boolean | null | { [k: string]: JsonValue } | JsonValue[];
@@ -159,16 +159,15 @@ export const atualizarStatusPendencia = createServerFn({ method: "POST" })
     const name = `${data.id}.json`;
     const actorName = displayName((context as { claims?: { email?: string; user_metadata?: { full_name?: string; name?: string } } }).claims);
 
-    await withKeyLock(`rmw:${folderId}:${name}`, async () => {
-      const existing = await readDriveJson<PendenciaDigitacao>(name, folderId);
+    // Ler-alterar-gravar com trava — no banco, atômico entre servidores.
+    await atualizarDriveJson<PendenciaDigitacao>(name, folderId, (existing) => {
       if (!existing) {
         throw new Error("Pendência não encontrada.");
       }
-      const nextRecord = aplicarStatusPendencia(existing, data.status, { userId: context.userId, nome: actorName }, now, {
+      return aplicarStatusPendencia(existing, data.status, { userId: context.userId, nome: actorName }, now, {
         observacao: data.observacao,
         payload: data.payload,
       });
-      await writeDriveJson(name, nextRecord, folderId);
     });
 
     return { ok: true };
@@ -210,14 +209,17 @@ export async function sincronizarPendenciaDoEnsaio(alvo: {
   }
 
   const name = `${escolha.pendencia.id}.json`;
-  return withKeyLock(`rmw:${folderId}:${name}`, async () => {
-    const atual = await readDriveJson<PendenciaDigitacao>(name, folderId);
-    if (!atual) return "nao_encontrada";
+  const resultado: { v: ResultadoSincronizacao } = { v: "inalterada" };
+  await atualizarDriveJson<PendenciaDigitacao>(name, folderId, (atual) => {
+    if (!atual) {
+      resultado.v = "nao_encontrada";
+      return null;
+    }
     const proxima = proximaPendencia(atual, alvo.status, alvo.ator, new Date().toISOString());
-    if (!proxima) return "inalterada";
-    await writeDriveJson(name, proxima, folderId);
-    return "atualizada";
+    resultado.v = proxima ? "atualizada" : "inalterada";
+    return proxima;
   });
+  return resultado.v;
 }
 
 const ConcluirExternoInput = z.object({
