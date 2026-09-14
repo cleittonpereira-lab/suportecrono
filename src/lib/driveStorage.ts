@@ -408,6 +408,28 @@ export async function findFolder(name: string, parentId: string): Promise<string
   return data.files?.[0]?.id ?? null;
 }
 
+/**
+ * Todas as pastas com este nome, a mais antiga primeiro. O Drive permite
+ * homônimos: chegou a haver 16 pastas `os-hub`, e o que foi gravado antes de
+ * 09/09 ficou espalhado entre elas — `findFolder` só enxerga a mais antiga.
+ */
+export async function listarPastasComNome(name: string, parentId: string): Promise<string[]> {
+  if (!hasDriveCredentials()) return [];
+  const params = new URLSearchParams({
+    q: `name = '${escQ(name)}' and '${parentId}' in parents and mimeType = '${FOLDER_MIME}' and trashed = false`,
+    fields: "files(id,createdTime)",
+    orderBy: "createdTime",
+    pageSize: "100",
+    supportsAllDrives: "true",
+    includeItemsFromAllDrives: "true",
+    corpora: "drive",
+    driveId: DRIVE_ROOT_FOLDER_ID,
+  });
+  const res = await fetch(`${DRIVE_V3}/files?${params.toString()}`, { method: "GET", headers: await driveHeaders() });
+  if (!res.ok) throw new Error(`Falha ao buscar as pastas "${name}" no Drive: HTTP ${res.status}`);
+  return (((await res.json()) as { files?: { id: string }[] }).files ?? []).map((f) => f.id);
+}
+
 export async function createFolder(name: string, parentId: string): Promise<string> {
   // Sem credenciais (desenvolvimento local), o id precisa ser o MESMO a cada
   // reinício do servidor: os arquivos offline são gravados como

@@ -14,15 +14,18 @@ vi.mock("@/integrations/supabase/client.server", () => {
 type Arquivo = { id: string; name: string; version: string; modifiedTime: string; conteudo: unknown };
 
 const FOTO_GRANDE = "data:image/jpeg;base64," + "A".repeat(30_000);
-const PASTAS: Record<string, string> = { "lab-ensaios": "p-en", fotos: "p-fotos" };
-
+/** Nome da pasta → ids das pastas com esse nome (o Drive permite homônimas). */
+let PASTAS: Record<string, string[]>;
 let porPasta: Record<string, Arquivo[]>;
 let fotosEnviadas: string[];
+let chamadasAoDrive: number;
 
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
 
 beforeEach(() => {
   fotosEnviadas = [];
+  chamadasAoDrive = 0;
+  PASTAS = { "lab-ensaios": ["p-en"], fotos: ["p-fotos"] };
   porPasta = {
     "p-en": [
       {
@@ -41,6 +44,7 @@ beforeEach(() => {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: string | URL) => {
+      chamadasAoDrive++;
       const url = String(input);
       if (url.includes("/upload/drive/v3/files")) {
         const id = `foto-${fotosEnviadas.length + 1}`;
@@ -55,7 +59,7 @@ beforeEach(() => {
       const q = new URL(url).searchParams.get("q") ?? "";
       if (q.includes("mimeType = 'application/vnd.google-apps.folder'")) {
         const nome = q.match(/name = '([^']+)'/)?.[1] ?? "";
-        return json({ files: PASTAS[nome] ? [{ id: PASTAS[nome] }] : [] });
+        return json({ files: (PASTAS[nome] ?? []).map((id) => ({ id })) });
       }
       const nome = q.match(/name = '([^']+)'/)?.[1];
       const pai = q.match(/'([^']+)' in parents/)?.[1] ?? "";
@@ -85,7 +89,7 @@ describe("importação Drive → banco", () => {
 
     const rel = await imp.importarAlvo("simular", "lab-ensaios");
 
-    expect(rel).toMatchObject({ noDrive: 3, homonimos: 1, incluidos: 2, fotosMovidas: 1, erros: [] });
+    expect(rel).toMatchObject({ noDrive: 3, homonimos: 1, incluidos: 2, fotosMovidas: 1, erros: [], proximo: null });
     expect(rel.bytesDepois).toBeLessThan(rel.bytesAntes);
     expect(fotosEnviadas).toEqual([]);
     expect(db.sqlite.prepare("SELECT COUNT(*) AS n FROM documentos").get()).toEqual({ n: 0 });
@@ -103,15 +107,65 @@ describe("importação Drive → banco", () => {
     expect(en1?.dados.photos[0]).toMatchObject({ url: "/api/photo/foto-1", dataUrl: "" });
   });
 
-  it("repetir a importação não sobrescreve nem envia a foto de novo", async () => {
+  it("repetir a importação não baixa de novo, não sobrescreve nem envia a foto outra vez", async () => {
     const db = d1EmMemoria();
     const { imp } = await carregar({ DB: db });
 
     await imp.importarAlvo("incluir", "lab-ensaios");
+    const downloadsAntes = chamadasAoDrive;
     const segunda = await imp.importarAlvo("incluir", "lab-ensaios");
 
     expect(segunda).toMatchObject({ incluidos: 0, jaExistiam: 2 });
     expect(fotosEnviadas).toHaveLength(1);
+    // Só pastas e listagens: nenhum download dos documentos que já estão no banco.
+    expect(chamadasAoDrive - downloadsAntes).toBeLessThanOrEqual(3);
+  });
+
+  it("pasta grande vai em partes, cada uma dentro do limite de chamadas, e termina com tudo", async () => {
+    porPasta["p-en"] = Array.from({ length: 95 }, (_, i) => ({
+      id: `g${i}`,
+      name: `am_x__en_${String(i).padStart(3, "0")}.json`,
+      version: "1",
+      modifiedTime: "2026-09-10T10:00:00Z",
+      conteudo: { id: `en_${i}` },
+    }));
+    const db = d1EmMemoria();
+    const { imp } = await carregar({ DB: db });
+
+    let inicio: number | null = 0;
+    let partes = 0;
+    let incluidos = 0;
+    while (inicio !== null) {
+      const antes = chamadasAoDrive;
+      const parte = await imp.importarAlvo("incluir", "lab-ensaios", inicio);
+      expect(chamadasAoDrive - antes).toBeLessThanOrEqual(imp.LIMITE_CHAMADAS_POR_PARTE + 2);
+      incluidos += parte.incluidos;
+      inicio = parte.proximo;
+      partes++;
+    }
+
+    expect(partes).toBeGreaterThan(1);
+    expect(incluidos).toBe(95);
+    expect(db.sqlite.prepare("SELECT COUNT(*) AS n FROM documentos").get()).toEqual({ n: 95 });
+  });
+
+  it("pastas homônimas (as 16 os-hub) são lidas todas; de cada nome fica o mais recente", async () => {
+    PASTAS["os-hub"] = ["hub-antiga-vazia", "hub-com-dados", "hub-outra"];
+    porPasta["hub-antiga-vazia"] = [];
+    porPasta["hub-com-dados"] = [
+      { id: "h1", name: "17960-26.json", version: "2", modifiedTime: "2026-08-28T15:09:02Z", conteudo: { osNumero: "17960-26", messages: [1, 2] } },
+    ];
+    porPasta["hub-outra"] = [
+      { id: "h1-velho", name: "17960-26.json", version: "1", modifiedTime: "2026-08-20T10:00:00Z", conteudo: { osNumero: "17960-26", messages: [] } },
+      { id: "h2", name: "16797-25.json", version: "1", modifiedTime: "2026-08-27T11:14:58Z", conteudo: { osNumero: "16797-25" } },
+    ];
+    const db = d1EmMemoria();
+    const { imp, d1 } = await carregar({ DB: db });
+
+    const rel = await imp.importarAlvo("incluir", "os-hub");
+
+    expect(rel).toMatchObject({ noDrive: 3, homonimos: 1, incluidos: 2, erros: [] });
+    await expect(d1.lerDocumento(db, "os-hub", "17960-26.json")).resolves.toMatchObject({ dados: { messages: [1, 2] } });
   });
 
   it("sincronizar é recusado com o banco já ligado", async () => {
@@ -122,7 +176,7 @@ describe("importação Drive → banco", () => {
   it("pasta que não existe no Drive não é criada lá: só relata zero", async () => {
     const { imp } = await carregar({ DB: d1EmMemoria() });
     const rel = await imp.importarAlvo("incluir", "lab-capsulas");
-    expect(rel).toMatchObject({ noDrive: 0, incluidos: 0, erros: [] });
+    expect(rel).toMatchObject({ noDrive: 0, incluidos: 0, erros: [], proximo: null });
   });
 
   it("situação do banco conta os documentos por pasta", async () => {

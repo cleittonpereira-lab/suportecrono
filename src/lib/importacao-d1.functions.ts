@@ -25,6 +25,8 @@ export const situacaoDoBancoD1 = createServerFn({ method: "GET" })
 const ImportarInput = z.object({
   modo: z.enum(["simular", "incluir", "sincronizar"]),
   pasta: z.string().min(1),
+  /** De onde continuar a pasta (ver `proximo` no relatório). */
+  inicio: z.number().int().min(0).default(0),
 });
 
 export const importarDadosParaD1 = createServerFn({ method: "POST" })
@@ -33,5 +35,5 @@ export const importarDadosParaD1 = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<RelatorioPasta> => {
     await exigirAdministrador();
     const { importarAlvo } = await import("@/lib/importacao-d1.server");
-    return importarAlvo(data.modo, data.pasta);
+    return importarAlvo(data.modo, data.pasta, data.inicio);
   });

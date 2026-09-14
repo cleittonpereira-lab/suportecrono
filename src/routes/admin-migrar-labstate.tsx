@@ -17,6 +17,23 @@ function mensagemDeErro(err: unknown): string {
 
 const kb = (n: number) => `${Math.round(n / 1024).toLocaleString("pt-BR")} KB`;
 
+/** Junta as partes de uma mesma pasta num relatório só. */
+function somarPartes(a: RelatorioPasta, b: RelatorioPasta): RelatorioPasta {
+  return {
+    ...b,
+    noDrive: a.noDrive + b.noDrive,
+    homonimos: a.homonimos + b.homonimos,
+    incluidos: a.incluidos + b.incluidos,
+    atualizados: a.atualizados + b.atualizados,
+    jaExistiam: a.jaExistiam + b.jaExistiam,
+    fotosMovidas: a.fotosMovidas + b.fotosMovidas,
+    bytesAntes: a.bytesAntes + b.bytesAntes,
+    bytesDepois: a.bytesDepois + b.bytesDepois,
+    grandesDemais: [...a.grandesDemais, ...b.grandesDemais],
+    erros: [...a.erros, ...b.erros],
+  };
+}
+
 const CONFIRMACAO: Record<Exclude<ModoImportacao, "simular">, string> = {
   incluir: "Incluir no banco os documentos do Drive que ainda não estão lá? O que já está no banco não é alterado.",
   sincronizar:
@@ -51,9 +68,22 @@ function SecaoBancoD1() {
     setErro(null);
     setRelatorio([]);
     try {
+      // Cada pasta vai em partes (limite de chamadas por requisição do
+      // Cloudflare): repete até o servidor dizer que terminou (proximo = null).
       for (const pasta of situacao.alvos) {
-        const r = await importarFn({ data: { modo, pasta } });
-        setRelatorio((anterior) => [...anterior, r]);
+        let inicio: number | null = 0;
+        let acumulado: RelatorioPasta | null = null;
+        while (inicio !== null) {
+          const parte: RelatorioPasta = await importarFn({ data: { modo, pasta, inicio } });
+          const total: RelatorioPasta = acumulado ? somarPartes(acumulado, parte) : parte;
+          acumulado = total;
+          setRelatorio((anterior) => [...anterior.filter((r) => r.pasta !== pasta), total]);
+          // Sem avanço, repetir seria um laço sem fim: para e mostra o que houve.
+          if (parte.proximo !== null && parte.proximo <= inicio) {
+            throw new Error(`A importação de ${pasta} não avançou (parou no documento ${inicio + 1}).`);
+          }
+          inicio = parte.proximo;
+        }
       }
       await atualizarSituacao();
     } catch (err) {
