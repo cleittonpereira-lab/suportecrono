@@ -52,7 +52,7 @@ import type { PermVSample, PermVCalibracaoModo, PermVCapsula, PermVBureta } from
 import { seedPermVSample, newPermVLeitura, newPermVCapsula } from "@/features/perm-v/types";
 import { listBuretas, saveBureta } from "@/features/perm-v/buretaPresets";
 import {
-  massaSeca, volumeCp, massaEspecificaAparenteSeca, indiceDeVazios, grauDeSaturacao,
+  massaSeca, volumeCp, areaCp, massaEspecificaAparenteSeca, indiceDeVazios, grauDeSaturacao,
   areaBureta, cargaHidraulica, capsulaUmidadePct, teorUmidadeMedio,
   calcDeterminacoes, volumeAcumulado, volumeDeVazios, k20Medio, determinacoesDaMedia, fmtK,
   classificarPermeabilidade, posicaoNaFaixaPermeabilidade, PERM_FAIXAS,
@@ -131,6 +131,11 @@ function usePermVCalculos(sample: PermVSample) {
   const sr = sample.massaEspecificaGraos != null && teorUmidade != null && ei != null
     ? grauDeSaturacao(sample.massaEspecificaGraos, teorUmidade, ei) : null;
   const vv = vcp != null && ei != null ? volumeDeVazios(vcp, ei) : null;
+  const area = sample.diametroInicial != null ? areaCp(sample.diametroInicial) : null;
+  // Massa específica aparente úmida (ρ = Mu / V) e porosidade (n = e / (1 + e)).
+  const rho = sample.massaUmida != null && vcp != null ? sample.massaUmida / vcp : null;
+  const porosidade = ei != null && ei >= 0 ? (ei / (1 + ei)) * 100 : null;
+  const capsulas = capsulasPreenchidas(sample.capsulas);
 
   const chartData = determinacoes.map((d, i) => ({
     idx: i + 1,
@@ -140,42 +145,178 @@ function usePermVCalculos(sample: PermVSample) {
     h: d.h2,
   }));
 
-  return { determinacoes, volAcum, k20med, naMedia, ms, rhoD, ei, sr, vv, chartData };
+  return {
+    determinacoes, volAcum, k20med, naMedia, ms, rhoD, ei, sr, vv, chartData,
+    teorUmidade, area, vcp, rho, porosidade, capsulas,
+  };
+}
+
+/** Cápsulas com algum valor digitado (as vazias da grade de digitação não saem no laudo). */
+function capsulasPreenchidas(capsulas: PermVCapsula[]): { capsula: PermVCapsula; indice: number }[] {
+  return capsulas
+    .map((capsula, indice) => ({ capsula, indice }))
+    .filter(({ capsula }) => capsula.tara > 0 || capsula.wet > 0 || capsula.dry > 0);
+}
+
+/** Mesmo texto do cartão "Condição da amostra" da tela. */
+function condicaoDaAmostra(s: PermVSample): string {
+  if (s.sampleState === "compactada") {
+    return `Compactada${s.compactionEnergy ? ` · ${s.compactionEnergy}` : ""}${
+      typeof s.compactionDegreePct === "number" ? ` · GC ${s.compactionDegreePct}%` : ""
+    }`;
+  }
+  if (s.sampleState === "recompactada") return "Recompactada";
+  if (s.sampleState === "deformada") return "Deformada";
+  if (s.sampleState === "indeformada") return `Indeformada${s.sampleType ? ` · ${s.sampleType}` : ""}`;
+  return "—";
+}
+
+function descricaoDaBureta(cal: PermVSample["calibracao"]): string {
+  if (cal.modo === "curva") {
+    return `Curva${cal.buretaNome ? ` ${cal.buretaNome}` : ""} · ${cal.curva.length} pts`;
+  }
+  const a = areaBureta(cal);
+  const base =
+    cal.modo === "volume"
+      ? `Volume · ${fmt(cal.volumeReferenciaMl, 1)} mL = ${fmt(cal.alturaReferenciaCm, 1)} cm`
+      : "Comprimento";
+  return a != null ? `${base} · a = ${fmt(a, 3)} cm²` : base;
 }
 
 type CalcPermV = ReturnType<typeof usePermVCalculos>;
 
+const CELULA = "border border-[#141414] px-1 py-0.5 text-center";
+const TITULO_BLOCO =
+  "rounded-t border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-center text-[9.5px] font-bold uppercase text-[#141414]";
+
+function LinhaCabecalho({ itens }: { itens: string[] }) {
+  return (
+    <tr className="bg-[#141414]/5 text-[8.5px] font-semibold">
+      {itens.map((t) => (
+        <td key={t} className={CELULA}>{t}</td>
+      ))}
+    </tr>
+  );
+}
+
+function LinhaValores({ itens }: { itens: { v: string; forte?: boolean }[] }) {
+  return (
+    <tr>
+      {itens.map((it, i) => (
+        <td key={i} className={`${CELULA}${it.forte ? " font-medium" : ""}`}>{it.v}</td>
+      ))}
+    </tr>
+  );
+}
+
+/** Condições em que o ensaio foi feito — antes o laudo só trazia água e gradiente. */
+function BlocoDadosEnsaio({ sample }: { sample: PermVSample }) {
+  // Uma linha por campo (o excesso vira reticências): a altura do bloco não
+  // pode depender do texto, senão o planejador de folhas erra (reportLayout.ts).
+  const item = (rotulo: string, valor: string) => (
+    <td className="border border-[#141414] px-1.5 py-0.5 align-top">
+      <div className="truncate text-[7px] uppercase tracking-wide text-[#141414]/60 leading-tight">{rotulo}</div>
+      <div className="truncate text-[8.5px] font-medium leading-tight">{valor}</div>
+    </td>
+  );
+  return (
+    <div data-bloco="ensaio" className="border border-[#141414]">
+      <div className={TITULO_BLOCO}>Dados do Ensaio</div>
+      <table className="w-full table-fixed border-collapse">
+        <tbody>
+          <tr>
+            {item("Condição da amostra", condicaoDaAmostra(sample))}
+            {item("Equipamento", sample.equipment || "—")}
+            {item("Natureza da água", sample.naturezaAgua || "—")}
+          </tr>
+          <tr>
+            {item("Bureta / calibração", descricaoDaBureta(sample.calibracao))}
+            {item("Carga inicial na bureta (cm)", fmt(sample.cargaHidraulicaInicial, 2))}
+            {item("Gradiente hidráulico (i)", fmt(sample.gradienteHidraulico, 1))}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** Corpo de prova: dimensões, massas e índices físicos iniciais. */
 function BlocoIndices({ sample, c }: { sample: PermVSample; c: CalcPermV }) {
   return (
-        <div className="border border-[#141414]">
-          <div className="rounded-t border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-center text-[9.5px] font-bold uppercase text-[#141414]">
-            Índices Físicos Iniciais do Corpo de Prova
-          </div>
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="bg-[#141414]/5 text-[8.5px] font-semibold">
-                <td className="border border-[#141414] px-1 py-0.5 text-center">D₀ (cm)</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">H₀ (cm)</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">Ms (g)</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">ρd (g/cm³)</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">ei</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">SR (%)</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">Vv (cm³)</td>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(sample.diametroInicial, 2)}</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(sample.alturaInicial, 2)}</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(c.ms, 1)}</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(c.rhoD, 3)}</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(c.ei, 3)}</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(c.sr, 1)}</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(c.vv, 2)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+    <div data-bloco="indices" className="border border-[#141414]">
+      <div className={TITULO_BLOCO}>Corpo de Prova — Dimensões, Massas e Índices Físicos Iniciais</div>
+      <table className="w-full table-fixed border-collapse">
+        <tbody>
+          <LinhaCabecalho itens={["D₀ (cm)", "H₀ (cm)", "A (cm²)", "V (cm³)", "Mu (g)", "w (%)", "Ms (g)"]} />
+          <LinhaValores
+            itens={[
+              { v: fmt(sample.diametroInicial, 2) },
+              { v: fmt(sample.alturaInicial, 2) },
+              { v: fmt(c.area, 2) },
+              { v: fmt(c.vcp, 2) },
+              { v: fmt(sample.massaUmida, 2), forte: true },
+              { v: fmt(c.teorUmidade, 2), forte: true },
+              { v: fmt(c.ms, 2), forte: true },
+            ]}
+          />
+          <LinhaCabecalho itens={["ρ (g/cm³)", "ρd (g/cm³)", "ρs (g/cm³)", "ei", "n (%)", "Sr (%)", "Vv (cm³)"]} />
+          <LinhaValores
+            itens={[
+              { v: fmt(c.rho, 3) },
+              { v: fmt(c.rhoD, 3), forte: true },
+              { v: fmt(sample.massaEspecificaGraos, 3) },
+              { v: fmt(c.ei, 3), forte: true },
+              { v: fmt(c.porosidade, 1) },
+              { v: fmt(c.sr, 1) },
+              { v: fmt(c.vv, 2) },
+            ]}
+          />
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** Determinação do teor de umidade inicial, cápsula por cápsula. */
+function BlocoCapsulas({ c }: { c: CalcPermV }) {
+  return (
+    <div data-bloco="capsulas" className="border border-[#141414]">
+      <div className={TITULO_BLOCO}>Teor de Umidade Inicial do Corpo de Prova — Cápsulas</div>
+      <table className="w-full table-fixed border-collapse">
+        <tbody>
+          <LinhaCabecalho
+            itens={["Cápsula", "Tara (g)", "Solo úmido + tara (g)", "Solo seco + tara (g)", "Água (g)", "Solo seco (g)", "w (%)"]}
+          />
+          {c.capsulas.map(({ capsula, indice }) => (
+            <LinhaValores
+              key={indice}
+              itens={[
+                { v: capsula.numero?.trim() || `#${indice + 1}` },
+                { v: fmt(capsula.tara, 2) },
+                { v: fmt(capsula.wet, 2) },
+                { v: fmt(capsula.dry, 2) },
+                { v: fmt(capsula.wet - capsula.dry, 2) },
+                { v: fmt(capsula.dry - capsula.tara, 2) },
+                { v: fmt(capsulaUmidadePct(capsula), 2), forte: true },
+              ]}
+            />
+          ))}
+          {c.capsulas.length === 0 && (
+            <tr>
+              <td colSpan={7} className={`${CELULA} text-[#141414]/60`}>
+                Sem determinações de umidade registradas.
+              </td>
+            </tr>
+          )}
+          <tr className="bg-[#141414]/5 font-semibold">
+            <td colSpan={6} className="border border-[#141414] px-2 py-0.5 text-right">
+              Teor de umidade médio — w
+            </td>
+            <td className={CELULA}>{fmt(c.teorUmidade, 2)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -385,14 +526,20 @@ function BlocoLegenda() {
             Legenda
           </div>
           <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 p-2 text-[8.5px] leading-tight">
+            <div><b>D₀, H₀</b> — diâmetro e altura iniciais do corpo de prova (cm)</div>
+            <div><b>A, V</b> — área da seção e volume do corpo de prova (cm², cm³)</div>
+            <div><b>Mu, Ms</b> — massa úmida e massa seca do corpo de prova (g)</div>
+            <div><b>w</b> — teor de umidade inicial, média das cápsulas (%)</div>
+            <div><b>ρ, ρd</b> — massa específica aparente úmida e seca (g/cm³)</div>
+            <div><b>ρs</b> — massa específica dos grãos (g/cm³)</div>
+            <div><b>ei, n</b> — índice de vazios inicial e porosidade (%)</div>
+            <div><b>Sr, Vv</b> — grau de saturação inicial (%) e volume de vazios (cm³)</div>
             <div><b>h1, h2</b> — carga hidráulica nos instantes t1 e t2 (cm)</div>
             <div><b>Δt</b> — intervalo de tempo entre t1 e t2 (s)</div>
             <div><b>R_T</b> — relação entre a viscosidade da água na temperatura de ensaio e a 20 °C (Tabela 1)</div>
             <div><b>k</b> — coeficiente de permeabilidade à temperatura de ensaio (cm/s)</div>
             <div><b>k20</b> — coeficiente de permeabilidade referido a 20 °C = R_T × k (cm/s)</div>
-            <div><b>ei</b> — índice de vazios inicial do corpo de prova</div>
-            <div><b>SR</b> — grau de saturação inicial (%)</div>
-            <div><b>Vv</b> — volume de vazios do corpo de prova (cm³)</div>
+            <div><b>a</b> — área interna da bureta (cm²)</div>
           </div>
           <div className="border-t border-[#141414]/40 px-2 py-1 text-[8px] text-[#141414]/70 leading-tight">
             k = (a·H)/(A·Δt) · ln(h1/h2) · k20 = R_T·k, conforme ABNT NBR 14545:2021, § 8.4.
@@ -404,8 +551,12 @@ function BlocoLegenda() {
 
 function renderBlocoPermV(b: BlocoPermV, sample: PermVSample, c: CalcPermV, key: number) {
   switch (b.tipo) {
+    case "ensaio":
+      return <BlocoDadosEnsaio key={key} sample={sample} />;
     case "indices":
       return <BlocoIndices key={key} sample={sample} c={c} />;
+    case "capsulas":
+      return <BlocoCapsulas key={key} c={c} />;
     case "determinacoes":
       return <BlocoDeterminacoes key={key} sample={sample} c={c} de={b.de} ate={b.ate} continuacao={b.continuacao} />;
     case "resultado":
@@ -444,11 +595,12 @@ function PermVReportPages({
     () =>
       planejarPaginasPermV({
         nDeterminacoes: c.determinacoes.length,
+        nCapsulas: c.capsulas.length,
         observacoes: sample.observacoes ?? "",
         nFotos: photos.length,
         temNota,
       }),
-    [c.determinacoes.length, sample.observacoes, photos.length, temNota],
+    [c.determinacoes.length, c.capsulas.length, sample.observacoes, photos.length, temNota],
   );
   const folhasDeFoto = plano.paginas.filter((p) => p.tipo === "fotos").length;
   const reportSample = sample as unknown as ReportSample;

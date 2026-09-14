@@ -34,7 +34,17 @@ export const ALTURAS = {
   miolo: 796,
   margemSeguranca: 8,
   gap: 8,
-  indices: 64,
+  // Blocos do cabeçalho técnico (14/09), medidos na página de modelo do PERM.V:
+  // dados do ensaio 75 px, corpo de prova 101,8 px, cápsulas 64 + 20 por linha.
+  // Cada campo dos dados do ensaio é de uma linha só (texto cortado com
+  // reticências), para a altura não depender do conteúdo.
+  /** Dados do ensaio (condição da amostra, equipamento, bureta, carga inicial, água, gradiente). */
+  ensaio: 76,
+  /** Corpo de prova: dimensões, massas e índices físicos (duas faixas de tabela). */
+  indices: 102,
+  /** Cápsulas de umidade: título + cabeçalho + linha da média, e cada cápsula. */
+  capCabecalho: 65,
+  capLinha: 20,
   detCabecalho: 44,
   detLinha: 20,
   k20: 32,
@@ -43,7 +53,8 @@ export const ALTURAS = {
   obsCabecalho: 33,
   obsLinha: 11,
   grafico: 155,
-  legenda: 109,
+  /** Legenda com os símbolos do corpo de prova e das cápsulas (146,6 px medidos). */
+  legenda: 148,
 };
 
 /** Caracteres por linha do bloco de observações (fonte de 8px na largura útil da página). */
@@ -51,7 +62,9 @@ export const CARACTERES_POR_LINHA_OBS = 118;
 export const FOTOS_POR_PAGINA = 4;
 
 export type BlocoPermV =
+  | { tipo: "ensaio" }
   | { tipo: "indices" }
+  | { tipo: "capsulas" }
   | { tipo: "determinacoes"; de: number; ate: number; continuacao: boolean; ultimaFatia: boolean }
   | { tipo: "resultado" }
   | { tipo: "nota" }
@@ -66,6 +79,8 @@ export type PaginaPermV =
 
 export interface EntradaPlano {
   nDeterminacoes: number;
+  /** Cápsulas de umidade preenchidas (sem nenhuma, o bloco mostra uma linha "sem determinações"). */
+  nCapsulas: number;
   observacoes: string;
   nFotos: number;
   /** Há determinações fora da média (a nota do asterisco aparece). */
@@ -118,7 +133,12 @@ export function planejarPaginasPermV(e: EntradaPlano): { paginas: PaginaPermV[];
     atual.push(bloco);
   };
 
+  // Dados do ensaio, corpo de prova (dimensões, massas, índices) e cápsulas de
+  // umidade abrem o laudo — antes só havia uma linha de índices, sem as massas
+  // nem as cápsulas que os produzem.
+  colocar({ tipo: "ensaio" }, A.ensaio);
   colocar({ tipo: "indices" }, A.indices);
+  colocar({ tipo: "capsulas" }, A.capCabecalho + Math.max(e.nCapsulas, 1) * A.capLinha);
 
   // Resultado (k20) e faixa de classificação ficam grudados na última fatia da
   // tabela: o número do laudo nunca aparece numa folha separada dos dados

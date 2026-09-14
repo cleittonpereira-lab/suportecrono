@@ -9,13 +9,17 @@ import {
   type PaginaPermV,
 } from "./reportLayout";
 
-const base: EntradaPlano = { nDeterminacoes: 5, observacoes: "", nFotos: 0, temNota: false };
+const base: EntradaPlano = { nDeterminacoes: 5, nCapsulas: 3, observacoes: "", nFotos: 0, temNota: false };
 const limite = ALTURAS.miolo - ALTURAS.margemSeguranca;
 
-function alturaBloco(b: BlocoPermV): number {
+function alturaBloco(b: BlocoPermV, e: EntradaPlano): number {
   switch (b.tipo) {
+    case "ensaio":
+      return ALTURAS.ensaio;
     case "indices":
       return ALTURAS.indices;
+    case "capsulas":
+      return ALTURAS.capCabecalho + Math.max(e.nCapsulas, 1) * ALTURAS.capLinha;
     case "determinacoes":
       return ALTURAS.detCabecalho + Math.max(b.ate - b.de, 1) * ALTURAS.detLinha;
     case "resultado":
@@ -32,9 +36,9 @@ function alturaBloco(b: BlocoPermV): number {
   }
 }
 
-function alturaPagina(p: PaginaPermV): number {
+function alturaPagina(p: PaginaPermV, e: EntradaPlano): number {
   if (p.tipo === "fotos") return 0;
-  return p.blocos.reduce((s, b, i) => s + (i > 0 ? ALTURAS.gap : 0) + alturaBloco(b), 0);
+  return p.blocos.reduce((s, b, i) => s + (i > 0 ? ALTURAS.gap : 0) + alturaBloco(b, e), 0);
 }
 
 function blocos(paginas: PaginaPermV[]): BlocoPermV[] {
@@ -47,7 +51,7 @@ function conferirInvariantes(e: EntradaPlano) {
 
   // Nenhuma página de conteúdo passa do espaço disponível: é exatamente o
   // defeito que cortava o fim do laudo.
-  for (const p of paginas) expect(alturaPagina(p)).toBeLessThanOrEqual(limite);
+  for (const p of paginas) expect(alturaPagina(p, e)).toBeLessThanOrEqual(limite);
 
   // Toda determinação aparece uma vez, em ordem.
   const fatias = blocos(paginas).filter((b) => b.tipo === "determinacoes") as Extract<BlocoPermV, { tipo: "determinacoes" }>[];
@@ -74,7 +78,7 @@ function conferirInvariantes(e: EntradaPlano) {
 
   // Nenhum bloco obrigatório some.
   const tipos = blocos(paginas).map((b) => b.tipo);
-  for (const t of ["indices", "resultado", "grafico-k20", "grafico-h", "legenda"] as const) {
+  for (const t of ["ensaio", "indices", "capsulas", "resultado", "grafico-k20", "grafico-h", "legenda"] as const) {
     expect(tipos.filter((x) => x === t)).toHaveLength(1);
   }
   expect(tipos.includes("nota")).toBe(e.temNota);
@@ -90,17 +94,27 @@ function conferirInvariantes(e: EntradaPlano) {
 }
 
 describe("planejarPaginasPermV", () => {
-  it("laudo mínimo (o caso que já funcionava) continua em uma página, na ordem original", () => {
+  it("laudo mínimo: dados do ensaio, corpo de prova e cápsulas abrem o laudo, na ordem", () => {
     const { paginas, total } = conferirInvariantes(base);
-    expect(total).toBe(1);
+    expect(total).toBeLessThanOrEqual(2);
     expect(blocos(paginas).map((b) => b.tipo)).toEqual([
+      "ensaio",
       "indices",
+      "capsulas",
       "determinacoes",
       "resultado",
       "grafico-k20",
       "grafico-h",
       "legenda",
     ]);
+  });
+
+  it("sem cápsulas preenchidas, o bloco ainda reserva a linha de 'sem determinações'", () => {
+    conferirInvariantes({ ...base, nCapsulas: 0 });
+  });
+
+  it("muitas cápsulas continuam cabendo na folha", () => {
+    conferirInvariantes({ ...base, nCapsulas: 8, nDeterminacoes: 20 });
   });
 
   it("sem determinações ainda reserva a linha de 'sem leituras' e não perde o resultado", () => {
@@ -134,6 +148,7 @@ describe("planejarPaginasPermV", () => {
   it("tudo junto: número de folhas bate com o plano", () => {
     conferirInvariantes({
       nDeterminacoes: 12,
+      nCapsulas: 3,
       observacoes: "Amostra com trincas visíveis após a moldagem.\n".repeat(15),
       nFotos: 6,
       temNota: true,
