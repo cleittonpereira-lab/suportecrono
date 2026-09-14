@@ -10,6 +10,8 @@ export default defineConfig({
   },
   nitro: {
     preset: "cloudflare-module",
+    // Cópia diária do banco no Drive, pelo agendamento `triggers.crons` abaixo.
+    plugins: ["./src/server/copia-diaria.plugin.ts"],
     // nodeCompat: habilita o `node:crypto`/`Buffer` que a autenticação da
     // conta de serviço do Google (assinatura de JWT) e o upload de fotos
     // usam. deployConfig: deixa o nitro gerar a config de deploy do
@@ -26,6 +28,9 @@ export default defineConfig({
         // sumir numa publicação — sem isto, cada versão nova as descartaria e o
         // app voltaria ao Drive em silêncio, com o que foi gravado só no banco.
         keep_vars: true,
+        // 09:00 UTC = 06:00 em Brasília: cópia diária do banco no Drive
+        // (src/server/copia-diaria.plugin.ts).
+        triggers: { crons: ["0 9 * * *"] },
         d1_databases: [
           {
             binding: "DB",

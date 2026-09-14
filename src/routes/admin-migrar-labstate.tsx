@@ -4,8 +4,10 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { runLabStateMigration, testDriveRoundTrip, importLabStateFromClient, migrateUsersFromSupabase } from "@/lib/lab-migration-admin.functions";
-import { importarDadosParaD1, situacaoDoBancoD1 } from "@/lib/importacao-d1.functions";
+import { gerarCopiaDoBancoAgora, importarDadosParaD1, situacaoDoBancoD1, tirarImagensDoQuadroChegada } from "@/lib/importacao-d1.functions";
+import type { ResultadoCopia } from "@/lib/copia-diaria.server";
 import type { ModoImportacao, RelatorioPasta, SituacaoDoBanco } from "@/lib/importacao-d1.server";
+import type { RelatorioChegada } from "@/lib/chegada-fotos.server";
 
 export const Route = createFileRoute("/admin-migrar-labstate")({
   component: AdminMigrarLabState,
@@ -190,6 +192,111 @@ function SecaoBancoD1() {
   );
 }
 
+/** Cópia do banco no Drive: automática todo dia às 06:00, ou agora pelo botão. */
+function SecaoCopiaDoBanco() {
+  const gerarFn = useServerFn(gerarCopiaDoBancoAgora);
+  const [rodando, setRodando] = useState(false);
+  const [resultado, setResultado] = useState<ResultadoCopia | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+
+  async function gerar() {
+    setRodando(true);
+    setErro(null);
+    try {
+      setResultado(await gerarFn());
+    } catch (err) {
+      setErro(mensagemDeErro(err));
+    } finally {
+      setRodando(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Cópia do banco no Drive</CardTitle>
+        <CardDescription>
+          Todo dia às 06:00 (Brasília) um arquivo com todos os dados do banco é salvo na pasta copias-do-banco do
+          Drive. Ficam as 30 cópias mais recentes. Use o botão antes de qualquer operação arriscada.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <Button onClick={gerar} disabled={rodando} variant="outline">
+          {rodando ? "Gerando…" : "Gerar cópia agora"}
+        </Button>
+        {erro && <p className="text-sm text-destructive">Erro: {erro}</p>}
+        {resultado && (
+          <p className="text-sm">
+            Cópia salva: <span className="font-mono">{resultado.arquivo}</span> · {resultado.documentos} documentos ·{" "}
+            {kb(resultado.bytes)}
+            {resultado.apagadas > 0 && ` · ${resultado.apagadas} cópia(s) antiga(s) apagada(s)`}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Tira do quadro de Chegada as imagens antigas guardadas como texto. */
+function SecaoImagensChegada() {
+  const tirarFn = useServerFn(tirarImagensDoQuadroChegada);
+  const [rodando, setRodando] = useState<"simular" | "aplicar" | null>(null);
+  const [relatorio, setRelatorio] = useState<(RelatorioChegada & { simulado: boolean }) | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+
+  async function rodar(simular: boolean) {
+    if (!simular && !window.confirm("Salvar as imagens antigas do quadro como arquivo no Drive e trocar no quadro pelo endereço do arquivo?")) return;
+    setRodando(simular ? "simular" : "aplicar");
+    setErro(null);
+    try {
+      let r = await tirarFn({ data: { simular } });
+      const inicial = r;
+      // Em lotes (limite de chamadas por requisição): repete até não sobrar imagem.
+      while (!simular && r.restantes > 0 && r.enviadas > 0) {
+        r = await tirarFn({ data: { simular: false } });
+      }
+      setRelatorio({ ...r, bytesAntes: inicial.bytesAntes, imagensEmbutidas: inicial.imagensEmbutidas, simulado: simular });
+    } catch (err) {
+      setErro(mensagemDeErro(err));
+    } finally {
+      setRodando(null);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Quadro de Chegada: imagens antigas</CardTitle>
+        <CardDescription>
+          Registros de 26/08 a 02/09 guardam fotos e assinaturas como texto dentro do quadro, que ficou perto do
+          limite do banco. Salva essas imagens como arquivo no Drive, como as chegadas novas já fazem. A tela e o
+          PDF do comprovante não mudam.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => rodar(true)} disabled={!!rodando} variant="outline">
+            {rodando === "simular" ? "Simulando…" : "Simular"}
+          </Button>
+          <Button onClick={() => rodar(false)} disabled={!!rodando}>
+            {rodando === "aplicar" ? "Salvando…" : "Tirar imagens do quadro"}
+          </Button>
+        </div>
+        {erro && <p className="text-sm text-destructive">Erro: {erro}</p>}
+        {relatorio && (
+          <p className="text-sm">
+            {relatorio.simulado ? "Simulação: " : ""}
+            {relatorio.imagensEmbutidas} imagens em texto
+            {relatorio.simulado ? "" : `, ${relatorio.trocadas} referências trocadas`} · quadro {kb(relatorio.bytesAntes)} →{" "}
+            {kb(relatorio.bytesDepois)}
+            {!relatorio.simulado && relatorio.restantes > 0 && ` · ainda restam ${relatorio.restantes}`}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function AdminMigrarLabState() {
   const migrateFn = useServerFn(runLabStateMigration);
   const testDriveFn = useServerFn(testDriveRoundTrip);
@@ -270,6 +377,8 @@ function AdminMigrarLabState() {
   return (
     <div className="max-w-3xl mx-auto my-16 px-4 space-y-6">
       <SecaoBancoD1 />
+      <SecaoCopiaDoBanco />
+      <SecaoImagensChegada />
       <Card>
         <CardHeader>
           <CardTitle>Migração: _lab-state.json → tabelas relacionais</CardTitle>

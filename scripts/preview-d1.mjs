@@ -35,7 +35,10 @@ const arquivoTeste = join(pastaServidor, "wrangler.preview-d1.json");
 writeFileSync(arquivoTeste, JSON.stringify(teste, null, 2));
 
 const porta = process.argv[2] ?? "8093";
-const args = ["wrangler", "dev", "--config", arquivoTeste, "--persist-to", join(raiz, ".wrangler", "state"), "--port", porta, "--local"];
+// Opções extras vão direto ao wrangler — ex.: `--test-scheduled`, que abre
+// /__scheduled?cron=... para disparar o agendamento (cópia diária) na hora.
+const extras = process.argv.slice(3);
+const args = ["wrangler", "dev", "--config", arquivoTeste, "--persist-to", join(raiz, ".wrangler", "state"), "--port", porta, "--local", ...extras];
 console.log(`> npx ${args.join(" ")}`);
 const filho = spawn("npx", args, { cwd: pastaServidor, stdio: "inherit", shell: true });
 filho.on("exit", (codigo) => process.exit(codigo ?? 0));
