@@ -173,7 +173,7 @@ export function MEspAEnsaioEditor() {
     : "";
 
   const { user, role } = useAuth();
-  const isAdmin = role === "admin" || user?.email?.includes("cleitton") || user?.id === "cleitton-admin-local";
+  const isAdmin = role === "admin";
   const isVerificador = role === "verificador" || role === "gestor" || isAdmin;
 
   const [versions, setVersions] = useState<ReportVersion[]>([]);

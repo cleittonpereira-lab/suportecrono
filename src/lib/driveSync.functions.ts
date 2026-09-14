@@ -10,6 +10,7 @@
  *         fotos/CP{n}/*.jpg
  *         manifest.json
  */
+import { exigirLogin, requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { getGoogleAccessToken, isGoogleAuthConfigured } from "./google-auth.server";
@@ -116,15 +117,104 @@ async function ensureFolderPath(parts: string[]): Promise<string> {
   return parent;
 }
 
+/**
+ * Lista os arquivos de uma pasta. Falha estoura: uma lista vazia no lugar do
+ * erro era lida como "este ensaio não tem nenhuma revisão no Drive".
+ */
 async function listFilesInFolder(parentId: string): Promise<{ id: string; name: string }[]> {
   const q = `'${parentId}' in parents and trashed = false and mimeType != '${FOLDER_MIME}'`;
   const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name)")}&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=drive&driveId=${DRIVE_ROOT_FOLDER_ID}`;
-  try {
-    const data = await driveJson(url, { method: "GET", headers: await driveHeaders() });
-    return (data.files ?? []) as { id: string; name: string }[];
-  } catch {
-    return [];
+  const data = await driveJson(url, { method: "GET", headers: await driveHeaders() });
+  return (data.files ?? []) as { id: string; name: string }[];
+}
+
+/**
+ * Resolve um caminho de pastas SEM criar nada; `null` se algum trecho não
+ * existir. Consultar o status de um ensaio usava `ensureFolderPath`, e toda
+ * abertura de tela de relatório criava a árvore `{OS}/{amostra}/{ensaio}/
+ * relatorios` no Drive — são as dezenas de pastas `relatorios` vazias que
+ * existem lá. "A pasta não existe" volta a significar "esse ensaio nunca teve
+ * revisão enviada", que é o que a tela precisa saber.
+ */
+async function resolveFolderPath(parts: string[]): Promise<string | null> {
+  let parent = DRIVE_ROOT_FOLDER_ID;
+  let acumulado = "";
+  for (const raw of parts) {
+    const name = raw.trim();
+    if (!name) continue;
+    acumulado = acumulado ? `${acumulado}/${name}` : name;
+    const emCache = driveFolderMemCache.get(acumulado);
+    if (emCache) {
+      parent = emCache;
+      continue;
+    }
+    const encontrada = await findFolder(name, parent);
+    if (!encontrada) return null;
+    driveFolderMemCache.set(acumulado, encontrada);
+    parent = encontrada;
   }
+  return parent;
+}
+
+/** Campos das entidades (OS, amostra, ensaio) que este módulo lê do Drive. */
+type ArquivoLab = {
+  numero?: string;
+  client?: string;
+  reportNumber?: string;
+  code?: string;
+  tipo?: string;
+  label?: string;
+  nome?: string;
+  sigla?: string;
+  reportApprovals?: { rev?: unknown }[];
+};
+
+/** Nomes das pastas `{OS}/{amostra}/{ensaio}` no Drive. */
+function nomesDaPasta(i: {
+  osNumero?: string | null;
+  osCliente?: string | null;
+  amostraCodigo?: string | null;
+  ensaioTipo?: string | null;
+  ensaioNome?: string | null;
+}): string[] {
+  const os = safeName(
+    i.osNumero ? (i.osCliente ? `${i.osNumero} - ${i.osCliente}` : i.osNumero) : "OS-sem-numero",
+    "OS-sem-numero",
+  );
+  const amostra = safeName(i.amostraCodigo || "Amostra-sem-codigo", "Amostra-sem-codigo");
+  const tipo = i.ensaioTipo || "ensaio";
+  const ensaio = safeName(i.ensaioNome ? `${tipo} - ${i.ensaioNome}` : tipo, "ensaio");
+  return [os, amostra, ensaio];
+}
+
+/**
+ * Pasta do ensaio calculada no servidor, a partir dos arquivos da OS, amostra
+ * e ensaio — uma fonte só.
+ *
+ * Antes, o envio montava a pasta com o que cada tela mandava (o PERM.V mandava
+ * o número da AMOSTRA como nome do ensaio, outras telas mandavam outras
+ * coisas) e o status procurava a pasta com o nome gravado no arquivo. As duas
+ * olhavam pastas diferentes, e o mesmo ensaio ganhava uma pasta nova a cada
+ * variação de nome: é por isso que existem `asf-dap`, `asf-dap - Densidade
+ * Aparente (ASF.DAP)` e `asf-dap - Densidade Aparente — ASF.DAP (DNIT ...)`
+ * lado a lado no Drive. A descrição da amostra ficou de fora de propósito:
+ * editá-la criava outra pasta.
+ */
+async function partesDaPastaDoEnsaio(scopeId: string): Promise<string[] | null> {
+  const ids = parseScope(scopeId);
+  if (!ids) return null;
+  const { ensureFolderPath: ensureFolderPathShared, readDriveJson } = await import("@/lib/driveStorage");
+  const os = await readDriveJson<ArquivoLab>(`${ids.osId}.json`, await ensureFolderPathShared(["lab-os"]));
+  const am = await readDriveJson<ArquivoLab>(`${ids.osId}__${ids.amostraId}.json`, await ensureFolderPathShared(["lab-amostras"]));
+  const en = await readDriveJson<ArquivoLab>(`${ids.amostraId}__${ids.ensaioId}.json`, await ensureFolderPathShared(["lab-ensaios"]));
+  if (!os || !am || !en) return null;
+  return nomesDaPasta({
+    osNumero: os.numero,
+    osCliente: os.client,
+    amostraCodigo: am.reportNumber || am.code,
+    ensaioTipo: en.tipo,
+    ensaioNome: en.label || en.nome || en.sigla,
+  });
 }
 
 function parseScope(scopeId: string): { osId: string; amostraId: string; ensaioId: string } | null {
@@ -206,60 +296,6 @@ function b64ToBytes(b64: string): Uint8Array {
   return out;
 }
 
-/**
- * Caminho do PDF da revisão no bucket privado `lab-reports`.
- * Sempre gravado no finalizar (mesmo se o Drive falhar), garantindo prévia.
- */
-function storagePdfPath(scopeId: string, rev: number) {
-  const safe = scopeId.replace(/[^\w/.-]+/g, "_");
-  return `${safe}/Rev-${String(rev).padStart(2, "0")}.pdf`;
-}
-
-/**
- * Grava o PDF no bucket privado — fonte de verdade compartilhada entre
- * navegadores/dispositivos para a lista de "Versões". Antes, um erro aqui
- * era engolido (só um console.warn) e a função devolvia sucesso mesmo
- * assim — o chamador (e o usuário) não tinha como saber que o PDF só
- * ficou salvo localmente (IndexedDB) e sumia ao abrir em outro navegador.
- * Agora propaga o erro de verdade.
- */
-async function uploadPdfToStorage(scopeId: string, rev: number, bytes: Uint8Array) {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const path = storagePdfPath(scopeId, rev);
-  const arrayBuffer = new ArrayBuffer(bytes.byteLength);
-  new Uint8Array(arrayBuffer).set(bytes);
-  const pdfBlob = new Blob([arrayBuffer], { type: "application/pdf" });
-  const { error } = await supabaseAdmin.storage
-    .from("lab-reports")
-    .upload(path, pdfBlob, {
-      contentType: "application/pdf",
-      upsert: true,
-    });
-  if (error) throw new Error(`Falha ao salvar PDF no Storage: ${error.message}`);
-  return path;
-}
-
-async function downloadPdfFromStorage(scopeId: string, rev: number): Promise<Uint8Array | null> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const path = storagePdfPath(scopeId, rev);
-  const { data, error } = await supabaseAdmin.storage.from("lab-reports").download(path);
-  if (error || !data) return null;
-  return new Uint8Array(await data.arrayBuffer());
-}
-
-async function latestStorageRev(scopeId: string): Promise<number | null> {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const safe = scopeId.replace(/[^\w/.-]+/g, "_");
-  const { data } = await supabaseAdmin.storage.from("lab-reports").list(safe, { limit: 100 });
-  if (!data || data.length === 0) return null;
-  const revs = data
-    .map((f) => /^Rev-(\d+)\.pdf$/i.exec(f.name)?.[1])
-    .filter(Boolean)
-    .map((n) => Number(n));
-  if (revs.length === 0) return null;
-  return Math.max(...revs);
-}
-
 const PhotoSchema = z.object({
   cpId: z.string(),
   filename: z.string(),
@@ -287,6 +323,8 @@ const SyncRevisionInput = z.object({
   dadosJson: z.string().optional(),
   fotos: z.array(PhotoSchema).default([]),
   manifest: z.record(z.string(), z.unknown()).default({}),
+  /** Reenvio deliberado do MESMO PDF já emitido: só aí sobrescrever a revisão existente no Drive é permitido. */
+  reemissao: z.boolean().optional(),
 });
 
 function safeName(s: string, fallback: string) {
@@ -334,145 +372,132 @@ function logSync(row: {
   }
 }
 
+/** Confere a assinatura e o tamanho mínimo de um PDF antes de enviá-lo a qualquer lugar. */
+function pdfValido(bytes: Uint8Array): boolean {
+  return (
+    bytes.length > 5000 &&
+    bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46 && bytes[4] === 0x2d
+  );
+}
+
+async function enviarRevisaoAoDrive(data: z.infer<typeof SyncRevisionInput>, pdfBytes: Uint8Array) {
+  const parts = (await partesDaPastaDoEnsaio(data.scopeId)) ?? ensaioFolderParts(data);
+  const ensaioFolderId = await ensureFolderPath(parts);
+  const relFolderId = await ensureFolderPath([...parts, "relatorios"]);
+
+  // Uma revisão emitida não é sobrescrita. Com a numeração vinda do navegador,
+  // outro computador gerava de novo a "Rev-00" e o upload por nome gravava por
+  // cima da Rev-00 já assinada. Só o reenvio deliberado do mesmo PDF passa.
+  if (!data.reemissao) {
+    const jaExiste = await findFileInFolder(data.pdf.filename, relFolderId);
+    if (jaExiste) {
+      throw new Error(
+        `${data.pdf.filename} já existe no Drive. Uma revisão emitida não é sobrescrita — gere uma nova revisão.`,
+      );
+    }
+  }
+
+  const pdfId = await uploadBytes({
+    parentId: relFolderId,
+    name: data.pdf.filename,
+    mimeType: "application/pdf",
+    bytes: pdfBytes,
+    overwrite: true,
+  });
+  logSync({ scope_id: data.scopeId, rev: data.rev, kind: "pdf", status: "ok", file_id: pdfId, folder_id: relFolderId });
+
+  if (data.xlsx) {
+    const xlsxId = await uploadBytes({
+      parentId: relFolderId,
+      name: data.xlsx.filename,
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      bytes: b64ToBytes(data.xlsx.base64),
+      overwrite: true,
+    });
+    logSync({ scope_id: data.scopeId, rev: data.rev, kind: "xlsx", status: "ok", file_id: xlsxId, folder_id: relFolderId });
+  }
+
+  let dadosId: string | null = null;
+  if (data.dadosJson) {
+    const dadosFolderId = await ensureFolderPath([...parts, "dados"]);
+    dadosId = await uploadBytes({
+      parentId: dadosFolderId,
+      name: "ensaio.json",
+      mimeType: "application/json",
+      bytes: new TextEncoder().encode(data.dadosJson),
+      overwrite: true,
+    });
+    logSync({ scope_id: data.scopeId, rev: data.rev, kind: "dados", status: "ok", file_id: dadosId });
+  }
+
+  const fotoResults: { cpId: string; filename: string; fileId: string }[] = [];
+  for (const f of data.fotos) {
+    const cpFolder = await ensureFolderPath([...parts, "fotos", f.cpId]);
+    const fid = await uploadBytes({
+      parentId: cpFolder,
+      name: f.filename,
+      mimeType: f.mimeType,
+      bytes: b64ToBytes(f.base64),
+      overwrite: true,
+    });
+    fotoResults.push({ cpId: f.cpId, filename: f.filename, fileId: fid });
+  }
+
+  const manifest = {
+    ...data.manifest,
+    scopeId: data.scopeId,
+    os: data.os,
+    amostra: data.amostra,
+    ensaio: data.ensaio,
+    ultimaRevisao: data.rev,
+    atualizadoEm: new Date().toISOString(),
+  };
+  await uploadBytes({
+    parentId: ensaioFolderId,
+    name: "manifest.json",
+    mimeType: "application/json",
+    bytes: new TextEncoder().encode(JSON.stringify(manifest, null, 2)),
+    overwrite: true,
+  });
+
+  return {
+    ensaioFolderId,
+    relFolderId,
+    pdfId,
+    dadosId,
+    fotos: fotoResults,
+    folderUrl: `https://drive.google.com/drive/folders/${ensaioFolderId}`,
+  };
+}
+
+/**
+ * Envia uma revisão emitida ao Google Drive — o único destino do PDF do laudo.
+ *
+ * Antes, o PDF ia primeiro para o bucket `lab-reports` do Supabase, e o erro de
+ * lá era relançado ANTES de chegar ao Drive. Como esse bucket não existe
+ * (nenhuma migração o cria), todo envio morria ali: nenhum PDF de laudo jamais
+ * chegou ao Drive, e as telas engoliam a falha com um `console.warn`. Sem Drive
+ * configurado, a função ainda devolvia `ok: true` sem ter gravado nada.
+ */
 export const syncRevisionToDrive = createServerFn({ method: "POST" })
+  .middleware([exigirLogin])
   .inputValidator((input: unknown) => SyncRevisionInput.parse(input))
   .handler(async ({ data }) => {
-    // Sempre grava o PDF no Storage privado — garante prévia mesmo se o Drive
-    // não estiver configurado ou falhar.
+    const rotulo = `Rev-${String(data.rev).padStart(2, "0")}`;
     const pdfBytes = b64ToBytes(data.pdf.base64);
-    let storagePath: string | null = null;
-    try {
-      storagePath = await uploadPdfToStorage(data.scopeId, data.rev, pdfBytes);
-      await logSync({
-        scope_id: data.scopeId,
-        rev: data.rev,
-        kind: "pdf-storage",
-        status: "ok",
-        file_id: storagePath,
-      });
-    } catch (err) {
-      await logSync({
-        scope_id: data.scopeId,
-        rev: data.rev,
-        kind: "pdf-storage",
-        status: "error",
-        error: (err instanceof Error ? err.message : String(err)).slice(0, 500),
-      });
-      throw err;
+    if (!pdfValido(pdfBytes)) {
+      throw new Error(`O PDF da ${rotulo} está vazio ou corrompido (${pdfBytes.length} bytes) e não foi enviado.`);
     }
-
     if (!isGoogleAuthConfigured()) {
-      // Drive não configurado: retorna sucesso baseado no Storage.
-      return {
-        ok: true,
-        storagePath,
-        ensaioFolderId: null as string | null,
-        relFolderId: null as string | null,
-        pdfId: null as string | null,
-        dadosId: null as string | null,
-        fotos: [] as { cpId: string; filename: string; fileId: string }[],
-        folderUrl: null as string | null,
-        driveConfigured: false,
-      };
+      throw new Error(`A ${rotulo} não foi enviada: o Google Drive não está configurado neste servidor.`);
     }
     try {
-      const parts = ensaioFolderParts(data);
-      const ensaioFolderId = await ensureFolderPath(parts);
-      const relFolderId = await ensureFolderPath([...parts, "relatorios"]);
-      const dadosFolderId = await ensureFolderPath([...parts, "dados"]);
-
-      const pdfId = await uploadBytes({
-        parentId: relFolderId,
-        name: data.pdf.filename,
-        mimeType: "application/pdf",
-        bytes: pdfBytes,
-        overwrite: true,
-      });
-      await logSync({ scope_id: data.scopeId, rev: data.rev, kind: "pdf", status: "ok", file_id: pdfId, folder_id: relFolderId });
-
-      let xlsxId: string | null = null;
-      if (data.xlsx) {
-        const xlsxBytes = b64ToBytes(data.xlsx.base64);
-        xlsxId = await uploadBytes({
-          parentId: relFolderId,
-          name: data.xlsx.filename,
-          mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          bytes: xlsxBytes,
-          overwrite: true,
-        });
-        await logSync({ scope_id: data.scopeId, rev: data.rev, kind: "xlsx", status: "ok", file_id: xlsxId, folder_id: relFolderId });
-      }
-
-      let dadosId: string | null = null;
-      if (data.dadosJson) {
-        dadosId = await uploadBytes({
-          parentId: dadosFolderId,
-          name: "ensaio.json",
-          mimeType: "application/json",
-          bytes: new TextEncoder().encode(data.dadosJson),
-          overwrite: true,
-        });
-        await logSync({ scope_id: data.scopeId, rev: data.rev, kind: "dados", status: "ok", file_id: dadosId });
-      }
-
-      const fotoResults: { cpId: string; filename: string; fileId: string }[] = [];
-      for (const f of data.fotos) {
-        const cpFolder = await ensureFolderPath([...parts, "fotos", f.cpId]);
-        const fid = await uploadBytes({
-          parentId: cpFolder,
-          name: f.filename,
-          mimeType: f.mimeType,
-          bytes: b64ToBytes(f.base64),
-          overwrite: true,
-        });
-        fotoResults.push({ cpId: f.cpId, filename: f.filename, fileId: fid });
-      }
-      if (data.fotos.length > 0) {
-        await logSync({
-          scope_id: data.scopeId,
-          rev: data.rev,
-          kind: "fotos",
-          status: "ok",
-          metadata: { count: data.fotos.length },
-        });
-      }
-
-      const manifest = {
-        ...data.manifest,
-        scopeId: data.scopeId,
-        os: data.os,
-        amostra: data.amostra,
-        ensaio: data.ensaio,
-        ultimaRevisao: data.rev,
-        atualizadoEm: new Date().toISOString(),
-      };
-      await uploadBytes({
-        parentId: ensaioFolderId,
-        name: "manifest.json",
-        mimeType: "application/json",
-        bytes: new TextEncoder().encode(JSON.stringify(manifest, null, 2)),
-        overwrite: true,
-      });
-
-      return {
-        ok: true,
-        ensaioFolderId,
-        relFolderId,
-        pdfId,
-        dadosId,
-        fotos: fotoResults,
-        folderUrl: `https://drive.google.com/drive/folders/${ensaioFolderId}`,
-      };
+      const drive = await enviarRevisaoAoDrive(data, pdfBytes);
+      return { ok: true, driveOk: true, avisos: [] as string[], ...drive };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      await logSync({
-        scope_id: data.scopeId,
-        rev: data.rev,
-        kind: "revision",
-        status: "error",
-        error: message.slice(0, 500),
-      });
-      throw new Error(message);
+      logSync({ scope_id: data.scopeId, rev: data.rev, kind: "revision", status: "error", error: message.slice(0, 500) });
+      throw new Error(`A ${rotulo} não chegou ao Drive: ${message}`);
     }
   });
 
@@ -487,45 +512,42 @@ type DriveSyncEntry = {
   created_at: string;
 };
 
-export type StorageRevisionEntry = { rev: number; filename: string; size: number; updatedAt: string };
+export type RevisaoNoDrive = { rev: number; filename: string; size: number; updatedAt: string };
 
 /**
- * Lista as revisões (versões de PDF) que REALMENTE existem no bucket
- * privado `lab-reports` para este ensaio — fonte de verdade compartilhada
- * entre navegadores/dispositivos. A lista de "Versões" na tela de
- * relatório usava só o IndexedDB do navegador (report-versions.ts), que é
- * local por definição — abrir o mesmo relatório em outro navegador ou
- * dispositivo mostrava a lista vazia mesmo com os PDFs já salvos no
- * servidor. Esta função é o que a UI deve consultar para saber quais
- * versões existem de verdade.
+ * Revisões (PDFs) que existem de fato na pasta `relatorios` do ensaio no Drive.
+ * A lista de "Versões" das telas vem do IndexedDB do navegador, que é local:
+ * em outro computador ela aparecia vazia. É isto que a tela consulta para
+ * trazer as revisões que ainda não tem. Falha estoura — não vira lista vazia.
  */
-const ListStorageRevisionsInput = z.object({ scopeId: z.string().min(1) });
-
-export const listStorageRevisions = createServerFn({ method: "GET" })
-  .inputValidator((input: unknown) => ListStorageRevisionsInput.parse(input))
-  .handler(async ({ data }): Promise<{ revisions: StorageRevisionEntry[] }> => {
-    try {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      const safe = data.scopeId.replace(/[^\w/.-]+/g, "_");
-      const { data: files, error } = await supabaseAdmin.storage.from("lab-reports").list(safe, { limit: 200 });
-      if (error || !files) return { revisions: [] };
-      const revisions: StorageRevisionEntry[] = files
-        .map((f): StorageRevisionEntry | null => {
-          const m = /^Rev-(\d+)\.pdf$/i.exec(f.name);
-          if (!m) return null;
-          return {
-            rev: Number(m[1]),
-            filename: f.name,
-            size: (f.metadata as { size?: number } | null)?.size ?? 0,
-            updatedAt: f.updated_at || f.created_at || new Date().toISOString(),
-          };
-        })
-        .filter((r): r is StorageRevisionEntry => r !== null)
-        .sort((a, b) => b.rev - a.rev);
-      return { revisions };
-    } catch {
-      return { revisions: [] };
-    }
+export const listDriveRevisions = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ scopeId: z.string().min(1) }).parse(input))
+  .handler(async ({ data }): Promise<{ revisions: RevisaoNoDrive[] }> => {
+    if (!isGoogleAuthConfigured()) return { revisions: [] };
+    const parts = await partesDaPastaDoEnsaio(data.scopeId);
+    if (!parts) return { revisions: [] };
+    const rel = await resolveFolderPath([...parts, "relatorios"]);
+    if (!rel) return { revisions: [] };
+    const q = `'${rel}' in parents and trashed = false and mimeType != '${FOLDER_MIME}'`;
+    const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name,size,modifiedTime)")}&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=drive&driveId=${DRIVE_ROOT_FOLDER_ID}`;
+    const resp = (await driveJson(url, { method: "GET", headers: await driveHeaders() })) as {
+      files?: { name: string; size?: string; modifiedTime?: string }[];
+    };
+    const revisions = (resp.files ?? [])
+      .map((f): RevisaoNoDrive | null => {
+        const m = /Rev-?(\d+)\.pdf$/i.exec(f.name);
+        if (!m) return null;
+        return {
+          rev: Number(m[1]),
+          filename: f.name,
+          size: Number(f.size ?? 0),
+          updatedAt: f.modifiedTime ?? new Date().toISOString(),
+        };
+      })
+      .filter((r): r is RevisaoNoDrive => r !== null)
+      .sort((a, b) => b.rev - a.rev);
+    return { revisions };
   });
 
 /**
@@ -535,28 +557,18 @@ export const listStorageRevisions = createServerFn({ method: "GET" })
  * passadas, mas é o que a UI realmente usa).
  */
 export const getDriveSyncStatus = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => z.object({ scopeId: z.string() }).parse(input))
   .handler(async ({ data }): Promise<{ entries: DriveSyncEntry[] }> => {
     try {
       const ids = parseScope(data.scopeId);
       if (!ids || !isGoogleAuthConfigured()) return { entries: [] };
 
-      const { ensureFolderPath: ensureFolderPathShared, readDriveJson } = await import("@/lib/driveStorage");
-      const osFolderId = await ensureFolderPathShared(["lab-os"]);
-      const os = await readDriveJson<any>(`${ids.osId}.json`, osFolderId);
-      const amFolderId = await ensureFolderPathShared(["lab-amostras"]);
-      const am = await readDriveJson<any>(`${ids.osId}__${ids.amostraId}.json`, amFolderId);
-      const enFolderId = await ensureFolderPathShared(["lab-ensaios"]);
-      const en = await readDriveJson<any>(`${ids.amostraId}__${ids.ensaioId}.json`, enFolderId);
-      if (!os || !am || !en) return { entries: [] };
-
-      const parts = ensaioFolderParts({
-        scopeId: data.scopeId,
-        os: { numero: os.numero || "", cliente: os.client || "" },
-        amostra: { code: am.code || am.reportNumber || "", descricao: am.description || "" },
-        ensaio: { tipo: en.tipo || "", nome: en.nome || "" },
-      } as any);
-      const relFolderId = await ensureFolderPath([...parts, "relatorios"]);
+      const parts = await partesDaPastaDoEnsaio(data.scopeId);
+      if (!parts) return { entries: [] };
+      // Só consulta: pasta que não existe = nenhuma revisão enviada. Não cria nada.
+      const relFolderId = await resolveFolderPath([...parts, "relatorios"]);
+      if (!relFolderId) return { entries: [] };
       const files = (await listFilesInFolder(relFolderId)).filter((f) => f.name.toLowerCase().endsWith(".pdf"));
       const nowIso = new Date().toISOString();
 
@@ -580,6 +592,62 @@ export const getDriveSyncStatus = createServerFn({ method: "GET" })
   });
 
 /**
+ * Próximo número de revisão pelo que o SERVIDOR já registrou, não pelo que o
+ * navegador lembra. As telas numeravam pelo IndexedDB local: em outro
+ * computador a lista começava vazia e a revisão voltava a ser Rev-00.
+ *
+ * Fontes: as revisões registradas no fluxo de aprovação (dentro do arquivo do
+ * ensaio, disponível sempre que o ensaio existe), os PDFs na pasta
+ * `relatorios` do Drive. `proxima: null` quando nenhuma
+ * fonte respondeu — a tela avisa e usa só o histórico local.
+ */
+export const getProximaRevisao = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ scopeId: z.string().min(1) }).parse(input))
+  .handler(async ({ data }): Promise<{ proxima: number | null; fontes: string[] }> => {
+    const revs: number[] = [];
+    const fontes: string[] = [];
+
+    const ids = parseScope(data.scopeId);
+    if (ids) {
+      try {
+        const { ensureFolderPath: ensureFolderPathShared, readDriveJson } = await import("@/lib/driveStorage");
+        const en = await readDriveJson<ArquivoLab>(
+          `${ids.amostraId}__${ids.ensaioId}.json`,
+          await ensureFolderPathShared(["lab-ensaios"]),
+        );
+        fontes.push("aprovacoes");
+        for (const a of (en?.reportApprovals ?? []) as { rev?: unknown }[]) {
+          if (typeof a.rev === "number") revs.push(a.rev);
+        }
+      } catch (err) {
+        console.warn("[getProximaRevisao] Falha ao ler as aprovações:", err);
+      }
+    }
+
+    if (isGoogleAuthConfigured()) {
+      try {
+        const parts = await partesDaPastaDoEnsaio(data.scopeId);
+        if (parts) {
+          const rel = await resolveFolderPath([...parts, "relatorios"]);
+          fontes.push("drive");
+          if (rel) {
+            for (const f of await listFilesInFolder(rel)) {
+              const m = /Rev-?(\d+)\.pdf$/i.exec(f.name);
+              if (m) revs.push(Number(m[1]));
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("[getProximaRevisao] Falha ao consultar o Drive:", err);
+      }
+    }
+
+    if (fontes.length === 0) return { proxima: null, fontes };
+    return { proxima: revs.length > 0 ? Math.max(...revs) + 1 : 0, fontes };
+  });
+
+/**
  * Registrar a abertura de um ensaio não é mais necessário: o arquivo do
  * ensaio no Drive (lab-ensaios/{amostraId}__{ensaioId}.json) já é criado
  * pelo próprio labStore assim que o ensaio existe. Mantido como no-op só
@@ -593,6 +661,7 @@ const RegisterDraftInput = z.object({
 });
 
 export const registerEnsaioDraft = createServerFn({ method: "POST" })
+  .middleware([exigirLogin])
   .inputValidator((v: unknown) => RegisterDraftInput.parse(v))
   .handler(async () => {
     return { ok: true, created: false };
@@ -600,8 +669,8 @@ export const registerEnsaioDraft = createServerFn({ method: "POST" })
 
 /**
  * Baixa o PDF da revisão informada (ou da última) do Drive e devolve em
- * base64 para pré-visualização em pop-up. Consulta `drive_sync_log` para
- * localizar o file_id da última upload bem-sucedida com kind='pdf'.
+ * base64 para pré-visualização em pop-up, direto da pasta `relatorios` do
+ * ensaio no Drive.
  */
 const PreviewInput = z.object({
   scopeId: z.string().min(1),
@@ -609,27 +678,11 @@ const PreviewInput = z.object({
 });
 
 export const getRevisionPdfBase64 = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((v: unknown) => PreviewInput.parse(v))
   .handler(async ({ data }) => {
-    // 1) Tenta Storage privado primeiro — sempre disponível quando o ensaio
-    //    foi finalizado (independente do Drive).
-    try {
-      const rev = typeof data.rev === "number" ? data.rev : await latestStorageRev(data.scopeId);
-      if (typeof rev === "number") {
-        const bytes = await downloadPdfFromStorage(data.scopeId, rev);
-        if (bytes) {
-          let bin = "";
-          const CHUNK = 0x8000;
-          for (let i = 0; i < bytes.length; i += CHUNK) {
-            bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-          }
-          return { base64: btoa(bin), rev };
-        }
-      }
-    } catch { /* cai para Drive */ }
-
     if (!isGoogleAuthConfigured()) {
-      throw new Error("Prévia indisponível: PDF ainda não foi armazenado. Finalize novamente o ensaio.");
+      throw new Error("Prévia indisponível: o Google Drive não está configurado neste servidor.");
     }
 
     // Busca direto na pasta do Drive deste ensaio (deduzida a partir dos
@@ -637,31 +690,28 @@ export const getRevisionPdfBase64 = createServerFn({ method: "POST" })
     const ids = parseScope(data.scopeId);
     if (!ids) throw new Error("scopeId inválido.");
 
-    const { ensureFolderPath: ensureFolderPathShared, readDriveJson } = await import("@/lib/driveStorage");
-    const osFolderId = await ensureFolderPathShared(["lab-os"]);
-    const os = await readDriveJson<any>(`${ids.osId}.json`, osFolderId);
-    const amFolderId = await ensureFolderPathShared(["lab-amostras"]);
-    const am = await readDriveJson<any>(`${ids.osId}__${ids.amostraId}.json`, amFolderId);
-    const enFolderId = await ensureFolderPathShared(["lab-ensaios"]);
-    const en = await readDriveJson<any>(`${ids.amostraId}__${ids.ensaioId}.json`, enFolderId);
-    if (!os || !am || !en) throw new Error("Ensaio não encontrado.");
-
-    const parts = ensaioFolderParts({
-      scopeId: data.scopeId,
-      os: { numero: os.numero || "", cliente: os.client || "" },
-      amostra: { code: am.code || am.reportNumber || "", descricao: am.description || "" },
-      ensaio: { tipo: en.tipo || "", nome: en.nome || "" },
-    } as any);
-    const relFolderId = await ensureFolderPath([...parts, "relatorios"]);
+    const parts = await partesDaPastaDoEnsaio(data.scopeId);
+    if (!parts) throw new Error("Ensaio não encontrado.");
+    const relFolderId = await resolveFolderPath([...parts, "relatorios"]);
+    if (!relFolderId) throw new Error("Nenhum PDF encontrado no Drive para este ensaio.");
     const files = (await listFilesInFolder(relFolderId)).filter((f) => f.name.toLowerCase().endsWith(".pdf"));
     if (files.length === 0) throw new Error("Nenhum PDF encontrado no Drive para este ensaio.");
 
-    let target = files[0];
+    // Pedida a revisão N, devolve a N ou falha. Antes caía em `files[0]` quando
+    // não achava, e a tela de compressão simples gravava esse PDF no histórico
+    // local COMO se fosse a revisão N.
+    const revDoArquivo = (nome: string) => {
+      const m = /Rev-?(\d+)\.pdf$/i.exec(nome);
+      return m ? Number(m[1]) : null;
+    };
+    const comRev = files.filter((f) => revDoArquivo(f.name) != null);
+    let target: { id: string; name: string } | undefined;
     if (typeof data.rev === "number") {
-      const wanted = files.find((f) => f.name.includes(`Rev-${String(data.rev).padStart(2, "0")}`));
-      if (wanted) target = wanted;
+      target = comRev.find((f) => revDoArquivo(f.name) === data.rev);
+      if (!target) throw new Error(`A revisão ${data.rev} não foi encontrada no Drive para este ensaio.`);
     } else {
-      target = [...files].sort((a, b) => b.name.localeCompare(a.name))[0];
+      target = [...comRev].sort((a, b) => (revDoArquivo(b.name) ?? 0) - (revDoArquivo(a.name) ?? 0))[0];
+      if (!target) throw new Error("Nenhum PDF de revisão encontrado no Drive para este ensaio.");
     }
 
     const res = await fetch(`${DRIVE_V3}/files/${target.id}?alt=media&supportsAllDrives=true`, {

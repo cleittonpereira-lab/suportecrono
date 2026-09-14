@@ -23,7 +23,9 @@ import {
   Beaker, History, FileText, Ruler,
 } from "lucide-react";
 import { toast } from "sonner";
-import { toPng } from "html-to-image";
+import { rasterizarRelatorioParaPdf, waitForOffscreenEl, comTeto } from "@/lib/report-pdf";
+import { planejarPaginasPermV, type BlocoPermV } from "@/features/perm-v/reportLayout";
+import { PhotoAppendixPage } from "@/features/lab/components/PhotoAppendixPage";
 import {
   listVersions, saveVersion, nextRev, deleteVersion, downloadVersion, type ReportVersion,
 } from "@/features/perm-v/report-versions";
@@ -32,7 +34,7 @@ import { ReportVersionsPanel } from "@/components/report/ReportVersionsPanel";
 import {
   listApprovals, requestApproval, verifyApproval, decideApproval, type ApprovalRow,
 } from "@/lib/approvals.functions";
-import { getWorkflowStatuses } from "@/lib/driveSync.functions";
+import { getWorkflowStatuses, getProximaRevisao } from "@/lib/driveSync.functions";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -105,14 +107,13 @@ function NumField({ label, value, onChange, className }: { label: string; value:
   );
 }
 
-/** Página única do laudo: identificação + índices físicos + determinações + gráficos. */
-function PermVReportPage({
-  sample,
-  photos = [],
-}: {
-  sample: PermVSample;
-  photos?: import("@/features/lab/types").Photo[];
-}) {
+const PERMV_TITULO = "PERMEABILIDADE A CARGA VARIÁVEL — MÉTODO B";
+const PERMV_NORMAS = [
+  { text: "ABNT NBR 14545:2021 - Solo — Determinação do coeficiente de permeabilidade de solos argilosos à carga variável" },
+];
+
+/** Cálculos do laudo, compartilhados por todos os blocos e pelo planejador de páginas. */
+function usePermVCalculos(sample: PermVSample) {
   const determinacoes = useMemo(() => calcDeterminacoes(sample), [sample]);
   const volAcum = useMemo(() => volumeAcumulado(determinacoes), [determinacoes]);
   const k20med = k20Medio(determinacoes, sample.mediaExcluidas);
@@ -138,15 +139,13 @@ function PermVReportPage({
     h: d.h2,
   }));
 
+  return { determinacoes, volAcum, k20med, naMedia, ms, rhoD, ei, sr, vv, chartData };
+}
+
+type CalcPermV = ReturnType<typeof usePermVCalculos>;
+
+function BlocoIndices({ sample, c }: { sample: PermVSample; c: CalcPermV }) {
   return (
-    <ReportPage
-      sample={sample as unknown as ReportSample}
-      page={1}
-      total={1}
-      title="PERMEABILIDADE A CARGA VARIÁVEL — MÉTODO B"
-      norms={[{ text: "ABNT NBR 14545:2021 - Solo — Determinação do coeficiente de permeabilidade de solos argilosos à carga variável" }]}
-    >
-      <div className="space-y-2 text-[10px] text-[#141414]">
         <div className="border border-[#141414]">
           <div className="rounded-t border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-center text-[9.5px] font-bold uppercase text-[#141414]">
             Índices Físicos Iniciais do Corpo de Prova
@@ -167,19 +166,25 @@ function PermVReportPage({
               <tr>
                 <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(sample.diametroInicial, 2)}</td>
                 <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(sample.alturaInicial, 2)}</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(ms, 1)}</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(rhoD, 3)}</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(ei, 3)}</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(sr, 1)}</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(vv, 2)}</td>
+                <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(c.ms, 1)}</td>
+                <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(c.rhoD, 3)}</td>
+                <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(c.ei, 3)}</td>
+                <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(c.sr, 1)}</td>
+                <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(c.vv, 2)}</td>
               </tr>
             </tbody>
           </table>
         </div>
+  );
+}
 
+function BlocoDeterminacoes({
+  sample, c, de, ate, continuacao,
+}: { sample: PermVSample; c: CalcPermV; de: number; ate: number; continuacao: boolean }) {
+  return (
         <div className="border border-[#141414]">
           <div className="rounded-t border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-[9.5px] font-bold uppercase text-[#141414] flex items-center justify-between">
-            <span>Determinações do Coeficiente de Permeabilidade</span>
+            <span>Determinações do Coeficiente de Permeabilidade{continuacao ? " (continuação)" : ""}</span>
             <span>Água: {sample.naturezaAgua || "—"} · Gradiente: {fmt(sample.gradienteHidraulico, 1)}</span>
           </div>
           <table className="w-full border-collapse">
@@ -197,7 +202,8 @@ function PermVReportPage({
               </tr>
             </thead>
             <tbody>
-              {determinacoes.map((d, i) => {
+              {c.determinacoes.slice(de, ate).map((d, j) => {
+                const i = de + j;
                 const foraDaMedia = sample.mediaExcluidas.includes(d.leituraFinal.id);
                 return (
                 <tr key={i} className={foraDaMedia ? "text-[#141414]/55" : undefined}>
@@ -212,11 +218,11 @@ function PermVReportPage({
                   <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(d.rt, 3)}</td>
                   <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmtK(d.k)}</td>
                   <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmtK(d.k20)}</td>
-                  <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(volAcum[i], 2)}</td>
+                  <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(c.volAcum[i], 2)}</td>
                 </tr>
                 );
               })}
-              {determinacoes.length === 0 && (
+              {c.determinacoes.length === 0 && (
                 <tr>
                   <td colSpan={9} className="border border-[#141414] px-1 py-2 text-center text-muted-foreground">
                     Sem leituras suficientes para calcular determinações.
@@ -226,18 +232,23 @@ function PermVReportPage({
             </tbody>
           </table>
         </div>
+  );
+}
 
+function BlocoResultado({ c }: { c: CalcPermV }) {
+  return (
+    <>
         <div className="border border-[#141414] px-2 py-1.5 flex items-center justify-between">
           <span className="text-[9.5px] font-semibold uppercase">
-            Coeficiente de Permeabilidade a 20°C — k20 (média de {naMedia} de {determinacoes.length} determinações)
+            Coeficiente de Permeabilidade a 20°C — k20 (média de {c.naMedia} de {c.determinacoes.length} determinações)
           </span>
-          <span className="text-[12px] font-bold">{fmtK(k20med)} cm/s</span>
+          <span className="text-[12px] font-bold">{fmtK(c.k20med)} cm/s</span>
         </div>
 
         {/* Classificação pela faixa de permeabilidade (A. Casagrande e R. E. Fadum) */}
         <div className="border border-[#141414]">
           <div className="rounded-t border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-center text-[9px] font-bold uppercase text-[#141414]">
-            Faixa de Permeabilidade (A. Casagrande e R. E. Fadum) — {classificarPermeabilidade(k20med) ?? "—"}
+            Faixa de Permeabilidade (A. Casagrande e R. E. Fadum) — {classificarPermeabilidade(c.k20med) ?? "—"}
           </div>
           <div className="p-2">
             <div className="relative h-6 w-full flex overflow-hidden rounded-sm border border-[#141414]/50">
@@ -250,10 +261,10 @@ function PermVReportPage({
                   {f.nome}
                 </div>
               ))}
-              {posicaoNaFaixaPermeabilidade(k20med) != null && (
+              {posicaoNaFaixaPermeabilidade(c.k20med) != null && (
                 <div
                   className="absolute top-[-3px] h-[calc(100%+6px)] w-[2px] bg-[#dc2626]"
-                  style={{ left: `${(posicaoNaFaixaPermeabilidade(k20med) as number) * 100}%` }}
+                  style={{ left: `${(posicaoNaFaixaPermeabilidade(c.k20med) as number) * 100}%` }}
                 />
               )}
             </div>
@@ -262,38 +273,74 @@ function PermVReportPage({
             </div>
           </div>
         </div>
+    </>
+  );
+}
 
-        {naMedia < determinacoes.length && (
+function BlocoNota() {
+  return (
           <p className="text-[7.5px] text-[#141414]/70">
             * Determinação registrada, mas não considerada no cálculo do k₂₀ médio.
           </p>
-        )}
+  );
+}
 
-        {sample.observacoes?.trim() && (
+function BlocoObservacoes({ linhas, continuacao }: { linhas: string[]; continuacao: boolean }) {
+  return (
           <div className="border border-[#141414]">
             <div className="border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-[9px] font-bold uppercase text-[#141414]">
-              Observações
+              Observações{continuacao ? " (continuação)" : ""}
             </div>
             <p className="whitespace-pre-wrap px-2 py-1 text-[8px] leading-snug text-[#141414]">
-              {sample.observacoes}
+              {linhas.join("\n")}
             </p>
           </div>
-        )}
+  );
+}
 
-        {/* Gráfico 1 — exigido pela norma (item 9.h): k20 × volume de água percolado acumulado */}
+/**
+ * k20 varia em ordens de grandeza entre a primeira determinação (regime
+ * transiente) e as seguintes. Com eixo linear, a primeira esticava a escala e
+ * todas as outras ficavam coladas no zero, ilegíveis. Escala log com marcas
+ * nas potências de 10, como é usual para permeabilidade.
+ */
+function dominioLogK20(valores: number[]): { dominio: [number, number]; ticks: number[] } | null {
+  const positivos = valores.filter((v) => v > 0 && Number.isFinite(v));
+  if (positivos.length === 0) return null;
+  const exps = positivos.map((v) => Math.log10(v));
+  const lo = Math.floor(Math.min(...exps));
+  let hi = Math.ceil(Math.max(...exps));
+  if (hi === lo) hi = lo + 1;
+  const ticks: number[] = [];
+  for (let e = lo; e <= hi; e++) ticks.push(10 ** e);
+  return { dominio: [10 ** lo, 10 ** hi], ticks };
+}
+
+function BlocoGraficoK20({ c }: { c: CalcPermV }) {
+  const pontos = c.chartData.filter((d) => d.k20 != null && d.k20 > 0);
+  const escala = dominioLogK20(pontos.map((d) => d.k20 as number));
+  return (
         <div className="border border-[#141414]">
           <div className="rounded-t border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-center text-[9px] font-bold uppercase text-[#141414]">
             Variação do Coeficiente de Permeabilidade (k20) × Volume de Água Percolado
           </div>
           <div className="h-[130px] p-1">
             <ResponsiveContainer>
-              <ComposedChart data={chartData} margin={{ top: 4, right: 12, bottom: 16, left: 8 }}>
+              <ComposedChart data={pontos} margin={{ top: 4, right: 12, bottom: 16, left: 8 }}>
                 <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" />
-                <XAxis dataKey="volAcum" type="number" tick={{ fontSize: 8 }}>
+                <XAxis dataKey="volAcum" type="number" tick={{ fontSize: 8 }} domain={[0, "dataMax"]}>
                   <RLabel value="Volume percolado acumulado (cm³)" position="insideBottom" offset={-8} fontSize={8} />
                 </XAxis>
-                <YAxis dataKey="k20" tick={{ fontSize: 8 }} width={55}
-                  tickFormatter={(v) => (typeof v === "number" ? v.toExponential(1) : String(v))}>
+                <YAxis
+                  dataKey="k20"
+                  tick={{ fontSize: 8 }}
+                  width={62}
+                  scale={escala ? "log" : "auto"}
+                  domain={escala ? escala.dominio : ["auto", "auto"]}
+                  ticks={escala?.ticks}
+                  allowDataOverflow
+                  tickFormatter={(v) => (typeof v === "number" ? fmtK(v) : String(v))}
+                >
                   <RLabel value="k20 (cm/s)" angle={-90} position="insideLeft" offset={-4} fontSize={8} />
                 </YAxis>
                 <Tooltip formatter={(v: number) => fmtK(v)} />
@@ -302,15 +349,18 @@ function PermVReportPage({
             </ResponsiveContainer>
           </div>
         </div>
+  );
+}
 
-        {/* Gráfico 2 — carga hidráulica × tempo (curva de decaimento da carga variável) */}
+function BlocoGraficoH({ c }: { c: CalcPermV }) {
+  return (
         <div className="border border-[#141414]">
           <div className="rounded-t border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-center text-[9px] font-bold uppercase text-[#141414]">
             Carga Hidráulica (h) × Tempo
           </div>
           <div className="h-[130px] p-1">
             <ResponsiveContainer>
-              <ComposedChart data={chartData} margin={{ top: 4, right: 12, bottom: 16, left: 8 }}>
+              <ComposedChart data={c.chartData} margin={{ top: 4, right: 12, bottom: 16, left: 8 }}>
                 <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" />
                 <XAxis dataKey="tFinal" type="number" tick={{ fontSize: 8 }}>
                   <RLabel value="Tempo (min)" position="insideBottom" offset={-8} fontSize={8} />
@@ -324,22 +374,11 @@ function PermVReportPage({
             </ResponsiveContainer>
           </div>
         </div>
+  );
+}
 
-        {photos.length > 0 && (
-          <div className="border border-[#141414]">
-            <div className="rounded-t border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-center text-[9.5px] font-bold uppercase text-[#141414]">
-              Registro Fotográfico
-            </div>
-            <div className="grid grid-cols-4 gap-1 p-1">
-              {photos.map((p) => (
-                <div key={p.id} className="aspect-square overflow-hidden rounded border border-[#141414]/40 bg-white">
-                  <img src={p.url || p.dataUrl} alt="Registro fotográfico" crossOrigin="anonymous" className="h-full w-full object-cover" />
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
+function BlocoLegenda() {
+  return (
         <div className="border border-[#141414]">
           <div className="rounded-t border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-center text-[9.5px] font-bold uppercase text-[#141414]">
             Legenda
@@ -359,8 +398,86 @@ function PermVReportPage({
             Método B: a = área interna da bureta; H e A = altura e área iniciais do corpo de prova.
           </div>
         </div>
-      </div>
-    </ReportPage>
+  );
+}
+
+function renderBlocoPermV(b: BlocoPermV, sample: PermVSample, c: CalcPermV, key: number) {
+  switch (b.tipo) {
+    case "indices":
+      return <BlocoIndices key={key} sample={sample} c={c} />;
+    case "determinacoes":
+      return <BlocoDeterminacoes key={key} sample={sample} c={c} de={b.de} ate={b.ate} continuacao={b.continuacao} />;
+    case "resultado":
+      return <BlocoResultado key={key} c={c} />;
+    case "nota":
+      return <BlocoNota key={key} />;
+    case "observacoes":
+      return <BlocoObservacoes key={key} linhas={b.linhas} continuacao={b.continuacao} />;
+    case "grafico-k20":
+      return <BlocoGraficoK20 key={key} c={c} />;
+    case "grafico-h":
+      return <BlocoGraficoH key={key} c={c} />;
+    case "legenda":
+      return <BlocoLegenda key={key} />;
+  }
+}
+
+/**
+ * Laudo completo, quantas folhas forem necessárias. Cada folha é um filho
+ * direto (a regra `@media print` do container quebra página entre eles) e o
+ * mesmo plano alimenta a pré-visualização e o PDF — as duas não podem mais
+ * divergir no número de folhas.
+ */
+function PermVReportPages({
+  sample,
+  photos = [],
+  folhaClassName = "",
+}: {
+  sample: PermVSample;
+  photos?: import("@/features/lab/types").Photo[];
+  folhaClassName?: string;
+}) {
+  const c = usePermVCalculos(sample);
+  const temNota = c.naMedia < c.determinacoes.length;
+  const plano = useMemo(
+    () =>
+      planejarPaginasPermV({
+        nDeterminacoes: c.determinacoes.length,
+        observacoes: sample.observacoes ?? "",
+        nFotos: photos.length,
+        temNota,
+      }),
+    [c.determinacoes.length, sample.observacoes, photos.length, temNota],
+  );
+  const folhasDeFoto = plano.paginas.filter((p) => p.tipo === "fotos").length;
+  const reportSample = sample as unknown as ReportSample;
+  let indiceFoto = 0;
+
+  return (
+    <>
+      {plano.paginas.map((pag, i) => (
+        <div key={i} className={`w-[210mm] h-[297mm] bg-white shrink-0 overflow-hidden ${folhaClassName}`}>
+          {pag.tipo === "fotos" ? (
+            <PhotoAppendixPage
+              sample={reportSample}
+              page={i + 1}
+              total={plano.total}
+              title={PERMV_TITULO}
+              norms={PERMV_NORMAS}
+              photos={photos.slice(pag.de, pag.ate)}
+              agruparPorCategoria={false}
+              subtitulo={folhasDeFoto > 1 ? `${++indiceFoto} de ${folhasDeFoto}` : undefined}
+            />
+          ) : (
+            <ReportPage sample={reportSample} page={i + 1} total={plano.total} title={PERMV_TITULO} norms={PERMV_NORMAS}>
+              <div className="space-y-2 text-[10px] text-[#141414]">
+                {pag.blocos.map((b, j) => renderBlocoPermV(b, sample, c, j))}
+              </div>
+            </ReportPage>
+          )}
+        </div>
+      ))}
+    </>
   );
 }
 
@@ -370,7 +487,9 @@ export function PermVPage() {
   const cad = ctx?.os?.numero ? lookup(ctx.os.numero) : undefined;
   const { displayName, user, role } = useAuth();
   const currentUserName = displayName || user?.email?.split("@")[0] || "Cleitton Pereira";
-  const isAdmin = role === "admin" || user?.email?.includes("cleitton") || user?.id === "cleitton-admin-local";
+  // Admin vem do papel do usuário. Antes, qualquer conta cujo e-mail CONTIVESSE
+  // "cleitton" era tratada como admin e podia aprovar laudo oficial.
+  const isAdmin = role === "admin";
   const isVerificador = role === "verificador" || role === "gestor" || isAdmin;
 
   const scopeId =
@@ -523,6 +642,9 @@ export function PermVPage() {
         ctxAmostra: ctx?.amostra,
         ctxEnsaio: { tipo: "perm-v", nome: sample.reportNumber },
         fotos,
+        // Reenvio deliberado do MESMO PDF já emitido: só aqui sobrescrever a
+        // mesma revisão no Drive é permitido.
+        reemissao: true,
       });
       if (result?.folderUrl) setDriveFolderUrl(result.folderUrl);
       await refreshDriveStatus();
@@ -650,83 +772,90 @@ export function PermVPage() {
   const a = useMemo(() => areaBureta(sample.calibracao), [sample.calibracao]);
 
   /**
-   * `toPng` embute as imagens do laudo baixando cada uma. Se uma dessas
-   * requisições ficar pendurada — o /api/photo é servido pelo mesmo Worker que
-   * às vezes estoura o limite de recursos — o <img> nunca dispara load nem
-   * error, e a promise do toPng não resolve nunca. Como quem chama só devolve
-   * `saveBusy = false` no finally, a tela ficava travada em "Gerando e salvando
-   * versão PDF…" para sempre, com o botão de verificar desabilitado junto.
-   *
-   * Um teto de tempo transforma trava permanente em erro visível e recuperável.
+   * Gera o PDF a partir das folhas renderizadas fora da tela (módulo único em
+   * `lib/report-pdf.ts`). Em revisão oficial, imagem que não carregar
+   * interrompe a geração; no PDF de rascunho, gera e avisa quantas saíram em
+   * branco.
    */
-  const comTeto = <T,>(p: Promise<T>, ms: number, oQue: string): Promise<T> => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    return Promise.race([
-      p,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new Error(`${oQue} passou de ${Math.round(ms / 1000)}s sem responder. Tente novamente.`)),
-          ms,
-        );
-      }),
-    ]).finally(() => clearTimeout(timer)) as Promise<T>;
+  const gerarPdfDoLaudo = async (oficial: boolean): Promise<Blob> => {
+    const el = await waitForOffscreenEl(() => reportRef.current);
+    const { blob, fotosQueFalharam, folhasCortadas } = await rasterizarRelatorioParaPdf(el, {
+      fotosObrigatorias: oficial,
+      // Revisão oficial nunca sai cortada: se alguma folha estourar, é erro.
+      aoEstourar: oficial ? "erro" : "ignorar",
+    });
+    if (fotosQueFalharam.length > 0) {
+      toast.warning(`${fotosQueFalharam.length} imagem(ns) não carregaram e saíram em branco neste PDF de rascunho.`);
+    }
+    if (folhasCortadas.length > 0) {
+      toast.warning(
+        `Conteúdo cortado neste rascunho: ${folhasCortadas.map((f) => `folha ${f.folha} (+${f.excessoPx}px)`).join(", ")}. Avise o suporte.`,
+      );
+    }
+    return blob;
   };
 
-  const buildReportPdfBlob = async (): Promise<Blob> => {
-    if (import.meta.env.SSR) throw new Error("buildReportPdfBlob só roda no navegador");
-    const el = reportRef.current;
-    if (!el) throw new Error("Container do relatório não encontrado.");
-
-    const prevStyle = {
-      position: el.style.position, top: el.style.top, left: el.style.left,
-      width: el.style.width, zIndex: el.style.zIndex, opacity: el.style.opacity, visibility: el.style.visibility,
-    };
-
-    Object.assign(el.style, {
-      position: "fixed", top: "0", left: "0", width: "210mm", background: "#ffffff",
-      pointerEvents: "none", zIndex: "2147483647", opacity: "1", visibility: "visible",
-    });
-
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
-    await new Promise((r) => setTimeout(r, 200));
-
+  /**
+   * Número da próxima revisão. Vinha só do IndexedDB deste navegador: em outro
+   * computador a lista começava vazia, a revisão voltava a ser Rev-00 e — com o
+   * Drive funcionando — sobrescreveria a Rev-00 já assinada. Agora é o maior
+   * entre o histórico local e o que o servidor já registrou (aprovações e PDFs
+   * no Drive).
+   */
+  const proximaRevisao = async (): Promise<number> => {
+    const local = await nextRev(scopeId);
     try {
-      const pages = Array.from(el.querySelectorAll<HTMLElement>(".printable-report"));
-      if (pages.length === 0) throw new Error("Nenhuma página do relatório encontrada.");
+      const { proxima } = await getProximaRevisao({ data: { scopeId } });
+      if (proxima != null) return Math.max(local, proxima);
+    } catch (err) {
+      console.warn("[PERM.V] Falha ao consultar a próxima revisão no servidor:", err);
+    }
+    toast.warning("Não foi possível confirmar no servidor as revisões já emitidas; a numeração usa só o histórico deste computador.");
+    return local;
+  };
 
-      const { jsPDF } = await import("jspdf");
-      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
-      const W = 210, H = 297;
+  const avisarQueNaoChegouAoDrive = (revisao: number, motivo: string) => {
+    toast.warning(`Rev ${String(revisao).padStart(2, "0")} salva neste computador, mas NÃO chegou ao Drive: ${motivo}`, {
+      duration: Infinity,
+      action: { label: "Tentar de novo", onClick: () => void handleSyncAll() },
+    });
+  };
 
-      for (let i = 0; i < pages.length; i++) {
-        const page = pages[i];
-        const dataUrl = await comTeto(
-          toPng(page, {
-            pixelRatio: 2.5, cacheBust: false, backgroundColor: "#ffffff",
-            style: {
-              transform: "none", margin: "0", padding: "5mm 8mm", width: "210mm", height: "297mm",
-              maxWidth: "210mm", maxHeight: "297mm", boxSizing: "border-box", overflow: "hidden",
-            },
-            filter: (node) => !(node instanceof HTMLElement && node.classList.contains("no-print")),
-          }),
-          60_000,
-          `A renderização da página ${i + 1} do laudo`,
-        );
-
-        if (i > 0) pdf.addPage("a4", "portrait");
-        pdf.addImage(dataUrl, "PNG", 0, 0, W, H, undefined, "FAST");
-      }
-
-      return pdf.output("blob");
-    } finally {
-      Object.assign(el.style, prevStyle);
+  /**
+   * Envia a revisão ao Drive. A falha era só um `console.warn("Drive sync
+   * standby")`: a tela mostrava sucesso e o PDF ficava apenas no navegador.
+   */
+  const enviarRevisaoAoDrive = async (blob: Blob, revisao: number, filename: string) => {
+    const fotos = (ctx?.photos ?? [])
+      .map((p) => {
+        const m = /^data:(.*?);base64,(.*)$/.exec(p.dataUrl);
+        const mimeType = m?.[1] || "image/jpeg";
+        const b64 = m?.[2] || "";
+        const ext = mimeType.split("/")[1] || "jpg";
+        return { cpId: "geral", filename: `${p.kind}_${p.id}.${ext}`, mimeType, base64: b64 };
+      })
+      .filter((f) => f.base64.length > 0);
+    try {
+      const res = await comTeto(
+        syncRevision({
+          scopeId, rev: revisao, pdfBlob: blob, pdfFilename: filename, sample,
+          photos: ctx?.photos || [], ctxOs: ctx?.os, ctxAmostra: ctx?.amostra,
+          ctxEnsaio: { tipo: "perm-v", nome: sample.reportNumber }, fotos,
+        }),
+        120_000,
+        "O envio da revisão ao Drive",
+      );
+      if (res?.folderUrl) setDriveFolderUrl(res.folderUrl);
+      await refreshDriveStatus();
+    } catch (err) {
+      avisarQueNaoChegouAoDrive(revisao, err instanceof Error ? err.message : String(err));
     }
   };
 
   const handleGeneratePdf = async () => {
     const toastId = toast.loading("Gerando PDF do relatório…");
     try {
-      const blob = await buildReportPdfBlob();
+      const blob = await gerarPdfDoLaudo(false);
       const url = URL.createObjectURL(blob);
       const aEl = document.createElement("a");
       aEl.href = url;
@@ -754,40 +883,19 @@ export function PermVPage() {
     setSaveBusy(true);
     const tid = toast.loading("Gerando e salvando versão PDF…");
     try {
-      const blob = await buildReportPdfBlob();
-      const rev = await nextRev(scopeId);
+      // Revisão oficial: imagem que não carregar é erro — não um quadrado em
+      // branco num laudo que vai ser assinado.
+      const blob = await gerarPdfDoLaudo(true);
+      const rev = await proximaRevisao();
       const base = (sample.workNumber || sample.os || "relatorio").toString().replace(/[^\w-]+/g, "_");
       const filename = `PERM-V_${base}_Rev-${String(rev).padStart(2, "0")}.pdf`;
       const saved = await saveVersion({ scopeId, rev, filename, size: blob.size, pdfBlob: blob });
       await refreshVersions();
 
-      try {
-        const fotos = (ctx?.photos ?? [])
-          .map((p) => {
-            const m = /^data:(.*?);base64,(.*)$/.exec(p.dataUrl);
-            const mimeType = m?.[1] || "image/jpeg";
-            const b64 = m?.[2] || "";
-            const ext = mimeType.split("/")[1] || "jpg";
-            return { cpId: "geral", filename: `${p.kind}_${p.id}.${ext}`, mimeType, base64: b64 };
-          })
-          .filter((f) => f.base64.length > 0);
-
-        // Com teto: a versão e a aprovação já estão gravadas neste ponto, então
-        // um Drive lento não pode impedir o fluxo de chegar em "aguardando
-        // verificação". O catch abaixo já trata a falha como não-fatal.
-        const resDrive = await comTeto(
-          syncRevision({
-            scopeId, rev: saved.rev, pdfBlob: blob, pdfFilename: filename, sample,
-            photos: ctx?.photos || [], ctxOs: ctx?.os, ctxAmostra: ctx?.amostra,
-            ctxEnsaio: { tipo: "perm-v", nome: sample.reportNumber }, fotos,
-          }),
-          120_000,
-          "O envio da revisão ao Drive",
-        );
-        if (resDrive?.folderUrl) setDriveFolderUrl(resDrive.folderUrl);
-      } catch (err) {
-        console.warn("Drive sync standby:", err);
-      }
+      // A versão já está salva aqui. Um Drive lento ou fora do ar não impede o
+      // fluxo de chegar em "aguardando verificação", mas agora avisa na tela,
+      // de forma persistente, em vez de só escrever no console.
+      await enviarRevisaoAoDrive(blob, saved.rev, filename);
 
       await requestApproval({
         data: {
@@ -894,9 +1002,7 @@ export function PermVPage() {
           </div>
           <div className="flex-1 min-h-0 overflow-auto bg-[#525659] p-8 flex justify-center">
             <div className="flex flex-col items-center gap-8 shrink-0 pb-12">
-              <div className="w-[210mm] h-[297mm] shadow-2xl bg-white shrink-0 overflow-hidden">
-                <PermVReportPage sample={sample} photos={ctx?.photos ?? []} />
-              </div>
+              <PermVReportPages sample={sample} photos={ctx?.photos ?? []} folhaClassName="shadow-2xl" />
             </div>
           </div>
         </DialogContent>
@@ -1517,7 +1623,7 @@ export function PermVPage() {
           }}
           className="print-only-report mx-auto flex flex-col items-center gap-4"
         >
-          <PermVReportPage sample={sample} photos={ctx?.photos ?? []} />
+          <PermVReportPages sample={sample} photos={ctx?.photos ?? []} />
         </div>
         <style>{`
           @media print {
