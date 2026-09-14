@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { listDraftHistory } from "@/lib/draft.functions";
 import type { DraftHistoryEntry } from "@/lib/lab-entities.functions";
 import { aoMudar, definirOnde, tempoRealConectado } from "@/lib/tempo-real";
+import { registroDoEnsaio } from "@/lib/sala-logica";
 
 export type DraftActivity = {
   lastSavedAt: string | null;
@@ -10,15 +11,6 @@ export type DraftActivity = {
   history: DraftHistoryEntry[];
   refresh: () => void;
 };
-
-/** Nome do registro do ensaio no banco, a partir do scopeId (os/…/amostra/…/ensaio/…). */
-function registroDoEnsaio(scopeId: string): string | null {
-  const partes = scopeId.split("/");
-  const iAm = partes.indexOf("amostra");
-  const iEn = partes.indexOf("ensaio");
-  if (iAm === -1 || iEn === -1 || !partes[iAm + 1] || !partes[iEn + 1]) return null;
-  return `${partes[iAm + 1]}__${partes[iEn + 1]}.json`;
-}
 
 /** Com o tempo real conectado, a consulta do histórico vira rede de segurança. */
 const INTERVALO_COM_TEMPO_REAL_MS = 120_000;

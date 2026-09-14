@@ -73,6 +73,15 @@ export function listaDePresenca(presentes: (Presente | null | undefined)[]): Pre
     .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
 }
 
+/** Nome do registro do ensaio no banco, a partir do scopeId (os/…/amostra/…/ensaio/…). */
+export function registroDoEnsaio(scopeId: string): string | null {
+  const partes = scopeId.split("/");
+  const iAm = partes.indexOf("amostra");
+  const iEn = partes.indexOf("ensaio");
+  if (iAm === -1 || iEn === -1 || !partes[iAm + 1] || !partes[iEn + 1]) return null;
+  return `${partes[iAm + 1]}__${partes[iEn + 1]}.json`;
+}
+
 /** Quem mais está no mesmo laudo que esta aba — sem a própria aba e sem a mesma pessoa em outra aba. */
 export function outrosNoMesmoLugar(
   lista: Presente[],

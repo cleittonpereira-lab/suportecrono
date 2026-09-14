@@ -37,6 +37,16 @@ export async function saveOedReportVersion(version: ReportVersion): Promise<void
   }
 }
 
+export async function deleteOedReportVersion(id: string): Promise<void> {
+  if (typeof window === "undefined" || typeof indexedDB === "undefined") return;
+  const db = await openDB();
+  await new Promise<void>((resolve, reject) => {
+    const req = db.transaction(STORE_NAME, "readwrite").objectStore(STORE_NAME).delete(id);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
 export async function listOedReportVersions(scopeId: string): Promise<ReportVersion[]> {
   if (typeof window === "undefined" || typeof indexedDB === "undefined") return [];
   try {

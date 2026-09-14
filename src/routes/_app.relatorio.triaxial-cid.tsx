@@ -51,6 +51,7 @@ import {
   viewVersion,
   type ReportVersion,
 } from "@/features/triaxial-cid/report-versions";
+import { sincronizarVersoesComDrive, useVersoesAoVivo } from "@/lib/revisoes-do-drive";
 import { useEffect } from "react";
 import { History, Trash2, Eye } from "lucide-react";
 import { Cloud, CloudCheck, CloudAlert, ExternalLink, RefreshCw } from "lucide-react";
@@ -644,10 +645,15 @@ export function TriaxialCidPage() {
     try {
       const v = await listVersions(scopeId);
       setVersions(v);
+      // Revisões salvas em outro computador — ou cujo PDF recebeu as assinaturas depois — vêm do Drive.
+      if (await sincronizarVersoesComDrive(scopeId, v, { saveVersion, deleteVersion })) {
+        setVersions(await listVersions(scopeId));
+      }
     } catch (err) {
       console.error(err);
     }
   };
+  useVersoesAoVivo(scopeId, refreshVersions);
 
   const refreshApprovals = async () => {
     try {

@@ -26,6 +26,7 @@ import { toPng } from "html-to-image";
 import {
   listVersions, saveVersion, nextRev, deleteVersion, downloadVersion, replaceVersionPdf, type ReportVersion,
 } from "@/features/compressao-simples/report-versions";
+import { sincronizarVersoesComDrive, useVersoesAoVivo } from "@/lib/revisoes-do-drive";
 import { syncRevision, fetchDriveStatus } from "@/features/compressao-simples/driveSync";
 import { ReportVersionsPanel } from "@/components/report/ReportVersionsPanel";
 import { marcarAssinaturasNoPdf } from "@/lib/assinaturas-pdf";
@@ -430,30 +431,13 @@ export function CompressaoSimplesPage() {
   const refreshVersions = async () => {
     const local = await listVersions(scopeId);
     setVersions(local);
-    try {
-      const { revisions } = await listDriveRevisions({ data: { scopeId } });
-      const localRevs = new Set(local.map((v) => v.rev));
-      const missing = revisions.filter((r) => !localRevs.has(r.rev));
-      if (missing.length === 0) return;
-      await Promise.all(
-        missing.map(async (r) => {
-          try {
-            const res = await getRevisionPdfBase64({ data: { scopeId, rev: r.rev } });
-            const bin = atob(res.base64);
-            const bytes = new Uint8Array(bin.length);
-            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-            const pdfBlob = new Blob([bytes], { type: "application/pdf" });
-            await saveVersion({ scopeId, rev: r.rev, filename: r.filename, size: r.size || pdfBlob.size, pdfBlob });
-          } catch (err) {
-            console.warn(`[Compressão Simples] Falha ao trazer Versão ${r.rev} do servidor:`, err);
-          }
-        }),
-      );
+    // Mesma reconciliação de todas as telas (lib/revisoes-do-drive.ts), que também
+    // troca a cópia local quando o PDF do Drive recebeu as assinaturas depois.
+    if (await sincronizarVersoesComDrive(scopeId, local, { saveVersion, deleteVersion })) {
       setVersions(await listVersions(scopeId));
-    } catch (err) {
-      console.warn("[Compressão Simples] Falha ao consultar versões no servidor:", err);
     }
   };
+  useVersoesAoVivo(scopeId, refreshVersions);
 
   const refreshApprovals = async () => {
     try {

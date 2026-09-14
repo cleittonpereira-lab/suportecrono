@@ -181,6 +181,8 @@ export interface ReportVersion {
   createdAt: string;
   pdfBlob: Blob;
   sizeBytes: number;
+  /** Cópia trazida do Drive: `drive:<data de modificação no Drive>` (ver lib/versoes-sync.ts). */
+  note?: string;
 }
 
 export interface ApprovalRow {

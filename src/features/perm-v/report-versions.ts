@@ -72,11 +72,14 @@ export async function nextRev(scopeId: string): Promise<number> {
   return items.length === 0 ? 0 : items[0].rev + 1;
 }
 
-export async function saveVersion(v: Omit<ReportVersion, "id" | "createdAt">): Promise<ReportVersion> {
+export async function saveVersion(
+  v: Omit<ReportVersion, "id" | "createdAt"> & { createdAt?: string },
+): Promise<ReportVersion> {
   const full: ReportVersion = {
     ...v,
     id: crypto.randomUUID(),
-    createdAt: new Date().toISOString(),
+    // Cópia trazida do Drive mantém a data da revisão, não a hora em que foi baixada.
+    createdAt: v.createdAt ?? new Date().toISOString(),
   };
   await tx("readwrite", (store) => reqAsPromise(store.add(full)));
   return full;

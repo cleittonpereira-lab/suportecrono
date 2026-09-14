@@ -25,6 +25,7 @@ import {
   downloadVersion,
   type ReportVersion,
 } from "@/features/asf-dap/report-versions";
+import { sincronizarVersoesComDrive, useVersoesAoVivo } from "@/lib/revisoes-do-drive";
 import { syncRevision, fetchDriveStatus } from "@/features/asf-dap/driveSync";
 import { ReportVersionsPanel } from "@/components/report/ReportVersionsPanel";
 import { marcarAssinaturasNoPdf } from "@/lib/assinaturas-pdf";
@@ -393,7 +394,12 @@ export function ASFPage() {
   const refreshVersions = async () => {
     const v = await listVersions(scopeId);
     setVersions(v);
+    // Revisões salvas em outro computador — ou cujo PDF recebeu as assinaturas depois — vêm do Drive.
+    if (await sincronizarVersoesComDrive(scopeId, v, { saveVersion, deleteVersion })) {
+      setVersions(await listVersions(scopeId));
+    }
   };
+  useVersoesAoVivo(scopeId, refreshVersions);
 
   const refreshApprovals = async () => {
     try {

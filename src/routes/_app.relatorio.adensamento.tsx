@@ -133,7 +133,8 @@ import assinaturaMauricio from "@/assets/assinatura-mauricio.png";
 import { OedImportDialog } from "@/features/oedometer/components/OedImportDialog";
 import { exportOedometerXlsx } from "@/features/oedometer/exportXlsx";
 import { syncOedometerRevisionToDrive } from "@/features/oedometer/driveSync";
-import { saveOedReportVersion, listOedReportVersions } from "@/features/oedometer/report-versions";
+import { saveOedReportVersion, listOedReportVersions, deleteOedReportVersion } from "@/features/oedometer/report-versions";
+import { sincronizarVersoesComDrive, useVersoesAoVivo } from "@/lib/revisoes-do-drive";
 import { rasterizarRelatorioParaPdf, waitForOffscreenEl } from "@/lib/report-pdf";
 import { getProximaRevisao } from "@/lib/driveSync.functions";
 import { saveOedDraft, loadOedDraft, fetchRemoteOedDraft, flushOedDraft } from "@/features/oedometer/draftStore";
@@ -593,6 +594,22 @@ export function AdensamentoPage() {
     try {
       const vList = await listOedReportVersions(scopeId);
       if (vList && vList.length > 0) setVersions(vList);
+      // Revisões salvas em outro computador — ou cujo PDF recebeu as assinaturas depois — vêm do Drive.
+      const mudou = await sincronizarVersoesComDrive(scopeId, vList ?? [], {
+        saveVersion: (v) =>
+          saveOedReportVersion({
+            id: crypto.randomUUID(),
+            scopeId: v.scopeId,
+            rev: v.rev,
+            filename: v.filename,
+            createdAt: v.createdAt ?? new Date().toISOString(),
+            pdfBlob: v.pdfBlob,
+            sizeBytes: v.size,
+            note: v.note,
+          }),
+        deleteVersion: deleteOedReportVersion,
+      });
+      if (mudou) setVersions(await listOedReportVersions(scopeId));
     } catch {}
     try {
       const res = await listApprovals({ data: { scopeId } });
@@ -622,6 +639,7 @@ export function AdensamentoPage() {
   useEffect(() => {
     loadVersions();
   }, [scopeId]);
+  useVersoesAoVivo(scopeId, loadVersions);
 
   const refreshApprovals = loadVersions;
 

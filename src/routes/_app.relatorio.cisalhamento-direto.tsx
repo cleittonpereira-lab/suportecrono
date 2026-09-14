@@ -67,6 +67,7 @@ import {
   viewVersion,
   type ReportVersion,
 } from "@/features/cisalhamento-direto/report-versions";
+import { sincronizarVersoesComDrive, useVersoesAoVivo } from "@/lib/revisoes-do-drive";
 import { syncRevision, fetchDriveStatus } from "@/features/cisalhamento-direto/driveSync";
 import { marcarAssinaturasNoPdf } from "@/lib/assinaturas-pdf";
 import {
@@ -415,7 +416,12 @@ export function CDPage() {
   const refreshVersions = async () => {
     const v = await listVersions(scopeId);
     setVersions(v);
+    // Revisões salvas em outro computador — ou cujo PDF recebeu as assinaturas depois — vêm do Drive.
+    if (await sincronizarVersoesComDrive(scopeId, v, { saveVersion, deleteVersion })) {
+      setVersions(await listVersions(scopeId));
+    }
   };
+  useVersoesAoVivo(scopeId, refreshVersions);
 
   const refreshDriveStatus = async () => {
     try {

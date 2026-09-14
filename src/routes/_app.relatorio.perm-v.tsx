@@ -29,6 +29,7 @@ import { PhotoAppendixPage } from "@/features/lab/components/PhotoAppendixPage";
 import {
   listVersions, saveVersion, nextRev, deleteVersion, downloadVersion, type ReportVersion,
 } from "@/features/perm-v/report-versions";
+import { sincronizarVersoesComDrive, useVersoesAoVivo } from "@/lib/revisoes-do-drive";
 import { syncRevision, fetchDriveStatus } from "@/features/perm-v/driveSync";
 import { ReportVersionsPanel } from "@/components/report/ReportVersionsPanel";
 import {
@@ -568,7 +569,12 @@ export function PermVPage() {
   const refreshVersions = async () => {
     const v = await listVersions(scopeId);
     setVersions(v);
+    // Revisões salvas em outro computador — ou cujo PDF recebeu as assinaturas depois — vêm do Drive.
+    if (await sincronizarVersoesComDrive(scopeId, v, { saveVersion, deleteVersion })) {
+      setVersions(await listVersions(scopeId));
+    }
   };
+  useVersoesAoVivo(scopeId, refreshVersions);
 
   const refreshApprovals = async () => {
     try {
