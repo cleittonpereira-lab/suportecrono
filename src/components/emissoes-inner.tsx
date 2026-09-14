@@ -11,6 +11,7 @@ import {
   type ApprovalCommentRow,
 } from "@/lib/approvals-com-pdf";
 import { corEtapa, normalizarEtapa, rotuloEtapa } from "@/lib/etapa-laudo";
+import { aoMudar } from "@/lib/tempo-real";
 import { useAuth } from "@/hooks/use-auth";
 import { getRevisionPdfBase64 } from "@/lib/driveSync.functions";
 import { getLabEnsaioSnapshot, type LabEnsaioSnapshot } from "@/lib/lab-ensaios.functions";
@@ -154,6 +155,21 @@ export function EmissoesInner({
 
   useEffect(() => {
     void reload();
+  }, [reload]);
+
+  // Tempo real: um laudo enviado, verificado ou aprovado em outro computador
+  // aparece nesta fila na hora (espera curta para juntar uma rajada de avisos).
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const parar = aoMudar((docs) => {
+      if (!docs.some((d) => d.pasta === "lab-ensaios")) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => void reload(), 400);
+    });
+    return () => {
+      clearTimeout(timer);
+      parar();
+    };
   }, [reload]);
 
   const counts = useMemo(() => {

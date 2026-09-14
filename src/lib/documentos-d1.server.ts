@@ -17,6 +17,7 @@
 // são substitutos que estouram ao primeiro acesso. `import { AsyncLocalStorage }`
 // acessava na hora e travava o app inteiro na tela de carregamento.
 import * as asyncHooks from "node:async_hooks";
+import { registrarMudanca } from "./avisos-mudanca";
 
 /** Só a parte da API do D1 usada aqui (evita depender dos tipos do Workers). */
 export interface D1Resultado<T = Record<string, unknown>> {
@@ -144,6 +145,8 @@ export async function gravarDocumento(db: D1Banco, pasta: string, nome: string, 
     )
     .bind(pasta, nome, json)
     .first<{ rev: number }>();
+  // Toda gravação entra no aviso de tempo real desta requisição (avisos-mudanca.ts).
+  registrarMudanca(pasta, nome);
   return Number(linha?.rev ?? 1);
 }
 
@@ -175,13 +178,17 @@ export async function atualizarDocumento<T>(
           .prepare("INSERT INTO documentos (pasta, nome, dados, rev) VALUES (?, ?, ?, 1) ON CONFLICT (pasta, nome) DO NOTHING")
           .bind(pasta, nome, json)
           .run();
-    if ((r.meta?.changes ?? 0) === 1) return proximo;
+    if ((r.meta?.changes ?? 0) === 1) {
+      registrarMudanca(pasta, nome);
+      return proximo;
+    }
   }
   throw new Error(`Muitas gravações simultâneas em ${pasta}/${nome}. Tente de novo.`);
 }
 
 export async function apagarDocumento(db: D1Banco, pasta: string, nome: string): Promise<void> {
   await db.prepare("DELETE FROM documentos WHERE pasta = ? AND nome = ?").bind(pasta, nome).run();
+  registrarMudanca(pasta, nome);
 }
 
 /** Inclui só se ainda não existe — usado pela importação, que nunca sobrescreve o que já está no banco. */
@@ -190,5 +197,7 @@ export async function incluirSeNaoExiste(db: D1Banco, pasta: string, nome: strin
     .prepare("INSERT INTO documentos (pasta, nome, dados, rev) VALUES (?, ?, ?, 1) ON CONFLICT (pasta, nome) DO NOTHING")
     .bind(pasta, nome, serializar(pasta, nome, dados))
     .run();
-  return (r.meta?.changes ?? 0) === 1;
+  const incluiu = (r.meta?.changes ?? 0) === 1;
+  if (incluiu) registrarMudanca(pasta, nome);
+  return incluiu;
 }

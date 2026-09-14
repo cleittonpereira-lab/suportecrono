@@ -18,6 +18,7 @@
  */
 import { useEffect, useSyncExternalStore } from "react";
 import type { Amostra, Ensaio, EnsaioTipo, LabState, OS, Photo } from "./types";
+import { aoMudar, iniciarTempoReal, tempoRealConectado } from "@/lib/tempo-real";
 import { syncLabTree, upsertOSFn, upsertAmostraFn, upsertEnsaioFn, deleteOSFn, deleteAmostraFn, deleteEnsaioFn } from "@/lib/lab-entities.functions";
 import { loadLabStateFromDrive } from "@/lib/labState.functions";
 import { trackSave, markDirty as markDirtyGlobal, markClean as markCleanGlobal, waitUntilSaved } from "@/lib/save-in-flight";
@@ -392,6 +393,11 @@ const aoVoltarParaAba = () => atualizarSeVisivel(REFRESH_FOCO_MIN_MS);
 
 let assinantesDaAtualizacao = 0;
 let timerAtualizacao: ReturnType<typeof setInterval> | null = null;
+let pararDeOuvirTempoReal: (() => void) | null = null;
+
+/** Com o tempo real conectado, a consulta periódica vira só rede de segurança. */
+const INTERVALO_COM_TEMPO_REAL_MS = 60_000;
+const PASTAS_DA_ARVORE = new Set(["lab-os", "lab-amostras", "lab-ensaios"]);
 
 /**
  * Uma única rotina de atualização por aba, não importa quantos componentes usem
@@ -403,7 +409,17 @@ function ligarAtualizacaoPeriodica(): () => void {
   if (typeof window === "undefined") return () => {};
   assinantesDaAtualizacao++;
   if (assinantesDaAtualizacao === 1) {
-    timerAtualizacao = setInterval(() => atualizarSeVisivel(REFRESH_INTERVAL_MS / 2), REFRESH_INTERVAL_MS);
+    // Tempo real (Fase 3): uma OS, amostra ou ensaio gravado em outro
+    // computador chega por aviso e a árvore atualiza na hora; conectado, a
+    // consulta periódica cai de 15 s para 60 s.
+    timerAtualizacao = setInterval(
+      () => atualizarSeVisivel(tempoRealConectado() ? INTERVALO_COM_TEMPO_REAL_MS : REFRESH_INTERVAL_MS / 2),
+      REFRESH_INTERVAL_MS,
+    );
+    iniciarTempoReal();
+    pararDeOuvirTempoReal = aoMudar((docs) => {
+      if (docs.some((d) => PASTAS_DA_ARVORE.has(d.pasta))) void refreshFromRemote();
+    });
     window.addEventListener("focus", aoVoltarParaAba);
     document.addEventListener("visibilitychange", aoVoltarParaAba);
   }
@@ -412,6 +428,8 @@ function ligarAtualizacaoPeriodica(): () => void {
     if (assinantesDaAtualizacao > 0) return;
     if (timerAtualizacao) clearInterval(timerAtualizacao);
     timerAtualizacao = null;
+    pararDeOuvirTempoReal?.();
+    pararDeOuvirTempoReal = null;
     window.removeEventListener("focus", aoVoltarParaAba);
     document.removeEventListener("visibilitychange", aoVoltarParaAba);
   };

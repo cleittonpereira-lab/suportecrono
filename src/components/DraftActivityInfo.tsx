@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AlertTriangle, History } from "lucide-react";
+import { AlertTriangle, History, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -9,6 +9,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import type { DraftHistoryEntry } from "@/lib/lab-entities.functions";
+import { useOutrosAqui } from "@/lib/tempo-real";
 
 function timeAgoLabel(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -20,10 +21,17 @@ function timeAgoLabel(iso: string): string {
   return `${h}h`;
 }
 
+function juntarNomes(nomes: string[]): string {
+  if (nomes.length <= 1) return nomes[0] ?? "";
+  return `${nomes.slice(0, -1).join(", ")} e ${nomes[nomes.length - 1]}`;
+}
+
 /**
- * Aviso leve (não bloqueia) quando outra pessoa salvou este relatório
- * recentemente — para reduzir o risco de duas pessoas editando o mesmo
- * ensaio ao mesmo tempo sem perceber.
+ * Aviso leve (não bloqueia) para reduzir o risco de duas pessoas editando o
+ * mesmo ensaio ao mesmo tempo sem perceber:
+ *  - quem está com este relatório aberto AGORA (tempo real — a presença é
+ *    registrada por `useDraftActivity`), mesmo antes de salvar;
+ *  - quem salvou este relatório nos últimos minutos.
  */
 export function EditingPresenceBanner({
   lastSavedAt,
@@ -38,17 +46,38 @@ export function EditingPresenceBanner({
   currentUserId?: string | null;
   thresholdMs?: number;
 }) {
-  if (!lastSavedAt || !lastSavedByName) return null;
-  if (lastSavedById && currentUserId && lastSavedById === currentUserId) return null;
-  const ageMs = Date.now() - new Date(lastSavedAt).getTime();
-  if (ageMs > thresholdMs) return null;
+  const outros = useOutrosAqui();
+  const nomesAgora = Array.from(new Set(outros.map((p) => p.nome)));
+
+  const salvouRecente =
+    !!lastSavedAt &&
+    !!lastSavedByName &&
+    !(lastSavedById && currentUserId && lastSavedById === currentUserId) &&
+    Date.now() - new Date(lastSavedAt).getTime() <= thresholdMs &&
+    // Quem está com o relatório aberto agora já aparece no aviso de cima.
+    !nomesAgora.includes(lastSavedByName);
+
+  if (nomesAgora.length === 0 && !salvouRecente) return null;
 
   return (
-    <div className="flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-800 dark:text-amber-300">
-      <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-      <span>
-        <b>{lastSavedByName}</b> editou este relatório há {timeAgoLabel(lastSavedAt)} — confira antes de continuar.
-      </span>
+    <div className="flex flex-col gap-1">
+      {nomesAgora.length > 0 && (
+        <div className="flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-800 dark:text-amber-300">
+          <Users className="h-3.5 w-3.5 shrink-0" />
+          <span>
+            <b>{juntarNomes(nomesAgora)}</b> {nomesAgora.length === 1 ? "está" : "estão"} com este relatório aberto
+            agora — combine antes de editar.
+          </span>
+        </div>
+      )}
+      {salvouRecente && lastSavedAt && (
+        <div className="flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-800 dark:text-amber-300">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          <span>
+            <b>{lastSavedByName}</b> editou este relatório há {timeAgoLabel(lastSavedAt)} — confira antes de continuar.
+          </span>
+        </div>
+      )}
     </div>
   );
 }

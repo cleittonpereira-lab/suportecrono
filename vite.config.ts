@@ -19,6 +19,8 @@ export default defineConfig({
     cloudflare: {
       nodeCompat: true,
       deployConfig: true,
+      // Exportações extras do Worker: a sala de tempo real (Fase 3, Durable Object).
+      exports: "./exports.cloudflare.ts",
       // Banco dos dados do app (Fase 1). Ter o banco ligado ao Worker não muda
       // nada sozinho: o app só passa a usá-lo com o segredo DADOS_NO_D1=1 (ver
       // documentos-d1.server.ts). Sem `vars` aqui de propósito: a publicação
@@ -39,6 +41,15 @@ export default defineConfig({
             migrations_dir: "migrations/d1",
           },
         ],
+        // Sala de tempo real (Fase 3). A classe nova só é criada por um
+        // `wrangler deploy` (uma vez); depois disso, as versões comuns
+        // (`versions upload` + promoção no painel) seguem normalmente. O formato
+        // `migrations` é de propósito: com `exports` de Durable Object no
+        // wrangler, `versions upload` deixa de funcionar.
+        durable_objects: {
+          bindings: [{ name: "SALA_TEMPO_REAL", class_name: "SalaTempoReal" }],
+        },
+        migrations: [{ tag: "v1", new_sqlite_classes: ["SalaTempoReal"] }],
       },
     },
   },

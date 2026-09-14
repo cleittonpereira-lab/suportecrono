@@ -31,6 +31,7 @@ import { Route as AppOsAprovadas15dRouteImport } from './routes/_app.os-aprovada
 import { Route as AppPendentesRouteImport } from './routes/_app.pendentes'
 import { Route as AppPerfilRouteImport } from './routes/_app.perfil'
 import { Route as AppSaturacaoRouteImport } from './routes/_app.saturacao'
+import { Route as ApiTempoRealRouteImport } from './routes/api.tempo-real'
 import { Route as AppAdminUsuariosRouteImport } from './routes/_app.admin.usuarios'
 import { Route as AppChegadaAmostrasRegistroRouteImport } from './routes/_app.chegada-amostras.registro'
 import { Route as AppModelosRelatoriosIndexRouteImport } from './routes/_app.modelos-relatorios.index'
@@ -190,6 +191,11 @@ const AppSaturacaoRoute = AppSaturacaoRouteImport.update({
   id: '/saturacao',
   path: '/saturacao',
   getParentRoute: () => AppRoute,
+} as any)
+const ApiTempoRealRoute = ApiTempoRealRouteImport.update({
+  id: '/api/tempo-real',
+  path: '/api/tempo-real',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AppAdminUsuariosRoute = AppAdminUsuariosRouteImport.update({
   id: '/admin/usuarios',
@@ -497,6 +503,7 @@ export interface FileRoutesByFullPath {
   '/pendentes': typeof AppPendentesRoute
   '/perfil': typeof AppPerfilRoute
   '/saturacao': typeof AppSaturacaoRoute
+  '/api/tempo-real': typeof ApiTempoRealRoute
   '/admin/usuarios': typeof AppAdminUsuariosRoute
   '/chegada-amostras/registro': typeof AppChegadaAmostrasRegistroRoute
   '/modelos-relatorios/adensamento': typeof AppModelosRelatoriosAdensamentoRoute
@@ -570,6 +577,7 @@ export interface FileRoutesByTo {
   '/pendentes': typeof AppPendentesRoute
   '/perfil': typeof AppPerfilRoute
   '/saturacao': typeof AppSaturacaoRoute
+  '/api/tempo-real': typeof ApiTempoRealRoute
   '/admin/usuarios': typeof AppAdminUsuariosRoute
   '/chegada-amostras/registro': typeof AppChegadaAmostrasRegistroRoute
   '/modelos-relatorios/adensamento': typeof AppModelosRelatoriosAdensamentoRoute
@@ -644,6 +652,7 @@ export interface FileRoutesById {
   '/_app/pendentes': typeof AppPendentesRoute
   '/_app/perfil': typeof AppPerfilRoute
   '/_app/saturacao': typeof AppSaturacaoRoute
+  '/api/tempo-real': typeof ApiTempoRealRoute
   '/_app/admin/usuarios': typeof AppAdminUsuariosRoute
   '/_app/chegada-amostras/registro': typeof AppChegadaAmostrasRegistroRoute
   '/_app/modelos-relatorios/adensamento': typeof AppModelosRelatoriosAdensamentoRoute
@@ -719,6 +728,7 @@ export interface FileRouteTypes {
     | '/pendentes'
     | '/perfil'
     | '/saturacao'
+    | '/api/tempo-real'
     | '/admin/usuarios'
     | '/chegada-amostras/registro'
     | '/modelos-relatorios/adensamento'
@@ -792,6 +802,7 @@ export interface FileRouteTypes {
     | '/pendentes'
     | '/perfil'
     | '/saturacao'
+    | '/api/tempo-real'
     | '/admin/usuarios'
     | '/chegada-amostras/registro'
     | '/modelos-relatorios/adensamento'
@@ -865,6 +876,7 @@ export interface FileRouteTypes {
     | '/_app/pendentes'
     | '/_app/perfil'
     | '/_app/saturacao'
+    | '/api/tempo-real'
     | '/_app/admin/usuarios'
     | '/_app/chegada-amostras/registro'
     | '/_app/modelos-relatorios/adensamento'
@@ -925,6 +937,7 @@ export interface RootRouteChildren {
   PendenteRoute: typeof PendenteRoute
   RegistroAmostraRoute: typeof RegistroAmostraRoute
   RegistroChegadaRoute: typeof RegistroChegadaRoute
+  ApiTempoRealRoute: typeof ApiTempoRealRoute
   ApiPhotoFileIdRoute: typeof ApiPhotoFileIdRoute
 }
 
@@ -1083,6 +1096,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/saturacao'
       preLoaderRoute: typeof AppSaturacaoRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/api/tempo-real': {
+      id: '/api/tempo-real'
+      path: '/api/tempo-real'
+      fullPath: '/api/tempo-real'
+      preLoaderRoute: typeof ApiTempoRealRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_app/admin/usuarios': {
       id: '/_app/admin/usuarios'
@@ -1612,6 +1632,7 @@ const rootRouteChildren: RootRouteChildren = {
   PendenteRoute: PendenteRoute,
   RegistroAmostraRoute: RegistroAmostraRoute,
   RegistroChegadaRoute: RegistroChegadaRoute,
+  ApiTempoRealRoute: ApiTempoRealRoute,
   ApiPhotoFileIdRoute: ApiPhotoFileIdRoute,
 }
 export const routeTree = rootRouteImport

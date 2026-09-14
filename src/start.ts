@@ -26,10 +26,17 @@ const csrfMiddleware = createCsrfMiddleware({
   filter: (ctx) => ctx.handlerType === "serverFn",
 });
 
+// Tempo real (Fase 3): junta o que a requisição gravou no banco e, depois da
+// resposta, avisa a sala — as outras telas atualizam na hora.
+const tempoRealMiddleware = createMiddleware().server(async ({ next, request }) => {
+  const { comAvisosDeMudanca } = await import("./lib/tempo-real.server");
+  return comAvisosDeMudanca(request, async () => next());
+});
+
 // Sem middleware de cliente: havia um que, antes de TODA chamada ao servidor,
 // pedia a sessão ao Supabase Auth (fora do ar desde 25/08) — com uma sessão
 // antiga guardada no navegador, tentava renová-la na rede antes de liberar a
 // chamada. O servidor já não usava nada disso: a identidade vem do cookie.
 export const startInstance = createStart(() => ({
-  requestMiddleware: [csrfMiddleware, errorMiddleware],
+  requestMiddleware: [csrfMiddleware, errorMiddleware, tempoRealMiddleware],
 }));

@@ -17,6 +17,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { AppVersionFooter } from "@/components/AppVersionFooter";
 import { useBlockExitWhileSaving } from "@/hooks/use-block-exit-while-saving";
 import { ExitSaveDialog } from "@/components/ExitSaveDialog";
+import { TempoRealSync } from "@/components/TempoRealSync";
 
 function NotFoundComponent() {
   return (
@@ -146,6 +147,7 @@ function RootComponent() {
           <Toaster richColors position="top-right" />
           <AppVersionFooter />
           <ExitSaveDialog resolver={exitResolver} />
+          <TempoRealSync />
         </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>
