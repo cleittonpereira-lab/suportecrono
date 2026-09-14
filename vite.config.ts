@@ -17,6 +17,20 @@ export default defineConfig({
     cloudflare: {
       nodeCompat: true,
       deployConfig: true,
+      // Banco dos dados do app (Fase 1). Ter o banco ligado ao Worker não muda
+      // nada sozinho: o app só passa a usá-lo com o segredo DADOS_NO_D1=1 (ver
+      // documentos-d1.server.ts). Sem `vars` aqui de propósito: a publicação
+      // substituiria variáveis definidas no painel do Cloudflare.
+      wrangler: {
+        d1_databases: [
+          {
+            binding: "DB",
+            database_name: "suportecrono-dados",
+            database_id: "95f080e7-35cf-42df-9be4-57339c18a39c",
+            migrations_dir: "migrations/d1",
+          },
+        ],
+      },
     },
   },
   tanstackStart: {

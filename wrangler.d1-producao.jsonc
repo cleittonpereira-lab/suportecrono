@@ -1,0 +1,18 @@
+// Só para comandos do banco de PRODUÇÃO (migrações e consultas de conferência):
+//   npx wrangler d1 migrations apply suportecrono-dados --remote --config wrangler.d1-producao.jsonc
+//
+// NÃO se chama wrangler.jsonc de propósito: a publicação usa a configuração
+// gerada pelo nitro (o banco entra por vite.config.ts), e um wrangler.jsonc na
+// raiz seria misturado a ela.
+{
+  "name": "gestao",
+  "compatibility_date": "2025-09-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "suportecrono-dados",
+      "database_id": "95f080e7-35cf-42df-9be4-57339c18a39c",
+      "migrations_dir": "migrations/d1"
+    }
+  ]
+}
