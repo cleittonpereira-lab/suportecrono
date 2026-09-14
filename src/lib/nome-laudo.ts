@@ -14,6 +14,7 @@
 const SIGLA_POR_TIPO: Record<string, string> = {
   "perm-v": "PERM.V",
   "asf-dap": "ASF.DAP",
+  "asf-tb": "ASF.TB",
   "mesp-a": "M.ESP.A",
   "umidade-natural": "UMID.NAT",
   "compressao-simples": "COMP.S",

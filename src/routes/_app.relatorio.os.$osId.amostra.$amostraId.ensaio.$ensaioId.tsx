@@ -17,6 +17,7 @@ import { MEspAEnsaioEditor } from "@/features/mesp-natural/editor";
 import { MRPage as MRPageInner } from "@/routes/_app.relatorio.modulo-resiliencia";
 import { UNPage as UNPageInner } from "@/routes/_app.relatorio.umidade-natural";
 import { ASFPage as AsfDapPageInner } from "@/routes/_app.relatorio.asf-dap";
+import { AsfTbPage as AsfTbPageInner } from "@/routes/_app.relatorio.asf-tb";
 import { PermVPage as PermVPageInner } from "@/routes/_app.relatorio.perm-v";
 import { CompressaoSimplesPage as CompressaoSimplesPageInner } from "@/routes/_app.relatorio.compressao-simples";
 
@@ -298,6 +299,10 @@ function pickEditor(tipo: string): React.FC {
   }
   if (norm.includes("umidade-natural")) {
     return UNPageInner as unknown as React.FC;
+  }
+  // ASF.TB antes do teste genérico de "asf", que abriria o editor do ASF.DAP.
+  if (norm === "asf-tb" || norm.includes("asf.tb")) {
+    return AsfTbPageInner as unknown as React.FC;
   }
   if (norm.includes("asf") || norm.includes("dap")) {
     return AsfDapPageInner as unknown as React.FC;

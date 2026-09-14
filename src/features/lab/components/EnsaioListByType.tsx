@@ -178,6 +178,7 @@ export function EnsaioListByType({ tipo }: { tipo: EnsaioTipo }) {
             (tipo === "triaxial-ciu" && /\bciu\b|\btri\.?\s*ciu\b/i.test(nomeEnsaio)) ||
             (tipo === "mesp-a" && (m === "mesp-a" || nomeEnsaio.toLowerCase().includes("mesp"))) ||
             (tipo === "asf-dap" && (m === "asf-dap" || nomeEnsaio.toLowerCase().includes("densidade aparente"))) ||
+            (tipo === "asf-tb" && (m === "asf-tb" || nomeEnsaio.toLowerCase().includes("teor de betume"))) ||
             (tipo === "perm-v" && nomeEnsaio.toLowerCase().includes("permeabilidade")) ||
             (tipo === "compressao-simples" && nomeEnsaio.toLowerCase().includes("compress"));
 
@@ -222,6 +223,7 @@ export function EnsaioListByType({ tipo }: { tipo: EnsaioTipo }) {
       if (tipo === "triaxial-ciu") return /\bciu\b|\btri\.?\s*ciu\b/i.test(r.ensaio ?? "") || r.tipo_ensaio === "triaxial-ciu";
       if (tipo === "mesp-a") return m === "mesp-a" || r.tipo_ensaio === "mesp-a";
       if (tipo === "asf-dap") return m === "asf-dap" || r.tipo_ensaio === "asf-dap";
+      if (tipo === "asf-tb") return m === "asf-tb" || r.tipo_ensaio === "asf-tb";
       if (tipo === "perm-v") return r.tipo_ensaio === "perm-v" || /permeabilidade/i.test(r.ensaio ?? "");
       if (tipo === "compressao-simples") return r.tipo_ensaio === "compressao-simples" || /compress/i.test(r.ensaio ?? "");
       return false;

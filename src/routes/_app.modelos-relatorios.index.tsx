@@ -102,6 +102,15 @@ const MODELOS = [
     tag: "ASF.DAP",
   },
   {
+    to: "/modelos-relatorios/asf-tb" as const,
+    titulo: "Teor de Betume e Granulometria (ASF.TB)",
+    descricao:
+      "Modelo do relatório de teor de betume por extrator centrífugo e da granulometria do agregado extraído, com curva e faixas A/B/C opcionais.",
+    norma: "DNER-ME 053/94 · DNIT 412/2025-ME",
+    icon: Layers,
+    tag: "ASF.TB",
+  },
+  {
     to: "/modelos-relatorios/perm-v" as const,
     titulo: "Permeabilidade a Carga Variável (PERM.V)",
     descricao:

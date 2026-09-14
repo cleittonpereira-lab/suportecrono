@@ -8,6 +8,7 @@
  */
 
 import { isPermVTag } from "@/features/perm-v/calc";
+import { isAsfTbTag } from "@/features/asf-tb/calc";
 import { isCompressaoSimplesTag } from "@/features/compressao-simples/calc";
 
 export const RHO_PARAFINA = 0.78;
@@ -167,7 +168,7 @@ export function isAsfDapEnsaioTag(raw: string | null | undefined): boolean {
 /** Metodologias com processamento/relatório disponíveis hoje. */
 export type SupportedMethodology =
   | "mesp-a" | "triaxial-cid" | "adensamento" | "cisalhamento-direto" | "asf-dap"
-  | "perm-v" | "compressao-simples";
+  | "asf-tb" | "perm-v" | "compressao-simples";
 
 export function detectMethodology(
   ensaio: string | null | undefined,
@@ -178,6 +179,7 @@ export function detectMethodology(
   if (candidates.some((c) => isMespANaturalTag(c))) return "mesp-a";
   if (candidates.some((c) => isTriaxialCidTag(c))) return "triaxial-cid";
   if (candidates.some((c) => isAdensamentoTag(c))) return "adensamento";
+  if (candidates.some((c) => isAsfTbTag(c))) return "asf-tb";
   if (candidates.some((c) => isAsfDapEnsaioTag(c))) return "asf-dap";
   if (candidates.some((c) => isPermVTag(c))) return "perm-v";
   if (candidates.some((c) => isCompressaoSimplesTag(c))) return "compressao-simples";
@@ -195,6 +197,7 @@ export function methodologyRoute(m: SupportedMethodology): string {
     case "triaxial-cid": return "/relatorio/triaxial-cid";
     case "adensamento": return "/relatorio/adensamento";
     case "asf-dap": return "/relatorio/asf-dap";
+    case "asf-tb": return "/relatorio/asf-tb";
     case "perm-v": return "/relatorio/perm-v";
     case "compressao-simples": return "/relatorio/compressao-simples";
   }

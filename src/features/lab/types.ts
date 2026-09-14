@@ -19,6 +19,7 @@ export type EnsaioTipo =
   | "modulo-resiliencia" // Módulo de Resiliência de solos (DNIT 134/2018-ME)
   | "umidade-natural"    // Teor de Umidade Natural (NBR 6457)
   | "asf-dap"            // Densidade Aparente de misturas asfálticas (DNIT 428/2022-ME)
+  | "asf-tb"             // Teor de betume (DNER-ME 053/94) + granulometria do agregado extraído (DNIT 412/2025-ME)
   | "perm-v"             // Permeabilidade a Carga Variável — Método B (ABNT NBR 14545:2021)
   | "compressao-simples"; // Compressão Simples — solo (NBR 12770), rocha (NBR 15845-5) e dosagem/solo-cimento (NBR 12025)
 
@@ -138,6 +139,7 @@ export const ENSAIO_LABEL: Record<EnsaioTipo, string> = {
   "modulo-resiliencia": "Módulo de Resiliência (DNIT 134)",
   "umidade-natural": "Umidade Natural (NBR 6457)",
   "asf-dap": "Densidade Aparente — ASF.DAP (DNIT 428/2022-ME)",
+  "asf-tb": "Teor de Betume e Granulometria — ASF.TB (DNER-ME 053/94 · DNIT 412/2025-ME)",
   "perm-v": "Permeabilidade a Carga Variável — PERM.V (ABNT NBR 14545)",
   "compressao-simples": "Compressão Simples (NBR 12770 / NBR 15845-5 / NBR 12025)",
 };
@@ -153,6 +155,7 @@ export const ENSAIO_DISPONIVEL: EnsaioTipo[] = [
   "modulo-resiliencia",
   "umidade-natural",
   "asf-dap",
+  "asf-tb",
   "perm-v",
   "compressao-simples",
 ];
@@ -231,6 +234,11 @@ export const ENSAIO_TAG: Record<EnsaioTipo, EnsaioTagInfo> = {
     code: "ASF.DAP",
     className:
       "bg-cyan-500/15 text-cyan-700 border-cyan-500/40 dark:text-cyan-300",
+  },
+  "asf-tb": {
+    code: "ASF.TB",
+    className:
+      "bg-stone-500/15 text-stone-700 border-stone-500/40 dark:text-stone-300",
   },
   "perm-v": {
     code: "PERM.V",

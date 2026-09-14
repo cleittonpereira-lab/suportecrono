@@ -97,6 +97,7 @@ const sections: readonly NavSection[] = [
       { title: "Triaxial CID", url: "/relatorio/triaxial-cid", icon: FlaskConical },
       { title: "M.ESP.A Natural", url: "/relatorio/mesp-a", icon: FlaskConical },
       { title: "ASF.DAP (Densidade Aparente)", url: "/relatorio/asf-dap", icon: Beaker },
+      { title: "ASF.TB (Teor de Betume)", url: "/relatorio/asf-tb", icon: Beaker },
       { title: "Permeabilidade Carga Variável (PERM.V)", url: "/relatorio/perm-v", icon: Droplets },
       { title: "Compressão Simples", url: "/relatorio/compressao-simples", icon: Gauge },
       { title: "Módulo de Resiliência", url: "/relatorio/modulo-resiliencia", icon: FlaskConical },

@@ -25,6 +25,7 @@ export function normAmostra(val: string | null | undefined): string {
 export function normMethod(val: string | null | undefined): string {
   if (!val) return "";
   const s = String(val).toLowerCase().trim();
+  if (s.includes("asf.tb") || s.includes("asf-tb") || s.includes("asftb") || s.includes("teor de betume")) return "asf-tb";
   if (s.includes("asf.dap") || s.includes("asf-dap") || s.includes("asfdap") || s.includes("densidade aparente")) return "asf-dap";
   if (s.includes("perm.v") || s.includes("perm-v") || s.includes("permv") || s.includes("permeabilidade")) return "perm-v";
   if (s.includes("comp.a") || s.includes("comp.r") || s.includes("comp.s") || s.includes("compressao-simples") || s.includes("compressão simples") || s.includes("compressao simples")) return "compressao-simples";
