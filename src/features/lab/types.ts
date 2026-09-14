@@ -29,7 +29,9 @@ export type EnsaioStatus =
   | "em_digitacao"
   | "aguardando_verificacao"
   | "aguardando_aprovacao"
-  | "aprovado";
+  | "aprovado"
+  /** Entregue fora da Central (Excel) — marcado à mão ao arquivar a OS. */
+  | "concluido_externo";
 
 export interface Coords {
   N?: number;   // Norte [m]

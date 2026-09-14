@@ -159,7 +159,9 @@ export function OsReportsView() {
       if (os) {
         for (const am of os.amostras) {
           for (const en of am.ensaios) {
-            labStore.patchEnsaio(os.id, am.id, en.id, { status: "concluido" });
+            // "Concluído fora (Excel)", como as pendências acima — "concluido" é
+            // aprovado para o status único, e os laudos apareciam aprovados.
+            labStore.patchEnsaio(os.id, am.id, en.id, { status: "concluido_externo" });
           }
         }
       }

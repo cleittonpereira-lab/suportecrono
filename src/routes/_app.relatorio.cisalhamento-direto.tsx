@@ -172,6 +172,7 @@ import { labStore } from "@/features/lab/store";
 import { SampleEditDialog } from "@/components/SampleEditDialog";
 import { AneisManagerDialog } from "@/components/AneisManagerDialog";
 import { useAuth } from "@/hooks/use-auth";
+import { podeVerificar } from "@/lib/papeis";
 import { parseGanttSampleData } from "@/lib/sample-parser";
 
 export function CDPage() {
@@ -181,7 +182,8 @@ export function CDPage() {
   const { displayName, user, profile, role } = useAuth();
   const currentUserName = displayName || profile?.nome || user?.email?.split("@")[0] || "Cleitton Pereira";
   const isAdmin = role === "admin";
-  const isVerificador = role === "verificador" || role === "gestor" || isAdmin;
+  // Mesma regra do servidor (lib/papeis.ts).
+  const isVerificador = podeVerificar({ role, labRole: profile?.labRole });
   const navigate = useNavigate();
   const [sampleEditOpen, setSampleEditOpen] = useState(false);
 

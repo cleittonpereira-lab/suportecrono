@@ -85,6 +85,7 @@ import {
   Eye,
 } from "lucide-react";
 import { toast } from "sonner";
+import { podeVerificar } from "@/lib/papeis";
 import {
   ETAPAS_DO_LAUDO,
   combinarEtapas,
@@ -166,7 +167,8 @@ function CentralRelatoriosPage() {
   const [tipoFiltro, setTipoFiltro] = useState<"all" | SupportedMethodology>("all");
 
   const { user, role, profile } = useAuth();
-  const canSeeQueues = role === "admin" || profile?.labRole === "verificador";
+  // Mesma regra do servidor (lib/papeis.ts): quem verifica ou aprova vê as filas.
+  const canSeeQueues = podeVerificar({ role, labRole: profile?.labRole });
 
   const [queueCounts, setQueueCounts] = useState<{ verif: number; aprov: number } | null>(null);
   const listEmissoesFn = useServerFn(listEmissoes);

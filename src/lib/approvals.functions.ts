@@ -33,6 +33,7 @@ import {
 } from "@/lib/lab-entities.functions";
 import { sincronizarPendenciaDoEnsaio, type PendenciaDigitacao } from "@/lib/lab-pendencias.functions";
 import { etapaDasAprovacoes } from "@/lib/etapa-laudo";
+import { exigirPermissaoNoFluxo, type PapelDoUsuario } from "@/lib/papeis";
 
 /**
  * Propaga o avanço do fluxo para a pendência vinculada ao ensaio.
@@ -184,6 +185,9 @@ export const requestApproval = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { claims } = context as { claims: { email?: string; user_metadata?: { full_name?: string; name?: string } } };
     const { userId } = context as { userId: string };
+    // Enviar direto para aprovação conta como verificar: a própria pessoa fica
+    // registrada como verificadora.
+    if (data.skipVerification) exigirPermissaoNoFluxo(context as PapelDoUsuario, "verificar");
     const name = displayName(claims);
     const nowIso = new Date().toISOString();
 
@@ -283,6 +287,8 @@ export const verifyApproval = createServerFn({ method: "POST" })
       userId: string;
       claims: { email?: string; user_metadata?: { full_name?: string; name?: string } };
     };
+    // O papel é conferido aqui, no servidor — a tela só esconde o botão.
+    exigirPermissaoNoFluxo(context as PapelDoUsuario, "verificar");
     const name = displayName(claims);
     const nowIso = new Date().toISOString();
     const nextStatus: ApprovalStatus = data.decision === "verificado" ? "pendente_aprovacao" : "rejeitado_verificacao";
@@ -363,6 +369,8 @@ export const decideApproval = createServerFn({ method: "POST" })
       userId: string;
       claims: { email?: string; user_metadata?: { full_name?: string; name?: string } };
     };
+    // O papel é conferido aqui, no servidor — a tela só esconde o botão.
+    exigirPermissaoNoFluxo(context as PapelDoUsuario, "aprovar");
     const name = displayName(claims);
     const nowIso = new Date().toISOString();
 

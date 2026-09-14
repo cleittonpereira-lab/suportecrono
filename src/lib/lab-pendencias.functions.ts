@@ -13,6 +13,7 @@ import { requireSupabaseAuth, exigirLogin } from "@/integrations/supabase/auth-m
 import { z } from "zod";
 import { ensureFolderPath, readDriveJson, writeDriveJson, atualizarDriveJson, lerJsonsDaPasta, findFileInFolder, deleteDriveFile } from "@/lib/driveStorage";
 import { aplicarStatusPendencia, escolherPendenciaDoEnsaio, proximaPendencia } from "@/lib/pendencia-match";
+import { exigirPermissaoNoFluxo, type PapelDoUsuario } from "@/lib/papeis";
 
 type JsonValue = string | number | boolean | null | { [k: string]: JsonValue } | JsonValue[];
 
@@ -154,6 +155,10 @@ export const atualizarStatusPendencia = createServerFn({ method: "POST" })
   .middleware([exigirLogin])
   .inputValidator((i: unknown) => UpdateStatusInput.parse(i))
   .handler(async ({ context, data }) => {
+    // Mover a pendência para verificado/aprovado pelo Kanban é verificar/aprovar:
+    // mesma regra do fluxo (lib/papeis.ts), conferida no servidor.
+    if (data.status === "verificado") exigirPermissaoNoFluxo(context as PapelDoUsuario, "verificar");
+    if (data.status === "aprovado") exigirPermissaoNoFluxo(context as PapelDoUsuario, "aprovar");
     const now = new Date().toISOString();
     const folderId = await ensureFolderPath(FOLDER_PENDENCIAS);
     const name = `${data.id}.json`;

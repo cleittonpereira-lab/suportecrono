@@ -458,6 +458,8 @@ export function preservarConteudoDasFotos(recebidas: Photo[], existentes: Photo[
   });
 }
 
+const STATUS_SO_DO_FLUXO = new Set(["aguardando_verificacao", "aguardando_aprovacao", "aprovado", "concluido"]);
+
 /**
  * Mescla uma gravação vinda do labStore com o arquivo de ensaio existente.
  * Preserva workflowStatus/approvals/draftHistory (geridos por
@@ -473,12 +475,16 @@ export function preservarConteudoDasFotos(recebidas: Photo[], existentes: Photo[
  */
 export function mesclarEnsaio(existing: EnsaioFile | null, data: z.infer<typeof EnsaioInput>): EnsaioFile {
   const temRascunhoCompartilhado = typeof existing?.draftRev === "number";
+  // Status do fluxo formal só o fluxo grava (approvals.functions.ts, com o papel
+  // conferido): por aqui, um ensaio sem revisão enviada podia ser gravado direto
+  // como "aprovado" e aparecer aprovado em todas as abas.
+  const statusRecebido = data.status && !STATUS_SO_DO_FLUXO.has(data.status) ? data.status : null;
   return {
     ...(existing ?? ({} as EnsaioFile)),
     id: data.id,
     amostraId: data.amostraId,
     tipo: data.tipo,
-    status: data.status ?? existing?.status ?? null,
+    status: statusRecebido ?? existing?.status ?? null,
     label: data.label ?? existing?.label ?? null,
     nome: data.nome ?? existing?.nome ?? null,
     sigla: data.sigla ?? existing?.sigla ?? null,

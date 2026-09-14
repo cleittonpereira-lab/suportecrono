@@ -238,6 +238,7 @@ function PtNumInput({
 
 import { useCadastroByOs } from "@/hooks/use-cadastro-by-os";
 import { useAuth } from "@/hooks/use-auth";
+import { podeVerificar } from "@/lib/papeis";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listRows } from "@/lib/programacao.functions";
@@ -251,7 +252,8 @@ export function AdensamentoPage() {
   const { displayName, user, profile, role } = useAuth();
   const currentUserName = displayName || profile?.nome || user?.email?.split("@")[0] || "Cleitton Pereira";
   const isAdmin = role === "admin";
-  const isVerificador = role === "verificador" || role === "gestor" || isAdmin;
+  // Mesma regra do servidor (lib/papeis.ts).
+  const isVerificador = podeVerificar({ role, labRole: profile?.labRole });
 
   const rows0Fn = useServerFn(listRows);
   const { data: amostrasProg = [] } = useQuery({

@@ -16,7 +16,8 @@
 export const CONVIDADO_ID = 'convidado'
 
 type Claims = { sub: string; email?: string; user_metadata?: { full_name?: string; name?: string } }
-type Identidade = { userId: string; claims: Claims; convidado: boolean }
+/** `role`/`labRole` vêm do registro da conta: são o que o servidor confere no fluxo (lib/papeis.ts). */
+type Identidade = { userId: string; claims: Claims; convidado: boolean; role?: string; labRole?: string }
 
 const CONVIDADO: Identidade = {
   userId: CONVIDADO_ID,
@@ -50,6 +51,8 @@ async function identidadeDoCookie(): Promise<Identidade | null> {
           userId: user.id,
           claims: { sub: user.id, email: user.email, user_metadata: { full_name: user.nome } },
           convidado: false,
+          role: user.role,
+          labRole: user.labRole,
         }
       : null
   cacheUsuarios.set(userId, { em: Date.now(), ident })
@@ -61,6 +64,8 @@ function contexto(ident: Identidade) {
     userId: ident.userId,
     claims: ident.claims as any,
     convidado: ident.convidado,
+    role: ident.role ?? null,
+    labRole: ident.labRole ?? null,
   }
 }
 

@@ -57,6 +57,7 @@ import { History, Trash2, Eye } from "lucide-react";
 import { Cloud, CloudCheck, CloudAlert, ExternalLink, RefreshCw } from "lucide-react";
 import { PickerWithCreate } from "@/features/triaxial-cid/PickerWithCreate";
 import { useAuth } from "@/hooks/use-auth";
+import { podeVerificar } from "@/lib/papeis";
 import { syncRevision, fetchDriveStatus } from "@/features/triaxial-cid/driveSync";
 import { getWorkflowStatuses } from "@/lib/driveSync.functions";
 import { buildScopeId } from "@/lib/scope";
@@ -222,7 +223,8 @@ export function TriaxialCidPage() {
   const { displayName, user, profile, role } = useAuth();
   const currentUserName = displayName || profile?.nome || user?.email?.split("@")[0] || "Cleitton Pereira";
   const isAdmin = role === "admin";
-  const isVerificador = role === "verificador" || role === "gestor" || isAdmin;
+  // Mesma regra do servidor (lib/papeis.ts).
+  const isVerificador = podeVerificar({ role, labRole: profile?.labRole });
   const navigate = useNavigate();
 
   const rows0Fn = useServerFn(listRows);

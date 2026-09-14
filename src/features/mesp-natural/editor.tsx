@@ -38,6 +38,7 @@ import { beginSave, endSave } from "@/lib/save-in-flight";
 import { MEspAReport, renderMEspAPdfBlob } from "@/features/mesp-natural/report";
 import { useCadastroByOs } from "@/hooks/use-cadastro-by-os";
 import { useAuth } from "@/hooks/use-auth";
+import { podeVerificar } from "@/lib/papeis";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -171,9 +172,10 @@ export function MEspAEnsaioEditor() {
     ? buildScopeId(ctx.os.id, ctx.amostra.id, ctx.ensaio.id)
     : "";
 
-  const { user, role } = useAuth();
+  const { user, role, profile } = useAuth();
   const isAdmin = role === "admin";
-  const isVerificador = role === "verificador" || role === "gestor" || isAdmin;
+  // Mesma regra do servidor (lib/papeis.ts).
+  const isVerificador = podeVerificar({ role, labRole: profile?.labRole });
 
   const [versions, setVersions] = useState<ReportVersion[]>([]);
   const [approvals, setApprovals] = useState<ApprovalRow[]>([]);
@@ -394,7 +396,10 @@ export function MEspAEnsaioEditor() {
 
   const finalizeAndSubmit = async (buildPdfBlob: () => Promise<Blob>, skipVerification = false) => {
     if (!ctx) return;
-    persist("concluido");
+    // "processando", não "concluido": para o status único, "concluido" é
+    // aprovado, e o laudo aparecia aprovado antes de ir para a verificação. O
+    // status do fluxo quem grava é o envio (requestApproval), logo abaixo.
+    persist("processando");
     setBusy(true);
     const saveToken = beginSave();
     const tid = toast.loading(skipVerification ? "Enviando para aprovação…" : "Enviando para verificação…");

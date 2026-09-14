@@ -68,11 +68,11 @@ describe("fotos leves do carregamento em massa", () => {
     // O labStore manda as fotos como vieram do loadLabTree: sem conteúdo.
     const r = mesclarEnsaio(existente({ photos: [fotoAntiga] }), {
       ...base,
-      status: "concluido",
+      status: "concluido_externo",
       photos: [fotoLeve(fotoAntiga)] as unknown as Record<string, unknown>[],
     });
     expect(r.photos[0].dataUrl).toBe(fotoAntiga.dataUrl);
-    expect(r.status).toBe("concluido");
+    expect(r.status).toBe("concluido_externo");
   });
 
   it("foto com arquivo no Drive (url) não recebe o base64 antigo de volta", () => {

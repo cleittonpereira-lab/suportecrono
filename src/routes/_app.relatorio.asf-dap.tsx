@@ -5,6 +5,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useRef, useState, useEffect } from "react";
 import { useCadastroByOs } from "@/hooks/use-cadastro-by-os";
 import { useAuth } from "@/hooks/use-auth";
+import { podeVerificar } from "@/lib/papeis";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -316,10 +317,11 @@ export function ASFPage() {
   const ctx = useOptionalLabEnsaio();
   const { lookup } = useCadastroByOs();
   const cad = ctx?.os?.numero ? lookup(ctx.os.numero) : undefined;
-  const { displayName, user, role } = useAuth();
+  const { displayName, user, role, profile } = useAuth();
   const currentUserName = displayName || user?.email?.split("@")[0] || "Cleitton Pereira";
   const isAdmin = role === "admin";
-  const isVerificador = role === "verificador" || role === "gestor" || isAdmin;
+  // Mesma regra do servidor (lib/papeis.ts).
+  const isVerificador = podeVerificar({ role, labRole: profile?.labRole });
 
   const scopeId =
     ctx && ctx.os && ctx.amostra && ctx.ensaio

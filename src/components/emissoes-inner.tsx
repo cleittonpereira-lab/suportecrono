@@ -12,6 +12,7 @@ import {
 } from "@/lib/approvals-com-pdf";
 import { corEtapa, normalizarEtapa, rotuloEtapa } from "@/lib/etapa-laudo";
 import { aoMudar } from "@/lib/tempo-real";
+import { podeAprovar, podeVerificar } from "@/lib/papeis";
 import { useAuth } from "@/hooks/use-auth";
 import { getRevisionPdfBase64 } from "@/lib/driveSync.functions";
 import { getLabEnsaioSnapshot, type LabEnsaioSnapshot } from "@/lib/lab-ensaios.functions";
@@ -125,7 +126,9 @@ export function EmissoesInner({
   }, [singleTab]);
   const { role, profile } = useAuth();
   const isAdmin = role === "admin";
-  const isVerificador = isAdmin || profile?.labRole === "verificador";
+  // Mesma regra do servidor (lib/papeis.ts).
+  const papel = { role, labRole: profile?.labRole };
+  const isVerificador = podeVerificar(papel);
   const [rows, setRows] = useState<EmissaoRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [decideOpen, setDecideOpen] = useState<{
@@ -216,8 +219,8 @@ export function EmissoesInner({
     }
   }
 
-  const canVerify = isVerificador || isAdmin;
-  const canApprove = isAdmin;
+  const canVerify = isVerificador;
+  const canApprove = podeAprovar(papel);
 
   const body = (
     <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>

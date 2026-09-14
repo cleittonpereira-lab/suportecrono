@@ -376,7 +376,9 @@ export function MEspAWorkspace({
         // Espelha no labStore para aparecer em "OS / Amostras" e em M.ESP.A Natural,
         // e obter osId/amId/enId para montar o scopeId usado pela fila de Verificação.
         let mirror: { osId: string; amId: string; enId: string } | null = null;
-        try { mirror = mirrorMEspAToLabStore(ident, { dets, obs }, "concluido"); } catch { /* silencia */ }
+        // "processando", não "concluido" (= aprovado para o status único): o
+        // status do fluxo quem grava é o envio para verificação.
+        try { mirror = mirrorMEspAToLabStore(ident, { dets, obs }, "processando"); } catch { /* silencia */ }
         let pid = pendenciaId;
         const payload = { ident, dets, obs } as unknown as Record<string, unknown>;
         // Se a pendência já existe (fluxo do relatório: "Iniciar digitação"
