@@ -314,6 +314,15 @@ try {
 } catch (err) {
   conferir("roteiro executado até o fim", false, err instanceof Error ? err.message : String(err));
 } finally {
+  // E2E_MANTER=1: o app local fica no ar (com os dados do roteiro) para olhar as telas no navegador.
+  if (process.env.E2E_MANTER) {
+    console.log(`\nApp no ar em ${BASE} — cookie da conta de teste:\n${COOKIE}\n(Ctrl+C para encerrar)`);
+    process.on("SIGINT", () => {
+      encerrar();
+      process.exit(0);
+    });
+    await new Promise(() => {});
+  }
   encerrar();
 }
 

@@ -83,9 +83,10 @@ import {
   User,
   Building,
   Eye,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
-import { podeConcluirFora, podeVerificar } from "@/lib/papeis";
+import { podeConcluirFora } from "@/lib/papeis";
 import {
   ETAPAS_DO_LAUDO,
   combinarEtapas,
@@ -102,7 +103,6 @@ import { useAuth } from "@/hooks/use-auth";
 import { EmissoesInner } from "@/components/emissoes-inner";
 import { OsReportsView } from "@/features/lab/components/OsReportsView";
 import { evaluateSla, formatHours, type SlaStatus } from "@/lib/sla-calc";
-import { listEmissoes } from "@/lib/emissoes.functions";
 
 export const Route = createFileRoute("/_app/relatorio/pendentes")({
   ssr: false,
@@ -111,11 +111,10 @@ export const Route = createFileRoute("/_app/relatorio/pendentes")({
   }),
   head: () => ({
     meta: [
-      { title: "Central de Relatórios & SLAs — Suporte INFRA" },
+      { title: "Central de Relatórios — Suporte INFRA" },
       {
         name: "description",
-        content:
-          "Central inteligente de processamento de relatórios: esteira do Gantt, digitação, verificação, aprovação e SLAs.",
+        content: "Da bancada ao laudo emitido: fila da bancada, digitação, verificação e aprovação.",
       },
     ],
   }),
@@ -144,6 +143,42 @@ const SLA_LABEL: Record<SlaStatus, string> = {
   atrasado: "Atrasado",
 };
 
+/** Os laudos que o app sabe abrir (features/mesp-natural/calc.ts → methodologyRoute). */
+const METODOLOGIAS: SupportedMethodology[] = [
+  "cisalhamento-direto",
+  "adensamento",
+  "triaxial-cid",
+  "mesp-a",
+  "asf-dap",
+  "asf-tb",
+  "perm-v",
+  "compressao-simples",
+];
+
+/** As colunas da esteira (Kanban) — o filtro de etapa e os cartões do topo usam as mesmas. */
+type EtapaFiltro = "all" | "digitacao" | "verificacao" | "aprovacao" | "concluidos";
+const ETAPA_FILTRO: Record<Exclude<EtapaFiltro, "all">, { rotulo: string; status: PendenciaDigitacao["status"][] }> = {
+  digitacao: { rotulo: "Em digitação", status: ["pendente", "em_digitacao"] },
+  verificacao: { rotulo: "Aguardando verificação", status: ["digitado"] },
+  aprovacao: { rotulo: "Aguardando aprovação", status: ["verificado"] },
+  concluidos: { rotulo: "Concluídos", status: ["aprovado", "concluido_externo"] },
+};
+
+const ABAS = ["gantt-fila", "fluxo-relatorios", "emissoes-historico", "por-os"] as const;
+type Aba = (typeof ABAS)[number];
+
+/** Prazos (SLA) de uma pendência, pelas datas gravadas no payload. */
+function slaDaPendencia(r: PendenciaDigitacao) {
+  const payload = (r.payload as Record<string, any>) || {};
+  return evaluateSla({
+    execucaoConcluidaAt: payload.execucao_concluida_at || r.created_at,
+    digitacaoIniciadaAt: payload.digitacao_started_at,
+    digitacaoConcluidaAt: payload.digitacao_finished_at,
+    verificadoAt: payload.verificado_at,
+    aprovadoAt: payload.aprovado_at,
+  });
+}
+
 
 // normOs/normAmostra/normMethod: ver src/lib/pendencia-match.ts (compartilhado com os editores de relatório).
 
@@ -151,7 +186,12 @@ function CentralRelatoriosPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const search = Route.useSearch();
-  const activeTab = search.tab ?? "gantt-fila";
+  // A aba "dashboard-sla" (números fixos, removida) cai na esteira, onde está o prazo de cada laudo.
+  const activeTab: Aba = (ABAS as readonly string[]).includes(search.tab ?? "")
+    ? (search.tab as Aba)
+    : search.tab === "dashboard-sla"
+      ? "fluxo-relatorios"
+      : "gantt-fila";
   const listFn = useServerFn(listPendenciasDigitacao);
   const updFn = useServerFn(atualizarPendenciaDigitacao);
   const conclExtFn = useServerFn(concluirPendenciaExterna);
@@ -163,39 +203,12 @@ function CentralRelatoriosPage() {
   const [viewMode, setViewMode] = useState<"kanban" | "table">("kanban");
   const [ganttFilter, setGanttFilter] = useState<"all" | "concluido" | "execucao" | "planejado">("concluido");
   const [soMeus, setSoMeus] = useState(false);
-  const [statusFiltro, setStatusFiltro] = useState<"all" | PendenciaDigitacao["status"]>("all");
+  const [etapaFiltro, setEtapaFiltro] = useState<EtapaFiltro>("all");
   const [tipoFiltro, setTipoFiltro] = useState<"all" | SupportedMethodology>("all");
 
   const { user, role, profile } = useAuth();
-  // Mesma regra do servidor (lib/papeis.ts): quem verifica ou aprova vê as filas.
-  const canSeeQueues = podeVerificar({ role, labRole: profile?.labRole });
   // "Legado Excel" (concluído fora da Central): só quem verifica — o servidor também confere.
   const podeMarcarFora = podeConcluirFora({ role, labRole: profile?.labRole });
-
-  const [queueCounts, setQueueCounts] = useState<{ verif: number; aprov: number } | null>(null);
-  const listEmissoesFn = useServerFn(listEmissoes);
-
-  useEffect(() => {
-    if (!canSeeQueues) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        // Uma consulta só: eram duas, e cada uma varria todos os ensaios do Drive.
-        const filas = await listEmissoesFn({
-          data: { workflowStatuses: ["aguardando_verificacao", "aguardando_aprovacao"] },
-        });
-        if (!cancelled) {
-          setQueueCounts({
-            verif: filas.filter((r) => r.workflow_status === "aguardando_verificacao").length,
-            aprov: filas.filter((r) => r.workflow_status === "aguardando_aprovacao").length,
-          });
-        }
-      } catch {}
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [listEmissoesFn, canSeeQueues]);
 
   // Modais
   const [avulsoOpen, setAvulsoOpen] = useState(false);
@@ -204,7 +217,7 @@ function CentralRelatoriosPage() {
     cliente: "",
     obra: "",
     amostra: "",
-    ensaio: "Cisalhamento Direto Inundado",
+    ensaio: ENSAIO_LABEL["cisalhamento-direto"],
     tipo_ensaio: "cisalhamento-direto",
     operador_nome: "",
     observacoes: "",
@@ -217,7 +230,7 @@ function CentralRelatoriosPage() {
   // Queries
   const labState = useLabState();
 
-  const { data: rows = [], isLoading, refetch } = useQuery({
+  const { data: rows = [], isLoading, isFetching, refetch } = useQuery({
     queryKey: ["lab-pendencias"],
     queryFn: () => listFn(),
     // Mesmo intervalo das outras telas que usam esta consulta (visão por OS,
@@ -370,8 +383,9 @@ function CentralRelatoriosPage() {
         amostra: a?.codigo_amostra ?? a?.identificacao ?? "—",
         furo: a?.identificacao ?? "",
         prof: a?.topo_m && a?.base_m ? `${a.topo_m} – ${a.base_m} m` : "",
-        ensaio: t?.nome ?? e?.status ?? "Ensaio",
-        tipoEnsaioNome: t?.nome ?? "",
+        // Sem tipo cadastrado, a etiqueta da planilha (ex.: "CD3.IN") — antes aparecia o status ("pendente").
+        ensaio: t?.nome ?? e?.etiqueta ?? "Tipo não identificado",
+        tipoEnsaioNome: t?.nome ?? e?.etiqueta ?? "",
         equipamento: eq?.nome ?? "—",
         inicio_real: p.data_inicio_real || p.inicio_real_ts || null,
         fim_real: p.data_fim_real || p.fim_real_ts || null,
@@ -419,7 +433,7 @@ function CentralRelatoriosPage() {
     const q = busca.trim().toLowerCase();
     return allPendencias.filter((r) => {
       if (soMeus && user?.id && r.digitador_user_id !== user.id && r.operador_user_id !== user.id) return false;
-      if (statusFiltro !== "all" && r.status !== statusFiltro) return false;
+      if (etapaFiltro !== "all" && !ETAPA_FILTRO[etapaFiltro].status.includes(r.status)) return false;
       if (tipoFiltro !== "all" && detectMethodology(r.ensaio, r.tipo_ensaio) !== tipoFiltro) return false;
       if (!q) return true;
       return (
@@ -431,7 +445,7 @@ function CentralRelatoriosPage() {
         (r.digitador_nome ?? "").toLowerCase().includes(q)
       );
     });
-  }, [allPendencias, busca, soMeus, statusFiltro, tipoFiltro, user]);
+  }, [allPendencias, busca, soMeus, etapaFiltro, tipoFiltro, user]);
 
   const filteredGantt = useMemo(() => {
     const q = busca.trim().toLowerCase();
@@ -462,16 +476,72 @@ function CentralRelatoriosPage() {
     return c;
   }, [ganttQueue, allPendencias]);
 
-  // Mutações
-  const setStatusMutation = useMutation({
-    mutationFn: (v: { id: string; status: PendenciaDigitacao["status"] }) => updFn({ data: v }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["lab-pendencias"] });
-      toast.success("Status atualizado com sucesso!");
+  // Cartões do topo: cada um abre a aba e o filtro que mostram exatamente o que ele conta.
+  const irPara = (tab: Aba) => navigate({ to: "/relatorio/pendentes", search: { tab } });
+  const naEsteira = (f: Exclude<EtapaFiltro, "all">) => () => {
+    irPara("fluxo-relatorios");
+    setEtapaFiltro(f);
+  };
+  const cartoesDeEtapa = [
+    {
+      chave: "bancada",
+      rotulo: "Prontos na bancada",
+      valor: counts.ganttConcluidos,
+      dica: "Ensaio feito, laudo não iniciado",
+      classe: "border-amber-500/20 bg-amber-50/30 dark:bg-amber-950/10",
+      corTexto: "text-amber-700 dark:text-amber-400",
+      ativo: activeTab === "gantt-fila" && ganttFilter === "concluido",
+      abrir: () => {
+        irPara("gantt-fila");
+        setGanttFilter("concluido");
+      },
     },
-    onError: (e: Error) => toast.error(e.message),
-  });
+    {
+      chave: "digitacao",
+      rotulo: ETAPA_FILTRO.digitacao.rotulo,
+      valor: counts.em_digitacao,
+      dica: "Cálculos e gráficos",
+      classe: "border-sky-500/20 bg-sky-50/30 dark:bg-sky-950/10",
+      corTexto: "text-sky-700 dark:text-sky-400",
+      ativo: activeTab === "fluxo-relatorios" && etapaFiltro === "digitacao",
+      abrir: naEsteira("digitacao"),
+    },
+    {
+      chave: "verificacao",
+      rotulo: ETAPA_FILTRO.verificacao.rotulo,
+      valor: counts.verificacao,
+      dica: "Conferência técnica",
+      classe: "border-violet-500/20 bg-violet-50/30 dark:bg-violet-950/10",
+      corTexto: "text-violet-700 dark:text-violet-400",
+      ativo: activeTab === "fluxo-relatorios" && etapaFiltro === "verificacao",
+      abrir: naEsteira("verificacao"),
+    },
+    {
+      chave: "aprovacao",
+      rotulo: ETAPA_FILTRO.aprovacao.rotulo,
+      valor: counts.aprovacao,
+      dica: "Assinatura do RT",
+      classe: "border-indigo-500/20 bg-indigo-50/30 dark:bg-indigo-950/10",
+      corTexto: "text-indigo-700 dark:text-indigo-400",
+      ativo: activeTab === "fluxo-relatorios" && etapaFiltro === "aprovacao",
+      abrir: naEsteira("aprovacao"),
+    },
+    {
+      chave: "concluidos",
+      rotulo: ETAPA_FILTRO.concluidos.rotulo,
+      valor: counts.concluidos,
+      dica: "Aprovados e legado Excel",
+      classe: "border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-950/10",
+      corTexto: "text-emerald-700 dark:text-emerald-400",
+      ativo: activeTab === "fluxo-relatorios" && etapaFiltro === "concluidos",
+      abrir: naEsteira("concluidos"),
+    },
+  ];
 
+  // Mutações. Verificar e aprovar NÃO têm atalho aqui: acontecem no laudo e na
+  // aba "Verificação e aprovação" (fluxo formal, com revisão e responsáveis).
+  // Os botões "Aprovar Verificação"/"Aprovar Final" do Kanban mudavam só o
+  // status da pendência, e o fluxo formal o sobrepunha — pareciam não ter efeito.
   const concluirExternoMutation = useMutation({
     mutationFn: (v: { id: string; observacao?: string }) => conclExtFn({ data: v }),
     onSuccess: () => {
@@ -506,8 +576,14 @@ function CentralRelatoriosPage() {
   });
 
   // Roteamento inteligente para os editores de laudo
+  // Ensaio sem laudo no app avisa — antes abria o Triaxial (daqui) ou o Cisalhamento (da fila) no lugar.
+  function avisarSemLaudo(ensaio: string) {
+    toast.error(`Não há laudo no app para "${ensaio}". Confira o tipo do ensaio na programação.`);
+  }
+
   function abrirDigitacao(r: PendenciaDigitacao) {
-    const tipo = detectMethodology(r.ensaio, r.tipo_ensaio) ?? "triaxial-cid";
+    const tipo = detectMethodology(r.ensaio, r.tipo_ensaio);
+    if (!tipo) return avisarSemLaudo(r.ensaio);
     abrirPorTipo(tipo, r.os, r.amostra ?? "", undefined, undefined, r.id, r.ensaio, r.status);
   }
 
@@ -644,255 +720,123 @@ function CentralRelatoriosPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-4">
         <div>
           <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground flex items-center gap-1.5 font-semibold">
-            <Sparkles className="h-3.5 w-3.5 text-primary" /> Central Integrada de Laudos & SLAs
+            <Sparkles className="h-3.5 w-3.5 text-primary" /> Laudos
           </div>
           <h1 className="mt-1 font-display text-2xl md:text-3xl font-bold tracking-tight text-foreground">
-            Central de Processamento de Relatórios
+            Central de Relatórios
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Controle ponta a ponta: da bancada (Gantt) à digitação, verificação, aprovação e emissão oficial com SLAs.
+            Da bancada ao laudo emitido: digitação, verificação e aprovação.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            onClick={() => setAvulsoOpen(true)}
-            className="gap-1.5 shadow-sm bg-primary text-primary-foreground hover:bg-primary/90"
-          >
-            <Plus className="h-4 w-4" /> Processar Relatório Avulso
+          <Button onClick={() => setAvulsoOpen(true)} className="gap-1.5">
+            <Plus className="h-4 w-4" /> Relatório avulso
           </Button>
-          <Button
-            variant="outline"
-            onClick={() => navigate({ to: "/programacao/gantt" })}
-            className="gap-1.5"
-          >
+          <Button variant="outline" onClick={() => navigate({ to: "/programacao/gantt" })} className="gap-1.5">
             <Calendar className="h-4 w-4 text-muted-foreground" /> Ver Gantt
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => refetch()}
-            title="Atualizar dados"
-          >
-            <Activity className="h-4 w-4" />
+          <Button variant="ghost" size="icon" onClick={() => refetch()} title="Atualizar" aria-label="Atualizar">
+            <RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
           </Button>
         </div>
       </div>
 
-      {/* Cards de Métricas Principais — clicáveis: filtram a lista abaixo */}
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-4 lg:grid-cols-7">
-        <Card
-          role="button"
-          tabIndex={0}
-          onClick={() => { navigate({ to: "/relatorio/pendentes", search: { tab: "gantt-fila" } }); setGanttFilter("concluido"); }}
-          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate({ to: "/relatorio/pendentes", search: { tab: "gantt-fila" } }); setGanttFilter("concluido"); } }}
-          className="border-amber-500/20 bg-amber-50/30 dark:bg-amber-950/10 cursor-pointer transition-shadow hover:shadow-md hover:ring-1 hover:ring-amber-500/40"
-        >
-          <CardContent className="p-3">
-            <div className="text-[10px] font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wider">
-              Prontos na Bancada
-            </div>
-            <div className="text-xl font-bold text-amber-900 dark:text-amber-200 mt-1">
-              {counts.ganttConcluidos}
-            </div>
-            <div className="text-[10px] text-muted-foreground">Aguardando laudo</div>
-          </CardContent>
-        </Card>
-
-        <Card
-          role="button"
-          tabIndex={0}
-          onClick={() => { navigate({ to: "/relatorio/pendentes", search: { tab: "gantt-fila" } }); setGanttFilter("execucao"); }}
-          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate({ to: "/relatorio/pendentes", search: { tab: "gantt-fila" } }); setGanttFilter("execucao"); } }}
-          className="border-sky-500/20 bg-sky-50/30 dark:bg-sky-950/10 cursor-pointer transition-shadow hover:shadow-md hover:ring-1 hover:ring-sky-500/40"
-        >
-          <CardContent className="p-3">
-            <div className="text-[10px] font-semibold text-sky-700 dark:text-sky-400 uppercase tracking-wider">
-              Em Bancada
-            </div>
-            <div className="text-xl font-bold text-sky-900 dark:text-sky-200 mt-1">
-              {counts.ganttExecucao}
-            </div>
-            <div className="text-[10px] text-muted-foreground">Executando no lab</div>
-          </CardContent>
-        </Card>
-
-        <Card
-          role="button"
-          tabIndex={0}
-          onClick={() => navigate({ to: "/relatorio/pendentes", search: { tab: "fluxo-relatorios" } })}
-          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate({ to: "/relatorio/pendentes", search: { tab: "fluxo-relatorios" } }); } }}
-          className="border-blue-500/20 bg-blue-50/30 dark:bg-blue-950/10 cursor-pointer transition-shadow hover:shadow-md hover:ring-1 hover:ring-blue-500/40"
-        >
-          <CardContent className="p-3">
-            <div className="text-[10px] font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wider">
-              Em Digitação
-            </div>
-            <div className="text-xl font-bold text-blue-900 dark:text-blue-200 mt-1">
-              {counts.em_digitacao}
-            </div>
-            <div className="text-[10px] text-muted-foreground">Cálculos & gráficos</div>
-          </CardContent>
-        </Card>
-
-        <Card
-          role="button"
-          tabIndex={0}
-          onClick={() => navigate({ to: "/relatorio/pendentes", search: { tab: "fluxo-relatorios" } })}
-          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate({ to: "/relatorio/pendentes", search: { tab: "fluxo-relatorios" } }); } }}
-          className="border-violet-500/20 bg-violet-50/30 dark:bg-violet-950/10 cursor-pointer transition-shadow hover:shadow-md hover:ring-1 hover:ring-violet-500/40"
-        >
-          <CardContent className="p-3">
-            <div className="text-[10px] font-semibold text-violet-700 dark:text-violet-400 uppercase tracking-wider">
-              Verificação
-            </div>
-            <div className="text-xl font-bold text-violet-900 dark:text-violet-200 mt-1">
-              {counts.verificacao}
-            </div>
-            <div className="text-[10px] text-muted-foreground">Aguardando conferência</div>
-          </CardContent>
-        </Card>
-
-        <Card
-          role="button"
-          tabIndex={0}
-          onClick={() => navigate({ to: "/relatorio/pendentes", search: { tab: "fluxo-relatorios" } })}
-          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate({ to: "/relatorio/pendentes", search: { tab: "fluxo-relatorios" } }); } }}
-          className="border-indigo-500/20 bg-indigo-50/30 dark:bg-indigo-950/10 cursor-pointer transition-shadow hover:shadow-md hover:ring-1 hover:ring-indigo-500/40"
-        >
-          <CardContent className="p-3">
-            <div className="text-[10px] font-semibold text-indigo-700 dark:text-indigo-400 uppercase tracking-wider">
-              Aprovação RT
-            </div>
-            <div className="text-xl font-bold text-indigo-900 dark:text-indigo-200 mt-1">
-              {counts.aprovacao}
-            </div>
-            <div className="text-[10px] text-muted-foreground">Assinatura final</div>
-          </CardContent>
-        </Card>
-
-        <Card
-          role="button"
-          tabIndex={0}
-          onClick={() => navigate({ to: "/relatorio/pendentes", search: { tab: "emissoes-historico" } })}
-          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate({ to: "/relatorio/pendentes", search: { tab: "emissoes-historico" } }); } }}
-          className="border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-950/10 cursor-pointer transition-shadow hover:shadow-md hover:ring-1 hover:ring-emerald-500/40"
-        >
-          <CardContent className="p-3">
-            <div className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">
-              Concluídos
-            </div>
-            <div className="text-xl font-bold text-emerald-900 dark:text-emerald-200 mt-1">
-              {counts.concluidos}
-            </div>
-            <div className="text-[10px] text-muted-foreground">Emitidos e legados</div>
-          </CardContent>
-        </Card>
-
-        <Card
-          role="button"
-          tabIndex={0}
-          onClick={() => { navigate({ to: "/relatorio/pendentes", search: { tab: "gantt-fila" } }); setGanttFilter("planejado"); }}
-          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate({ to: "/relatorio/pendentes", search: { tab: "gantt-fila" } }); setGanttFilter("planejado"); } }}
-          className="border-border bg-card cursor-pointer transition-shadow hover:shadow-md hover:ring-1 hover:ring-border"
-        >
-          <CardContent className="p-3">
-            <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-              Gantt Previsto
-            </div>
-            <div className="text-xl font-bold text-foreground mt-1">
-              {counts.ganttPlanejado}
-            </div>
-            <div className="text-[10px] text-muted-foreground">Programados</div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Barra de Busca e Filtros */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="relative w-full sm:max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-            placeholder="Filtrar por OS, amostra, obra, ensaio ou responsável..."
-            className="pl-9 text-xs"
-          />
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Select value={statusFiltro} onValueChange={(v) => setStatusFiltro(v as typeof statusFiltro)}>
-            <SelectTrigger className="h-8 w-[170px] text-xs">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos os status</SelectItem>
-              {(Object.keys(STATUS_LABEL) as PendenciaDigitacao["status"][]).map((s) => (
-                <SelectItem key={s} value={s}>{STATUS_LABEL[s]}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={tipoFiltro} onValueChange={(v) => setTipoFiltro(v as typeof tipoFiltro)}>
-            <SelectTrigger className="h-8 w-[170px] text-xs">
-              <SelectValue placeholder="Tipo de ensaio" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos os ensaios</SelectItem>
-              {(["cisalhamento-direto", "adensamento", "triaxial-cid", "mesp-a", "asf-dap", "asf-tb", "perm-v", "compressao-simples"] as SupportedMethodology[]).map((t) => (
-                <SelectItem key={t} value={t}>{ENSAIO_LABEL[t] ?? t}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground pl-1 cursor-pointer select-none">
-            <Switch checked={soMeus} onCheckedChange={setSoMeus} />
-            Só meus
-          </label>
-        </div>
-      </div>
-
-      {/* Filas de aprovação — verificador/admin */}
-      {canSeeQueues && (
-        <div className="grid gap-3 sm:grid-cols-2">
+      {/* Etapas: cada cartão abre a aba e o filtro que mostram o que ele conta */}
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-5">
+        {cartoesDeEtapa.map((c) => (
           <Card
+            key={c.chave}
             role="button"
             tabIndex={0}
-            onClick={() => navigate({ to: "/relatorio/emissoes" })}
-            className="cursor-pointer transition-colors hover:border-primary/60"
+            onClick={c.abrir}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                c.abrir();
+              }
+            }}
+            className={`cursor-pointer transition-shadow hover:shadow-md ${c.classe} ${c.ativo ? "ring-2 ring-primary/60" : ""}`}
           >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="flex items-center gap-2 text-sm font-medium">
-                <ShieldCheck className="h-4 w-4 text-primary" /> Aguardando verificação
-              </CardTitle>
-              <ArrowRight className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="font-display text-2xl font-semibold tabular-nums">
-                {queueCounts === null ? "—" : queueCounts.verif}
-              </div>
-              <div className="text-[11px] text-muted-foreground">Central de Emissões</div>
+            <CardContent className="p-3">
+              <div className={`text-[10px] font-semibold uppercase tracking-wider ${c.corTexto}`}>{c.rotulo}</div>
+              <div className="text-xl font-bold text-foreground mt-1 tabular-nums">{c.valor}</div>
+              <div className="text-[10px] text-muted-foreground">{c.dica}</div>
             </CardContent>
           </Card>
-          <Card
-            role="button"
-            tabIndex={0}
-            onClick={() => navigate({ to: "/relatorio/emissoes" })}
-            className="cursor-pointer transition-colors hover:border-primary/60"
-          >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="flex items-center gap-2 text-sm font-medium">
-                <Stamp className="h-4 w-4 text-primary" /> Aguardando aprovação
-              </CardTitle>
-              <ArrowRight className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="font-display text-2xl font-semibold tabular-nums">
-                {queueCounts === null ? "—" : queueCounts.aprov}
-              </div>
-              <div className="text-[11px] text-muted-foreground">Central de Emissões</div>
-            </CardContent>
-          </Card>
+        ))}
+      </div>
+
+      {/* Busca e filtros — só nas abas em que valem (as outras duas têm os seus) */}
+      {(activeTab === "gantt-fila" || activeTab === "fluxo-relatorios") && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="relative w-full sm:max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder={
+                activeTab === "gantt-fila"
+                  ? "Filtrar por OS, amostra, ensaio, equipamento ou técnico..."
+                  : "Filtrar por OS, amostra, ensaio ou responsável..."
+              }
+              className="pl-9 text-xs"
+            />
+          </div>
+
+          {activeTab === "fluxo-relatorios" && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Select value={etapaFiltro} onValueChange={(v) => setEtapaFiltro(v as EtapaFiltro)}>
+                <SelectTrigger className="h-8 w-[190px] text-xs">
+                  <SelectValue placeholder="Etapa" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as etapas</SelectItem>
+                  {(Object.keys(ETAPA_FILTRO) as Exclude<EtapaFiltro, "all">[]).map((k) => (
+                    <SelectItem key={k} value={k}>
+                      {ETAPA_FILTRO[k].rotulo}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select value={tipoFiltro} onValueChange={(v) => setTipoFiltro(v as typeof tipoFiltro)}>
+                <SelectTrigger className="h-8 w-[190px] text-xs">
+                  <SelectValue placeholder="Tipo de ensaio" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os ensaios</SelectItem>
+                  {METODOLOGIAS.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {ENSAIO_LABEL[t] ?? t}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground pl-1 cursor-pointer select-none">
+                <Switch checked={soMeus} onCheckedChange={setSoMeus} />
+                Só meus
+              </label>
+
+              {(etapaFiltro !== "all" || tipoFiltro !== "all" || soMeus || busca) && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 text-xs"
+                  onClick={() => {
+                    setEtapaFiltro("all");
+                    setTipoFiltro("all");
+                    setSoMeus(false);
+                    setBusca("");
+                  }}
+                >
+                  Limpar filtros
+                </Button>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -905,19 +849,15 @@ function CentralRelatoriosPage() {
         <TabsList className="flex flex-wrap h-auto justify-start gap-1 w-full bg-muted/40 p-1 border">
           <TabsTrigger value="gantt-fila" className="gap-1.5 text-xs">
             <FlaskConical className="h-3.5 w-3.5 text-amber-600" />
-            Fila do Gantt & Bancada ({counts.ganttConcluidos})
+            Fila da bancada ({counts.ganttConcluidos})
           </TabsTrigger>
           <TabsTrigger value="fluxo-relatorios" className="gap-1.5 text-xs">
             <Layers className="h-3.5 w-3.5 text-sky-600" />
-            Fluxo dos Relatórios (Kanban) ({counts.em_digitacao + counts.verificacao + counts.aprovacao})
-          </TabsTrigger>
-          <TabsTrigger value="dashboard-sla" className="gap-1.5 text-xs">
-            <Clock className="h-3.5 w-3.5 text-indigo-600" />
-            Dashboard de SLAs & Gargalos
+            Esteira dos laudos ({counts.em_digitacao + counts.verificacao + counts.aprovacao})
           </TabsTrigger>
           <TabsTrigger value="emissoes-historico" className="gap-1.5 text-xs">
-            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-            Histórico de Emissões ({counts.concluidos})
+            <ShieldCheck className="h-3.5 w-3.5 text-violet-600" />
+            Verificação e aprovação
           </TabsTrigger>
           <TabsTrigger value="por-os" className="gap-1.5 text-xs">
             <Building className="h-3.5 w-3.5 text-orange-600" />
@@ -1148,8 +1088,8 @@ function CentralRelatoriosPage() {
                                           : "bg-primary text-primary-foreground hover:bg-primary/90"
                                   }`}
                                   onClick={() => {
-                                    const tipo =
-                                      detectMethodology(item.ensaio, item.tipoEnsaioNome) || "cisalhamento-direto";
+                                    const tipo = detectMethodology(item.ensaio, item.tipoEnsaioNome);
+                                    if (!tipo) return avisarSemLaudo(item.ensaio);
                                     abrirPorTipo(tipo, item.os, item.amostra, cad?.tomador, cad?.obra, pendExistente?.id, item.ensaio, pendExistente?.status);
                                   }}
                                 >
@@ -1308,8 +1248,6 @@ function CentralRelatoriosPage() {
                         onAction={() => abrirDigitacao(r)}
                         actionLabel="Verificar Laudo"
                         actionIcon={ShieldCheck}
-                        secondaryAction={() => setStatusMutation.mutate({ id: r.id, status: "verificado" })}
-                        secondaryLabel="Aprovar Verificação"
                         onDelete={() => setDeleteConfirm(r)}
                       />
                     ))}
@@ -1336,8 +1274,6 @@ function CentralRelatoriosPage() {
                         onAction={() => abrirDigitacao(r)}
                         actionLabel="Revisar & Aprovar"
                         actionIcon={Stamp}
-                        secondaryAction={() => setStatusMutation.mutate({ id: r.id, status: "aprovado" })}
-                        secondaryLabel="Aprovar Final"
                         onDelete={() => setDeleteConfirm(r)}
                       />
                     ))}
@@ -1382,6 +1318,7 @@ function CentralRelatoriosPage() {
                     <TableHead className="w-32">Digitador</TableHead>
                     <TableHead className="w-32">Verificador</TableHead>
                     <TableHead className="w-32">Aprovador (RT)</TableHead>
+                    <TableHead className="w-40 text-center">Prazo (SLA)</TableHead>
                     <TableHead className="w-36 text-right">Ação</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1402,6 +1339,16 @@ function CentralRelatoriosPage() {
                       <TableCell className="text-xs text-muted-foreground">{r.digitador_nome || "—"}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{r.verificador_nome || "—"}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{r.aprovador_nome || "—"}</TableCell>
+                      <TableCell className="text-center">
+                        {(() => {
+                          const sla = slaDaPendencia(r);
+                          return (
+                            <Badge variant="outline" className={`${SLA_BADGE_COLOR[sla.overallStatus]} text-[10px]`}>
+                              {SLA_LABEL[sla.overallStatus]} · {sla.totalLeadTime.formattedDuration}
+                            </Badge>
+                          );
+                        })()}
+                      </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
                           <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => abrirDigitacao(r)}>
@@ -1426,144 +1373,14 @@ function CentralRelatoriosPage() {
         </TabsContent>
 
         {/* =========================================================================
-            ABA 3: DASHBOARD DE SLAS & GARGALOS
-           ========================================================================= */}
-        <TabsContent value="dashboard-sla" className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Tempo Médio de Espera (Bancada &rarr; Digitação)
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-foreground">3h 45m</div>
-                <div className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
-                  <CheckCircle className="h-3 w-3" /> Dentro da Meta (&le; 24h)
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Tempo Médio de Digitação & Cálculo
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-foreground">18h 20m</div>
-                <div className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
-                  <CheckCircle className="h-3 w-3" /> Dentro da Meta (&le; 48h)
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Tempo Médio de Verificação Técnica
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-foreground">6h 10m</div>
-                <div className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
-                  <CheckCircle className="h-3 w-3" /> Dentro da Meta (&le; 24h)
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Lead Time Total Médio
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-primary">32h 15m</div>
-                <div className="text-xs text-muted-foreground mt-1">Meta global: &le; 120h (5 dias)</div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Rastreabilidade Nominal e Tabela de SLA dos Laudos Ativos */}
-          <Card>
-            <CardHeader className="border-b bg-muted/20">
-              <CardTitle className="text-sm font-bold flex items-center gap-2">
-                <Clock className="h-4 w-4 text-primary" /> Rastreabilidade Nominal & Monitoramento de SLA por Ensaio
-              </CardTitle>
-              <CardDescription className="text-xs">
-                Controle individual do tempo decorrido e identificação dos responsáveis por cada etapa da esteira.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/50">
-                    <TableHead className="w-24">OS</TableHead>
-                    <TableHead className="w-28">Amostra</TableHead>
-                    <TableHead>Ensaio</TableHead>
-                    <TableHead className="w-28">Operador</TableHead>
-                    <TableHead className="w-28">Digitador</TableHead>
-                    <TableHead className="w-28">Verificador</TableHead>
-                    <TableHead className="w-28">Aprovador</TableHead>
-                    <TableHead className="w-32 text-center">SLA Execução</TableHead>
-                    <TableHead className="w-32 text-center">SLA Relatório</TableHead>
-                    <TableHead className="w-24 text-right">Lead Time</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredRows.slice(0, 25).map((r) => {
-                    const payload = (r.payload as Record<string, any>) || {};
-                    const sla = evaluateSla({
-                      execucaoConcluidaAt: payload.execucao_concluida_at || r.created_at,
-                      digitacaoIniciadaAt: payload.digitacao_started_at,
-                      digitacaoConcluidaAt: payload.digitacao_finished_at,
-                      verificadoAt: payload.verificado_at,
-                      aprovadoAt: payload.aprovado_at,
-                    });
-
-                    return (
-                      <TableRow key={r.id} className="hover:bg-muted/30">
-                        <TableCell className="font-bold text-xs">{r.os}</TableCell>
-                        <TableCell className="text-xs">{r.amostra || "—"}</TableCell>
-                        <TableCell className="text-xs font-medium text-primary">{r.ensaio}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{r.operador_nome || "—"}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{r.digitador_nome || "—"}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{r.verificador_nome || "—"}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{r.aprovador_nome || "—"}</TableCell>
-                        {/* SLA Execução (Bancada/Operação) */}
-                        <TableCell className="text-center">
-                          <Badge variant="outline" className={`${SLA_BADGE_COLOR[sla.esperaDigitacao.status]} text-[10px]`}>
-                            {SLA_LABEL[sla.esperaDigitacao.status]} ({sla.esperaDigitacao.formattedDuration})
-                          </Badge>
-                        </TableCell>
-                        {/* SLA Relatório (Digitação até RT) */}
-                        <TableCell className="text-center">
-                          <Badge variant="outline" className={`${SLA_BADGE_COLOR[sla.digitacao.status]} text-[10px]`}>
-                            {SLA_LABEL[sla.digitacao.status]} ({sla.digitacao.formattedDuration})
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right text-xs font-mono font-medium">
-                          {sla.totalLeadTime.formattedDuration}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* =========================================================================
-            ABA 4: HISTÓRICO DE EMISSÕES
+            ABA 3: VERIFICAÇÃO E APROVAÇÃO (fluxo formal, com revisão)
            ========================================================================= */}
         <TabsContent value="emissoes-historico">
           <EmissoesInner />
         </TabsContent>
 
         {/* =========================================================================
-            ABA 5: POR OS (VISÃO AGRUPADA, DOWNLOADS E ARQUIVAMENTO EM LOTE)
+            ABA 4: POR OS (VISÃO AGRUPADA, DOWNLOADS E ARQUIVAMENTO EM LOTE)
            ========================================================================= */}
         <TabsContent value="por-os">
           <OsReportsView />
@@ -1600,26 +1417,19 @@ function CentralRelatoriosPage() {
                 <Label className="text-xs">Tipo de Ensaio *</Label>
                 <Select
                   value={avulsoData.tipo_ensaio}
-                  onValueChange={(v) => {
-                    const label =
-                      v === "cisalhamento-direto"
-                        ? "Cisalhamento Direto Inundado"
-                        : v === "triaxial-cid"
-                          ? "Triaxial CID"
-                          : v === "adensamento"
-                            ? "Adensamento Edométrico"
-                            : "Massa Específica Aparente Natural";
-                    setAvulsoData((s) => ({ ...s, tipo_ensaio: v, ensaio: label }));
-                  }}
+                  onValueChange={(v) =>
+                    setAvulsoData((s) => ({ ...s, tipo_ensaio: v, ensaio: ENSAIO_LABEL[v as EnsaioTipo] ?? v }))
+                  }
                 >
                   <SelectTrigger className="h-8 text-xs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="cisalhamento-direto">Cisalhamento Direto</SelectItem>
-                    <SelectItem value="triaxial-cid">Triaxial CID</SelectItem>
-                    <SelectItem value="adensamento">Adensamento Edométrico</SelectItem>
-                    <SelectItem value="mesp-a">Massa Específica (M.ESP.A)</SelectItem>
+                    {METODOLOGIAS.map((m) => (
+                      <SelectItem key={m} value={m}>
+                        {ENSAIO_LABEL[m] ?? m}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -1801,8 +1611,6 @@ function KanbanCard({
   onAction,
   actionLabel,
   actionIcon: ActionIcon,
-  secondaryAction,
-  secondaryLabel,
   onExterno,
   onDelete,
 }: {
@@ -1810,8 +1618,6 @@ function KanbanCard({
   onAction: () => void;
   actionLabel: string;
   actionIcon: React.ComponentType<{ className?: string }>;
-  secondaryAction?: () => void;
-  secondaryLabel?: string;
   onExterno?: () => void;
   onDelete?: () => void;
 }) {
@@ -1892,11 +1698,6 @@ function KanbanCard({
         <Button size="sm" className="w-full h-7 text-xs gap-1" onClick={onAction}>
           <ActionIcon className="h-3.5 w-3.5" /> {actionLabel}
         </Button>
-        {secondaryAction && secondaryLabel && (
-          <Button size="sm" variant="secondary" className="w-full h-6 text-[11px]" onClick={secondaryAction}>
-            {secondaryLabel}
-          </Button>
-        )}
         {onExterno && (
           <Button size="sm" variant="ghost" className="w-full h-6 text-[10px] text-muted-foreground" onClick={onExterno}>
             <FileSpreadsheet className="h-3 w-3 mr-1 text-emerald-600" /> Marcar Legado Excel

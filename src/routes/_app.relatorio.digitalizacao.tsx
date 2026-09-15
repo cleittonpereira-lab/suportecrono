@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { PageHeader } from "@/components/page-header";
-import { ScanLine, Camera, ClipboardList, Beaker } from "lucide-react";
+import { ScanLine, Camera, ClipboardList, Beaker, ListTodo } from "lucide-react";
 
 export const Route = createFileRoute("/_app/relatorio/digitalizacao")({
   ssr: false,
@@ -18,6 +18,8 @@ export const Route = createFileRoute("/_app/relatorio/digitalizacao")({
 });
 
 const TABS = [
+  // O que o laboratorista tem para fazer, direto do Gantt (features/lab/components/FilaDoTecnico.tsx).
+  { to: "/relatorio/digitalizacao/fila", label: "Minha fila", icon: ListTodo, exact: false },
   { to: "/relatorio/digitalizacao", label: "QR Code", icon: Camera, exact: true },
   { to: "/relatorio/digitalizacao/pendencias", label: "Pendências", icon: ClipboardList, exact: false },
   { to: "/relatorio/digitalizacao/capsulas", label: "Cápsulas", icon: Beaker, exact: false },
@@ -33,7 +35,7 @@ function DigitalizacaoLayout() {
         eyebrow="Laboratório"
         icon={ScanLine}
         title="Digitalização de Ensaios"
-        description="Escaneie o QR da amostra para pré-preencher a identificação, ou acesse as pendências vindas do Gantt."
+        description="Veja o que está programado para a bancada, escaneie o QR da amostra para pré-preencher a identificação, ou acesse as pendências vindas do Gantt."
       />
       <nav className="inline-flex rounded-lg border bg-muted/40 p-1 gap-1">
         {TABS.map((t) => {

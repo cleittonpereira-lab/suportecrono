@@ -27,9 +27,8 @@ import {
 } from "@/lib/programacao-model";
 import { recalculateDownstream } from "@/lib/programacao-cascade";
 import { endIsoFromDur } from "@/lib/business-days";
+import { useAcoesDaProgramacao } from "@/features/lab/hooks/use-acoes-da-programacao";
 
-const isMespATipo = (nome: string) => /m\.?\s*esp\.?\s*a|massa\s+espec[ií]fica\s+aparente/i.test(nome);
-const isAdensamentoTipo = (nome: string) => /adensamento|edométric|^aden\b/i.test(nome);
 
 export const Route = createFileRoute("/_app/programacao/scan")({
   component: ScanPage,
@@ -103,26 +102,8 @@ function ScanPage() {
       (await listRows({ data: { sheet: SHEET_PROGS } })).map(parseProgramacaoRow),
   });
 
-  const savProg = useMutation({
-    mutationFn: async (p: { id: string; row: Record<string, unknown> }) =>
-      updateRow({ data: { sheet: SHEET_PROGS, id: p.id, patch: p.row } }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["programacoes"] });
-    },
-  });
-
-  // Mesma cascata de reagendamento do Gantt desktop — iniciar/concluir pelo
-  // celular deve se comportar de forma idêntica a iniciar/concluir pela tela
-  // do escritório.
-  const runCascade = async (anchorProgId: string, anchorFinishIso: string) => {
-    const { shifted } = await recalculateDownstream(anchorProgId, anchorFinishIso, progs, async (id, patch) => {
-      await updateRow({ data: { sheet: SHEET_PROGS, id, patch } });
-    });
-    if (shifted > 0) {
-      toast.info(`${shifted} ensaio(s) reagendado(s) automaticamente`);
-      qc.invalidateQueries({ queryKey: ["programacoes"] });
-    }
-  };
+  // Iniciar/concluir: a mesma lógica da fila do técnico (hooks/use-acoes-da-programacao.ts).
+  const { iniciar: iniciarProg, concluir: concluirProg, salvando } = useAcoesDaProgramacao(progs);
 
   // Cleanup camera on unmount
   useEffect(() => {
@@ -272,110 +253,20 @@ function ScanPage() {
     setScanError(null);
   }
 
+  function contexto() {
+    if (!match || !("prog" in match) || !match.prog) return null;
+    return {
+      prog: match.prog,
+      ctx: { os: match.amostra.os_numero, amostra: match.amostra.codigo_amostra ?? null, tipoNome: match.tipo.nome },
+    };
+  }
   function iniciar() {
-    if (!match || !("prog" in match) || !match.prog) return;
-    const hoje = isoToday();
-    const nowTs = new Date().toISOString();
-    const prog = match.prog;
-    const novoFim = endIsoFromDur(hoje, prog.duracao_dias || 1, prog.incluir_fds);
-    savProg.mutate(
-      {
-        id: prog.id,
-        row: {
-          data_inicio_real: hoje,
-          inicio_real_ts: nowTs,
-          status: "em_execucao",
-          progresso: 10,
-          data_inicio: hoje,
-          data_fim: novoFim,
-        },
-      },
-      {
-        onSuccess: async () => {
-          toast.success("Ensaio iniciado");
-          await runCascade(prog.id, novoFim);
-          // Ponte Scan -> Relatório: M.ESP.A já vira pendência ao iniciar.
-          try {
-            if (match && "amostra" in match && match.amostra && match.tipo) {
-              if (isMespATipo(match.tipo.nome)) {
-                await criarPendenciaDigitacao({
-                  data: {
-                    os: match.amostra.os_numero,
-                    amostra: match.amostra.codigo_amostra ?? null,
-                    ensaio: match.tipo.nome,
-                    tipo_ensaio: match.tipo.nome,
-                    equipamento: null,
-                    programacao_id: prog.id ?? null,
-                    operador_nome: prog.tecnico ?? null,
-                  },
-                });
-              }
-            }
-          } catch { /* silencia */ }
-        },
-        onError: (e: any) => toast.error(e?.message || "Falha ao iniciar"),
-      },
-    );
+    const c = contexto();
+    if (c) iniciarProg(c.prog, c.ctx);
   }
   function concluir() {
-    if (!match || !("prog" in match) || !match.prog) return;
-    const hoje = isoToday();
-    const nowTs = new Date().toISOString();
-    const prog = match.prog;
-    savProg.mutate(
-      {
-        id: prog.id,
-        row: {
-          data_fim_real: hoje,
-          fim_real_ts: nowTs,
-          status: "concluido",
-          progresso: 100,
-          data_fim: hoje,
-        },
-      },
-      {
-        onSuccess: async () => {
-          toast.success("Ensaio concluído");
-          // Termina antes do previsto -> puxa o início do próximo; termina
-          // depois -> atrasa o próximo. Mesma cascata do Gantt desktop.
-          await runCascade(prog.id, hoje);
-          // Ponte Scan -> Relatório (Pendente de digitação). M.ESP.A já tem
-          // sua própria pendência criada ao iniciar — não duplicamos aqui,
-          // igual ao Gantt desktop faz ao concluir uma programação.
-          try {
-            if (match && "amostra" in match && match.amostra && match.tipo && !isMespATipo(match.tipo.nome)) {
-              const pend = await criarPendenciaDigitacao({
-                data: {
-                  os: match.amostra.os_numero,
-                  amostra: match.amostra.codigo_amostra ?? null,
-                  ensaio: match.tipo.nome,
-                  tipo_ensaio: match.tipo.nome,
-                  equipamento: null,
-                  programacao_id: prog.id ?? null,
-                  operador_nome: prog.tecnico ?? null,
-                },
-              });
-              // Encadeia os dois fluxos mobile: depois de concluir na
-              // bancada, oferece ir direto pra digitação de campo do mesmo
-              // ensaio, em vez de deixar a pessoa navegar manualmente.
-              const isAdens = isAdensamentoTipo(match.tipo.nome);
-              toast.info("Pronto para digitalização de campo", {
-                action: {
-                  label: "Ir para Digitalização",
-                  onClick: () =>
-                    navigate(
-                      isAdens
-                        ? { to: "/relatorio/digitalizacao/adensamento", search: { pid: pend.id } }
-                        : { to: "/relatorio/digitalizacao" },
-                    ),
-                },
-              });
-            }
-          } catch { /* não bloqueia se a ponte falhar */ }
-        },
-        onError: (e: any) => toast.error(e?.message || "Falha ao concluir"),
-      },
-    );
+    const c = contexto();
+    if (c) concluirProg(c.prog, c.ctx);
   }
 
   return (
@@ -501,7 +392,7 @@ function ScanPage() {
           onIniciar={iniciar}
           onConcluir={concluir}
           onReset={reset}
-          saving={savProg.isPending}
+          saving={salvando}
         />
       )}
     </div>

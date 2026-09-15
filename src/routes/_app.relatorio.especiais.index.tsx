@@ -1,5 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Sparkles, LayoutDashboard, List, UploadCloud, BarChart3 } from "lucide-react";
+import { Sparkles, LayoutDashboard, List, UploadCloud, BarChart3, Gauge } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
+import { GestaoEspeciaisView } from "@/features/lab/components/GestaoEspeciaisView";
 import { PageHeader } from "@/components/page-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EnsaiosEspeciaisView } from "@/features/lab/components/EnsaiosEspeciaisView";
@@ -27,7 +29,10 @@ export const Route = createFileRoute("/_app/relatorio/especiais/")({
 function EnsaiosEspeciaisPage() {
   const navigate = useNavigate();
   const search = Route.useSearch();
-  const activeTab = search.tab ?? "lista";
+  const { role } = useAuth();
+  const ehAdmin = role === "admin";
+  // "Gestão" é só do administrador; os demais caem na lista.
+  const activeTab = search.tab === "gestao" && !ehAdmin ? "lista" : (search.tab ?? "lista");
 
   return (
     <div className="space-y-6 w-full px-4 sm:px-6 md:px-8 py-8">
@@ -56,6 +61,11 @@ function EnsaiosEspeciaisPage() {
           <TabsTrigger value="producao" className="gap-1.5 text-xs">
             <BarChart3 className="h-3.5 w-3.5 text-emerald-600" /> Produção
           </TabsTrigger>
+          {ehAdmin && (
+            <TabsTrigger value="gestao" className="gap-1.5 text-xs">
+              <Gauge className="h-3.5 w-3.5 text-rose-600" /> Gestão
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="lista">
@@ -70,6 +80,11 @@ function EnsaiosEspeciaisPage() {
         <TabsContent value="producao">
           <ProducaoView />
         </TabsContent>
+        {ehAdmin && (
+          <TabsContent value="gestao">
+            <GestaoEspeciaisView />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );

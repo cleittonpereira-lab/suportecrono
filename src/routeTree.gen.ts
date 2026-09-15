@@ -78,6 +78,7 @@ import { Route as AppRelatorioDigitalizacaoAsfDapRouteImport } from './routes/_a
 import { Route as AppRelatorioDigitalizacaoAsfTbRouteImport } from './routes/_app.relatorio.digitalizacao.asf-tb'
 import { Route as AppRelatorioDigitalizacaoCapsulasRouteImport } from './routes/_app.relatorio.digitalizacao.capsulas'
 import { Route as AppRelatorioDigitalizacaoCompressaoSimplesRouteImport } from './routes/_app.relatorio.digitalizacao.compressao-simples'
+import { Route as AppRelatorioDigitalizacaoFilaRouteImport } from './routes/_app.relatorio.digitalizacao.fila'
 import { Route as AppRelatorioDigitalizacaoPendenciasRouteImport } from './routes/_app.relatorio.digitalizacao.pendencias'
 import { Route as AppRelatorioDigitalizacaoPermVRouteImport } from './routes/_app.relatorio.digitalizacao.perm-v'
 import { Route as AppRelatorioEspeciaisIndexRouteImport } from './routes/_app.relatorio.especiais.index'
@@ -460,6 +461,12 @@ const AppRelatorioDigitalizacaoCompressaoSimplesRoute =
     path: '/compressao-simples',
     getParentRoute: () => AppRelatorioDigitalizacaoRoute,
   } as any)
+const AppRelatorioDigitalizacaoFilaRoute =
+  AppRelatorioDigitalizacaoFilaRouteImport.update({
+    id: '/fila',
+    path: '/fila',
+    getParentRoute: () => AppRelatorioDigitalizacaoRoute,
+  } as any)
 const AppRelatorioDigitalizacaoPendenciasRoute =
   AppRelatorioDigitalizacaoPendenciasRouteImport.update({
     id: '/pendencias',
@@ -575,6 +582,7 @@ export interface FileRoutesByFullPath {
   '/relatorio/digitalizacao/asf-tb': typeof AppRelatorioDigitalizacaoAsfTbRoute
   '/relatorio/digitalizacao/capsulas': typeof AppRelatorioDigitalizacaoCapsulasRoute
   '/relatorio/digitalizacao/compressao-simples': typeof AppRelatorioDigitalizacaoCompressaoSimplesRoute
+  '/relatorio/digitalizacao/fila': typeof AppRelatorioDigitalizacaoFilaRoute
   '/relatorio/digitalizacao/pendencias': typeof AppRelatorioDigitalizacaoPendenciasRoute
   '/relatorio/digitalizacao/perm-v': typeof AppRelatorioDigitalizacaoPermVRoute
   '/relatorio/especiais/$osNumero': typeof AppRelatorioEspeciaisOsNumeroRoute
@@ -652,6 +660,7 @@ export interface FileRoutesByTo {
   '/relatorio/digitalizacao/asf-tb': typeof AppRelatorioDigitalizacaoAsfTbRoute
   '/relatorio/digitalizacao/capsulas': typeof AppRelatorioDigitalizacaoCapsulasRoute
   '/relatorio/digitalizacao/compressao-simples': typeof AppRelatorioDigitalizacaoCompressaoSimplesRoute
+  '/relatorio/digitalizacao/fila': typeof AppRelatorioDigitalizacaoFilaRoute
   '/relatorio/digitalizacao/pendencias': typeof AppRelatorioDigitalizacaoPendenciasRoute
   '/relatorio/digitalizacao/perm-v': typeof AppRelatorioDigitalizacaoPermVRoute
   '/relatorio/especiais/$osNumero': typeof AppRelatorioEspeciaisOsNumeroRoute
@@ -732,6 +741,7 @@ export interface FileRoutesById {
   '/_app/relatorio/digitalizacao/asf-tb': typeof AppRelatorioDigitalizacaoAsfTbRoute
   '/_app/relatorio/digitalizacao/capsulas': typeof AppRelatorioDigitalizacaoCapsulasRoute
   '/_app/relatorio/digitalizacao/compressao-simples': typeof AppRelatorioDigitalizacaoCompressaoSimplesRoute
+  '/_app/relatorio/digitalizacao/fila': typeof AppRelatorioDigitalizacaoFilaRoute
   '/_app/relatorio/digitalizacao/pendencias': typeof AppRelatorioDigitalizacaoPendenciasRoute
   '/_app/relatorio/digitalizacao/perm-v': typeof AppRelatorioDigitalizacaoPermVRoute
   '/_app/relatorio/especiais/$osNumero': typeof AppRelatorioEspeciaisOsNumeroRoute
@@ -812,6 +822,7 @@ export interface FileRouteTypes {
     | '/relatorio/digitalizacao/asf-tb'
     | '/relatorio/digitalizacao/capsulas'
     | '/relatorio/digitalizacao/compressao-simples'
+    | '/relatorio/digitalizacao/fila'
     | '/relatorio/digitalizacao/pendencias'
     | '/relatorio/digitalizacao/perm-v'
     | '/relatorio/especiais/$osNumero'
@@ -889,6 +900,7 @@ export interface FileRouteTypes {
     | '/relatorio/digitalizacao/asf-tb'
     | '/relatorio/digitalizacao/capsulas'
     | '/relatorio/digitalizacao/compressao-simples'
+    | '/relatorio/digitalizacao/fila'
     | '/relatorio/digitalizacao/pendencias'
     | '/relatorio/digitalizacao/perm-v'
     | '/relatorio/especiais/$osNumero'
@@ -968,6 +980,7 @@ export interface FileRouteTypes {
     | '/_app/relatorio/digitalizacao/asf-tb'
     | '/_app/relatorio/digitalizacao/capsulas'
     | '/_app/relatorio/digitalizacao/compressao-simples'
+    | '/_app/relatorio/digitalizacao/fila'
     | '/_app/relatorio/digitalizacao/pendencias'
     | '/_app/relatorio/digitalizacao/perm-v'
     | '/_app/relatorio/especiais/$osNumero'
@@ -1477,6 +1490,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRelatorioDigitalizacaoCompressaoSimplesRouteImport
       parentRoute: typeof AppRelatorioDigitalizacaoRoute
     }
+    '/_app/relatorio/digitalizacao/fila': {
+      id: '/_app/relatorio/digitalizacao/fila'
+      path: '/fila'
+      fullPath: '/relatorio/digitalizacao/fila'
+      preLoaderRoute: typeof AppRelatorioDigitalizacaoFilaRouteImport
+      parentRoute: typeof AppRelatorioDigitalizacaoRoute
+    }
     '/_app/relatorio/digitalizacao/pendencias': {
       id: '/_app/relatorio/digitalizacao/pendencias'
       path: '/pendencias'
@@ -1553,6 +1573,7 @@ interface AppRelatorioDigitalizacaoRouteChildren {
   AppRelatorioDigitalizacaoAsfTbRoute: typeof AppRelatorioDigitalizacaoAsfTbRoute
   AppRelatorioDigitalizacaoCapsulasRoute: typeof AppRelatorioDigitalizacaoCapsulasRoute
   AppRelatorioDigitalizacaoCompressaoSimplesRoute: typeof AppRelatorioDigitalizacaoCompressaoSimplesRoute
+  AppRelatorioDigitalizacaoFilaRoute: typeof AppRelatorioDigitalizacaoFilaRoute
   AppRelatorioDigitalizacaoPendenciasRoute: typeof AppRelatorioDigitalizacaoPendenciasRoute
   AppRelatorioDigitalizacaoPermVRoute: typeof AppRelatorioDigitalizacaoPermVRoute
   AppRelatorioDigitalizacaoIndexRoute: typeof AppRelatorioDigitalizacaoIndexRoute
@@ -1568,6 +1589,7 @@ const AppRelatorioDigitalizacaoRouteChildren: AppRelatorioDigitalizacaoRouteChil
       AppRelatorioDigitalizacaoCapsulasRoute,
     AppRelatorioDigitalizacaoCompressaoSimplesRoute:
       AppRelatorioDigitalizacaoCompressaoSimplesRoute,
+    AppRelatorioDigitalizacaoFilaRoute: AppRelatorioDigitalizacaoFilaRoute,
     AppRelatorioDigitalizacaoPendenciasRoute:
       AppRelatorioDigitalizacaoPendenciasRoute,
     AppRelatorioDigitalizacaoPermVRoute: AppRelatorioDigitalizacaoPermVRoute,

@@ -33,7 +33,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-type Tab = { title: string; url: string; icon: LucideIcon };
+/** `soAdmin`: aparece só para o administrador (ex.: Gestão dos Ensaios Especiais). */
+type Tab = { title: string; url: string; icon: LucideIcon; soAdmin?: boolean };
 type Section = { key: string; label: string; match: (p: string) => boolean; tabs: readonly Tab[] };
 
 const SECTIONS: readonly Section[] = [
@@ -125,6 +126,7 @@ const SECTIONS: readonly Section[] = [
     match: (p) => p.startsWith("/relatorio/especiais"),
     tabs: [
       { title: "Ensaios Especiais", url: "/relatorio/especiais", icon: Sparkles },
+      { title: "Gestão (admin)", url: "/relatorio/especiais?tab=gestao", icon: Gauge, soAdmin: true },
     ],
   },
   {
@@ -158,12 +160,13 @@ export function useCurrentSection() {
 
 export function SectionNav() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { canAccess } = useAuth();
+  const { canAccess, role } = useAuth();
 
   // Filtra abas por permissão; remove seções sem nenhuma aba visível.
   const visibleSections = SECTIONS
     .map((sec) => {
       const tabs = sec.tabs.filter((t) => {
+        if (t.soAdmin && role !== "admin") return false;
         const key = pathToTab(t.url.split("?")[0]);
         return key ? canAccess(key) : true;
       });
