@@ -31,6 +31,7 @@ import { Route as AppOsAprovadas15dRouteImport } from './routes/_app.os-aprovada
 import { Route as AppPendentesRouteImport } from './routes/_app.pendentes'
 import { Route as AppPerfilRouteImport } from './routes/_app.perfil'
 import { Route as AppSaturacaoRouteImport } from './routes/_app.saturacao'
+import { Route as ApiAvisosRouteImport } from './routes/api.avisos'
 import { Route as ApiTempoRealRouteImport } from './routes/api.tempo-real'
 import { Route as AppAdminUsuariosRouteImport } from './routes/_app.admin.usuarios'
 import { Route as AppChegadaAmostrasRegistroRouteImport } from './routes/_app.chegada-amostras.registro'
@@ -194,6 +195,11 @@ const AppSaturacaoRoute = AppSaturacaoRouteImport.update({
   id: '/saturacao',
   path: '/saturacao',
   getParentRoute: () => AppRoute,
+} as any)
+const ApiAvisosRoute = ApiAvisosRouteImport.update({
+  id: '/api/avisos',
+  path: '/api/avisos',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ApiTempoRealRoute = ApiTempoRealRouteImport.update({
   id: '/api/tempo-real',
@@ -523,6 +529,7 @@ export interface FileRoutesByFullPath {
   '/pendentes': typeof AppPendentesRoute
   '/perfil': typeof AppPerfilRoute
   '/saturacao': typeof AppSaturacaoRoute
+  '/api/avisos': typeof ApiAvisosRoute
   '/api/tempo-real': typeof ApiTempoRealRoute
   '/admin/usuarios': typeof AppAdminUsuariosRoute
   '/chegada-amostras/registro': typeof AppChegadaAmostrasRegistroRoute
@@ -600,6 +607,7 @@ export interface FileRoutesByTo {
   '/pendentes': typeof AppPendentesRoute
   '/perfil': typeof AppPerfilRoute
   '/saturacao': typeof AppSaturacaoRoute
+  '/api/avisos': typeof ApiAvisosRoute
   '/api/tempo-real': typeof ApiTempoRealRoute
   '/admin/usuarios': typeof AppAdminUsuariosRoute
   '/chegada-amostras/registro': typeof AppChegadaAmostrasRegistroRoute
@@ -678,6 +686,7 @@ export interface FileRoutesById {
   '/_app/pendentes': typeof AppPendentesRoute
   '/_app/perfil': typeof AppPerfilRoute
   '/_app/saturacao': typeof AppSaturacaoRoute
+  '/api/avisos': typeof ApiAvisosRoute
   '/api/tempo-real': typeof ApiTempoRealRoute
   '/_app/admin/usuarios': typeof AppAdminUsuariosRoute
   '/_app/chegada-amostras/registro': typeof AppChegadaAmostrasRegistroRoute
@@ -757,6 +766,7 @@ export interface FileRouteTypes {
     | '/pendentes'
     | '/perfil'
     | '/saturacao'
+    | '/api/avisos'
     | '/api/tempo-real'
     | '/admin/usuarios'
     | '/chegada-amostras/registro'
@@ -834,6 +844,7 @@ export interface FileRouteTypes {
     | '/pendentes'
     | '/perfil'
     | '/saturacao'
+    | '/api/avisos'
     | '/api/tempo-real'
     | '/admin/usuarios'
     | '/chegada-amostras/registro'
@@ -911,6 +922,7 @@ export interface FileRouteTypes {
     | '/_app/pendentes'
     | '/_app/perfil'
     | '/_app/saturacao'
+    | '/api/avisos'
     | '/api/tempo-real'
     | '/_app/admin/usuarios'
     | '/_app/chegada-amostras/registro'
@@ -975,6 +987,7 @@ export interface RootRouteChildren {
   PendenteRoute: typeof PendenteRoute
   RegistroAmostraRoute: typeof RegistroAmostraRoute
   RegistroChegadaRoute: typeof RegistroChegadaRoute
+  ApiAvisosRoute: typeof ApiAvisosRoute
   ApiTempoRealRoute: typeof ApiTempoRealRoute
   ApiPhotoFileIdRoute: typeof ApiPhotoFileIdRoute
 }
@@ -1134,6 +1147,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/saturacao'
       preLoaderRoute: typeof AppSaturacaoRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/api/avisos': {
+      id: '/api/avisos'
+      path: '/api/avisos'
+      fullPath: '/api/avisos'
+      preLoaderRoute: typeof ApiAvisosRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/tempo-real': {
       id: '/api/tempo-real'
@@ -1697,6 +1717,7 @@ const rootRouteChildren: RootRouteChildren = {
   PendenteRoute: PendenteRoute,
   RegistroAmostraRoute: RegistroAmostraRoute,
   RegistroChegadaRoute: RegistroChegadaRoute,
+  ApiAvisosRoute: ApiAvisosRoute,
   ApiTempoRealRoute: ApiTempoRealRoute,
   ApiPhotoFileIdRoute: ApiPhotoFileIdRoute,
 }

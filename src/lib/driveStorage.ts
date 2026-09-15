@@ -49,6 +49,8 @@ export const PASTAS_DE_DADOS: readonly string[] = [
   "os-hub",
   "sample-uploads",
   "lab-capsulas",
+  // Avisos do app (Fase 5): inscrições dos aparelhos e caixa de avisos por pessoa.
+  "avisos",
 ];
 /** JSON soltos na raiz do Drive que também são dados do app. */
 export const DOCUMENTOS_DA_RAIZ: readonly string[] = [

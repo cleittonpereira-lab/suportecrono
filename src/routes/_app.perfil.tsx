@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { AvisosNesteAparelho } from "@/components/AvisosNesteAparelho";
 
 export const Route = createFileRoute("/_app/perfil")({
   head: () => ({
@@ -215,6 +216,8 @@ function PerfilPage() {
           </div>
         </CardContent>
       </Card>
+
+      <AvisosNesteAparelho />
 
       <Card>
         <CardHeader>

@@ -8,11 +8,15 @@
  *  - Páginas: sempre da rede; sem rede, a última cópia guardada daquela página.
  *  - Dados (/_serverFn, /api): nunca guardados aqui — sem rede, quem trata é o
  *    app (fila da bancada em src/lib/fila-offline.ts).
+ *  - Avisos (push): o push chega sem conteúdo; aqui se busca /api/avisos com a
+ *    sessão da pessoa e se mostra a notificação. Tocar abre o laudo.
  */
 const VERSAO = __VERSAO__;
 const ARQUIVOS = __ARQUIVOS__;
 const CACHE_APP = "suporte-app-" + VERSAO;
 const CACHE_PAGINAS = "suporte-paginas";
+/** Só a hora do último aviso mostrado neste aparelho (ver o evento "push"). */
+const CACHE_AVISOS = "suporte-avisos";
 const FIXOS = [
   "/manifest.webmanifest",
   "/favicon.png",
@@ -119,3 +123,59 @@ function paginaSemRede(temBancada) {
     "</body></html>"
   );
 }
+
+// ---------------- Avisos (Web Push) ----------------
+
+self.addEventListener("push", (event) => {
+  event.waitUntil(
+    (async () => {
+      // Cada aparelho guarda a hora do último aviso que mostrou e pede só os mais novos.
+      const marca = await caches.open(CACHE_AVISOS);
+      const guardada = await marca.match("/_ultimo-aviso");
+      const desde = guardada ? await guardada.text() : "";
+      let avisos = [];
+      try {
+        const r = await fetch("/api/avisos?desde=" + encodeURIComponent(desde), { credentials: "same-origin", cache: "no-store" });
+        if (r.ok) avisos = (await r.json()).avisos || [];
+      } catch (err) {
+        // sem rede ou sem sessão: cai no aviso genérico abaixo
+      }
+      if (avisos.length > 0) {
+        const maisNovo = avisos.reduce((m, a) => (a.criadoEm > m ? a.criadoEm : m), desde);
+        await marca.put("/_ultimo-aviso", new Response(maisNovo));
+      }
+      // O navegador exige uma notificação por push; sem detalhes, uma genérica.
+      if (avisos.length === 0) {
+        avisos = [{ id: "suporte-aviso", titulo: "Suporte Lab", corpo: "Há novidade nos laudos — toque para abrir.", url: "/relatorio/pendentes" }];
+      }
+      for (const a of avisos.slice(0, 5)) {
+        await self.registration.showNotification(a.titulo, {
+          body: a.corpo,
+          tag: a.id,
+          data: { url: a.url },
+          icon: "/icons/icon-192.png",
+          badge: "/icons/icon-192.png",
+          lang: "pt-BR",
+        });
+      }
+    })(),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const destino = new URL((event.notification.data && event.notification.data.url) || "/", self.location.origin).href;
+  event.waitUntil(
+    (async () => {
+      const janelas = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      for (const j of janelas) {
+        if (j.url.startsWith(self.location.origin)) {
+          await j.focus();
+          if ("navigate" in j) await j.navigate(destino).catch(() => {});
+          return;
+        }
+      }
+      await self.clients.openWindow(destino);
+    })(),
+  );
+});

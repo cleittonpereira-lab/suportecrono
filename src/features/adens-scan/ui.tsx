@@ -22,12 +22,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft, Save, CheckCircle2, Plus, Trash2, FlaskConical } from "lucide-react";
 import { ImagePlus, Camera } from "lucide-react";
 import { fileToCompressedDataUrl, formatBytes } from "@/features/lab/photos";
-import {
-  atualizarPendenciaDigitacao,
-  criarPendenciaDigitacao,
-  listPendenciasDigitacao,
-  type PendenciaDigitacao,
-} from "@/lib/lab-pendencias.functions";
+import { atualizarPendenciaOuGuardar, criarPendenciaOuGuardar, usePendenciaDaBancada } from "@/lib/fila-offline";
 import { getLabEnsaioSnapshot } from "@/lib/lab-ensaios.functions";
 import type { Photo } from "@/features/lab/types";
 
@@ -156,8 +151,9 @@ export function AdensWorkspace({
 }) {
   const [data, setData] = useState<AdensFieldPayload>(initial);
   const [pid, setPid] = useState<string | null>(pendenciaId);
-  const criarFn = useServerFn(criarPendenciaDigitacao);
-  const atualizarFn = useServerFn(atualizarPendenciaDigitacao);
+  // Sem rede, gravam no aparelho e saem quando a rede volta (lib/fila-offline.ts).
+  const criarFn = criarPendenciaOuGuardar;
+  const atualizarFn = atualizarPendenciaOuGuardar;
   const navigate = useNavigate();
   const loadedRef = useRef(false);
   // Ref sempre com o payload mais recente — usado pelo autosave onBlur,
@@ -328,11 +324,16 @@ export function AdensWorkspace({
       }
     }
     try {
-      await atualizarFn({
+      const r = await atualizarFn({
         data: { id: curPid!, status: "pendente", observacao: data.obs || null, payload },
       });
-      toast.success("Execução finalizada — enviada para Digitação & Emissões");
-      navigate({ to: "/relatorio/pendentes", search: { tab: "enviados" } });
+      if (r.guardada) {
+        toast.success("Execução finalizada — guardada no aparelho; vai para a Central quando a rede voltar");
+        navigate({ to: "/relatorio/digitalizacao" });
+      } else {
+        toast.success("Execução finalizada — enviada para Digitação & Emissões");
+        navigate({ to: "/relatorio/pendentes", search: { tab: "enviados" } });
+      }
     } catch (e: unknown) {
       toast.error("Falha ao gravar: " + (e instanceof Error ? e.message : String(e)));
     }
@@ -583,17 +584,9 @@ function FieldNum({
 
 // -------- Loader por pendenciaId (usado na rota) --------
 export function AdensPendenciaEditor({ pendenciaId, onBack }: { pendenciaId: string | null; onBack: () => void }) {
-  const listFn = useServerFn(listPendenciasDigitacao);
   const snapshotFn = useServerFn(getLabEnsaioSnapshot);
-  const { data: pendencias = [] } = useQuery({
-    queryKey: ["adens_scan_pendencias"],
-    queryFn: () => listFn(),
-    staleTime: 5_000,
-  });
-  const pendencia = useMemo(
-    () => (pendencias as PendenciaDigitacao[]).find((p) => p.id === pendenciaId) ?? null,
-    [pendencias, pendenciaId],
-  );
+  // A do servidor ou, sem rede, a guardada no aparelho (lib/fila-offline.ts).
+  const { pendencia, carregando } = usePendenciaDaBancada(pendenciaId, "adens_scan_pendencias");
   const linked = (pendencia?.payload as unknown as AdensFieldPayload | undefined)?._linkedEnsaio;
   const { data: officeSnapshot } = useQuery({
     queryKey: ["adens_linked_ensaio_photos", linked?.osId, linked?.amostraId, linked?.ensaioId],
@@ -604,7 +597,11 @@ export function AdensPendenciaEditor({ pendenciaId, onBack }: { pendenciaId: str
   const officePhotos: Photo[] = officeSnapshot?.ensaio?.photos ?? [];
 
   if (pendenciaId && !pendencia) {
-    return <div className="p-6 text-center text-sm text-muted-foreground">Carregando pendência…</div>;
+    return (
+      <div className="p-6 text-center text-sm text-muted-foreground">
+        {carregando ? "Carregando pendência…" : "Pendência não encontrada — sem rede e sem cópia neste aparelho."}
+      </div>
+    );
   }
   const initial: AdensFieldPayload = pendencia?.payload
     ? (pendencia.payload as unknown as AdensFieldPayload)

@@ -18,6 +18,7 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "sonner";
 import { findDigitScanPlugin } from "@/features/digit-scan/registry";
+import { atualizarPendenciaOuGuardar, criarPendenciaOuGuardar } from "@/lib/fila-offline";
 import {
   Camera,
   StopCircle,
@@ -269,8 +270,9 @@ export function MEspAWorkspace({
   const [dets, setDets] = useState<DeterminacaoInput[]>([newDet()]);
   const [obs, setObs] = useState("");
   const [pendenciaId, setPendenciaId] = useState<string | null>(null);
-  const atualizarFn = useServerFn(atualizarPendenciaDigitacao);
-  const criarFn = useServerFn(criarPendenciaDigitacao);
+  // Sem rede, gravam no aparelho e saem quando a rede volta (lib/fila-offline.ts).
+  const atualizarFn = atualizarPendenciaOuGuardar;
+  const criarFn = criarPendenciaOuGuardar;
   const listPendFn = useServerFn(listPendenciasDigitacao);
   const requestApprovalFn = useServerFn(requestApproval);
   const navigate = useNavigate();
@@ -347,7 +349,6 @@ export function MEspAWorkspace({
                 amostra: ident.amostraCodigo || null,
                 ensaio: "Massa Específica Aparente Natural",
                 tipo_ensaio: "M.ESP.A",
-                equipamento: null,
                 origem: "digitalizacao",
                 payload,
               },
@@ -394,7 +395,6 @@ export function MEspAWorkspace({
                 amostra: ident.amostraCodigo || null,
                 ensaio: "Massa Específica Aparente Natural",
                 tipo_ensaio: "M.ESP.A",
-                equipamento: null,
                 origem: "digitalizacao",
                 payload,
               },
@@ -447,9 +447,15 @@ export function MEspAWorkspace({
               return;
             }
           }
-          await atualizarFn({
+          const r = await atualizarFn({
             data: { id: pid, status: nextStatus, observacao: obs || null, payload },
           });
+          if (r.guardada) {
+            // Sem rede: fica no aparelho e sai sozinho; a bancada segue para o próximo QR.
+            toast.success("Guardado no aparelho — vai para Digitação & Emissões quando a rede voltar");
+            reset();
+            return;
+          }
           toast.success(
             nextStatus === "digitado"
               ? "Digitação concluída — enviada para Verificação"
@@ -502,7 +508,8 @@ export function ScannerCard({ onIdentified }: { onIdentified: (id: Identificacao
   const containerId = "digitalizacao-qr";
   const scannerRef = useRef<{ isScanning?: boolean; stop: () => Promise<void>; clear: () => Promise<void> } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const criarPendenciaFn = useServerFn(criarPendenciaDigitacao);
+  // Sem rede, a pendência do Adensamento nasce no aparelho (lib/fila-offline.ts).
+  const criarPendenciaFn = criarPendenciaOuGuardar;
   const navigate = useNavigate();
   const decodedLockRef = useRef(false);
   const nativeVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -939,7 +946,6 @@ export function ScannerCard({ onIdentified }: { onIdentified: (id: Identificacao
           amostra: ident.amostraCodigo || null,
           ensaio: "Adensamento Edométrico",
           tipo_ensaio: "adensamento",
-          equipamento: null,
           origem: "digitalizacao",
           payload: { ident, moldagem: {}, capsulas: [], obs: "" } as unknown as Record<string, unknown>,
         },

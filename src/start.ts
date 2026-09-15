@@ -33,10 +33,17 @@ const tempoRealMiddleware = createMiddleware().server(async ({ next, request }) 
   return comAvisosDeMudanca(request, async () => next());
 });
 
+// Trabalho para depois da resposta (avisos do fluxo de aprovação, Fase 5):
+// quem aprovou ou reprovou não espera o envio das notificações.
+const tarefasDepoisMiddleware = createMiddleware().server(async ({ next, request }) => {
+  const { comTarefasDepois } = await import("./lib/depois-da-resposta");
+  return comTarefasDepois(request, async () => next());
+});
+
 // Sem middleware de cliente: havia um que, antes de TODA chamada ao servidor,
 // pedia a sessão ao Supabase Auth (fora do ar desde 25/08) — com uma sessão
 // antiga guardada no navegador, tentava renová-la na rede antes de liberar a
 // chamada. O servidor já não usava nada disso: a identidade vem do cookie.
 export const startInstance = createStart(() => ({
-  requestMiddleware: [csrfMiddleware, errorMiddleware, tempoRealMiddleware],
+  requestMiddleware: [csrfMiddleware, errorMiddleware, tempoRealMiddleware, tarefasDepoisMiddleware],
 }));

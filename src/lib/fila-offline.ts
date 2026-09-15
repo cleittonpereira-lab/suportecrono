@@ -32,7 +32,8 @@ export interface CriarPendencia {
 }
 
 export interface AtualizarPendencia {
-  status: "em_digitacao" | "pendente";
+  /** "digitado": M.ESP.A finalizada a partir de uma pendência que já existia. */
+  status: "em_digitacao" | "pendente" | "digitado";
   observacao?: string | null;
   payload: Record<string, unknown>;
 }
@@ -118,12 +119,17 @@ export function useFilaOffline(): Estado {
 
 // ---------------- Gravar ----------------
 
+const ORDEM_STATUS: Record<AtualizarPendencia["status"], number> = { em_digitacao: 0, pendente: 1, digitado: 2 };
+
 async function guardar(pid: string, parte: { criar?: CriarPendencia; atualizar?: AtualizarPendencia }) {
   const atual = await ler(pid);
   let atualizar = parte.atualizar ?? atual?.atualizar;
   if (parte.atualizar && atual?.atualizar) {
-    // Finalizada sem rede e editada de novo: continua finalizada.
-    const status = atual.atualizar.status === "pendente" ? "pendente" : parte.atualizar.status;
+    // Finalizada sem rede e editada de novo: continua finalizada (vale o status mais adiantado).
+    const status =
+      ORDEM_STATUS[atual.atualizar.status] > ORDEM_STATUS[parte.atualizar.status]
+        ? atual.atualizar.status
+        : parte.atualizar.status;
     atualizar = { ...parte.atualizar, status, observacao: parte.atualizar.observacao ?? atual.atualizar.observacao };
   }
   await gravar({

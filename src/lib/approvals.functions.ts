@@ -267,6 +267,20 @@ export const requestApproval = createServerFn({ method: "POST" })
       userId,
       nome: name,
     });
+    // Avisos no celular (Fase 5): quem verifica — ou quem aprova, se já foi direto.
+    const { avisarFluxo } = await import("./avisos.server");
+    await avisarFluxo({
+      evento: data.skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao",
+      scopeId: data.scopeId,
+      laudo: {
+        ensaio: data.index?.ensaio_nome,
+        os: data.index?.os_numero,
+        amostra: data.index?.amostra_code,
+        arquivo: data.filename,
+        registro: file,
+      },
+      ator: { userId, nome: name },
+    });
     return { ...row, pendencia };
   });
 
@@ -349,6 +363,16 @@ export const verifyApproval = createServerFn({ method: "POST" })
       data.decision === "verificado" ? "verificado" : "em_digitacao",
       { userId, nome: name },
     );
+    // Avisos no celular (Fase 5): verificado → quem aprova; devolvido → quem enviou.
+    const { avisarFluxo } = await import("./avisos.server");
+    await avisarFluxo({
+      evento: data.decision === "verificado" ? "aguardando_aprovacao" : "reprovado",
+      scopeId: data.scopeId,
+      laudo: { arquivo: updatedRow.filename, registro: file },
+      ator: { userId, nome: name },
+      solicitante: updatedRow.requested_by,
+      comentario: data.comment,
+    });
     return { ...updatedRow, pendencia };
   });
 
@@ -433,6 +457,18 @@ export const decideApproval = createServerFn({ method: "POST" })
       userId,
       nome: name,
     });
+    // Avisos no celular (Fase 5): reprovado pelo RT → quem enviou a revisão.
+    if (data.decision === "rejeitado") {
+      const { avisarFluxo } = await import("./avisos.server");
+      await avisarFluxo({
+        evento: "reprovado",
+        scopeId: data.scopeId,
+        laudo: { arquivo: updatedRow.filename, registro: file },
+        ator: { userId, nome: name },
+        solicitante: updatedRow.requested_by,
+        comentario: data.comment,
+      });
+    }
     return { ...updatedRow, pendencia };
   });
 
