@@ -13,7 +13,7 @@ import { useSchedule } from "@/hooks/use-schedule";
 import { fetchSchedule } from "@/lib/sheets.functions";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AiAssistantFloating } from "@/components/ai-assistant-floating";
-import { SectionNav, useCurrentSection } from "@/components/section-nav";
+import { SectionNav, useCurrentSection, primeiraUrlLiberada } from "@/components/section-nav";
 import { UserMenu } from "@/components/user-menu";
 import { useAuth } from "@/hooks/use-auth";
 import { pathToTab } from "@/lib/tab-permissions";
@@ -80,11 +80,14 @@ function AppLayout() {
       nav({ to: "/pendente", replace: true });
       return;
     }
-    // Guard de aba
+    // Guard de aba: página não liberada (inclusive a inicial) → primeira aba
+    // liberada do menu. Antes ia sempre para /entregas, e "/" e "/entregas"
+    // ficavam abertas até para quem só tinha, por exemplo, a Digitalização.
     const tab = pathToTab(pathname);
     if (tab && !canAccess(tab)) {
-      if (pathname !== "/entregas" && pathname !== "/") {
-        nav({ to: "/entregas", replace: true });
+      const [to, q] = (primeiraUrlLiberada(canAccess) ?? "/perfil").split("?");
+      if (to !== pathname) {
+        nav({ to, search: q ? Object.fromEntries(new URLSearchParams(q)) : undefined, replace: true } as any);
       }
     }
   }, [loading, user, profile, pathname, canAccess, nav]);

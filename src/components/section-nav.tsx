@@ -137,6 +137,20 @@ const SECTIONS: readonly Section[] = [
   },
 ];
 
+/**
+ * Primeira aba do menu que a pessoa pode abrir — para onde vai quem entra numa
+ * página não liberada (ou na inicial sem ter o Dashboard). Null = nenhuma.
+ */
+export function primeiraUrlLiberada(canAccess: (tab: NonNullable<ReturnType<typeof pathToTab>>) => boolean): string | null {
+  for (const sec of SECTIONS) {
+    for (const t of sec.tabs) {
+      const key = pathToTab(t.url.split("?")[0]);
+      if (!key || canAccess(key)) return t.url;
+    }
+  }
+  return null;
+}
+
 export function useCurrentSection() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   return SECTIONS.find((s) => s.match(pathname)) ?? null;

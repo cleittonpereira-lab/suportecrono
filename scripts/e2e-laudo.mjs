@@ -297,7 +297,7 @@ try {
   );
   r = await chamar("importarEnsaios", "POST", pedidoImp);
   conferir("importar de novo não duplica", r.resultado?.ensaios === 0 && r.resultado?.repetidos === 2, r.erro ?? JSON.stringify(r.resultado));
-  r = await chamar("diagnosticarProgramacao", "POST", { manterSoNoApp: false });
+  r = await chamar("diagnosticarProgramacao", "POST", undefined);
   conferir("diagnóstico da programação responde (sem planilha aqui)", r.resultado?.planilhaConfigurada === false, r.erro ?? "");
 
   const comLogin = await fetch(`${BASE}/api/avisos`, { headers: { cookie: COOKIE } });

@@ -1,23 +1,23 @@
 /**
- * Reparo da programação: junta a planilha antiga (com linhas de colunas
- * trocadas) ao banco do app e corrige os tipos de ensaio perdidos. Só lógica,
- * sem rede — o servidor lê a planilha e grava (programacao-planilha.server.ts);
- * aqui só se decide o quê.
+ * Leitura e arrumação da planilha da Programação. Só lógica, sem rede — o
+ * servidor lê e grava a planilha (programacao-fonte.server.ts); aqui só se
+ * decide o quê.
  *
- * Por que as colunas trocaram: `insertRow` acrescentava a linha na planilha na
- * ordem dos campos enviados ({...linha, id, created_at, updated_at}), não na
- * ordem do cabeçalho da aba. E o Gantt lia a planilha: o ensaio importado
- * ficava com o id da amostra na coluna "id", o id do tipo em "amostra_id" e
- * "pendente" em "tipo_ensaio_id" — daí os cartões "Ensaio • amostra".
+ * A planilha é a fonte dos dados da programação. O defeito que isto corrige:
+ * `insertRow` acrescentava a linha na ordem dos campos enviados ({...linha,
+ * id, created_at, updated_at}), não na do cabeçalho da aba. As telas liam pelo
+ * cabeçalho: o ensaio importado ficava com o id da amostra na coluna "id", o
+ * do tipo em "amostra_id" e "pendente" em "tipo_ensaio_id" — os cartões
+ * "Ensaio • amostra" do Gantt.
  *
- * Como desentortar sem chute: o banco guardou cada linha incluída com os
- * campos NA MESMA ORDEM em que ela foi para a planilha. Essas ordens viram
- * gabaritos; uma linha torta é lida pelo gabarito de mesmo tamanho que melhor
- * encaixa (id que existe, data onde é data, status conhecido...). Linha que
- * nenhum gabarito explica não entra — vai para o relatório, com os valores.
+ * Como desentortar sem chute: a cópia do app (programacao_db.json) guardou
+ * cada linha incluída com os campos NA MESMA ORDEM em que ela foi para a
+ * planilha. Essas ordens viram gabaritos; uma linha torta é lida pelo gabarito
+ * de mesmo tamanho que melhor encaixa (id que existe, data onde é data, status
+ * conhecido...). Linha que nenhum gabarito explica fica como está — e aparece
+ * no relatório, com os valores.
  */
 import { ehTipoAvulso, resolverTipo, type TipoProg } from "./programacao-tipos";
-import { PROG_COLUMNS } from "./programacao-model";
 
 export type Linha = Record<string, string>;
 export type Abas = Record<string, Linha[]>;
@@ -53,8 +53,9 @@ const PRIORIDADES = new Set(["baixa", "media", "alta", "urgente"]);
 export const pareceId = (v: string) => UUID.test(v) || ID_SEMENTE.test(v);
 const norm = (s: unknown) => String(s ?? "").trim().toUpperCase();
 const texto = (v: unknown) => (v == null ? "" : String(v));
+export const celula = (v: unknown) => (v == null ? "" : typeof v === "boolean" ? (v ? "TRUE" : "FALSE") : String(v));
 
-function aparaFim(v: string[]): string[] {
+function aparaFim(v: unknown[]): string[] {
   const out = v.map(texto);
   while (out.length && out[out.length - 1] === "") out.pop();
   return out;
@@ -69,7 +70,7 @@ function temRabo(v: string[]): boolean {
 function porOrdem(ordem: string[], v: string[]): Linha {
   const o: Linha = {};
   ordem.forEach((k, i) => {
-    o[k] = v[i] ?? "";
+    if (k) o[k] = v[i] ?? "";
   });
   return o;
 }
@@ -165,7 +166,7 @@ export function lerLinha(
   return { como: "nao_reconhecida" };
 }
 
-/** Gabaritos de uma aba: as ordens de campos das linhas incluídas que o banco guardou. */
+/** Gabaritos de uma aba: as ordens de campos das linhas incluídas que a cópia do app guardou. */
 export function coletarOrdens(linhas: Linha[], extras: string[][] = []): string[][] {
   const vistas = new Map<string, string[]>();
   for (const o of extras) vistas.set(o.join(""), o);
@@ -179,9 +180,10 @@ export function coletarOrdens(linhas: Linha[], extras: string[][] = []): string[
   return [...vistas.values()];
 }
 
-function separarCabecalho(valores: string[][]): { cabecalho: string[] | null; linhas: string[][] } {
+/** Cabeçalho = primeira linha, se tiver a coluna "id". Aba sem ele não é lida da planilha. */
+export function cabecalhoDe(valores: unknown[][]): string[] | null {
   const primeira = (valores[0] ?? []).map((c) => texto(c).trim());
-  return primeira.includes("id") ? { cabecalho: primeira, linhas: valores.slice(1) } : { cabecalho: null, linhas: valores };
+  return primeira.includes("id") ? primeira : null;
 }
 
 function idsConhecidos(banco: Abas, planilha: AbaDaPlanilha[]): IdsConhecidos {
@@ -196,9 +198,9 @@ function idsConhecidos(banco: Abas, planilha: AbaDaPlanilha[]): IdsConhecidos {
     for (const l of banco[aba] ?? []) if (l.id) ids[conj].add(texto(l.id));
     const p = planilha.find((x) => x.aba === aba);
     if (!p) continue;
-    const { cabecalho, linhas } = separarCabecalho(p.valores);
-    const col = cabecalho ? cabecalho.indexOf("id") : -1;
-    for (const crua of linhas) {
+    const cab = cabecalhoDe(p.valores);
+    const col = cab ? cab.indexOf("id") : -1;
+    for (const crua of cab ? p.valores.slice(1) : p.valores) {
       const v = aparaFim(crua);
       // Linha torta: o id verdadeiro está no rabo, não na coluna "id".
       if (temRabo(v)) ids[conj].add(v[v.length - 3]);
@@ -210,146 +212,31 @@ function idsConhecidos(banco: Abas, planilha: AbaDaPlanilha[]): IdsConhecidos {
 
 const maisNova = (a: Linha, b: Linha) => texto(a.updated_at) > texto(b.updated_at);
 
+type LinhaLida = { indice: number; pos: number; crua: string[]; leitura: Leitura };
+
+/** Lê as linhas de dados de uma aba com cabeçalho. `pos` = número da linha na planilha (1 = cabeçalho). */
+function lerLinhasDaAba(p: AbaDaPlanilha, cabecalho: string[], banco: Abas, ids: IdsConhecidos): LinhaLida[] {
+  const ordens = coletarOrdens(banco[p.aba] ?? [], ORDENS_DA_IMPORTACAO_ANTIGA[p.aba]);
+  const out: LinhaLida[] = [];
+  p.valores.slice(1).forEach((bruta, indice) => {
+    const crua = aparaFim(bruta);
+    if (crua.length === 0) return;
+    out.push({ indice, pos: indice + 2, crua, leitura: lerLinha(crua, cabecalho, ordens, ids) });
+  });
+  return out;
+}
+
 export type RelatorioAba = {
   aba: string;
-  /** false = a aba não existe na planilha: o banco fica como está. */
-  naPlanilhaExiste: boolean;
+  /** false = aba sem cabeçalho com "id" (ou vazia): não é lida nem mexida. */
+  temCabecalho: boolean;
   naPlanilha: number;
   alinhadas: number;
   realinhadas: number;
+  /** Linhas com um id que já apareceu antes na aba (vale a alteração mais recente). */
+  repetidas: number;
   naoReconhecidas: { linha: number; valores: string[] }[];
-  noApp: number;
-  soNaPlanilha: number;
-  soNoApp: number;
-  /** Das só no banco, as que ficaram mesmo sem `manterSoNoApp` porque algo as usa. */
-  soNoAppMantidas: number;
-  planilhaMaisNova: number;
-  resultado: number;
 };
-
-/**
- * Junta planilha e banco, aba a aba. Linha nos dois: vale a alteração mais
- * recente. Só na planilha: entra (era o que as telas mostravam). Só no banco:
- * as telas NÃO mostravam (liam a planilha) — em geral sobra de gravação que
- * falhou ou de algo apagado; fica só se `manterSoNoApp`.
- */
-export function mesclar(
-  banco: Abas,
-  planilha: AbaDaPlanilha[],
-  opcoes: { manterSoNoApp: boolean },
-): { dados: Abas; relatorio: RelatorioAba[] } {
-  const ids = idsConhecidos(banco, planilha);
-  const dados: Abas = {};
-  const relatorio: RelatorioAba[] = [];
-  const foraDoResultado = new Map<string, Linha[]>();
-  const nomes = [...new Set([...Object.keys(banco), ...planilha.map((p) => p.aba)])];
-
-  for (const aba of nomes) {
-    const doBanco = banco[aba] ?? [];
-    const daPlanilha = planilha.find((p) => p.aba === aba);
-    const r: RelatorioAba = {
-      aba,
-      naPlanilhaExiste: !!daPlanilha,
-      naPlanilha: 0,
-      alinhadas: 0,
-      realinhadas: 0,
-      naoReconhecidas: [],
-      noApp: doBanco.length,
-      soNaPlanilha: 0,
-      soNoApp: 0,
-      soNoAppMantidas: 0,
-      planilhaMaisNova: 0,
-      resultado: doBanco.length,
-    };
-    relatorio.push(r);
-    if (!daPlanilha) {
-      dados[aba] = doBanco.map((l) => ({ ...l }));
-      continue;
-    }
-
-    const { cabecalho, linhas } = separarCabecalho(daPlanilha.valores);
-    const ordens = coletarOrdens(doBanco, ORDENS_DA_IMPORTACAO_ANTIGA[aba]);
-    const lidas = new Map<string, Linha>();
-    linhas.forEach((crua, i) => {
-      const v = aparaFim(crua);
-      if (v.length === 0) return;
-      r.naPlanilha++;
-      const l = lerLinha(v, cabecalho, ordens, ids);
-      if (l.como === "nao_reconhecida") {
-        r.naoReconhecidas.push({ linha: i + (cabecalho ? 2 : 1), valores: v });
-        return;
-      }
-      if (l.como === "alinhada") r.alinhadas++;
-      else r.realinhadas++;
-      const antes = lidas.get(l.linha.id);
-      if (!antes || maisNova(l.linha, antes)) lidas.set(l.linha.id, l.linha);
-    });
-
-    const saida: Linha[] = [];
-    const usados = new Set<string>();
-    const deFora: Linha[] = [];
-    for (const b of doBanco) {
-      const p = lidas.get(b.id);
-      if (p) {
-        usados.add(b.id);
-        if (maisNova(p, b)) {
-          r.planilhaMaisNova++;
-          saida.push({ ...b, ...p });
-        } else {
-          saida.push({ ...p, ...b });
-        }
-      } else {
-        r.soNoApp++;
-        if (opcoes.manterSoNoApp) saida.push({ ...b });
-        else deFora.push({ ...b });
-      }
-    }
-    for (const [id, p] of lidas) {
-      if (usados.has(id)) continue;
-      r.soNaPlanilha++;
-      saida.push(p);
-    }
-    dados[aba] = saida;
-    if (deFora.length) foraDoResultado.set(aba, deFora);
-  }
-
-  // Linha só do banco que algo do resultado ainda usa (o tipo de um ensaio, a
-  // amostra de um ensaio...) fica mesmo sem `manterSoNoApp` — senão o reparo
-  // criaria órfãos. Repete até parar: a linha que volta pode usar outra.
-  for (let mudou = true; mudou; ) {
-    mudou = false;
-    const emUso = valoresEmUso(dados);
-    for (const [aba, linhas] of foraDoResultado) {
-      const ficamFora: Linha[] = [];
-      for (const l of linhas) {
-        if (emUso.has(texto(l.id))) {
-          dados[aba].push(l);
-          relatorio.find((r) => r.aba === aba)!.soNoAppMantidas++;
-          mudou = true;
-        } else {
-          ficamFora.push(l);
-        }
-      }
-      foraDoResultado.set(aba, ficamFora);
-    }
-  }
-  for (const r of relatorio) r.resultado = dados[r.aba].length;
-  return { dados, relatorio };
-}
-
-/** Todo valor que aponta para outra linha (menos o próprio id); listas "a,b" contam item a item. */
-function valoresEmUso(dados: Abas): Set<string> {
-  const s = new Set<string>();
-  for (const linhas of Object.values(dados)) {
-    for (const l of linhas) {
-      for (const [k, v] of Object.entries(l)) {
-        if (k === "id") continue;
-        for (const parte of texto(v).split(",")) if (parte.trim()) s.add(parte.trim());
-      }
-    }
-  }
-  return s;
-}
 
 export type RelatorioTipos = {
   corrigidos: { ensaio: string; amostra: string; de: string; para: string }[];
@@ -357,13 +244,90 @@ export type RelatorioTipos = {
   avulsosRemovidos: string[];
 };
 
+export type ModeloDaPlanilha = {
+  /** Só as abas com cabeçalho. */
+  dados: Abas;
+  cabecalhos: Record<string, string[]>;
+  /** Linha da planilha do registro que vale, por id. */
+  posicao: Record<string, Map<string, number>>;
+  /** Todas as linhas com aquele id (repetidas incluídas). */
+  posicoes: Record<string, Map<string, number[]>>;
+  /** Quantas células cada linha tem hoje (para limpar sobra ao regravar). */
+  larguras: Record<string, Map<number, number>>;
+  relatorio: RelatorioAba[];
+  tipos: RelatorioTipos;
+};
+
+/**
+ * A planilha lida como as telas devem vê-la: linhas tortas pelo gabarito, id
+ * repetido = a alteração mais recente, ensaio de tipo avulso ou etiqueta crua
+ * no tipo oficial (a etiqueta vai para `etiqueta`).
+ */
+export function lerPlanilha(planilha: AbaDaPlanilha[], banco: Abas = {}): ModeloDaPlanilha {
+  const ids = idsConhecidos(banco, planilha);
+  const m: ModeloDaPlanilha = {
+    dados: {},
+    cabecalhos: {},
+    posicao: {},
+    posicoes: {},
+    larguras: {},
+    relatorio: [],
+    tipos: { corrigidos: [], semTipo: [], avulsosRemovidos: [] },
+  };
+  for (const p of planilha) {
+    const cab = cabecalhoDe(p.valores);
+    const r: RelatorioAba = {
+      aba: p.aba,
+      temCabecalho: !!cab,
+      naPlanilha: 0,
+      alinhadas: 0,
+      realinhadas: 0,
+      repetidas: 0,
+      naoReconhecidas: [],
+    };
+    m.relatorio.push(r);
+    if (!cab) continue;
+
+    const escolhidas = new Map<string, { linha: Linha; pos: number }>();
+    const posicoes = new Map<string, number[]>();
+    const larguras = new Map<number, number>();
+    for (const l of lerLinhasDaAba(p, cab, banco, ids)) {
+      r.naPlanilha++;
+      larguras.set(l.pos, l.crua.length);
+      if (l.leitura.como === "nao_reconhecida") {
+        r.naoReconhecidas.push({ linha: l.pos, valores: l.crua });
+        continue;
+      }
+      if (l.leitura.como === "alinhada") r.alinhadas++;
+      else r.realinhadas++;
+      const { linha } = l.leitura;
+      const ps = posicoes.get(linha.id);
+      if (ps) {
+        ps.push(l.pos);
+        r.repetidas++;
+      } else {
+        posicoes.set(linha.id, [l.pos]);
+      }
+      const antes = escolhidas.get(linha.id);
+      if (!antes || maisNova(linha, antes.linha)) escolhidas.set(linha.id, { linha, pos: l.pos });
+    }
+    m.cabecalhos[p.aba] = cab;
+    m.dados[p.aba] = [...escolhidas.values()].map((x) => x.linha);
+    m.posicao[p.aba] = new Map([...escolhidas].map(([id, x]) => [id, x.pos]));
+    m.posicoes[p.aba] = posicoes;
+    m.larguras[p.aba] = larguras;
+  }
+  m.tipos = corrigirTipos(m.dados, { removerAvulsos: false });
+  return m;
+}
+
 /**
  * Ensaio sem tipo válido, ou num tipo avulso ("CD3.IN") que tem tipo oficial
  * equivalente, passa ao tipo oficial — a etiqueta original fica em `etiqueta`.
- * Avulsos repetidos (mesmo nome) viram um só. Some só o avulso que ficou sem
- * uso E é repetido (de um oficial ou de outro avulso); os demais ficam.
+ * Avulsos repetidos (mesmo nome) viram um só. Com `removerAvulsos`, some da
+ * lista o avulso que ficou sem uso E é repetido (de um oficial ou de outro).
  */
-export function corrigirTipos(dados: Abas): RelatorioTipos {
+export function corrigirTipos(dados: Abas, opcoes: { removerAvulsos: boolean } = { removerAvulsos: true }): RelatorioTipos {
   const tipos = (dados["Tipos de Ensaio"] ?? []) as (Linha & TipoProg)[];
   const porId = new Map(tipos.map((t) => [t.id, t]));
   const oficiais = tipos.filter((t) => !ehTipoAvulso(t));
@@ -392,6 +356,7 @@ export function corrigirTipos(dados: Abas): RelatorioTipos {
     e.tipo_ensaio_id = alvo.id;
     rel.corrigidos.push({ ensaio: e.id, amostra: rotulo(e.amostra_id), de: etiqueta || atual, para: alvo.nome });
   }
+  if (!opcoes.removerAvulsos) return rel;
 
   const usados = new Set<string>();
   for (const [aba, linhas] of Object.entries(dados)) {
@@ -408,54 +373,71 @@ export function corrigirTipos(dados: Abas): RelatorioTipos {
   return rel;
 }
 
-export type RelatorioReparo = {
-  abas: RelatorioAba[];
+/* ---------------------------- Gravar na planilha ---------------------------- */
+
+/** O registro como linha da aba, cada valor na coluna do cabeçalho; campo novo vira coluna nova no fim. */
+export function linhaParaPlanilha(
+  cabecalho: string[],
+  registro: Record<string, unknown>,
+): { cabecalho: string[]; valores: string[]; cabecalhoMudou: boolean } {
+  const cab = [...cabecalho];
+  for (const k of Object.keys(registro)) if (k && !cab.includes(k)) cab.push(k);
+  return {
+    cabecalho: cab,
+    valores: cab.map((k) => celula(registro[k])),
+    cabecalhoMudou: cab.length !== cabecalho.length,
+  };
+}
+
+/* ---------------------------- Arrumar a planilha ---------------------------- */
+
+export type Arrumacao = {
+  /** Abas que mudam, já com o conteúdo novo inteiro (cabeçalho + linhas). */
+  abas: AbaDaPlanilha[];
+  relatorio: RelatorioAba[];
   tipos: RelatorioTipos;
-  programacoesSemEnsaio: number;
 };
 
-/** O reparo inteiro: junta, corrige os tipos e conta as programações órfãs. */
-export function montarReparo(
-  banco: Abas,
-  planilha: AbaDaPlanilha[],
-  opcoes: { manterSoNoApp: boolean },
-): { dados: Abas; relatorio: RelatorioReparo } {
-  const { dados, relatorio } = mesclar(banco, planilha, opcoes);
-  const tipos = corrigirTipos(dados);
-  const ensaios = new Set((dados.Ensaios ?? []).map((e) => e.id));
-  const programacoesSemEnsaio = (dados["Programações"] ?? []).filter((p) => !ensaios.has(p.ensaio_id)).length;
-  return { dados, relatorio: { abas: relatorio, tipos, programacoesSemEnsaio } };
-}
+/**
+ * Endireita a planilha: cada linha torta volta para as colunas do cabeçalho,
+ * no MESMO lugar; ensaios de tipo avulso/etiqueta crua passam ao tipo oficial
+ * (com a etiqueta na coluna "etiqueta"). Nenhuma linha some: a que o reparo
+ * não soube ler, as vazias e as abas sem cabeçalho ficam como estão.
+ */
+export function arrumarPlanilha(planilha: AbaDaPlanilha[], banco: Abas = {}): Arrumacao {
+  const modelo = lerPlanilha(planilha, banco);
+  const corrigidos = new Map<string, Linha>();
+  const idsCorrigidos = new Set(modelo.tipos.corrigidos.map((c) => c.ensaio));
+  for (const e of modelo.dados.Ensaios ?? []) if (idsCorrigidos.has(e.id)) corrigidos.set(e.id, e);
+  const ids = idsConhecidos(banco, planilha);
 
-/* ------------------------- Espelho da planilha ------------------------- */
+  const abas: AbaDaPlanilha[] = [];
+  for (const p of planilha) {
+    const cab = cabecalhoDe(p.valores);
+    if (!cab) continue;
+    const lidas = new Map(lerLinhasDaAba(p, cab, banco, ids).map((l) => [l.indice, l]));
+    const registro = (l: LinhaLida | undefined): Linha | null => {
+      if (!l || l.leitura.como === "nao_reconhecida") return null;
+      const o = l.leitura.linha;
+      const c = p.aba === "Ensaios" ? corrigidos.get(o.id) : undefined;
+      return c ? { ...o, tipo_ensaio_id: c.tipo_ensaio_id, etiqueta: c.etiqueta ?? o.etiqueta ?? "" } : o;
+    };
 
-const ORDEM_DAS_COLUNAS: Record<string, string[]> = {
-  Amostras: [
-    "os_numero", "codigo_amostra", "tipo", "identificacao", "descricao", "tomador", "obra",
-    "prioridade", "topo_m", "base_m", "amostra_coletada",
-  ],
-  Ensaios: ["amostra_id", "tipo_ensaio_id", "etiqueta", "status", "prioridade", "prazo", "observacoes", "detalhes_tecnicos"],
-  Programações: PROG_COLUMNS,
-  "Tipos de Ensaio": ["nome", "codigo", "cor_gantt", "equipamentos_ids", "permite_paralelo", "tempo_medio_h", "tipo_relatorio"],
-  Equipamentos: ["nome", "codigo"],
-};
-
-/** Cabeçalho fixo da aba no espelho: id primeiro, as colunas conhecidas, as demais, e as datas no fim. */
-export function cabecalhoDaAba(aba: string, linhas: Linha[]): string[] {
-  const preferidas = (ORDEM_DAS_COLUNAS[aba] ?? []).filter((k) => !RABO.includes(k));
-  const outras: string[] = [];
-  for (const l of linhas) {
-    for (const k of Object.keys(l)) {
-      if (!RABO.includes(k) && !preferidas.includes(k) && !outras.includes(k)) outras.push(k);
+    const dados = p.valores.slice(1);
+    let novoCab = cab;
+    for (let i = 0; i < dados.length; i++) {
+      const r = registro(lidas.get(i));
+      if (r) novoCab = linhaParaPlanilha(novoCab, r).cabecalho;
     }
+    const valores = [
+      novoCab,
+      ...dados.map((crua, i) => {
+        const r = registro(lidas.get(i));
+        return r ? aparaFim(novoCab.map((k) => celula(r[k]))) : aparaFim(crua);
+      }),
+    ];
+    const antes = JSON.stringify(p.valores.map(aparaFim));
+    if (JSON.stringify(valores.map(aparaFim)) !== antes) abas.push({ aba: p.aba, valores });
   }
-  return ["id", ...preferidas, ...outras, "created_at", "updated_at"];
-}
-
-const celula = (v: unknown) => (v == null ? "" : typeof v === "boolean" ? (v ? "TRUE" : "FALSE") : String(v));
-
-/** A aba inteira como vai para a planilha: cabeçalho + uma linha por registro, cada valor na sua coluna. */
-export function valoresDaAba(aba: string, linhas: Linha[]): string[][] {
-  const cab = cabecalhoDaAba(aba, linhas);
-  return [cab, ...linhas.map((l) => cab.map((k) => celula(l[k])))];
+  return { abas, relatorio: modelo.relatorio, tipos: modelo.tipos };
 }
