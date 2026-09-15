@@ -15,7 +15,8 @@ export default defineConfig({
   nitro: {
     preset: "cloudflare-module",
     // Cópia diária do banco no Drive, pelo agendamento `triggers.crons` abaixo.
-    plugins: ["./src/server/copia-diaria.plugin.ts"],
+    // Checagem de saúde de 15 em 15 min (Fase 6), pelo segundo agendamento abaixo.
+    plugins: ["./src/server/copia-diaria.plugin.ts", "./src/server/saude.plugin.ts"],
     // nodeCompat: habilita o `node:crypto`/`Buffer` que a autenticação da
     // conta de serviço do Google (assinatura de JWT) e o upload de fotos
     // usam. deployConfig: deixa o nitro gerar a config de deploy do
@@ -36,7 +37,8 @@ export default defineConfig({
         keep_vars: true,
         // 09:00 UTC = 06:00 em Brasília: cópia diária do banco no Drive
         // (src/server/copia-diaria.plugin.ts).
-        triggers: { crons: ["0 9 * * *"] },
+        // "*/15 * * * *": checagem de saúde (src/server/saude.plugin.ts).
+        triggers: { crons: ["0 9 * * *", "*/15 * * * *"] },
         d1_databases: [
           {
             binding: "DB",

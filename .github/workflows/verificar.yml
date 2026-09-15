@@ -1,0 +1,40 @@
+# Verificação automática (Fase 6): a cada envio ao GitHub, confere tipos,
+# testes, compilação e um laudo de ponta a ponta no app compilado (runtime
+# local do Cloudflare, banco de teste vazio — nada aqui toca a produção).
+# Uma versão só deve ser promovida no Cloudflare com este fluxo verde.
+name: Verificar
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: verificar-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Dependências
+        run: npm ci
+
+      - name: Tipos
+        run: npm run typecheck
+
+      - name: Testes
+        run: npm test
+
+      - name: Compilação
+        run: npm run build
+
+      - name: Laudo de ponta a ponta (app compilado, banco de teste)
+        run: npm run e2e

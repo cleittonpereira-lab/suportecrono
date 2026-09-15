@@ -9,7 +9,10 @@
     "build:dev": "node scripts/cleanup-routes.js && vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "vitest run",
+    "e2e": "node scripts/e2e-laudo.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.51",

@@ -21,12 +21,15 @@ export function depoisDaResposta(tarefa: Promise<unknown>): void {
 export async function comTarefasDepois<T>(request: Request, fn: () => Promise<T>): Promise<T> {
   escopo ??= new asyncHooks.AsyncLocalStorage<Promise<unknown>[]>();
   const lista: Promise<unknown>[] = [];
-  const resultado = await escopo.run(lista, fn);
-  if (lista.length > 0) {
-    const todas = Promise.allSettled(lista);
-    const esperarDepois = (request as Request & { waitUntil?: (p: Promise<unknown>) => void }).waitUntil;
-    if (typeof esperarDepois === "function") esperarDepois(todas);
-    else await todas;
+  try {
+    return await escopo.run(lista, fn);
+  } finally {
+    // Também quando a requisição falhou — é justamente aí que se anota o erro (saude.server.ts).
+    if (lista.length > 0) {
+      const todas = Promise.allSettled(lista);
+      const esperarDepois = (request as Request & { waitUntil?: (p: Promise<unknown>) => void }).waitUntil;
+      if (typeof esperarDepois === "function") esperarDepois(todas);
+      else await todas;
+    }
   }
-  return resultado;
 }
