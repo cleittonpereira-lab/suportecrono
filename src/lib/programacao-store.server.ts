@@ -1,4 +1,4 @@
-import { readDriveJson, writeDriveJson } from "./driveStorage";
+import { atualizarDriveJson, DRIVE_ROOT_FOLDER_ID, readDriveJson, writeDriveJson } from "./driveStorage";
 
 export interface ProgramacaoData {
   Amostras: Record<string, string>[];
@@ -204,4 +204,22 @@ export async function writeStore(data: ProgramacaoData): Promise<void> {
   // Sem `catch` que engole: a tela mostrava "salvo" com a gravação tendo
   // falhado, e a edição se perdia no próximo carregamento.
   await writeDriveJson(DRIVE_FILENAME, data);
+}
+
+/** Todas as abas, inclusive as que não estão no tipo fixo (ex.: "Dependências"). */
+export type DadosProgramacao = ProgramacaoData & Record<string, Record<string, string>[]>;
+
+/**
+ * Ler-alterar-gravar com trava — no D1, a trava é do banco, entre servidores.
+ * `readStore` + `writeStore` soltos deixavam duas gravações ao mesmo tempo (a
+ * importação faz dezenas) apagarem uma a outra. `alterar` devolve null para
+ * não gravar nada; pode ser chamada de novo se outra gravação vencer a corrida.
+ */
+export async function atualizarStore(
+  alterar: (atual: DadosProgramacao) => DadosProgramacao | null | Promise<DadosProgramacao | null>,
+): Promise<DadosProgramacao> {
+  const r = await atualizarDriveJson<DadosProgramacao>(DRIVE_FILENAME, DRIVE_ROOT_FOLDER_ID, (atual) =>
+    alterar(atual ?? (getInitialData() as DadosProgramacao)),
+  );
+  return (r ?? getInitialData()) as DadosProgramacao;
 }

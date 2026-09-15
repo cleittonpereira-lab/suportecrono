@@ -14,61 +14,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Upload, FileSpreadsheet, X, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
-import { insertRow, ensureColumns } from "@/lib/programacao.functions";
-import { ENSAIO_TAG, ENSAIO_LABEL, type EnsaioTipo } from "@/features/lab/types";
+import { importarEnsaios } from "@/lib/programacao.functions";
+import { resolverTipo, type TipoProg } from "@/lib/programacao-tipos";
 
-const SHEET_AMOSTRAS = "Amostras";
-const SHEET_ENSAIOS = "Ensaios";
-const SHEET_TIPOS = "Tipos de Ensaio";
+type Tipo = TipoProg;
 
-type Tipo = { id: string; nome: string };
-
-/**
- * Códigos canônicos de ensaio usados no resto do app (etiquetas/QR, ver
- * ENSAIO_TAG). Ordenados do código mais específico pro mais genérico, para
- * que "TRI.CIDsat" não seja engolido por um "TRI" mais curto, por exemplo.
- */
-const CANONICAL_TAGS: { code: string; tipo: EnsaioTipo }[] = (
-  Object.entries(ENSAIO_TAG) as [EnsaioTipo, { code: string; aliases?: string[] }][]
-)
-  .flatMap(([tipo, info]) => [info.code, ...(info.aliases ?? [])].map((code) => ({ code: code.toUpperCase(), tipo })))
-  .sort((a, b) => b.code.length - a.code.length);
-
-/**
- * Resolve uma tag crua da planilha (ex.: "CD3.NAT", "COMP.EN.5") para um
- * Tipo de Ensaio já cadastrado, tentando nessa ordem:
- * 1. Nome/código já cadastrado batendo exatamente com a tag.
- * 2. Código canônico do app (ENSAIO_TAG) — por igualdade ou prefixo, já que
- *    etiquetas de campo costumam vir com sufixos (nº de CPs, condição etc.)
- *    coladas no código, ex. "CD3.NAT" = CD + "3" (CPs) + ".NAT" (natural).
- * Se nada bater, retorna null — quem chama decide se cadastra um tipo novo
- * ad-hoc (não faz isso silenciosamente, para não gerar "tipos" lixo do nada).
- */
-function resolveTipoTag(tag: string, tipos: Tipo[]): Tipo | null {
-  const cleanTag = tag.trim().toUpperCase();
-  if (!cleanTag) return null;
-
-  const exact = tipos.find(
-    (t) =>
-      t.nome.trim().toUpperCase() === cleanTag ||
-      (t as any).codigo?.trim().toUpperCase() === cleanTag,
-  );
-  if (exact) return exact;
-
-  const canonical = CANONICAL_TAGS.find(
-    (c) => cleanTag === c.code || cleanTag.startsWith(c.code),
-  );
-  if (canonical) {
-    const label = ENSAIO_LABEL[canonical.tipo].toUpperCase();
-    const found = tipos.find(
-      (t) =>
-        t.nome.trim().toUpperCase() === label ||
-        (t as any).codigo?.trim().toUpperCase() === canonical.code,
-    );
-    if (found) return found;
-  }
-  return null;
-}
+/** Prévia: a mesma regra que o servidor usa ao gravar (lib/programacao-tipos.ts). */
+const resolveTipoTag = (tag: string, tipos: Tipo[]) => resolverTipo(tag, tipos);
 
 interface ParsedRow {
   key: string; // unique
@@ -323,120 +275,22 @@ export function ImportEnsaiosDialog({
     mutationFn: async () => {
       const chosen = rows.filter((r) => selected.has(r.key));
       if (chosen.length === 0) throw new Error("Nada selecionado");
-      // garante colunas extras
-      await ensureColumns({
+      // Uma gravação só, no servidor: tipos resolvidos com a lista do banco,
+      // amostra existente reaproveitada, ensaio já importado não duplica.
+      return importarEnsaios({
         data: {
-          sheet: SHEET_AMOSTRAS,
-          columns: [
-            "os_numero",
-            "codigo_amostra",
-            "descricao",
-            "tomador",
-            "obra",
-            "prioridade",
-            "tipo",
-            "topo_m",
-            "base_m",
-            "amostra_coletada",
-          ],
+          osNumero,
+          tomador: tomador || "",
+          obra: obra || "",
+          linhas: chosen.map(({ key: _key, ...r }) => r),
         },
       });
-      // agrupa por identificação+codigo
-      const tipoByNome = new Map(tipos.map((t) => [t.nome.trim().toUpperCase(), t]));
-      const amostraKeyToId = new Map<string, string>();
-
-      const ensureTipo = async (tag: string): Promise<string> => {
-        const cleanTag = tag.trim().toUpperCase();
-        // 1. Nome/código exato, ou código canônico do app (ENSAIO_TAG)
-        let found: Tipo | undefined = resolveTipoTag(tag, tipos) ?? undefined;
-        // 2. Aliases por substring (fallback pra tags fora do padrão do app)
-        if (!found) {
-          if (cleanTag.includes("CD") || cleanTag.includes("CISALHA")) {
-            found = tipos.find((t) => t.nome.toLowerCase().includes("cisalha"));
-          } else if (cleanTag.includes("ADENS") || cleanTag.includes("EDOM") || cleanTag.includes("OED")) {
-            found = tipos.find((t) => t.nome.toLowerCase().includes("adens"));
-          } else if (cleanTag.includes("TRIAX") || cleanTag.includes("UU") || cleanTag.includes("CU")) {
-            found = tipos.find((t) => t.nome.toLowerCase().includes("triax"));
-          } else if (cleanTag.includes("CARACT") || cleanTag.includes("CBR")) {
-            found = tipos.find((t) => t.nome.toLowerCase().includes("caract") || t.nome.toLowerCase().includes("cbr"));
-          } else if (cleanTag.includes("MR") || cleanTag.includes("DP")) {
-            found = tipos.find((t) => t.nome.toLowerCase().includes("resili") || t.nome.toLowerCase().includes("mr"));
-          } else if (cleanTag.includes("MCT")) {
-            found = tipos.find((t) => t.nome.toLowerCase().includes("mct"));
-          } else if (cleanTag.includes("PERM")) {
-            found = tipos.find((t) => t.nome.toLowerCase().includes("perm"));
-          } else if (cleanTag.includes("COMP")) {
-            found = tipos.find((t) => t.nome.toLowerCase().includes("comp"));
-          }
-        }
-        if (found) return found.id;
-
-        const res: any = await insertRow({
-          data: {
-            sheet: SHEET_TIPOS,
-            row: {
-              nome: tag,
-              codigo: tag,
-              permite_paralelo: false,
-              cor_gantt: "#F0B43C",
-            },
-          },
-        });
-        return res.id;
-      };
-
-      let count = 0;
-      for (const r of chosen) {
-        const targetOs = osNumero || r.os || "Geral";
-        const normId = (r.identificacao || "").trim().toUpperCase().replace(/\s+/g, " ");
-        const normCod = (r.codigo_amostra || "").trim().toUpperCase().replace(/\s+/g, " ");
-        const key = `${targetOs}||${normId}||${normCod}`;
-        let amostraId = amostraKeyToId.get(key);
-        if (!amostraId) {
-          const desc = [
-            r.identificacao,
-            r.amostra_coletada ? `Coleta: ${r.amostra_coletada}` : "",
-          ]
-            .filter(Boolean)
-            .join(" — ");
-          const res: any = await insertRow({
-            data: {
-              sheet: SHEET_AMOSTRAS,
-              row: {
-                os_numero: targetOs,
-                codigo_amostra: r.codigo_amostra || r.identificacao || `Amostra ${count + 1}`,
-                descricao: desc || r.codigo_amostra || "",
-                tomador: tomador || "",
-                obra: obra || "",
-                prioridade: "media",
-                tipo: r.tipo || "ST",
-                topo_m: r.topo || "",
-                base_m: r.base || "",
-                amostra_coletada: r.amostra_coletada || "",
-              },
-            },
-          });
-          amostraId = res.id;
-          amostraKeyToId.set(key, amostraId!);
-        }
-        const tipoId = await ensureTipo(r.tag);
-        await insertRow({
-          data: {
-            sheet: SHEET_ENSAIOS,
-            row: {
-              amostra_id: amostraId,
-              tipo_ensaio_id: tipoId,
-              status: "pendente",
-              prioridade: "media",
-            },
-          },
-        });
-        count++;
-      }
-      return count;
     },
-    onSuccess: (n) => {
-      toast.success(`${n} ensaio(s) importado(s)`);
+    onSuccess: (r) => {
+      const partes = [`${r.ensaios} ensaio(s) importado(s)`];
+      if (r.repetidos) partes.push(`${r.repetidos} já estava(m) na programação`);
+      if (r.tiposNovos.length) partes.push(`tipo(s) novo(s): ${r.tiposNovos.join(", ")}`);
+      toast.success(partes.join(" · "));
       qc.invalidateQueries({ queryKey: ["amostras"] });
       qc.invalidateQueries({ queryKey: ["ensaios"] });
       qc.invalidateQueries({ queryKey: ["tipos_ensaio"] });

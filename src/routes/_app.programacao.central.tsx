@@ -47,8 +47,9 @@ import {
 import { Plus, Pencil, Trash2, Search, FlaskConical, ClipboardList, AlertCircle, ChevronsUpDown, Check, Info, Printer } from "lucide-react";
 import { Eye } from "lucide-react";
 import { toast } from "sonner";
-import { Upload, ChevronDown, ChevronRight } from "lucide-react";
+import { Upload, ChevronDown, ChevronRight, Wrench } from "lucide-react";
 import { ImportEnsaiosDialog } from "@/components/import-ensaios-dialog";
+import { ReparoProgramacaoDialog } from "@/components/reparo-programacao-dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -698,6 +699,7 @@ function CentralPage() {
   const [ensaioEdit, setEnsaioEdit] = useState<Ensaio | null>(null);
   const [ensaioAmostraId, setEnsaioAmostraId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [reparoOpen, setReparoOpen] = useState(false);
   const [collapsedAmostras, setCollapsedAmostras] = useState<Set<string>>(new Set());
   const toggleAmostra = (id: string) =>
     setCollapsedAmostras((prev) => {
@@ -784,7 +786,7 @@ function CentralPage() {
 
   /* ---- Visão principal ---- */
   const [view, setView] = useState<"detalhe" | "kanban" | "ensaios" | "planilha">("detalhe");
-  const { canAccess } = useAuth();
+  const { canAccess, role } = useAuth();
   const canPlanilha = canAccess("programacao_planilha");
 
   /* ---- Índices auxiliares ---- */
@@ -1048,6 +1050,17 @@ ${bodyHtml}
             Programações Pendentes
             <Badge variant="secondary" className="ml-1">{ensaiosSemProg.length}</Badge>
           </Button>
+          {role === "admin" && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => setReparoOpen(true)}
+              title="Recuperar da planilha antiga, corrigir tipos de ensaio e regravar a planilha"
+            >
+              <Wrench className="h-4 w-4" /> Dados da programação
+            </Button>
+          )}
           <Tabs value={view} onValueChange={(v) => setView(v as typeof view)}>
             <TabsList>
               <TabsTrigger value="detalhe" className="gap-1.5"><List className="h-4 w-4" /> Por OS</TabsTrigger>
@@ -2061,6 +2074,8 @@ ${bodyHtml}
           />
         )}
       </Dialog>
+
+      {role === "admin" && <ReparoProgramacaoDialog open={reparoOpen} onOpenChange={setReparoOpen} />}
 
       {osSelecionada && (
         <ImportEnsaiosDialog

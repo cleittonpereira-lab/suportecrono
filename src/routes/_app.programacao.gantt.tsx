@@ -66,8 +66,13 @@ type Ensaio = {
   prazo: string | null;
   observacoes?: string | null;
   detalhes_tecnicos?: string | null;
+  /** Etiqueta original da planilha da OS (ex.: "CD3.IN"). */
+  etiqueta?: string | null;
 };
-type TipoEnsaio = { id: string; nome: string; cor_gantt: string | null; equipamentos_ids: string[]; tempo_medio_h: number | null };
+/** Nome do tipo; sem tipo cadastrado, a etiqueta original — nunca só "Ensaio". */
+const nomeDoTipo = (t: { nome: string } | null | undefined, e: { etiqueta?: string | null } | null | undefined) =>
+  t?.nome || e?.etiqueta || "Tipo não identificado";
+type TipoEnsaio ={ id: string; nome: string; cor_gantt: string | null; equipamentos_ids: string[]; tempo_medio_h: number | null };
 type Equipamento = { id: string; nome: string };
 
 /* ------------------------------- Rota ------------------------------- */
@@ -108,6 +113,7 @@ function GanttPage() {
         prazo: r.prazo || null,
         observacoes: r.observacoes || null,
         detalhes_tecnicos: r.detalhes_tecnicos || null,
+        etiqueta: r.etiqueta || null,
       })) as Ensaio[],
   });
   const { data: tipos = [] } = useQuery({
@@ -292,7 +298,7 @@ function GanttPage() {
         const e = ensaioById.get(p.ensaio_id);
         const t = e ? tipoById.get(e.tipo_ensaio_id) : null;
         const a = e ? amostraById.get(e.amostra_id) : null;
-        const txt = `${t?.nome || "Ensaio"} • ${a?.codigo_amostra || "amostra"}${a?.tipo ? ` (${a.tipo})` : ""}${a?.identificacao ? ` • ${a.identificacao}` : ""}${a?.os_numero ? ` • OS ${a.os_numero}` : ""}`;
+        const txt = `${nomeDoTipo(t, e)} •${a?.codigo_amostra || "amostra"}${a?.tipo ? ` (${a.tipo})` : ""}${a?.identificacao ? ` • ${a.identificacao}` : ""}${a?.os_numero ? ` • OS ${a.os_numero}` : ""}`;
         const w = ctx.measureText(txt).width;
         if (w > maxW) maxW = w;
       }
@@ -1160,7 +1166,7 @@ function GanttPage() {
                   const t = e ? tipoById.get(e.tipo_ensaio_id) : null;
                   const a = e ? amostraById.get(e.amostra_id) : null;
                   const cor = t?.cor_gantt || "#6366f1";
-                  const label = `${t?.nome || "Ensaio"} • ${a?.codigo_amostra || "amostra"}${a?.os_numero ? ` • OS ${a.os_numero}` : ""}`;
+                  const label = `${nomeDoTipo(t, e)} •${a?.codigo_amostra || "amostra"}${a?.os_numero ? ` • OS ${a.os_numero}` : ""}`;
                   const durLabel = p.data_inicio ? formatDur(p.duracao_dias) : "—";
                   const rowBg = idx % 2 === 1 ? "bg-muted/30" : "bg-background";
                   // Marcador de prazo da OS na timeline (linha vermelha tracejada)
@@ -1192,7 +1198,7 @@ function GanttPage() {
                           }}
                           title={label}
                         >
-                          <span className="text-foreground">{t?.nome || "Ensaio"}</span>
+                          <span className="text-foreground">{nomeDoTipo(t, e)}</span>
                           <span className="text-muted-foreground"> • {a?.codigo_amostra || "amostra"}{a?.tipo ? ` (${a.tipo})` : ""}{a?.identificacao ? ` • ${a.identificacao}` : ""}{a?.os_numero ? ` • OS ${a.os_numero}` : ""}</span>
                         </button>
                         <button
@@ -1320,7 +1326,7 @@ function GanttPage() {
                   }}
                 >
                   <Plus className="h-3 w-3" />
-                  {t?.nome || "Ensaio"} • {a?.codigo_amostra || "amostra"}
+                  {nomeDoTipo(t, e)} • {a?.codigo_amostra || "amostra"}
                   {a?.os_numero ? ` • OS ${a.os_numero}` : ""}
                 </Button>
               );
@@ -1776,7 +1782,7 @@ function ProgForm({
               const t = tipoById.get(e.tipo_ensaio_id);
               return (
                 <SelectItem key={e.id} value={e.id}>
-                  {t?.nome || "Ensaio"} — {a?.codigo_amostra || "amostra"}
+                  {nomeDoTipo(t, e)} — {a?.codigo_amostra || "amostra"}
                   {a?.os_numero ? ` (OS ${a.os_numero})` : ""}
                 </SelectItem>
               );
@@ -2051,7 +2057,7 @@ function ProgDetalhesDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <span className="h-3 w-1.5 rounded-sm" style={{ background: cor }} />
-            <span className="truncate">{t?.nome || "Ensaio"}</span>
+            <span className="truncate">{nomeDoTipo(t, e)}</span>
             <Badge className={statusMeta.cls}>{statusMeta.label}</Badge>
           </DialogTitle>
           <CardDescription className="mt-1">

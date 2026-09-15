@@ -273,6 +273,33 @@ try {
   const naCentral = Array.isArray(r.resultado) && r.resultado.some((p) => p.id === pid && p.status === "pendente");
   conferir("Central lista a pendência", naCentral, r.erro ?? "");
 
+  // Programação: a importação resolve o tipo pela etiqueta e grava só no app.
+  const linhaImp = (tag) => ({
+    identificacao: "Furo E2E",
+    codigo_amostra: "SH-E2E",
+    tipo: "SH",
+    topo: "",
+    base: "",
+    amostra_coletada: "",
+    tag,
+  });
+  const pedidoImp = { osNumero: "E2E-PROG", tomador: "Teste", obra: "", linhas: [linhaImp("CD3.IN"), linhaImp("TRI.UU")] };
+  r = await chamar("importarEnsaios", "POST", pedidoImp);
+  conferir("importação de ensaios", r.resultado?.ensaios === 2 && r.resultado?.amostrasNovas === 1, r.erro ?? JSON.stringify(r.resultado));
+  r = await chamar("listRows", "GET", { sheet: "Ensaios" });
+  const importados = (r.resultado ?? []).filter((e) => e.etiqueta === "CD3.IN" || e.etiqueta === "TRI.UU");
+  conferir(
+    "ensaios importados com o tipo certo",
+    importados.length === 2 &&
+      importados.find((e) => e.etiqueta === "CD3.IN")?.tipo_ensaio_id === "te-cisalhamento" &&
+      importados.find((e) => e.etiqueta === "TRI.UU")?.tipo_ensaio_id === "te-triaxial",
+    r.erro ?? JSON.stringify(importados.map((e) => [e.etiqueta, e.tipo_ensaio_id])),
+  );
+  r = await chamar("importarEnsaios", "POST", pedidoImp);
+  conferir("importar de novo não duplica", r.resultado?.ensaios === 0 && r.resultado?.repetidos === 2, r.erro ?? JSON.stringify(r.resultado));
+  r = await chamar("diagnosticarProgramacao", "POST", { manterSoNoApp: false });
+  conferir("diagnóstico da programação responde (sem planilha aqui)", r.resultado?.planilhaConfigurada === false, r.erro ?? "");
+
   const comLogin = await fetch(`${BASE}/api/avisos`, { headers: { cookie: COOKIE } });
   conferir("avisos com login: 200", comLogin.status === 200, `HTTP ${comLogin.status}`);
 
