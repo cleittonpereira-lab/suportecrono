@@ -18,6 +18,7 @@ import { AppVersionFooter } from "@/components/AppVersionFooter";
 import { useBlockExitWhileSaving } from "@/hooks/use-block-exit-while-saving";
 import { ExitSaveDialog } from "@/components/ExitSaveDialog";
 import { TempoRealSync } from "@/components/TempoRealSync";
+import { FilaOfflineAviso } from "@/components/FilaOfflineAviso";
 
 function NotFoundComponent() {
   return (
@@ -84,6 +85,12 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
+      // App instalável (Fase 5) — manifesto e ícones em public/.
+      { name: "theme-color", content: "#ffffff" },
+      { name: "mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-capable", content: "yes" },
+      { name: "apple-mobile-web-app-title", content: "Suporte Lab" },
+      { name: "apple-mobile-web-app-status-bar-style", content: "default" },
       { title: "Suporte INFRA — Gestão de OS's" },
       { name: "description", content: "Plataforma Suporte INFRA para gestão de cronograma, entregas e ordens de serviço do laboratório." },
       { name: "author", content: "Suporte INFRA" },
@@ -101,6 +108,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: appCss,
       },
+      { rel: "manifest", href: "/manifest.webmanifest" },
+      { rel: "icon", type: "image/png", href: "/icons/icon-192.png" },
+      { rel: "apple-touch-icon", href: "/icons/apple-touch-icon.png" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
@@ -148,6 +158,7 @@ function RootComponent() {
           <AppVersionFooter />
           <ExitSaveDialog resolver={exitResolver} />
           <TempoRealSync />
+          <FilaOfflineAviso />
         </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>

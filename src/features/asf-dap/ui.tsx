@@ -25,12 +25,7 @@ import {
   ImagePlus, Camera, AlertTriangle, Calculator,
 } from "lucide-react";
 import { fileToCompressedDataUrl, formatBytes } from "@/features/lab/photos";
-import {
-  atualizarPendenciaDigitacao,
-  criarPendenciaDigitacao,
-  listPendenciasDigitacao,
-  type PendenciaDigitacao,
-} from "@/lib/lab-pendencias.functions";
+import { atualizarPendenciaOuGuardar, criarPendenciaOuGuardar, usePendenciaDaBancada } from "@/lib/fila-offline";
 import { getLabEnsaioSnapshot } from "@/lib/lab-ensaios.functions";
 import type { Photo } from "@/features/lab/types";
 import { pctAguaAbsorvida, dPvc } from "./calc";
@@ -169,7 +164,7 @@ export async function dispatchAsfDap(payload: Record<string, unknown>): Promise<
     servicoId: toNumOrUndef(payload.servico_id),
     ensaioTagId: toNumOrUndef(payload.ensaio_tag_id),
   };
-  const r = await criarPendenciaDigitacao({
+  const r = await criarPendenciaOuGuardar({
     data: {
       os,
       amostra: amostraCodigo || null,
@@ -197,8 +192,9 @@ export function AsfDapWorkspace({
 }) {
   const [data, setData] = useState<AsfDapFieldPayload>(initial);
   const [pid, setPid] = useState<string | null>(pendenciaId);
-  const criarFn = useServerFn(criarPendenciaDigitacao);
-  const atualizarFn = useServerFn(atualizarPendenciaDigitacao);
+  // Sem rede, gravam no aparelho e saem quando a rede volta (lib/fila-offline.ts).
+  const criarFn = criarPendenciaOuGuardar;
+  const atualizarFn = atualizarPendenciaOuGuardar;
   const navigate = useNavigate();
   const loadedRef = useRef(false);
   const dataRef = useRef(data);
@@ -385,11 +381,16 @@ export function AsfDapWorkspace({
       }
     }
     try {
-      await atualizarFn({
+      const r = await atualizarFn({
         data: { id: curPid!, status: "pendente", observacao: data.obs || null, payload },
       });
-      toast.success("Execução finalizada — enviada para Digitação & Emissões");
-      navigate({ to: "/relatorio/pendentes", search: { tab: "enviados" } });
+      if (r.guardada) {
+        toast.success("Execução finalizada — guardada no aparelho; vai para a Central quando a rede voltar");
+        navigate({ to: "/relatorio/digitalizacao" });
+      } else {
+        toast.success("Execução finalizada — enviada para Digitação & Emissões");
+        navigate({ to: "/relatorio/pendentes", search: { tab: "enviados" } });
+      }
     } catch (e: unknown) {
       toast.error("Falha ao gravar: " + (e instanceof Error ? e.message : String(e)));
     }
@@ -652,17 +653,9 @@ function FieldNum({
 
 // -------- Loader por pendenciaId (usado na rota) --------
 export function AsfDapPendenciaEditor({ pendenciaId, onBack }: { pendenciaId: string | null; onBack: () => void }) {
-  const listFn = useServerFn(listPendenciasDigitacao);
   const snapshotFn = useServerFn(getLabEnsaioSnapshot);
-  const { data: pendencias = [] } = useQuery({
-    queryKey: ["asf_dap_scan_pendencias"],
-    queryFn: () => listFn(),
-    staleTime: 5_000,
-  });
-  const pendencia = useMemo(
-    () => (pendencias as PendenciaDigitacao[]).find((p) => p.id === pendenciaId) ?? null,
-    [pendencias, pendenciaId],
-  );
+  // A do servidor ou, sem rede, a guardada no aparelho (lib/fila-offline.ts).
+  const { pendencia, carregando } = usePendenciaDaBancada(pendenciaId, "asf_dap_scan_pendencias");
   const linked = (pendencia?.payload as unknown as AsfDapFieldPayload | undefined)?._linkedEnsaio;
   const { data: officeSnapshot } = useQuery({
     queryKey: ["asf_dap_linked_ensaio_photos", linked?.osId, linked?.amostraId, linked?.ensaioId],
@@ -673,7 +666,11 @@ export function AsfDapPendenciaEditor({ pendenciaId, onBack }: { pendenciaId: st
   const officePhotos: Photo[] = officeSnapshot?.ensaio?.photos ?? [];
 
   if (pendenciaId && !pendencia) {
-    return <div className="p-6 text-center text-sm text-muted-foreground">Carregando pendência…</div>;
+    return (
+      <div className="p-6 text-center text-sm text-muted-foreground">
+        {carregando ? "Carregando pendência…" : "Pendência não encontrada — sem rede e sem cópia neste aparelho."}
+      </div>
+    );
   }
   const initial: AsfDapFieldPayload = pendencia?.payload
     ? (pendencia.payload as unknown as AsfDapFieldPayload)

@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import { useServerFn } from "@tanstack/react-start";
 import { ALL_TABS, TAB_META, type TabKey } from "@/lib/tab-permissions";
 import { getSessionUser, logout as logoutFn } from "@/lib/auth.functions";
+import { semRede } from "@/lib/rede";
+import { esquecerPaginasGuardadas } from "@/lib/pwa";
 import type { PublicUser } from "@/lib/user-store.server";
 
 export type Role = "admin" | "gestor" | "usuario" | "verificador";
@@ -46,10 +48,20 @@ const LOCAL_SESSION_KEY = "labflow:auth_session";
  * Cópia local de quem está logado, para a tela abrir já identificada. O
  * servidor não usa isto: a identidade dele vem do cookie de sessão.
  */
-function persistLocalIdentity(user: AppUser, profile: Profile, role: Role) {
+function persistLocalIdentity(user: AppUser, profile: Profile, role: Role, tabs: string[]) {
   try {
-    localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify({ user, profile, role }));
+    localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify({ user, profile, role, tabs }));
   } catch {}
+}
+
+/** A cópia local, para o app instalado seguir identificado sem rede (Fase 5). */
+function lerIdentidadeLocal(): { user: AppUser; profile: Profile; role: Role; tabs?: string[] } | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(LOCAL_SESSION_KEY) || "null");
+    return v?.user?.id && v?.profile && v?.role ? v : null;
+  } catch {
+    return null;
+  }
 }
 
 function clearLocalIdentity() {
@@ -103,15 +115,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(p);
     setRole(r);
     setAllowedTabs(raw.tabs && raw.tabs.length > 0 ? new Set(raw.tabs as TabKey[]) : null);
-    persistLocalIdentity(u, p, r);
+    persistLocalIdentity(u, p, r, raw.tabs ?? []);
   };
 
   const refresh = async () => {
     try {
       const { user: raw } = await getSessionUserFn();
       applySession(raw);
-    } catch {
-      applySession(null);
+    } catch (err) {
+      // Sem rede (app instalado, bancada sem sinal): segue com quem estava logado
+      // neste aparelho — o servidor confere a sessão de novo em cada envio. Uma
+      // resposta do servidor (sessão inválida) continua saindo da conta.
+      const local = semRede(err) ? lerIdentidadeLocal() : null;
+      if (!local) {
+        applySession(null);
+        return;
+      }
+      setUser(local.user);
+      setProfile(local.profile);
+      setRole(local.role);
+      setAllowedTabs(local.tabs && local.tabs.length > 0 ? new Set(local.tabs as TabKey[]) : null);
     }
   };
 
@@ -158,6 +181,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           await logoutServerFn();
         } catch {}
         clearLocalIdentity();
+        // Páginas guardadas para uso sem rede saem com a conta; a fila da bancada fica.
+        void esquecerPaginasGuardadas();
         setUser(null);
         setProfile(null);
         setRole(null);

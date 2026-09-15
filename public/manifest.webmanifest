@@ -1,0 +1,39 @@
+{
+  "name": "Suporte INFRA — Laboratório",
+  "short_name": "Suporte Lab",
+  "description": "Gestão de OS, bancada e laudos do laboratório Suporte INFRA.",
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "id": "/",
+  "start_url": "/entregas",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Ler QR na bancada",
+      "short_name": "Bancada",
+      "url": "/relatorio/digitalizacao",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Central de Relatórios",
+      "short_name": "Central",
+      "url": "/relatorio/pendentes",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Chegada de amostras",
+      "short_name": "Chegada",
+      "url": "/registro-amostra",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
+}

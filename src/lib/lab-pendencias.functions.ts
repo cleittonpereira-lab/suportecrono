@@ -14,6 +14,7 @@ import { z } from "zod";
 import { ensureFolderPath, readDriveJson, writeDriveJson, atualizarDriveJson, lerJsonsDaPasta, findFileInFolder, deleteDriveFile } from "@/lib/driveStorage";
 import { aplicarStatusPendencia, escolherPendenciaDoEnsaio, proximaPendencia } from "@/lib/pendencia-match";
 import { exigirPermissaoNoFluxo, type PapelDoUsuario } from "@/lib/papeis";
+import { chaveDaPendencia } from "@/lib/pendencia-chave";
 
 type JsonValue = string | number | boolean | null | { [k: string]: JsonValue } | JsonValue[];
 
@@ -27,10 +28,8 @@ function displayName(claims: { email?: string; user_metadata?: { full_name?: str
 
 const FOLDER_PENDENCIAS = ["lab-pendencias"];
 
-function pendenciaKey(os: string, amostra: string | null, ensaio: string): string {
-  const raw = `${os.trim()}__${(amostra ?? "").trim()}__${ensaio.trim()}`;
-  return raw.toLowerCase().replace(/[^a-z0-9_.-]+/g, "_");
-}
+/** Mesma chave que o aparelho calcula sem rede (fila offline da bancada). */
+const pendenciaKey = chaveDaPendencia;
 
 export type PendenciaDigitacao = {
   id: string;
