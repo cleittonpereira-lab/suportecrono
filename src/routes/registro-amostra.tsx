@@ -72,6 +72,7 @@ export function RegistroAmostraStandalonePage() {
 
   // Form State
   const [osCliente, setOsCliente] = useState("");
+  const [osNumero, setOsNumero] = useState("");
   const [dataChegada, setDataChegada] = useState(formatDateToday());
   const [recebidoPor, setRecebidoPor] = useState<string[]>([]);
   const [sup, setSup] = useState("");
@@ -109,6 +110,7 @@ export function RegistroAmostraStandalonePage() {
 
   const handleResetForm = () => {
     setOsCliente("");
+    setOsNumero("");
     setDataChegada(formatDateToday());
     setRecebidoPor([]);
     setSup("");
@@ -178,6 +180,7 @@ export function RegistroAmostraStandalonePage() {
       // 2. Cria registro automático com persistência e sincronização em nuvem
       const created = await createChegadaRegistroAsync({
         osCliente,
+        osNumero: osNumero.trim() || undefined,
         dataChegada,
         tipoAmostra,
         recebidoPor,
@@ -202,6 +205,7 @@ export function RegistroAmostraStandalonePage() {
       const receipt: RecebimentoReceiptData = {
         numeroControle: created.numeroControle || numeroControle,
         osCliente,
+        osNumero: osNumero.trim() || undefined,
         dataChegada,
         horaRegistro: timeStr,
         registradoPor: currentUserName,
@@ -224,6 +228,7 @@ export function RegistroAmostraStandalonePage() {
 
       // Limpa dados em segundo plano para o próximo
       setOsCliente("");
+      setOsNumero("");
       setRecebidoPor([]);
       setSup("");
       setAmostras([novaAmostraVazia()]);
@@ -349,19 +354,33 @@ export function RegistroAmostraStandalonePage() {
               </CardHeader>
 
               <CardContent className="p-4 sm:p-5 space-y-4">
-                {/* OS / Cliente */}
-                <div className="space-y-1.5">
-                  <Label htmlFor="osCliente" className="text-xs font-semibold text-foreground flex items-center gap-1">
-                    OS / Cliente <span className="text-destructive">*</span>
-                  </Label>
-                  <Input
-                    id="osCliente"
-                    value={osCliente}
-                    onChange={(e) => setOsCliente(e.target.value)}
-                    placeholder="Ex: Alfa Geotecnia / OS 1029 ou Vale S.A."
-                    className="text-xs h-9 bg-background shadow-2xs"
-                    required
-                  />
+                {/* OS / Cliente e Nº da OS (o número pode vir depois, quando a OS for aberta) */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                  <div className="sm:col-span-2 space-y-1.5">
+                    <Label htmlFor="osCliente" className="text-xs font-semibold text-foreground flex items-center gap-1">
+                      OS / Cliente <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      id="osCliente"
+                      value={osCliente}
+                      onChange={(e) => setOsCliente(e.target.value)}
+                      placeholder="Ex: Alfa Geotecnia / OS 1029 ou Vale S.A."
+                      className="text-xs h-9 bg-background shadow-2xs"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="osNumero" className="text-xs font-semibold text-foreground">
+                      Nº da OS
+                    </Label>
+                    <Input
+                      id="osNumero"
+                      value={osNumero}
+                      onChange={(e) => setOsNumero(e.target.value)}
+                      placeholder="Ex: 17588-26, se já tiver"
+                      className="text-xs h-9 bg-background shadow-2xs"
+                    />
+                  </div>
                 </div>
 
                 {/* Grid: Recebido por & Data de Chegada */}

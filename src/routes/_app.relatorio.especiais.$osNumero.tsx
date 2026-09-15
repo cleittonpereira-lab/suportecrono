@@ -204,7 +204,10 @@ function OsEspecialHubPage() {
     if (!chegadaState) return [];
     const all = Object.values(chegadaState.tasks).flat();
     const q = osNumero.toLowerCase();
-    return all.filter((t) => (t.osCliente || "").toLowerCase().includes(q));
+    // Pelo campo próprio "Nº da OS" quando preenchido; senão, pelo texto "Cliente / OS".
+    return all.filter(
+      (t) => (t.osNumero?.trim().toLowerCase() === q) || (t.osCliente || "").toLowerCase().includes(q),
+    );
   }, [chegadaState, osNumero]);
 
   const [dateDialogOpen, setDateDialogOpen] = useState(false);

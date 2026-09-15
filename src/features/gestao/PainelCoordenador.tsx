@@ -4,7 +4,7 @@
  * previsão e risco, e os alertas que pedem ação. Cada número abre a lista que
  * o explica. Regras em lib/painel-coordenador.ts.
  */
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useSchedule } from "@/hooks/use-schedule";
 import { listRows } from "@/lib/programacao.functions";
-import { SHEET_AMOSTRAS, SHEET_ENSAIOS, SHEET_PROGS, SHEET_TIPOS, parseProgramacaoRow } from "@/lib/programacao-model";
+import { SHEET_AMOSTRAS, SHEET_ENSAIOS, SHEET_EQUIPS, SHEET_PROGS, SHEET_TIPOS, parseProgramacaoRow } from "@/lib/programacao-model";
 import { listPendenciasDigitacao } from "@/lib/lab-pendencias.functions";
 import { fetchSharedChegadaState } from "@/lib/chegada-amostras.functions";
 import { listarDatasAcordadas } from "@/lib/os-hub.functions";
@@ -25,7 +25,12 @@ import {
   SETORES,
   chaveOs,
   montarPainel,
+  type Bancada as BancadaModelo,
+  type CargaTecnico,
   type Destino,
+  type EnsaioLongo,
+  type EstadoDia,
+  type EtapaDeLaudo,
   type EtapaEsteira,
   type LinhaPrazo,
   type Setor,
@@ -131,6 +136,185 @@ function Situacao({ p }: { p: LinhaPrazo }) {
   return <Badge variant="outline" className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 text-[10px] whitespace-nowrap">no prazo</Badge>;
 }
 
+/* ------------------------------ Fase 2 ------------------------------ */
+
+const DIA_DA_SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+const rotuloDia = (iso: string) => `${DIA_DA_SEMANA[new Date(`${iso}T12:00:00`).getDay()]} ${iso.slice(8, 10)}`;
+const COR_DO_DIA: Record<EstadoDia, string> = {
+  livre: "bg-muted",
+  ocupado: "bg-primary/40",
+  atrasado: "bg-rose-500/70",
+};
+
+function GradeOcupacao({ bancada }: { bancada: BancadaModelo }) {
+  if (bancada.equipamentos.length === 0) {
+    return <p className="text-sm text-muted-foreground">Nenhum equipamento com ensaio neste setor.</p>;
+  }
+  return (
+    <div className="space-y-3">
+      <div className="overflow-x-auto">
+        <div
+          className="grid items-center gap-[3px] text-[11px] min-w-[560px]"
+          style={{ gridTemplateColumns: "minmax(150px,1.7fr) repeat(7, minmax(34px,1fr)) minmax(92px,auto)" }}
+          role="table"
+          aria-label="Ocupação dos equipamentos por dia útil"
+        >
+          <span />
+          {bancada.dias.map((d, i) => (
+            <span key={d} className={`text-center text-[10px] ${i === 0 ? "font-semibold text-primary" : "text-muted-foreground"}`}>
+              {rotuloDia(d)}
+            </span>
+          ))}
+          <span className="text-right text-[10px] text-muted-foreground">livre a partir de</span>
+          {bancada.equipamentos.map((q) => (
+            <Fragment key={q.id}>
+              <span className="truncate pr-2" title={`${q.nome} · ${q.ensaios} ensaio(s) na janela`}>
+                {q.nome}
+              </span>
+              {q.dias.map((s, i) => (
+                <span
+                  key={i}
+                  className={`h-5 rounded-sm ${COR_DO_DIA[s]}`}
+                  title={`${rotuloDia(bancada.dias[i])}: ${s === "livre" ? "livre" : s === "ocupado" ? "ocupado" : "ensaio além do fim previsto"}`}
+                />
+              ))}
+              <span className={`text-right tabular-nums ${q.comAtraso ? "text-rose-600 dark:text-rose-400 font-medium" : "text-muted-foreground"}`}>
+                {q.comAtraso ? "ensaio atrasado" : q.dias[0] === "livre" ? "livre hoje" : br(q.livreEm)}
+              </span>
+            </Fragment>
+          ))}
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-4 text-[11px] text-muted-foreground">
+        <span className="flex items-center gap-1.5"><i className={`inline-block h-2.5 w-2.5 rounded-sm ${COR_DO_DIA.ocupado}`} />ocupado</span>
+        <span className="flex items-center gap-1.5"><i className={`inline-block h-2.5 w-2.5 rounded-sm ${COR_DO_DIA.livre}`} />livre</span>
+        <span className="flex items-center gap-1.5"><i className={`inline-block h-2.5 w-2.5 rounded-sm ${COR_DO_DIA.atrasado}`} />ensaio passou do fim previsto</span>
+      </div>
+    </div>
+  );
+}
+
+/** Os mais adiantados primeiro; o resto fica na Minha fila / Gantt. */
+const LONGOS_VISIVEIS = 8;
+
+function ListaLongos({ longos }: { longos: EnsaioLongo[] }) {
+  if (longos.length === 0) return <p className="text-sm text-muted-foreground">Nenhum ensaio longo em execução.</p>;
+  const resto = longos.length - LONGOS_VISIVEIS;
+  return (
+    <ul className="grid gap-3">
+      {resto > 0 && (
+        <li className="-mt-1 text-[11px] text-muted-foreground">
+          Os {LONGOS_VISIVEIS} mais adiantados de {longos.length} ·{" "}
+          <Para destino={{ to: "/relatorio/digitalizacao/fila" }} className="underline underline-offset-2 hover:text-foreground">
+            ver todos na fila
+          </Para>
+        </li>
+      )}
+      {longos.slice(0, LONGOS_VISIVEIS).map((l) => {
+        const pct = Math.min(100, Math.round((l.dia / Math.max(1, l.de)) * 100));
+        return (
+          <li key={l.id} className="grid gap-1">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-sm font-medium truncate">{l.ensaio}</span>
+              <span className={`text-xs tabular-nums whitespace-nowrap ${l.atrasado ? "text-rose-600 dark:text-rose-400 font-medium" : ""}`}>
+                dia {l.dia} de {l.de}
+              </span>
+            </div>
+            <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+              <div className={`h-full rounded-full ${l.atrasado ? "bg-rose-500" : "bg-primary"}`} style={{ width: `${pct}%` }} />
+            </div>
+            <div className="text-[11px] text-muted-foreground truncate">
+              OS {l.os} · {l.amostra} · {l.equipamento}
+              {l.tecnico ? ` · ${l.tecnico}` : ""}
+              {l.fimPrevisto ? ` · fim previsto ${br(l.fimPrevisto)}` : ""}
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function TabelaTecnicos({ tecnicos }: { tecnicos: CargaTecnico[] }) {
+  if (tecnicos.length === 0) {
+    return <p className="px-6 pb-6 text-sm text-muted-foreground">Nenhum ensaio em execução ou programado para os próximos dias.</p>;
+  }
+  return (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-muted/40">
+            <TableHead>Técnico</TableHead>
+            <TableHead className="text-right">Em execução</TableHead>
+            <TableHead className="text-right">Programados (7 dias úteis)</TableHead>
+            <TableHead className="text-right">Além do previsto</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {tecnicos.map((t) => (
+            <TableRow key={t.nome}>
+              <TableCell className={`text-xs ${t.nome === "Sem técnico" ? "italic text-muted-foreground" : "font-medium"}`}>{t.nome}</TableCell>
+              <TableCell className="text-right text-xs tabular-nums">{t.emExecucao}</TableCell>
+              <TableCell className="text-right text-xs tabular-nums">{t.programados}</TableCell>
+              <TableCell className={`text-right text-xs tabular-nums ${t.alemDoPrevisto ? "font-medium text-rose-600 dark:text-rose-400" : "text-muted-foreground"}`}>
+                {t.alemDoPrevisto}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function ColunasLaudos({ etapas }: { etapas: EtapaDeLaudo[] }) {
+  return (
+    <div className="grid gap-3 md:grid-cols-3">
+      {etapas.map((et) => (
+        <Para
+          key={et.chave}
+          destino={{ to: "/relatorio/pendentes", search: { tab: "fluxo-relatorios" } }}
+          className="grid content-start gap-2 rounded-lg border bg-muted/20 p-3 transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        >
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-xs font-semibold">{et.nome}</span>
+            <span className="font-display text-xl font-semibold tabular-nums">{et.total}</span>
+          </div>
+          <div className="text-[11px]">
+            {et.parados ? (
+              <b className="text-amber-600 dark:text-amber-400">{et.parados} parado(s) há 2+ dias úteis</b>
+            ) : (
+              <span className="text-muted-foreground">nenhum parado</span>
+            )}
+          </div>
+          {et.itens.length > 0 && (
+            <ul className="grid gap-1.5 border-t pt-2">
+              {et.itens.map((i) => (
+                <li key={i.id} className="text-[11px] leading-snug">
+                  <div className="flex justify-between gap-2">
+                    <span className="truncate font-medium">{i.ensaio}</span>
+                    <span
+                      className={`whitespace-nowrap tabular-nums ${i.idade >= 2 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`}
+                      title="dias úteis na mesma etapa"
+                    >
+                      {i.idade}d
+                    </span>
+                  </div>
+                  <div className="truncate text-muted-foreground">
+                    OS {i.os}
+                    {i.amostra ? ` · ${i.amostra}` : ""}
+                    {i.pessoa ? ` · ${i.papel} ${i.pessoa}` : ""}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Para>
+      ))}
+    </div>
+  );
+}
+
 export function PainelCoordenador() {
   const qc = useQueryClient();
   const [setor, setSetor] = useState<Setor>("todos");
@@ -151,8 +335,9 @@ export function PainelCoordenador() {
   const ensaios = useQuery(aba(SHEET_ENSAIOS));
   const progs = useQuery(aba(SHEET_PROGS));
   const tipos = useQuery(aba(SHEET_TIPOS));
+  const equips = useQuery(aba(SHEET_EQUIPS));
 
-  const consultas = [datas, chegada, pend, amostras, ensaios, progs, tipos];
+  const consultas = [datas, chegada, pend, amostras, ensaios, progs, tipos, equips];
   const carregando = carregandoCronograma || consultas.some((q) => q.isLoading);
   const falha = consultas.find((q) => q.error)?.error as Error | undefined;
 
@@ -163,6 +348,7 @@ export function PainelCoordenador() {
       (lista ?? []).map((t) => ({
         id: String(t.id),
         osCliente: String(t.osCliente ?? ""),
+        osNumero: t.osNumero ? String(t.osNumero) : undefined,
         dataChegada: String(t.dataChegada ?? ""),
         amostras: Array.isArray(t.amostras) && t.amostras.length ? t.amostras.length : 1,
         coluna,
@@ -193,9 +379,10 @@ export function PainelCoordenador() {
       })),
       programacoes: (progs.data ?? []).map(parseProgramacaoRow),
       tipos: (tipos.data ?? []).map((r: Record<string, string>) => ({ id: r.id, nome: r.nome ?? "" })),
+      equipamentos: (equips.data ?? []).map((r: Record<string, string>) => ({ id: r.id, nome: r.nome ?? "" })),
       pendencias: pend.data ?? [],
     });
-  }, [carregando, setor, schedule, datas.data, chegada.data, amostras.data, ensaios.data, progs.data, tipos.data, pend.data]);
+  }, [carregando, setor, schedule, datas.data, chegada.data, amostras.data, ensaios.data, progs.data, tipos.data, equips.data, pend.data]);
 
   const atualizar = () => {
     qc.invalidateQueries({ queryKey: ["coordenacao"] });
@@ -385,6 +572,53 @@ export function PainelCoordenador() {
                     ))}
                   </ul>
                 )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-[1.55fr_1fr] items-start">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-baseline justify-between gap-2 flex-wrap">
+                  Bancada · ocupação dos equipamentos
+                  <span className="text-xs font-normal text-muted-foreground">próximos {modelo.bancada.dias.length} dias úteis</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <GradeOcupacao bancada={modelo.bancada} />
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-baseline justify-between gap-2">
+                  Ensaios longos em curso
+                  <span className="text-xs font-normal text-muted-foreground">3 dias ou mais</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ListaLongos longos={modelo.bancada.longos} />
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-[1fr_1.55fr] items-start">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Técnicos · carga de trabalho</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <TabelaTecnicos tecnicos={modelo.bancada.tecnicos} />
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-baseline justify-between gap-2 flex-wrap">
+                  Laudos · com quem estão
+                  <span className="text-xs font-normal text-muted-foreground">idade = dias úteis na mesma etapa</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ColunasLaudos etapas={modelo.laudos} />
               </CardContent>
             </Card>
           </div>

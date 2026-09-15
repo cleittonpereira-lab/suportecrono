@@ -159,6 +159,7 @@ function ChegadaAmostras() {
   // Form state de Tarefas
   const [formData, setFormData] = useState({
     osCliente: "",
+    osNumero: "",
     dataChegada: formatDateToday(),
     recebidoPor: [] as string[],
     amostras: [novaAmostraVazia()] as AmostraItem[],
@@ -259,6 +260,7 @@ function ChegadaAmostras() {
     setActiveColumn(colId);
     setFormData({
       osCliente: "",
+      osNumero: "",
       dataChegada: formatDateToday(),
       recebidoPor: [],
       amostras: [novaAmostraVazia()],
@@ -291,6 +293,7 @@ function ChegadaAmostras() {
       : selectedTask?.assinaturaCliente ?? null;
     const payload = {
       osCliente: formData.osCliente,
+      osNumero: formData.osNumero.trim() || undefined,
       dataChegada: formData.dataChegada,
       recebidoPor: formData.recebidoPor,
       sup: formData.sup,
@@ -377,6 +380,7 @@ function ChegadaAmostras() {
     setSelectedTask(task);
     setFormData({
       osCliente: task.osCliente,
+      osNumero: task.osNumero ?? "",
       dataChegada: task.dataChegada,
       recebidoPor: task.recebidoPor,
       amostras: task.amostras && task.amostras.length > 0 ? task.amostras : [synthAmostraFromLegacy(task)],
@@ -414,6 +418,7 @@ function ChegadaAmostras() {
       const receipt: RecebimentoReceiptData = {
         numeroControle,
         osCliente: task.osCliente,
+        osNumero: task.osNumero,
         dataChegada: task.dataChegada,
         horaRegistro: horaRegistro || "—",
         registradoPor: task.criadoPor || "Colaborador",
@@ -646,6 +651,7 @@ function ChegadaAmostras() {
                               <CardContent className="p-3 space-y-2 text-xs">
                                 <div className="flex items-start justify-between gap-1">
                                   <span className="font-bold text-foreground text-xs leading-tight line-clamp-1">
+                                    {task.osNumero ? `OS ${task.osNumero} · ` : ""}
                                     {task.osCliente}
                                   </span>
 
@@ -807,18 +813,32 @@ function ChegadaAmostras() {
           </DialogHeader>
 
           <div className="grid gap-4 py-2 text-xs">
-            <div className="space-y-1.5">
-              <Label htmlFor="osCliente" className="text-xs font-semibold">
-                OS / Cliente <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="osCliente"
-                value={formData.osCliente}
-                onChange={(e) => setFormData((prev) => ({ ...prev, osCliente: e.target.value }))}
-                className="h-9 text-xs bg-background"
-                placeholder="Ex: Alfa / OS 1234"
-                required
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="sm:col-span-2 space-y-1.5">
+                <Label htmlFor="osCliente" className="text-xs font-semibold">
+                  OS / Cliente <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="osCliente"
+                  value={formData.osCliente}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, osCliente: e.target.value }))}
+                  className="h-9 text-xs bg-background"
+                  placeholder="Ex: Alfa / OS 1234"
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="osNumero" className="text-xs font-semibold">
+                  Nº da OS
+                </Label>
+                <Input
+                  id="osNumero"
+                  value={formData.osNumero}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, osNumero: e.target.value }))}
+                  className="h-9 text-xs bg-background"
+                  placeholder="Ex: 17588-26"
+                />
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1245,7 +1265,9 @@ function ChegadaAmostras() {
                     const { labStore } = await import("@/features/lab/store");
                     const parts = selectedTask.osCliente.split("/");
                     const client = parts[0]?.trim() || selectedTask.osCliente;
-                    const num = parts[1]?.trim().replace(/^OS[-\s]*/i, "") || selectedTask.osCliente;
+                    // O campo próprio vale; sem ele, o número vem do texto "Cliente / OS".
+                    const num =
+                      selectedTask.osNumero?.trim() || parts[1]?.trim().replace(/^OS[-\s]*/i, "") || selectedTask.osCliente;
 
                     const newOs = labStore.createOS({
                       numero: num,

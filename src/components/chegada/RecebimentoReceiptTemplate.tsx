@@ -5,6 +5,8 @@ const logoUrl = "/suporte-infra-logo.png";
 export interface RecebimentoReceiptData {
   numeroControle: string;
   osCliente: string;
+  /** Nº da OS em campo próprio, quando já informado. */
+  osNumero?: string;
   dataChegada: string;
   horaRegistro: string;
   registradoPor: string;
@@ -153,7 +155,11 @@ function ReceiptHeader({ data, page, total }: { data: RecebimentoReceiptData; pa
       <table className="w-full border-collapse border-t border-[#141414]">
         <tbody>
           <tr>
-            <Field label="OS / Cliente:" value={data.osCliente} className="w-1/3" />
+            <Field
+              label="OS / Cliente:"
+              value={data.osNumero ? `OS ${data.osNumero} · ${data.osCliente}` : data.osCliente}
+              className="w-1/3"
+            />
             <Field label="Data de Chegada:" value={data.dataChegada} className="w-1/3" />
             <Field label="Hora do Registro:" value={data.horaRegistro} className="w-1/3" />
           </tr>

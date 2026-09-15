@@ -210,6 +210,7 @@ export async function handleCreateSharedChegadaTask(
   const newTask: ChegadaTask = {
     id: data.id || "amostra_" + Date.now().toString(36) + "_" + Math.random().toString(36).substring(2, 7),
     osCliente: (data.osCliente || "").trim(),
+    osNumero: (data.osNumero || "").trim() || undefined,
     dataChegada: data.dataChegada || `${p.day}/${p.month}/${p.year}`,
     recebidoPor: Array.isArray(data.recebidoPor) ? data.recebidoPor : [],
     tipoAmostra: Array.isArray(data.tipoAmostra) ? data.tipoAmostra : [],

@@ -57,6 +57,12 @@ export interface AssinaturaCapturada {
 export interface ChegadaTask {
   id: string;
   osCliente: string;
+  /**
+   * Número da OS em campo próprio (ex.: "17588-26"). Opcional: a OS costuma ser
+   * aberta depois da chegada (coluna "Abrir OS"), então pode ser preenchido no
+   * quadro mais tarde. Liga a chegada à Programação e ao Painel do coordenador.
+   */
+  osNumero?: string;
   dataChegada: string;
   recebidoPor: string[];
   tipoAmostra: string[];
@@ -433,6 +439,7 @@ export async function createChegadaRegistroAsync(
   const newTask: ChegadaTask = {
     id: data.id || "amostra_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7),
     osCliente: (data.osCliente || "").trim(),
+    osNumero: (data.osNumero || "").trim() || undefined,
     dataChegada: data.dataChegada || formatDateToday(),
     recebidoPor: Array.isArray(data.recebidoPor) ? data.recebidoPor : [],
     tipoAmostra: Array.isArray(data.tipoAmostra) ? data.tipoAmostra : [],
@@ -496,6 +503,7 @@ export function createChegadaRegistro(
   const newTask: ChegadaTask = {
     id: data.id || "amostra_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7),
     osCliente: (data.osCliente || "").trim(),
+    osNumero: (data.osNumero || "").trim() || undefined,
     dataChegada: data.dataChegada || formatDateToday(),
     recebidoPor: Array.isArray(data.recebidoPor) ? data.recebidoPor : [],
     tipoAmostra: Array.isArray(data.tipoAmostra) ? data.tipoAmostra : [],

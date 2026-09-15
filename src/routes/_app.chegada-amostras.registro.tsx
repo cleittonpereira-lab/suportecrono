@@ -62,6 +62,7 @@ export function ChegadaAmostrasRegistroPage() {
 
   // Form State
   const [osCliente, setOsCliente] = useState("");
+  const [osNumero, setOsNumero] = useState("");
   const [dataChegada, setDataChegada] = useState(formatDateToday());
   const [recebidoPor, setRecebidoPor] = useState<string[]>([]);
   const [sup, setSup] = useState("");
@@ -110,6 +111,7 @@ export function ChegadaAmostrasRegistroPage() {
 
   const handleResetForm = () => {
     setOsCliente("");
+    setOsNumero("");
     setDataChegada(formatDateToday());
     setRecebidoPor([]);
     setSup("");
@@ -147,6 +149,7 @@ export function ChegadaAmostrasRegistroPage() {
       // 2. Cria registro automático com persistência e sincronização em nuvem
       const created = await createChegadaRegistroAsync({
         osCliente,
+        osNumero: osNumero.trim() || undefined,
         dataChegada,
         tipoAmostra,
         recebidoPor,
@@ -176,6 +179,7 @@ export function ChegadaAmostrasRegistroPage() {
 
       // Limpa formulário
       setOsCliente("");
+      setOsNumero("");
       setRecebidoPor([]);
       setSup("");
       setAmostras([novaAmostraVazia()]);
@@ -301,8 +305,8 @@ export function ChegadaAmostrasRegistroPage() {
             </CardHeader>
 
             <CardContent className="p-4 sm:p-6 space-y-5">
-              {/* OS/Cliente & Data de Chegada */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {/* OS/Cliente, Nº da OS & Data de Chegada */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                 <div className="sm:col-span-2 space-y-1.5">
                   <Label htmlFor="osCliente" className="text-xs font-semibold flex items-center gap-1 text-foreground">
                     OS / Cliente <span className="text-destructive">*</span>
@@ -314,6 +318,19 @@ export function ChegadaAmostrasRegistroPage() {
                     placeholder="Ex: Alfa Geotecnia / OS 1029 ou Vale S.A."
                     className="text-xs h-9 bg-background shadow-2xs"
                     required
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="osNumero" className="text-xs font-semibold text-foreground">
+                    Nº da OS
+                  </Label>
+                  <Input
+                    id="osNumero"
+                    value={osNumero}
+                    onChange={(e) => setOsNumero(e.target.value)}
+                    placeholder="Ex: 17588-26"
+                    className="text-xs h-9 bg-background shadow-2xs"
                   />
                 </div>
 

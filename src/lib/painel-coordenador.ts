@@ -2,7 +2,7 @@
  * Painel do Coordenador — só lógica (sem rede, sem tela). Recebe o que o app
  * já tem (Chegada de amostras, Programação, Cronograma, datas acordadas das
  * OS, pendências de laudo) e monta os números do dia, a esteira da operação,
- * os prazos e os alertas.
+ * os prazos, os alertas (Fase 1), a bancada e os laudos por etapa (Fase 2).
  *
  * Regras decididas pelo usuário em 15/09/2026:
  *  - vale a data acordada na OS quando existir; senão, a do Cronograma (e o
@@ -18,6 +18,12 @@ export const DIAS_UTEIS_PARADO = 2;
 export const DIAS_RISCO_NAO_INICIADO = 3;
 export const JANELA_PRAZOS = 15;
 export const JANELA_ENTREGAS = 7;
+/** Dias úteis mostrados na grade de ocupação da bancada. */
+export const DIAS_BANCADA = 7;
+/** A partir de quantos dias um ensaio conta como "longo" (adensamento, triaxial…). */
+export const DURACAO_ENSAIO_LONGO = 3;
+/** Até quantos dias atrás uma chegada com OS aberta e sem ensaio vira alerta. */
+export const JANELA_CHEGADA_SEM_ENSAIO = 30;
 
 export type Setor = "todos" | "Especiais" | "Convencionais" | "Dosagem";
 export const SETORES: Setor[] = ["todos", "Especiais", "Convencionais", "Dosagem"];
@@ -32,14 +38,30 @@ export type EntradaPainel = {
   cronograma: { os: string; tomador: string; setor: string; dataEntrega: string; dataPostagem: string }[];
   /** Por chave de OS (`chaveOs`). */
   datasAcordadas: Record<string, { data: string | null; arquivada: boolean }>;
-  chegadas: { id: string; osCliente: string; dataChegada: string; amostras: number; coluna: string }[];
+  /** `osNumero`: o campo próprio da chegada; sem ele, a OS é procurada no texto do cliente. */
+  chegadas: { id: string; osCliente: string; osNumero?: string; dataChegada: string; amostras: number; coluna: string }[];
   /** Última coluna do quadro de chegada ("OS no Sistema"): quem está nela saiu do recebimento. */
   colunaFinal: string;
   amostras: { id: string; os_numero: string; codigo_amostra?: string }[];
   ensaios: { id: string; amostra_id: string; tipo_ensaio_id: string; status: string; created_at?: string; etiqueta?: string }[];
-  programacoes: Pick<Programacao, "id" | "ensaio_id" | "status" | "data_fim" | "tecnico">[];
+  programacoes: Pick<
+    Programacao,
+    "id" | "ensaio_id" | "status" | "data_inicio" | "data_fim" | "data_inicio_real" | "duracao_dias" | "incluir_fds" | "equipamento_id" | "tecnico"
+  >[];
   tipos: { id: string; nome: string }[];
-  pendencias: { id: string; os: string; amostra?: string | null; ensaio: string; status: string; created_at: string; updated_at?: string | null }[];
+  equipamentos: { id: string; nome: string }[];
+  pendencias: {
+    id: string;
+    os: string;
+    amostra?: string | null;
+    ensaio: string;
+    status: string;
+    created_at: string;
+    updated_at?: string | null;
+    operador_nome?: string | null;
+    digitador_nome?: string | null;
+    verificador_nome?: string | null;
+  }[];
 };
 
 export type Tiles = {
@@ -81,7 +103,43 @@ export type LinhaPrazo = {
 
 export type Alerta = { nivel: "crit" | "warn"; texto: string; detalhe: string; destino: Destino };
 
-export type PainelModelo = { tiles: Tiles; esteira: EtapaEsteira[]; prazos: LinhaPrazo[]; alertas: Alerta[] };
+export type EstadoDia = "livre" | "ocupado" | "atrasado";
+export type OcupacaoEquipamento = {
+  id: string;
+  nome: string;
+  /** Um estado por dia de `Bancada.dias`. "atrasado" = ensaio que passou do fim previsto e segue no equipamento. */
+  dias: EstadoDia[];
+  ensaios: number;
+  /** Dia útil em que termina o último ensaio da janela; null quando não há nada adiante. */
+  livreEm: string | null;
+  comAtraso: boolean;
+};
+export type CargaTecnico = { nome: string; emExecucao: number; programados: number; alemDoPrevisto: number };
+export type EnsaioLongo = {
+  id: string;
+  ensaio: string;
+  os: string;
+  amostra: string;
+  equipamento: string;
+  tecnico: string | null;
+  dia: number;
+  de: number;
+  fimPrevisto: string | null;
+  atrasado: boolean;
+};
+export type Bancada = { dias: string[]; equipamentos: OcupacaoEquipamento[]; tecnicos: CargaTecnico[]; longos: EnsaioLongo[] };
+
+export type LaudoNaEtapa = { id: string; ensaio: string; os: string; amostra: string | null; pessoa: string | null; papel: string; idade: number };
+export type EtapaDeLaudo = { chave: "digitacao" | "verificacao" | "aprovacao"; nome: string; total: number; parados: number; itens: LaudoNaEtapa[] };
+
+export type PainelModelo = {
+  tiles: Tiles;
+  esteira: EtapaEsteira[];
+  prazos: LinhaPrazo[];
+  alertas: Alerta[];
+  bancada: Bancada;
+  laudos: EtapaDeLaudo[];
+};
 
 /* ------------------------------ Datas e OS ------------------------------ */
 
@@ -92,6 +150,10 @@ const utc = (iso: string) => {
 };
 export const somaDias = (iso: string, n: number) => new Date(utc(iso) + n * DIA).toISOString().slice(0, 10);
 export const diasEntre = (de: string, ate: string) => Math.round((utc(ate) - utc(de)) / DIA);
+const ehDiaUtil = (iso: string) => {
+  const w = new Date(utc(iso)).getUTCDay();
+  return w !== 0 && w !== 6;
+};
 
 /** Dias úteis (seg–sex) depois de `de`, até `ate` inclusive. Sexta → terça = 2. */
 export function diasUteisEntre(de: string, ate: string): number {
@@ -101,6 +163,19 @@ export function diasUteisEntre(de: string, ate: string): number {
     if (w !== 0 && w !== 6) n++;
   }
   return n;
+}
+
+/** Os próximos `n` dias úteis a partir de hoje (hoje entra se for dia útil). */
+export function proximosDiasUteis(hoje: string, n: number): string[] {
+  const out: string[] = [];
+  for (let d = hoje; out.length < n; d = somaDias(d, 1)) if (ehDiaUtil(d)) out.push(d);
+  return out;
+}
+
+function proximoDiaUtil(iso: string): string {
+  let d = somaDias(iso, 1);
+  while (!ehDiaUtil(d)) d = somaDias(d, 1);
+  return d;
 }
 
 /** "15/09/2026", "2026-09-15" ou um instante ISO → "2026-09-15"; o resto → null. */
@@ -158,6 +233,7 @@ export function montarPainel(e: EntradaPainel): PainelModelo {
   const osDaAmostra = new Map(e.amostras.map((a) => [a.id, chaveOs(a.os_numero)]));
   const amostraPorId = new Map(e.amostras.map((a) => [a.id, a]));
   const nomeDoTipo = new Map(e.tipos.map((t) => [t.id, t.nome]));
+  const nomeDoEquipamento = new Map(e.equipamentos.map((q) => [q.id, q.nome]));
   const progDoEnsaio = new Map(e.programacoes.map((p) => [p.ensaio_id, p]));
   const ensaioPorId = new Map(e.ensaios.map((x) => [x.id, x]));
   const nomeEnsaio = (en: EntradaPainel["ensaios"][number]) => nomeDoTipo.get(en.tipo_ensaio_id) || en.etiqueta || "Ensaio";
@@ -167,16 +243,40 @@ export function montarPainel(e: EntradaPainel): PainelModelo {
     return progDoEnsaio.get(en.id)?.status !== "concluido";
   };
   const ensaiosNoEscopo = e.ensaios.filter((en) => noEscopo(osDaAmostra.get(en.amostra_id)));
+  const progNoEscopo = (p: EntradaPainel["programacoes"][number]) => {
+    const en = ensaioPorId.get(p.ensaio_id);
+    return en ? noEscopo(osDaAmostra.get(en.amostra_id)) : e.setor === "todos";
+  };
+  /** Ensaio, OS e amostra de uma programação, para rotular listas. */
+  const rotuloDaProg = (p: EntradaPainel["programacoes"][number]) => {
+    const en = ensaioPorId.get(p.ensaio_id);
+    const am = en ? amostraPorId.get(en.amostra_id) : undefined;
+    return { ensaio: en ? nomeEnsaio(en) : "Ensaio", os: am?.os_numero ?? "—", amostra: am?.codigo_amostra ?? "—" };
+  };
 
   // 1) Recebimento — o próprio quadro de chegada tem o fluxo (Registro → … → OS no Sistema).
   const chegadas = e.chegadas
-    .map((c) => ({ ...c, iso: paraIso(c.dataChegada), os: osDaChegada(c.osCliente) }))
+    .map((c) => ({ ...c, iso: paraIso(c.dataChegada), os: c.osNumero?.trim() ? chaveOs(c.osNumero) : osDaChegada(c.osCliente) }))
     .filter((c) => e.setor === "todos" || noEscopo(c.os));
   const desde = somaDias(hoje, -(JANELA_ENTREGAS - 1));
   const recentes = chegadas.filter((c) => c.iso && c.iso >= desde && c.iso <= hoje);
   const noRecebimento = chegadas.filter((c) => c.coluna !== e.colunaFinal);
   const recebParados = noRecebimento
     .filter((c) => c.iso && diasUteisEntre(c.iso, hoje) >= DIAS_UTEIS_PARADO)
+    .sort((a, b) => (a.iso ?? "").localeCompare(b.iso ?? ""));
+  // OS já aberta no quadro, mas nenhum ensaio dela chegou à Programação.
+  const osComEnsaio = new Set(e.ensaios.map((en) => osDaAmostra.get(en.amostra_id)).filter(Boolean));
+  const desdeSemEnsaio = somaDias(hoje, -JANELA_CHEGADA_SEM_ENSAIO);
+  const chegadasSemEnsaio = chegadas
+    .filter(
+      (c) =>
+        c.coluna === e.colunaFinal &&
+        !!c.os &&
+        !osComEnsaio.has(c.os) &&
+        !!c.iso &&
+        c.iso >= desdeSemEnsaio &&
+        diasUteisEntre(c.iso, hoje) >= DIAS_UTEIS_PARADO,
+    )
     .sort((a, b) => (a.iso ?? "").localeCompare(b.iso ?? ""));
 
   // 2) Programação — ensaio ativo sem data no Gantt.
@@ -189,11 +289,8 @@ export function montarPainel(e: EntradaPainel): PainelModelo {
     .sort((a, b) => (a.created_at ?? "").localeCompare(b.created_at ?? ""));
 
   // 3) Bancada — em execução, e as que passaram do fim previsto.
-  const emExecucao = e.programacoes.filter((p) => {
-    if (p.status !== "em_execucao") return false;
-    const en = ensaioPorId.get(p.ensaio_id);
-    return en ? noEscopo(osDaAmostra.get(en.amostra_id)) : e.setor === "todos";
-  });
+  const progsAtivas = e.programacoes.filter((p) => p.status !== "concluido" && progNoEscopo(p));
+  const emExecucao = progsAtivas.filter((p) => p.status === "em_execucao");
   const alemDoPrevisto = emExecucao
     .filter((p) => !!p.data_fim && p.data_fim < hoje)
     .sort((a, b) => (a.data_fim ?? "").localeCompare(b.data_fim ?? ""));
@@ -345,6 +442,15 @@ export function montarPainel(e: EntradaPainel): PainelModelo {
       destino: { to: "/chegada-amostras" },
     });
   }
+  if (chegadasSemEnsaio.length) {
+    const c = chegadasSemEnsaio[0];
+    alertas.push({
+      nivel: "warn",
+      texto: `${plural(chegadasSemEnsaio.length, "chegada com OS aberta", "chegadas com OS aberta")} e nenhum ensaio na programação`,
+      detalhe: `Mais antiga: ${c.iso ? br(c.iso) : c.dataChegada} · OS ${c.osNumero?.trim() || c.os} · ${c.osCliente || "sem cliente"}`,
+      destino: { to: "/programacao/central" },
+    });
+  }
   if (aguardandoParados.length) {
     const en = aguardandoParados[0];
     const am = amostraPorId.get(en.amostra_id);
@@ -357,12 +463,11 @@ export function montarPainel(e: EntradaPainel): PainelModelo {
   }
   if (alemDoPrevisto.length) {
     const p = alemDoPrevisto[0];
-    const en = ensaioPorId.get(p.ensaio_id);
-    const am = en ? amostraPorId.get(en.amostra_id) : undefined;
+    const r = rotuloDaProg(p);
     alertas.push({
       nivel: "warn",
       texto: `${plural(alemDoPrevisto.length, "ensaio passou", "ensaios passaram")} do fim previsto na bancada`,
-      detalhe: `Mais atrasado: ${en ? nomeEnsaio(en) : "Ensaio"} · OS ${am?.os_numero ?? "—"} · previsto ${br(p.data_fim!)}${p.tecnico ? ` · ${p.tecnico}` : ""}`,
+      detalhe: `Mais atrasado: ${r.ensaio} · OS ${r.os} · previsto ${br(p.data_fim!)}${p.tecnico ? ` · ${p.tecnico}` : ""}`,
       destino: { to: "/relatorio/digitalizacao/fila" },
     });
   }
@@ -384,5 +489,158 @@ export function montarPainel(e: EntradaPainel): PainelModelo {
     });
   }
 
-  return { tiles, esteira, prazos, alertas };
+  return {
+    tiles,
+    esteira,
+    prazos,
+    alertas,
+    bancada: montarBancada(e, hoje, progsAtivas, nomeDoEquipamento, rotuloDaProg),
+    laudos: montarLaudos(laudos, idadeLaudo),
+  };
+}
+
+/* ------------------------------ Fase 2: bancada ------------------------------ */
+
+function montarBancada(
+  e: EntradaPainel,
+  hoje: string,
+  progsAtivas: EntradaPainel["programacoes"],
+  nomeDoEquipamento: Map<string, string>,
+  rotuloDaProg: (p: EntradaPainel["programacoes"][number]) => { ensaio: string; os: string; amostra: string },
+): Bancada {
+  const dias = proximosDiasUteis(hoje, DIAS_BANCADA);
+  const fimJanela = dias[dias.length - 1];
+
+  // Ocupação: cada programação ocupa o equipamento do início ao fim previsto.
+  const porEquipamento = new Map<string, EntradaPainel["programacoes"]>();
+  for (const p of progsAtivas) {
+    const k = p.equipamento_id || "__sem__";
+    porEquipamento.set(k, [...(porEquipamento.get(k) ?? []), p]);
+  }
+  const ids =
+    e.setor === "todos"
+      ? [...new Set([...e.equipamentos.map((q) => q.id), ...porEquipamento.keys()])]
+      : [...porEquipamento.keys()];
+  const equipamentos = ids
+    .map((id): OcupacaoEquipamento => {
+      const estados: EstadoDia[] = dias.map(() => "livre");
+      let ensaios = 0;
+      let comAtraso = false;
+      let ultimoFim: string | null = null;
+      for (const p of porEquipamento.get(id) ?? []) {
+        const ini = p.data_inicio;
+        const fim = p.data_fim;
+        if (!ini || !fim) continue;
+        // Passou do fim previsto e segue na bancada: o equipamento está preso hoje.
+        if (p.status === "em_execucao" && fim < hoje) {
+          estados[0] = "atrasado";
+          comAtraso = true;
+          ensaios++;
+          continue;
+        }
+        if (ini > fimJanela || fim < dias[0]) continue;
+        ensaios++;
+        dias.forEach((d, i) => {
+          if (ini <= d && d <= fim && estados[i] === "livre") estados[i] = "ocupado";
+        });
+        if (!ultimoFim || fim > ultimoFim) ultimoFim = fim;
+      }
+      return {
+        id,
+        nome: id === "__sem__" ? "Sem equipamento" : nomeDoEquipamento.get(id) ?? "Equipamento removido",
+        dias: estados,
+        ensaios,
+        livreEm: ultimoFim ? proximoDiaUtil(ultimoFim) : null,
+        comAtraso,
+      };
+    })
+    .filter((q) => q.id !== "__sem__" || q.ensaios > 0)
+    .sort((a, b) => {
+      const ocupA = a.dias.filter((x) => x !== "livre").length;
+      const ocupB = b.dias.filter((x) => x !== "livre").length;
+      return ocupB - ocupA || a.nome.localeCompare(b.nome);
+    });
+
+  // Carga por técnico (pelo nome gravado na programação).
+  const carga = new Map<string, CargaTecnico>();
+  for (const p of progsAtivas) {
+    const nome = (p.tecnico ?? "").trim() || "Sem técnico";
+    const c = carga.get(nome) ?? { nome, emExecucao: 0, programados: 0, alemDoPrevisto: 0 };
+    if (p.status === "em_execucao") {
+      c.emExecucao++;
+      if (p.data_fim && p.data_fim < hoje) c.alemDoPrevisto++;
+    } else if (p.data_inicio && p.data_inicio <= fimJanela) {
+      c.programados++;
+    }
+    carga.set(nome, c);
+  }
+  const tecnicos = [...carga.values()]
+    .filter((c) => c.emExecucao + c.programados > 0)
+    .sort((a, b) =>
+      a.nome === "Sem técnico" ? 1 : b.nome === "Sem técnico" ? -1 : b.emExecucao + b.programados - (a.emExecucao + a.programados) || a.nome.localeCompare(b.nome),
+    );
+
+  // Ensaios longos em curso: em que dia estão, de quantos.
+  const longos = progsAtivas
+    .filter((p) => p.status === "em_execucao" && (p.duracao_dias ?? 0) >= DURACAO_ENSAIO_LONGO)
+    .map((p): EnsaioLongo | null => {
+      const ini = p.data_inicio_real || p.data_inicio;
+      if (!ini) return null;
+      const r = rotuloDaProg(p);
+      return {
+        id: p.id,
+        ...r,
+        equipamento: (p.equipamento_id && nomeDoEquipamento.get(p.equipamento_id)) || "Sem equipamento",
+        tecnico: p.tecnico || null,
+        dia: (p.incluir_fds ? diasEntre(ini, hoje) : diasUteisEntre(ini, hoje)) + 1,
+        de: Math.ceil(p.duracao_dias),
+        fimPrevisto: p.data_fim,
+        atrasado: !!p.data_fim && p.data_fim < hoje,
+      };
+    })
+    .filter((x): x is EnsaioLongo => !!x)
+    .sort((a, b) => b.dia / b.de - a.dia / a.de);
+
+  return { dias, equipamentos, tecnicos, longos };
+}
+
+/* ------------------------------ Fase 2: laudos ------------------------------ */
+
+function montarLaudos(
+  laudos: EntradaPainel["pendencias"],
+  idadeLaudo: (p: EntradaPainel["pendencias"][number]) => number,
+): EtapaDeLaudo[] {
+  type P = EntradaPainel["pendencias"][number];
+  const etapas: { chave: EtapaDeLaudo["chave"]; nome: string; status: string[]; pessoa: (p: P) => string | null; papel: (p: P) => string }[] = [
+    {
+      chave: "digitacao",
+      nome: "Em digitação",
+      status: ["pendente", "em_digitacao"],
+      pessoa: (p) => p.digitador_nome || p.operador_nome || null,
+      papel: (p) => (p.digitador_nome ? "com" : "operador"),
+    },
+    { chave: "verificacao", nome: "Aguardando verificação", status: ["digitado"], pessoa: (p) => p.digitador_nome || null, papel: () => "enviado por" },
+    { chave: "aprovacao", nome: "Aguardando aprovação", status: ["verificado"], pessoa: (p) => p.verificador_nome || null, papel: () => "verificado por" },
+  ];
+  return etapas.map((et) => {
+    const lista = laudos
+      .filter((p) => et.status.includes(p.status))
+      .map((p) => ({
+        id: p.id,
+        ensaio: p.ensaio,
+        os: p.os,
+        amostra: p.amostra ?? null,
+        pessoa: et.pessoa(p),
+        papel: et.papel(p),
+        idade: idadeLaudo(p),
+      }))
+      .sort((a, b) => b.idade - a.idade);
+    return {
+      chave: et.chave,
+      nome: et.nome,
+      total: lista.length,
+      parados: lista.filter((x) => x.idade >= DIAS_UTEIS_PARADO).length,
+      itens: lista.slice(0, 5),
+    };
+  });
 }
