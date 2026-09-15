@@ -125,22 +125,9 @@ export const listPendenciasDigitacao = createServerFn({ method: "GET" })
     // "aparece e desaparece" reportado. Deixando propagar o erro, o React
     // Query mantém os últimos dados bons na tela em vez de trocar por
     // uma lista vazia.
-    const folderId = await ensureFolderPath(FOLDER_PENDENCIAS);
-    // Consultada a cada 30s por aba aberta: baixa só as pendências que mudaram
-    // desde a última leitura (ver lerJsonsDaPasta), 8 em voo por vez.
-    const rows = (await lerJsonsDaPasta<PendenciaDigitacao>(folderId)).map((l) => l.data);
-    // O nome do arquivo é determinístico por (os, amostra, ensaio), mas o
-    // Drive não impede dois arquivos com o mesmo nome na mesma pasta — uma
-    // condição de corrida (dois scans quase simultâneos) pode criar dois
-    // arquivos com o mesmo `id` lógico. Mantém só o mais recente de cada
-    // `id` pra nunca mostrar "pendência duplicada" na tela.
-    const byId = new Map<string, PendenciaDigitacao>();
-    for (const r of rows) {
-      if (!r) continue;
-      const prev = byId.get(r.id);
-      if (!prev || prev.updated_at < r.updated_at) byId.set(r.id, r);
-    }
-    return Array.from(byId.values()).sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+    // Leitura em lab-pendencias-leitura.server.ts (também usada pelo Painel do coordenador no agendamento).
+    const { listarPendencias } = await import("./lab-pendencias-leitura.server");
+    return listarPendencias();
   });
 
 const UpdateStatusInput = z.object({

@@ -5,9 +5,9 @@ import { sheetsApiRequest } from "./sheets-client.server.ts";
 import { readScheduleStore, writeScheduleStore } from "./schedule-store.server.ts";
 import { isGoogleAuthConfigured } from "./google-auth.server.ts";
 
-const SPREADSHEET_ID = "1V7mP2PfC2l877y6jjIOVXmt5ZzjEgLZIYVAe3Y4VD6c";
-const SHEET_NAME = "CRONOGRAMA LABORATÓRIO";
-const ENTREGUES_SHEET_NAME = "OS ENTREGUES";
+export const SPREADSHEET_ID = "1V7mP2PfC2l877y6jjIOVXmt5ZzjEgLZIYVAe3Y4VD6c";
+export const SHEET_NAME = "CRONOGRAMA LABORATÓRIO";
+export const ENTREGUES_SHEET_NAME = "OS ENTREGUES";
 const GATEWAY_URL = "https://connector-gateway.lovable.dev/google_sheets/v4";
 
 /* ---------------------------------- Cache --------------------------------- */
@@ -69,7 +69,7 @@ export function normalizeSetor(raw: string): string {
   return s;
 }
 
-const DEFAULT_SCHEDULE_ROWS: ScheduleRow[] = [
+export const DEFAULT_SCHEDULE_ROWS: ScheduleRow[] = [
   { rowIndex: 5, delta: "", dataPostagem: "20/08/2026", tomador: "EPR Litoral Pioneiro", os: "17797-26", setor: "Convencionais", laboratorio: "", dataEntrega: "28/08/2026", volumeComp: "", volumeCaract: "", mctc: "", mrs: "", escopo: "" },
   { rowIndex: 6, delta: "", dataPostagem: "18/08/2026", tomador: "Motiva Sorocabana", os: "17723-26", setor: "Dosagem", laboratorio: "7 Dias (1 ST rodou com uns dias de atraso, estou esperando a cura)", dataEntrega: "30/08/2026", volumeComp: "", volumeCaract: "", mctc: "", mrs: "", escopo: "MR / DP / Dosagem" },
   { rowIndex: 7, delta: "", dataPostagem: "15/08/2026", tomador: "Motiva RioSP", os: "17586-26", setor: "Especiais / Convencionais", laboratorio: "Entrega dos ensaios do SH-504-01 e triaxiais UU e CU dos demais SH", dataEntrega: "26/08/2026", volumeComp: "", volumeCaract: "", mctc: "", mrs: "", escopo: "Triaxiais Mec. Solos / Adensamento / Caracterização Comp/CBR || Parcial 1" },
@@ -101,100 +101,9 @@ export const fetchSchedule = createServerFn({ method: "GET" }).middleware([requi
       return scheduleCache.data;
     }
 
-    let parsed: ScheduleRow[] = [];
-    if (isGoogleAuthConfigured()) {
-      try {
-        const data = await fetchDirectGoogleSheet(SPREADSHEET_ID, SHEET_NAME);
-        const rows = data.values ?? [];
-        const dataRows = rows.slice(4);
-
-        parsed = dataRows
-          .map((row, idx) => ({ row, sheetRow: idx + 5 }))
-          .filter(({ row }) => (row[2] && row[2].trim()) || (row[3] && row[3].trim()) || (row[5] && row[5].trim()) || (row[6] && row[6].trim()))
-          .map(({ row, sheetRow }) => ({
-            rowIndex: sheetRow,
-            delta: row[0] ?? "",
-            dataPostagem: row[1] ?? "",
-            tomador: row[2] ?? "",
-            os: row[3] ?? "",
-            setor: normalizeSetor(row[4] ?? ""),
-            laboratorio: row[5] ?? "",
-            dataEntrega: row[6] ?? "",
-            volumeComp: row[7] ?? "",
-            volumeCaract: row[8] ?? "",
-            mctc: row[9] ?? "",
-            mrs: row[10] ?? "",
-            escopo: row[15] ?? "",
-          }));
-      } catch {
-        parsed = [...DEFAULT_SCHEDULE_ROWS];
-      }
-    } else {
-      parsed = [...DEFAULT_SCHEDULE_ROWS];
-    }
-
-    let finalRows = parsed;
-    const store = await readScheduleStore();
-    finalRows = parsed
-      .filter((r) => {
-        const edit = store.edits[String(r.rowIndex)] || store.edits[r.os];
-        return !edit?.movedToEntregues;
-      })
-      .map((r) => {
-        const edit = store.edits[String(r.rowIndex)] || store.edits[r.os];
-        if (edit) {
-          return {
-            ...r,
-            dataPostagem: edit.dataPostagem !== undefined ? edit.dataPostagem : r.dataPostagem,
-            setor: edit.setor !== undefined ? normalizeSetor(edit.setor) : r.setor,
-            laboratorio: edit.laboratorio !== undefined ? edit.laboratorio : r.laboratorio,
-            dataEntrega: edit.dataEntrega !== undefined ? edit.dataEntrega : r.dataEntrega,
-            escopo: edit.escopo !== undefined ? edit.escopo : r.escopo,
-          };
-        }
-        return r;
-      });
-
-    // Adiciona linhas novas criadas localmente
-    store.newRows.forEach((nr, idx) => {
-      if (!nr.movedToEntregues) {
-        finalRows.push({
-          rowIndex: nr.rowIndex || 999000 + idx,
-          delta: "",
-          dataPostagem: nr.dataPostagem || "",
-          tomador: nr.tomador || "",
-          os: nr.os || "",
-          setor: normalizeSetor(nr.setor || ""),
-          laboratorio: nr.laboratorio || "",
-          dataEntrega: nr.dataEntrega || "",
-          volumeComp: nr.volumeComp || "",
-          volumeCaract: nr.volumeCaract || "",
-          mctc: nr.mctc || "",
-          mrs: nr.mrs || "",
-          escopo: nr.escopo || "",
-        });
-      }
-    });
-
-    const result = {
-      title: "GERAL - CRONOGRAMAS (LAB)",
-      sheetName: SHEET_NAME,
-      headers: [
-        "DELTA",
-        "DATA POSTAGEM",
-        "TOMADOR",
-        "OS",
-        "SETOR",
-        "LABORATÓRIO",
-        "DATA ENTREGA",
-        "VOL. COMP.",
-        "VOL. CARACT.",
-        "MCT.C",
-        "MR.S",
-        "ESCOPO",
-      ],
-      rows: finalRows,
-    };
+    // Leitura em cronograma.server.ts (também usada pelo agendamento do Painel do coordenador).
+    const { lerCronogramaSemCache } = await import("./cronograma.server");
+    const result = await lerCronogramaSemCache();
 
     scheduleCache = { data: result, timestamp: Date.now() };
     return result;
@@ -218,58 +127,8 @@ export interface EntregueRow {
 
 export const fetchEntregues = createServerFn({ method: "GET" }).middleware([requireSupabaseAuth]).handler(
   async () => {
-    let parsed: EntregueRow[] = [];
-    if (isGoogleAuthConfigured()) {
-      try {
-        const data = await fetchDirectGoogleSheet(SPREADSHEET_ID, ENTREGUES_SHEET_NAME);
-        const rows = data.values ?? [];
-        const dataRows = rows.slice(2);
-
-        parsed = dataRows
-          .filter((row) => (row[2] && row[2].trim()) || (row[3] && row[3].trim()) || (row[5] && row[5].trim()))
-          .map((row) => ({
-            delta: row[0] ?? "",
-            dataPostagem: row[1] ?? "",
-            tomador: row[2] ?? "",
-            os: row[3] ?? "",
-            setor: normalizeSetor(row[4] ?? ""),
-            laboratorio: row[5] ?? "",
-            dataProgramada: row[6] ?? "",
-            volumeComp: row[7] ?? "",
-            volumeCaract: row[8] ?? "",
-            volumeEspec: row[9] ?? "",
-            capacidade: row[10] ?? "",
-            escopo: row[11] ?? "",
-          }));
-      } catch {
-        parsed = [];
-      }
-    }
-
-    // Mescla itens movidos para entregues no armazenamento persistente no Drive
-    const store = await readScheduleStore();
-    store.entreguesRows.forEach((r) => {
-      parsed.push({
-        delta: r.volumeComp || "",
-        dataPostagem: r.dataPostagem || "",
-        tomador: r.tomador || "",
-        os: r.os || "",
-        setor: normalizeSetor(r.setor || ""),
-        laboratorio: r.laboratorio || "",
-        dataProgramada: r.dataEntrega || "",
-        volumeComp: r.volumeComp || "",
-        volumeCaract: r.volumeCaract || "",
-        volumeEspec: "",
-        capacidade: "",
-        escopo: r.escopo || "",
-      });
-    });
-
-    return {
-      title: "OS ENTREGUES",
-      sheetName: ENTREGUES_SHEET_NAME,
-      rows: parsed,
-    };
+    const { lerEntregues } = await import("./cronograma.server");
+    return lerEntregues();
   },
 );
 

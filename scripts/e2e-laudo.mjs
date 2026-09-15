@@ -297,6 +297,21 @@ try {
   );
   r = await chamar("importarEnsaios", "POST", pedidoImp);
   conferir("importar de novo não duplica", r.resultado?.ensaios === 0 && r.resultado?.repetidos === 2, r.erro ?? JSON.stringify(r.resultado));
+  // Avisos do Painel do coordenador: preferências da pessoa e o resumo montado no servidor.
+  r = await chamar("salvarMinhasPreferenciasDoPainel", "POST", { resumo: false, risco: true });
+  const prefs = await chamar("minhasPreferenciasDoPainel", "GET", undefined);
+  conferir(
+    "preferências dos avisos do painel",
+    !r.erro && prefs.resultado?.resumo === false && prefs.resultado?.risco === true,
+    r.erro ?? prefs.erro ?? JSON.stringify(prefs.resultado),
+  );
+  r = await chamar("receberResumoAgora", "POST", undefined);
+  conferir(
+    "resumo do painel montado no servidor",
+    !r.erro && r.resultado?.enviado === false && typeof r.resultado?.previa === "string" && r.resultado.previa.length > 0,
+    r.erro ?? JSON.stringify(r.resultado),
+  );
+
   r = await chamar("diagnosticarProgramacao", "POST", undefined);
   conferir("diagnóstico da programação responde (sem planilha aqui)", r.resultado?.planilhaConfigurada === false, r.erro ?? "");
 
@@ -310,6 +325,12 @@ try {
     "checagem de saúde agendada roda",
     agendado.ok && registro.includes("[saude]") && !registro.includes("[saude] Checagem falhou"),
     `HTTP ${agendado.status}`,
+  );
+  await espera(2500);
+  conferir(
+    "avisos do painel rodam no agendamento",
+    registro.includes("[painel-avisos]") && !registro.includes("[painel-avisos] Falhou"),
+    (registro.match(/\[painel-avisos\][^\n]*/) ?? ["sem registro"])[0],
   );
 } catch (err) {
   conferir("roteiro executado até o fim", false, err instanceof Error ? err.message : String(err));

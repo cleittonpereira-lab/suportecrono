@@ -46,7 +46,17 @@ export type EntradaPainel = {
   ensaios: { id: string; amostra_id: string; tipo_ensaio_id: string; status: string; created_at?: string; etiqueta?: string }[];
   programacoes: Pick<
     Programacao,
-    "id" | "ensaio_id" | "status" | "data_inicio" | "data_fim" | "data_inicio_real" | "duracao_dias" | "incluir_fds" | "equipamento_id" | "tecnico"
+    | "id"
+    | "ensaio_id"
+    | "status"
+    | "data_inicio"
+    | "data_fim"
+    | "data_inicio_real"
+    | "data_fim_real"
+    | "duracao_dias"
+    | "incluir_fds"
+    | "equipamento_id"
+    | "tecnico"
   >[];
   tipos: { id: string; nome: string }[];
   equipamentos: { id: string; nome: string }[];
@@ -643,4 +653,64 @@ function montarLaudos(
       itens: lista.slice(0, 5),
     };
   });
+}
+
+/* ------------------- Fontes → entrada (tela e servidor) ------------------- */
+
+type LinhaDaFonte = Record<string, string>;
+
+/** As fontes como chegam das consultas da tela e das leituras do servidor (agendamento). */
+export type FontesDoPainel = {
+  hoje: string;
+  setor: Setor;
+  cronograma: EntradaPainel["cronograma"];
+  /** Por número da OS como gravado. */
+  datasAcordadas: Record<string, { osNumero: string; data: string | null; arquivada: boolean }>;
+  chegada: { columns?: { id: string }[]; tasks?: Record<string, unknown[]> } | null | undefined;
+  amostras: LinhaDaFonte[];
+  ensaios: LinhaDaFonte[];
+  /** Já convertidas por parseProgramacaoRow. */
+  programacoes: EntradaPainel["programacoes"];
+  tipos: LinhaDaFonte[];
+  equipamentos: LinhaDaFonte[];
+  pendencias: EntradaPainel["pendencias"];
+};
+
+export function entradaDasFontes(f: FontesDoPainel): EntradaPainel {
+  const chegadas = Object.entries(f.chegada?.tasks ?? {}).flatMap(([coluna, lista]) =>
+    (lista ?? []).map((bruto) => {
+      const t = bruto as Record<string, unknown>;
+      return {
+        id: String(t.id ?? ""),
+        osCliente: String(t.osCliente ?? ""),
+        osNumero: t.osNumero ? String(t.osNumero) : undefined,
+        dataChegada: String(t.dataChegada ?? ""),
+        amostras: Array.isArray(t.amostras) && t.amostras.length ? t.amostras.length : 1,
+        coluna,
+      };
+    }),
+  );
+  return {
+    hoje: f.hoje,
+    setor: f.setor,
+    cronograma: f.cronograma,
+    datasAcordadas: Object.fromEntries(
+      Object.values(f.datasAcordadas).map((d) => [chaveOs(d.osNumero), { data: d.data, arquivada: d.arquivada }]),
+    ),
+    chegadas,
+    colunaFinal: f.chegada?.columns?.at(-1)?.id ?? "os-sistema",
+    amostras: f.amostras.map((r) => ({ id: r.id, os_numero: r.os_numero ?? "", codigo_amostra: r.codigo_amostra })),
+    ensaios: f.ensaios.map((r) => ({
+      id: r.id,
+      amostra_id: r.amostra_id ?? "",
+      tipo_ensaio_id: r.tipo_ensaio_id ?? "",
+      status: r.status ?? "",
+      created_at: r.created_at,
+      etiqueta: r.etiqueta,
+    })),
+    programacoes: f.programacoes,
+    tipos: f.tipos.map((r) => ({ id: r.id, nome: r.nome ?? "" })),
+    equipamentos: f.equipamentos.map((r) => ({ id: r.id, nome: r.nome ?? "" })),
+    pendencias: f.pendencias,
+  };
 }

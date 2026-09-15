@@ -73,14 +73,8 @@ export const getOsHub = createServerFn({ method: "GET" })
 export const listarDatasAcordadas = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async () => {
-    const folderId = await ensureFolderPath(FOLDER_OS_HUB);
-    const docs = await lerJsonsDaPasta<OsHubData>(folderId);
-    const out: Record<string, { osNumero: string; data: string | null; arquivada: boolean }> = {};
-    for (const { data } of docs) {
-      if (!data?.osNumero) continue;
-      out[data.osNumero] = { osNumero: data.osNumero, data: data.dataAcordadaAtual ?? null, arquivada: !!data.arquivada };
-    }
-    return out;
+    const { lerDatasAcordadas } = await import("./painel-coordenador.server");
+    return lerDatasAcordadas();
   });
 
 const AtualizarDataInput = z.object({ osNumero: z.string().min(1), novaData: z.string().min(1) });

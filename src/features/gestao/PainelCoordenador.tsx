@@ -21,9 +21,12 @@ import { listPendenciasDigitacao } from "@/lib/lab-pendencias.functions";
 import { fetchSharedChegadaState } from "@/lib/chegada-amostras.functions";
 import { listarDatasAcordadas } from "@/lib/os-hub.functions";
 import { isoHoje } from "@/features/lab/hooks/use-acoes-da-programacao";
+import { useEntregues } from "@/hooks/use-entregues";
+import { AvisosDoPainel } from "@/features/gestao/AvisosDoPainel";
+import { montarDesempenho, type Desempenho, type SerieSemanal } from "@/lib/painel-desempenho";
 import {
   SETORES,
-  chaveOs,
+  entradaDasFontes,
   montarPainel,
   type Bancada as BancadaModelo,
   type CargaTecnico,
@@ -315,6 +318,77 @@ function ColunasLaudos({ etapas }: { etapas: EtapaDeLaudo[] }) {
   );
 }
 
+/* ------------------------------ Fase 3 ------------------------------ */
+
+const fmtMedia = (n: number) => n.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
+
+/** Uma medida por semana: número da semana atual, média e barras (a atual em destaque). */
+function MiniSerie({ s, semanas }: { s: SerieSemanal; semanas: string[] }) {
+  const max = Math.max(1, ...s.valores);
+  return (
+    <Para
+      destino={s.destino}
+      className="grid content-start gap-2 rounded-lg border bg-card p-3 transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+    >
+      <span className="text-[11px] leading-tight text-muted-foreground">{s.nome}</span>
+      <div className="flex items-baseline gap-2">
+        <span className="font-display text-2xl font-semibold tabular-nums">{s.atual}</span>
+        <span className="text-[11px] text-muted-foreground">nesta semana · média {fmtMedia(s.media)}</span>
+      </div>
+      <div className="flex h-14 items-end gap-[2px]" role="img" aria-label={`${s.nome} por semana: ${s.valores.join(", ")}`}>
+        {s.valores.map((v, i) => (
+          <div key={semanas[i]} className="group relative flex h-full flex-1 items-end">
+            <div
+              className={`w-full rounded-t-[3px] ${v === 0 ? "bg-muted" : i === s.valores.length - 1 ? "bg-primary" : "bg-primary/40"}`}
+              style={{ height: v === 0 ? "3px" : `${Math.max(8, (v / max) * 100)}%` }}
+            />
+            <span className="pointer-events-none absolute -top-6 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded border bg-popover px-1.5 py-0.5 text-[10px] text-popover-foreground opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+              sem. {br(semanas[i])}: {v}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-between text-[10px] text-muted-foreground">
+        <span>{br(semanas[0])}</span>
+        <span>esta semana</span>
+      </div>
+    </Para>
+  );
+}
+
+function BlocoDesempenho({ d }: { d: Desempenho }) {
+  const { pct, noPrazo, total, pctAnterior } = d.noPrazo;
+  const diferenca = pct !== null && pctAnterior !== null ? pct - pctAnterior : null;
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
+      {d.series.map((s) => (
+        <MiniSerie key={s.chave} s={s} semanas={d.semanas} />
+      ))}
+      <div className="grid content-start gap-1 rounded-lg border bg-card p-3">
+        <span className="text-[11px] text-muted-foreground">Entregas no prazo</span>
+        <span className="font-display text-3xl font-semibold tabular-nums">{pct === null ? "—" : `${pct}%`}</span>
+        <span className="text-[11px] text-muted-foreground">
+          {total ? `${noPrazo} de ${total} entregas nas 8 semanas` : "sem entregas com data programada"}
+        </span>
+        {diferenca !== null && (
+          <span className={`text-[11px] font-medium ${diferenca >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+            {diferenca >= 0 ? "▲" : "▼"} {Math.abs(diferenca)} p.p. vs. as 8 semanas anteriores ({pctAnterior}%)
+          </span>
+        )}
+      </div>
+      <div className="grid content-start gap-1 rounded-lg border bg-card p-3">
+        <span className="text-[11px] text-muted-foreground">Da chegada à entrega</span>
+        <span className="font-display text-3xl font-semibold tabular-nums">
+          {d.tempoAteEntrega.mediana === null ? "—" : `${d.tempoAteEntrega.mediana} dias`}
+        </span>
+        <span className="text-[11px] text-muted-foreground">
+          {d.tempoAteEntrega.n ? `mediana de ${d.tempoAteEntrega.n} OS entregues` : "registre o Nº da OS na chegada para medir"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export function PainelCoordenador() {
   const qc = useQueryClient();
   const [setor, setSetor] = useState<Setor>("todos");
@@ -341,48 +415,30 @@ export function PainelCoordenador() {
   const carregando = carregandoCronograma || consultas.some((q) => q.isLoading);
   const falha = consultas.find((q) => q.error)?.error as Error | undefined;
 
-  const modelo = useMemo(() => {
+  const entregues = useEntregues();
+
+  // As mesmas fontes que o servidor usa no agendamento (lib/painel-coordenador.ts → entradaDasFontes).
+  const entrada = useMemo(() => {
     if (carregando) return null;
-    const estado = chegada.data as { columns?: { id: string }[]; tasks?: Record<string, any[]> } | undefined;
-    const chegadas = Object.entries(estado?.tasks ?? {}).flatMap(([coluna, lista]) =>
-      (lista ?? []).map((t) => ({
-        id: String(t.id),
-        osCliente: String(t.osCliente ?? ""),
-        osNumero: t.osNumero ? String(t.osNumero) : undefined,
-        dataChegada: String(t.dataChegada ?? ""),
-        amostras: Array.isArray(t.amostras) && t.amostras.length ? t.amostras.length : 1,
-        coluna,
-      })),
-    );
-    const datasAcordadas = Object.fromEntries(
-      Object.values(datas.data ?? {}).map((d) => [chaveOs(d.osNumero), { data: d.data, arquivada: d.arquivada }]),
-    );
-    return montarPainel({
+    return entradaDasFontes({
       hoje: isoHoje(),
       setor,
       cronograma: schedule?.rows ?? [],
-      datasAcordadas,
-      chegadas,
-      colunaFinal: estado?.columns?.at(-1)?.id ?? "os-sistema",
-      amostras: (amostras.data ?? []).map((r: Record<string, string>) => ({
-        id: r.id,
-        os_numero: r.os_numero ?? "",
-        codigo_amostra: r.codigo_amostra,
-      })),
-      ensaios: (ensaios.data ?? []).map((r: Record<string, string>) => ({
-        id: r.id,
-        amostra_id: r.amostra_id ?? "",
-        tipo_ensaio_id: r.tipo_ensaio_id ?? "",
-        status: r.status ?? "",
-        created_at: r.created_at,
-        etiqueta: r.etiqueta,
-      })),
+      datasAcordadas: datas.data ?? {},
+      chegada: chegada.data as { columns?: { id: string }[]; tasks?: Record<string, unknown[]> } | undefined,
+      amostras: amostras.data ?? [],
+      ensaios: ensaios.data ?? [],
       programacoes: (progs.data ?? []).map(parseProgramacaoRow),
-      tipos: (tipos.data ?? []).map((r: Record<string, string>) => ({ id: r.id, nome: r.nome ?? "" })),
-      equipamentos: (equips.data ?? []).map((r: Record<string, string>) => ({ id: r.id, nome: r.nome ?? "" })),
+      tipos: tipos.data ?? [],
+      equipamentos: equips.data ?? [],
       pendencias: pend.data ?? [],
     });
   }, [carregando, setor, schedule, datas.data, chegada.data, amostras.data, ensaios.data, progs.data, tipos.data, equips.data, pend.data]);
+  const modelo = useMemo(() => (entrada ? montarPainel(entrada) : null), [entrada]);
+  const desempenho = useMemo(
+    () => (entrada ? montarDesempenho(entrada, entregues.data?.rows ?? []) : null),
+    [entrada, entregues.data],
+  );
 
   const atualizar = () => {
     qc.invalidateQueries({ queryKey: ["coordenacao"] });
@@ -398,9 +454,12 @@ export function PainelCoordenador() {
         title="Painel do coordenador"
         description="O que chegou, o que está parado, o que está rodando e o que vence — cada número abre a lista que o explica."
         actions={
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={atualizar}>
+          <div className="flex flex-wrap items-center gap-2">
+            <AvisosDoPainel />
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={atualizar}>
             <RefreshCw className={`h-4 w-4 ${consultas.some((q) => q.isFetching) ? "animate-spin" : ""}`} /> Atualizar
-          </Button>
+            </Button>
+          </div>
         }
       />
 
@@ -622,6 +681,20 @@ export function PainelCoordenador() {
               </CardContent>
             </Card>
           </div>
+
+          {desempenho && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-baseline justify-between gap-2 flex-wrap">
+                  Desempenho · últimas 8 semanas
+                  <span className="text-xs font-normal text-muted-foreground">semanas de segunda a domingo · a última ainda em curso</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <BlocoDesempenho d={desempenho} />
+              </CardContent>
+            </Card>
+          )}
         </>
       )}
     </div>
