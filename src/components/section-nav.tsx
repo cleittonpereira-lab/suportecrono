@@ -33,8 +33,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-/** `soAdmin`: aparece só para o administrador (ex.: Gestão dos Ensaios Especiais). */
-type Tab = { title: string; url: string; icon: LucideIcon; soAdmin?: boolean };
+type Tab = { title: string; url: string; icon: LucideIcon };
 type Section = { key: string; label: string; match: (p: string) => boolean; tabs: readonly Tab[] };
 
 const SECTIONS: readonly Section[] = [
@@ -46,6 +45,13 @@ const SECTIONS: readonly Section[] = [
       { title: "Dashboard", url: "/", icon: LayoutDashboard },
       { title: "Assistente IA", url: "/assistente", icon: Sparkles },
     ],
+  },
+  {
+    // Só aparece para quem tem a permissão "Painel do coordenador" (ou admin).
+    key: "gestao-coordenacao",
+    label: "Gestão",
+    match: (p) => p.startsWith("/coordenacao"),
+    tabs: [{ title: "Painel do coordenador", url: "/coordenacao", icon: Gauge }],
   },
   {
     key: "entregas",
@@ -126,7 +132,6 @@ const SECTIONS: readonly Section[] = [
     match: (p) => p.startsWith("/relatorio/especiais"),
     tabs: [
       { title: "Ensaios Especiais", url: "/relatorio/especiais", icon: Sparkles },
-      { title: "Gestão (admin)", url: "/relatorio/especiais?tab=gestao", icon: Gauge, soAdmin: true },
     ],
   },
   {
@@ -160,13 +165,12 @@ export function useCurrentSection() {
 
 export function SectionNav() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { canAccess, role } = useAuth();
+  const { canAccess } = useAuth();
 
   // Filtra abas por permissão; remove seções sem nenhuma aba visível.
   const visibleSections = SECTIONS
     .map((sec) => {
       const tabs = sec.tabs.filter((t) => {
-        if (t.soAdmin && role !== "admin") return false;
         const key = pathToTab(t.url.split("?")[0]);
         return key ? canAccess(key) : true;
       });

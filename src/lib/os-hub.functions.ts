@@ -6,7 +6,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth, exigirLogin } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
-import { atualizarDriveJson, ensureFolderPath, readDriveJson, writeDriveJson } from "@/lib/driveStorage";
+import { atualizarDriveJson, ensureFolderPath, lerJsonsDaPasta, readDriveJson, writeDriveJson } from "@/lib/driveStorage";
 import { uploadPhoto } from "@/lib/photo-upload.functions";
 
 const FOLDER_OS_HUB = ["os-hub"];
@@ -67,6 +67,20 @@ export const getOsHub = createServerFn({ method: "GET" })
     const name = `${osKey(data.osNumero)}.json`;
     const existing = await readDriveJson<OsHubData>(name, folderId);
     return existing ?? emptyHub(data.osNumero);
+  });
+
+/** Data acordada e arquivamento de TODAS as OS numa leitura só — para o Painel do Coordenador. */
+export const listarDatasAcordadas = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async () => {
+    const folderId = await ensureFolderPath(FOLDER_OS_HUB);
+    const docs = await lerJsonsDaPasta<OsHubData>(folderId);
+    const out: Record<string, { osNumero: string; data: string | null; arquivada: boolean }> = {};
+    for (const { data } of docs) {
+      if (!data?.osNumero) continue;
+      out[data.osNumero] = { osNumero: data.osNumero, data: data.dataAcordadaAtual ?? null, arquivada: !!data.arquivada };
+    }
+    return out;
   });
 
 const AtualizarDataInput = z.object({ osNumero: z.string().min(1), novaData: z.string().min(1) });

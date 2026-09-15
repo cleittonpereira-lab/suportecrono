@@ -161,6 +161,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (isBlocked || isPending) return false;
 
       if (meta.adminOnly) return false;
+      // Por concessão (ex.: Painel do coordenador): só quem foi marcado — o padrão do papel não inclui.
+      if (meta.porConcessao) return !!allowedTabs?.has(tab);
       if (allowedTabs) return allowedTabs.has(tab);
       return true;
     };

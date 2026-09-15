@@ -22,6 +22,7 @@ import { Route as AppCadastroRouteImport } from './routes/_app.cadastro'
 import { Route as AppCadastroDashboardRouteImport } from './routes/_app.cadastro-dashboard'
 import { Route as AppChamadasRouteImport } from './routes/_app.chamadas'
 import { Route as AppChegadaAmostrasRouteImport } from './routes/_app.chegada-amostras'
+import { Route as AppCoordenacaoRouteImport } from './routes/_app.coordenacao'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
 import { Route as AppEntregasRouteImport } from './routes/_app.entregas'
 import { Route as AppEntreguesRouteImport } from './routes/_app.entregues'
@@ -150,6 +151,11 @@ const AppChamadasRoute = AppChamadasRouteImport.update({
 const AppChegadaAmostrasRoute = AppChegadaAmostrasRouteImport.update({
   id: '/chegada-amostras',
   path: '/chegada-amostras',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppCoordenacaoRoute = AppCoordenacaoRouteImport.update({
+  id: '/coordenacao',
+  path: '/coordenacao',
   getParentRoute: () => AppRoute,
 } as any)
 const AppDashboardRoute = AppDashboardRouteImport.update({
@@ -527,6 +533,7 @@ export interface FileRoutesByFullPath {
   '/cadastro-dashboard': typeof AppCadastroDashboardRoute
   '/chamadas': typeof AppChamadasRoute
   '/chegada-amostras': typeof AppChegadaAmostrasRouteWithChildren
+  '/coordenacao': typeof AppCoordenacaoRoute
   '/dashboard': typeof AppDashboardRoute
   '/entregas': typeof AppEntregasRoute
   '/entregues': typeof AppEntreguesRoute
@@ -606,6 +613,7 @@ export interface FileRoutesByTo {
   '/cadastro-dashboard': typeof AppCadastroDashboardRoute
   '/chamadas': typeof AppChamadasRoute
   '/chegada-amostras': typeof AppChegadaAmostrasRouteWithChildren
+  '/coordenacao': typeof AppCoordenacaoRoute
   '/dashboard': typeof AppDashboardRoute
   '/entregas': typeof AppEntregasRoute
   '/entregues': typeof AppEntreguesRoute
@@ -686,6 +694,7 @@ export interface FileRoutesById {
   '/_app/cadastro-dashboard': typeof AppCadastroDashboardRoute
   '/_app/chamadas': typeof AppChamadasRoute
   '/_app/chegada-amostras': typeof AppChegadaAmostrasRouteWithChildren
+  '/_app/coordenacao': typeof AppCoordenacaoRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/entregas': typeof AppEntregasRoute
   '/_app/entregues': typeof AppEntreguesRoute
@@ -767,6 +776,7 @@ export interface FileRouteTypes {
     | '/cadastro-dashboard'
     | '/chamadas'
     | '/chegada-amostras'
+    | '/coordenacao'
     | '/dashboard'
     | '/entregas'
     | '/entregues'
@@ -846,6 +856,7 @@ export interface FileRouteTypes {
     | '/cadastro-dashboard'
     | '/chamadas'
     | '/chegada-amostras'
+    | '/coordenacao'
     | '/dashboard'
     | '/entregas'
     | '/entregues'
@@ -925,6 +936,7 @@ export interface FileRouteTypes {
     | '/_app/cadastro-dashboard'
     | '/_app/chamadas'
     | '/_app/chegada-amostras'
+    | '/_app/coordenacao'
     | '/_app/dashboard'
     | '/_app/entregas'
     | '/_app/entregues'
@@ -1096,6 +1108,13 @@ declare module '@tanstack/react-router' {
       path: '/chegada-amostras'
       fullPath: '/chegada-amostras'
       preLoaderRoute: typeof AppChegadaAmostrasRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/coordenacao': {
+      id: '/_app/coordenacao'
+      path: '/coordenacao'
+      fullPath: '/coordenacao'
+      preLoaderRoute: typeof AppCoordenacaoRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/dashboard': {
@@ -1608,6 +1627,7 @@ interface AppRouteChildren {
   AppCadastroDashboardRoute: typeof AppCadastroDashboardRoute
   AppChamadasRoute: typeof AppChamadasRoute
   AppChegadaAmostrasRoute: typeof AppChegadaAmostrasRouteWithChildren
+  AppCoordenacaoRoute: typeof AppCoordenacaoRoute
   AppDashboardRoute: typeof AppDashboardRoute
   AppEntregasRoute: typeof AppEntregasRoute
   AppEntreguesRoute: typeof AppEntreguesRoute
@@ -1669,6 +1689,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppCadastroDashboardRoute: AppCadastroDashboardRoute,
   AppChamadasRoute: AppChamadasRoute,
   AppChegadaAmostrasRoute: AppChegadaAmostrasRouteWithChildren,
+  AppCoordenacaoRoute: AppCoordenacaoRoute,
   AppDashboardRoute: AppDashboardRoute,
   AppEntregasRoute: AppEntregasRoute,
   AppEntreguesRoute: AppEntreguesRoute,

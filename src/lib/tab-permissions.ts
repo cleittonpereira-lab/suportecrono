@@ -33,9 +33,14 @@ export type TabKey =
   | "relatorio_ensaios_especiais"
   | "chegada_amostras"
   | "relatorio_cisalhamento"
-  | "admin_usuarios";
+  | "admin_usuarios"
+  | "painel_coordenador";
 
-export const TAB_META: Record<TabKey, { label: string; adminOnly?: boolean }> = {
+/**
+ * `adminOnly`: só administrador. `porConcessao`: fora do padrão do papel — só
+ * quem for marcado na Gestão de usuários (e o administrador).
+ */
+export const TAB_META: Record<TabKey, { label: string; adminOnly?: boolean; porConcessao?: boolean }> = {
   dashboard: { label: "Dashboard" },
   assistente: { label: "Assistente IA" },
   entregas: { label: "Entregas" },
@@ -67,6 +72,7 @@ export const TAB_META: Record<TabKey, { label: string; adminOnly?: boolean }> = 
   relatorio_ensaios_especiais: { label: "Ensaios Especiais" },
   chegada_amostras: { label: "Chegada de amostras" },
   admin_usuarios: { label: "Gestão de usuários", adminOnly: true },
+  painel_coordenador: { label: "Gestão · Painel do coordenador", porConcessao: true },
 };
 
 export const ALL_TABS = Object.keys(TAB_META) as TabKey[];
@@ -74,6 +80,7 @@ export const ALL_TABS = Object.keys(TAB_META) as TabKey[];
 // Mapeamento path → tab
 export function pathToTab(pathname: string): TabKey | null {
   if (pathname === "/" || pathname === "/dashboard") return "dashboard";
+  if (pathname.startsWith("/coordenacao")) return "painel_coordenador";
   if (pathname.startsWith("/assistente")) return "assistente";
   if (pathname.startsWith("/chegada-amostras") || pathname.startsWith("/registro-amostra") || pathname.startsWith("/registro-chegada")) return "chegada_amostras";
   if (pathname.startsWith("/entregas") || pathname.startsWith("/criar-entrega")) return "entregas";

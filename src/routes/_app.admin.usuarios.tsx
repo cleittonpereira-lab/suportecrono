@@ -695,24 +695,35 @@ function InviteDialog({
   );
 }
 
+/** Abas do padrão do papel, e as liberadas só por concessão (ex.: Painel do coordenador). */
+const ABAS_COMUNS = ALL_TABS.filter((k) => !TAB_META[k].adminOnly && !TAB_META[k].porConcessao);
+const ABAS_POR_CONCESSAO = ALL_TABS.filter((k) => TAB_META[k].porConcessao);
+
 function PermsDialog({ row, onClose }: { row: Row | null; onClose: () => void }) {
   const qc = useQueryClient();
   const [selected, setSelected] = useState<Set<TabKey>>(new Set());
+  const [extras, setExtras] = useState<Set<TabKey>>(new Set());
   const [useDefault, setUseDefault] = useState(true);
   const setUserTabsFn = useServerFn(setUserTabPermissions);
   const setGuestTabsFn = useServerFn(setGuestTabPermissions);
 
   useEffect(() => {
     if (row) {
-      setSelected(new Set(row.tabs as TabKey[]));
-      setUseDefault(row.tabs.length === 0);
+      const tabs = row.tabs as TabKey[];
+      const comuns = tabs.filter((t) => ABAS_COMUNS.includes(t));
+      setSelected(new Set(comuns));
+      setExtras(new Set(tabs.filter((t) => ABAS_POR_CONCESSAO.includes(t))));
+      // Lista com todas as abas comuns = padrão do papel + algum acesso especial.
+      setUseDefault(comuns.length === 0 || comuns.length === ABAS_COMUNS.length);
     }
   }, [row]);
 
   const save = useMutation({
     mutationFn: async () => {
       if (!row) return;
-      const tabs = useDefault ? [] : Array.from(selected);
+      // "Padrão do papel" é a lista vazia; com um acesso especial marcado, grava todas as comuns + ele.
+      const base = useDefault ? (extras.size ? ABAS_COMUNS : []) : Array.from(selected);
+      const tabs = [...base, ...extras];
       if (row.isGuest) {
         await setGuestTabsFn({ data: { tabs } });
       } else {
@@ -753,13 +764,36 @@ function PermsDialog({ row, onClose }: { row: Row | null; onClose: () => void })
               : "Usar padrão do papel (todas as abas não-admin)"}
           </label>
           <div className={`grid grid-cols-2 gap-2 max-h-80 overflow-y-auto pr-2 ${useDefault ? "opacity-50 pointer-events-none" : ""}`}>
-            {ALL_TABS.filter((k) => !TAB_META[k].adminOnly).map((k) => (
+            {ABAS_COMUNS.map((k) => (
               <label key={k} className="flex items-center gap-2 text-sm rounded border p-2">
                 <Checkbox checked={selected.has(k)} onCheckedChange={() => toggle(k)} />
                 <span>{TAB_META[k].label}</span>
               </label>
             ))}
           </div>
+          {!row?.isGuest && ABAS_POR_CONCESSAO.length > 0 && (
+            <div className="space-y-2 border-t pt-3">
+              <p className="text-xs text-muted-foreground">Acessos especiais — fora do padrão, só para quem for marcado:</p>
+              <div className="grid grid-cols-2 gap-2">
+                {ABAS_POR_CONCESSAO.map((k) => (
+                  <label key={k} className="flex items-center gap-2 text-sm rounded border p-2">
+                    <Checkbox
+                      checked={extras.has(k)}
+                      onCheckedChange={() =>
+                        setExtras((prev) => {
+                          const n = new Set(prev);
+                          if (n.has(k)) n.delete(k);
+                          else n.add(k);
+                          return n;
+                        })
+                      }
+                    />
+                    <span>{TAB_META[k].label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="outline" onClick={onClose}>Cancelar</Button>
