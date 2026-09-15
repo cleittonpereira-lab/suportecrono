@@ -1,6 +1,10 @@
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
+import { serviceWorkerPlugin } from "./pwa/sw.plugin";
 
 export default defineConfig({
+  // App instalável (Fase 5): gera o /sw.js no build do navegador, com a lista
+  // dos arquivos daquela versão para o app abrir sem sinal.
+  plugins: [serviceWorkerPlugin()],
   server: {
     port: 8080,
     host: true,
