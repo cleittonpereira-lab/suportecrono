@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cvTaylor, physicalIndices, ringArea, ringVolume, type MoistureCapsule, type SampleProps, type Stage } from "./oedometer";
+import { cvCasagrande, cvTaylor, physicalIndices, ringArea, ringVolume, type MoistureCapsule, type SampleProps, type Stage } from "./oedometer";
 
 /** Cápsula que resulta exatamente na umidade `w` (%): ms = 100 g. */
 const capsulaDe = (w: number): MoistureCapsule => ({ tara: 0, dry: 100, wet: 100 + w });
@@ -162,5 +162,43 @@ describe("Cv por Taylor (raiz do tempo)", () => {
   it("curva que nunca cruza a reta de 90% devolve null em vez de chute", () => {
     const readings = [0.25, 0.5, 1, 2, 4, 8].map((t) => ({ t, d: 0.1 * Math.sqrt(t) }));
     expect(cvTaylor({ sigma: 100, readings, finalDial: 0.28 }, 10)).toBeNull();
+  });
+});
+
+describe("Cv por Casagrande (log do tempo)", () => {
+  const ts = [0.25, 0.5, 1, 2, 4, 8, 16, 32, 64, 128, 256];
+
+  /** Recalque em S no log do tempo, como num estágio de carregamento. */
+  const carregamento: Stage = {
+    sigma: 100,
+    readings: ts.map((t) => ({ t, d: 0.05 + 0.45 / (1 + Math.pow(10 / t, 1.5)) })),
+    finalDial: 0.5,
+  };
+
+  /** Descarregamento: o CP expande, o recalque DIMINUI com o tempo. */
+  const descarregamento: Stage = {
+    sigma: 12.5,
+    readings: ts.map((t) => ({ t, d: 0.5 - 0.02 * Math.log10(t + 1) })),
+    finalDial: 0.45,
+  };
+
+  it("estágio de carregamento devolve t50 plausível e Cv coerente", () => {
+    const r = cvCasagrande(carregamento, 10);
+    expect(r).not.toBeNull();
+    expect(r!.t50).toBeGreaterThan(0.5);
+    expect(r!.t50).toBeLessThan(256);
+    expect(r!.cv).toBeCloseTo((0.197 * 1 * 1) / (r!.t50 * 60), 12);
+    expect(r!.d100).toBeGreaterThan(r!.d0);
+  });
+
+  it("descarregamento não inventa reta de compressão: devolve null", () => {
+    // Antes, `best` começava numa reta fictícia (m=0, b=0) que nunca era
+    // substituída quando todas as inclinações são negativas, e o d100 saía do
+    // cruzamento com essa reta inexistente.
+    expect(cvCasagrande(descarregamento, 10)).toBeNull();
+  });
+
+  it("poucas leituras não viram resultado", () => {
+    expect(cvCasagrande({ sigma: 100, readings: [{ t: 1, d: 0.1 }], finalDial: 0.1 }, 10)).toBeNull();
   });
 });

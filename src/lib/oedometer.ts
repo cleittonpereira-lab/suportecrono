@@ -226,13 +226,23 @@ export function cvCasagrande(stage: Stage, Hdrain_mm: number) {
   const n = pts.length;
   const sec = pts.slice(Math.max(0, n - 3));
   const { m: mS, b: bS } = linearFit(sec.map((p) => Math.log10(p.t)), sec.map((p) => p.d));
-  let best = { slope: 0, b: 0 };
+  // Reta de compressão primária: o trecho de 3 pontos mais inclinado.
+  // Começava em { slope: 0, b: 0 } — uma reta FICTÍCIA — e só era substituída
+  // por inclinação positiva. Em estágio de DESCARREGAMENTO o CP expande, toda
+  // inclinação é negativa, e o d100 acabava saindo do cruzamento com essa reta
+  // que não existe. Sem trecho de compressão, a construção de Casagrande não
+  // se aplica ao estágio.
+  let best: { slope: number; b: number } | null = null;
   for (let i = 0; i < n - 2; i++) {
     const seg = pts.slice(i, i + 3);
     const { m, b } = linearFit(seg.map((p) => Math.log10(p.t)), seg.map((p) => p.d));
-    if (m > best.slope) best = { slope: m, b };
+    if (isFinite(m) && m > 0 && (best === null || m > best.slope)) best = { slope: m, b };
   }
-  const x100 = (best.b - bS) / (mS - best.slope);
+  if (best === null) return null;
+  // Retas paralelas não se cruzam: sem isto, x100 virava ±Infinity.
+  const denom = mS - best.slope;
+  if (!isFinite(denom) || Math.abs(denom) < 1e-12) return null;
+  const x100 = (best.b - bS) / denom;
   const d100 = bS + mS * x100;
   const d50 = (d0 + d100) / 2;
   let t50: number | null = null;
