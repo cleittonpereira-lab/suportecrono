@@ -59,5 +59,9 @@ export function subscriptify(text: string): ReactNode {
 export const fmtTime = (t: number) =>
   t < 1 ? `${(t * 60).toFixed(0)}s` : t < 60 ? `${t}min` : `${t / 60}h`;
 
-/** Rótulo padrão para tensão efetiva. */
-export const sigmaLabel = (sigma: number) => `${fmt(sigma, 0)} kPa`;
+/**
+ * Rótulo padrão para tensão efetiva — 1 casa decimal.
+ * Sem ela, as cargas fracionárias da sequência (12,5 · 25 · 50 …) apareciam
+ * arredondadas no laudo: 12,5 kPa virava "13 kPa".
+ */
+export const sigmaLabel = (sigma: number) => `${fmt(sigma, 1)} kPa`;

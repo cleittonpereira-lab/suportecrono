@@ -64,7 +64,28 @@ export function calcMoistureFromCapsules(caps?: MoistureCapsule[]): number | nul
   return valid.length > 0 ? valid.reduce((a, b) => a + b, 0) / valid.length : null;
 }
 
-export function physicalIndices(s: SampleProps) {
+/**
+ * Índices físicos do corpo de prova.
+ *
+ * Cadeia definida pelo laboratório em 16/09 — o que o ensaio MEDE manda:
+ *  1. As cápsulas mandam na umidade (medida direta); a massa seca digitada
+ *     é só reserva para fichas antigas sem cápsulas.
+ *  2. A massa seca vem da massa aparente FINAL com a umidade final:
+ *     m_s = m_úmida,final / (1 + w_f).
+ *  3. O volume final vem da ALTURA FINAL medida (H₀ menos o recalque
+ *     acumulado no último estágio — que pode ser de descarregamento, quando o
+ *     CP recupera altura), não de uma hipótese de saturação. Daí saem ρ final,
+ *     e_f e Sr_f coerentes entre si.
+ *
+ * Antes desta versão, a umidade vinha das cápsulas e a massa seca do campo
+ * digitado: duas fontes que discordavam sem ninguém avisar, e o laudo saía com
+ * Sr₀ de 254% (impossível) e Sr_f = 0. Por isso a função agora devolve
+ * `avisos`: quando as fontes divergem, a tela mostra em vez de imprimir um
+ * número impossível.
+ *
+ * @param opts.hFinalMm Altura final do CP [mm]. Sem ela, cai em H₀.
+ */
+export function physicalIndices(s: SampleProps, opts?: { hFinalMm?: number }) {
   const A = ringArea(s.ringDiameter);
   const V0 = ringVolume(s.ringDiameter, s.ringHeight);
 
@@ -80,23 +101,57 @@ export function physicalIndices(s: SampleProps) {
       ? s.wetMassFinalWithRing - s.ringMass
       : s.wetMassFinal;
 
-  // Umidades por cápsulas
+  // Umidades por cápsulas — fonte que manda.
   const wiFromCaps = calcMoistureFromCapsules(s.capsules);
   const wfFromCaps = calcMoistureFromCapsules(s.finalCapsules);
 
-  // Massa seca calculada
-  const wi = wiFromCaps != null ? wiFromCaps : s.dryMass > 0 ? ((wetMassInitial - s.dryMass) / s.dryMass) * 100 : 0;
-  const dryMass = s.dryMass > 0 ? s.dryMass : wi > 0 ? wetMassInitial / (1 + wi / 100) : wetMassInitial;
-  const wf = wfFromCaps != null ? wfFromCaps : dryMass > 0 ? ((wetMassFinal - dryMass) / dryMass) * 100 : 0;
+  // Altura e volume FINAIS medidos.
+  const hFinal =
+    opts?.hFinalMm != null && isFinite(opts.hFinalMm) && opts.hFinalMm > 0 ? opts.hFinalMm : s.ringHeight;
+  const Vfinal = ringVolume(s.ringDiameter, hFinal);
+
+  // w_f pelas cápsulas finais; sem elas, pelas massas (fichas antigas).
+  const wfPorMassas = s.dryMass > 0 ? ((wetMassFinal - s.dryMass) / s.dryMass) * 100 : 0;
+  const wf = wfFromCaps != null ? wfFromCaps : wfPorMassas;
+
+  // Massa seca a partir da massa aparente final (regra do laboratório).
+  const dryMassPorFinal = wetMassFinal > 0 && wf > -100 ? wetMassFinal / (1 + wf / 100) : 0;
+  const dryMass =
+    dryMassPorFinal > 0
+      ? dryMassPorFinal
+      : s.dryMass > 0
+        ? s.dryMass
+        : wiFromCaps != null && wiFromCaps > -100
+          ? wetMassInitial / (1 + wiFromCaps / 100)
+          : wetMassInitial;
+
+  const wi = wiFromCaps != null ? wiFromCaps : dryMass > 0 ? ((wetMassInitial - dryMass) / dryMass) * 100 : 0;
 
   const rho_i = V0 > 0 ? wetMassInitial / V0 : 0;
   const rho_d = V0 > 0 ? dryMass / V0 : 0;
+  // Massas específicas FINAIS: massa medida no fim sobre o volume final medido.
+  const rho_f = Vfinal > 0 ? wetMassFinal / Vfinal : 0;
+  const rho_d_final = Vfinal > 0 ? dryMass / Vfinal : 0;
+
   const Vs = s.Gs > 0 && s.rhoW > 0 ? dryMass / (s.Gs * s.rhoW) : 0;
   const e0 = Vs > 0 ? V0 / Vs - 1 : 0;
+  const ef = Vs > 0 ? Vfinal / Vs - 1 : 0;
   const Sr0 = e0 > 0 && s.Gs > 0 ? ((wi / 100) * s.Gs) / e0 : 0;
-  const Vw_f = s.rhoW > 0 ? (wetMassFinal - dryMass) / s.rhoW : 0;
-  const ef_assumed_sat = Vs > 0 ? Math.min(e0, Vw_f / Vs) : e0;
-  const Srf = ef_assumed_sat > 0 && s.Gs > 0 ? Math.min(1, ((wf / 100) * s.Gs) / ef_assumed_sat) : 0;
+  const Srf = ef > 0 && s.Gs > 0 ? ((wf / 100) * s.Gs) / ef : 0;
+
+  // Conferência das fontes: a umidade das cápsulas tem de bater com a que as
+  // massas indicam. Divergir é sinal de dado trocado na ficha — quem digita
+  // precisa saber, senão o laudo sai com índice impossível.
+  const wiPorMassas = dryMass > 0 ? ((wetMassInitial - dryMass) / dryMass) * 100 : null;
+  const avisos: string[] = [];
+  if (wiFromCaps != null && wiPorMassas != null && Math.abs(wiFromCaps - wiPorMassas) > 2) {
+    avisos.push(
+      `Umidade inicial das cápsulas (${wiFromCaps.toFixed(1)}%) não confere com a das massas (${wiPorMassas.toFixed(1)}%).`,
+    );
+  }
+  if (Sr0 * 100 > 105) avisos.push(`Grau de saturação inicial impossível (${(Sr0 * 100).toFixed(0)}%) — confira massas e cápsulas.`);
+  if (Srf * 100 > 105) avisos.push(`Grau de saturação final impossível (${(Srf * 100).toFixed(0)}%) — confira a massa final e a altura final.`);
+  if (wetMassFinal > 0 && dryMassPorFinal <= 0) avisos.push("Massa aparente final ausente: massa seca caiu para o valor digitado.");
 
   return {
     A,
@@ -109,11 +164,15 @@ export function physicalIndices(s: SampleProps) {
     dryMass,
     rho_i,
     rho_d,
-    rho_f: V0 > 0 ? wetMassFinal / V0 : 0,
+    rho_f,
+    rho_d_final,
+    hFinal,
+    Vfinal,
     e0,
-    ef: ef_assumed_sat,
+    ef,
     Sr0: Sr0 * 100,
     Srf: Srf * 100,
+    avisos,
   };
 }
 

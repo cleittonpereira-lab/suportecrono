@@ -400,14 +400,26 @@ export function AdensamentoPage() {
       ? buildScopeId(ctx.os.id, ctx.amostra.id, ctx.ensaio.id)
       : `os/${sample.os || "OS"}/amostra/${sample.code || "AMOSTRA"}/ensaio/adensamento`;
   const draftActivity = useDraftActivity(scopeId);
-  const phys = useMemo(() => physicalIndices(sample), [sample]);
+  // Semente dos estágios: só precisa de e₀, que não depende da altura final.
+  const physSeed = useMemo(() => physicalIndices(sample), [sample]);
   const [stages, setStages] = useState<Stage[]>(() => {
     const payloadStages = (ctx?.ensaio?.payload as any)?.stages;
     if (Array.isArray(payloadStages) && payloadStages.length > 0) return payloadStages;
     const initialDraft = typeof window !== "undefined" ? loadOedDraft(scopeId) : null;
     if (Array.isArray(initialDraft?.stages) && initialDraft.stages.length > 0) return initialDraft.stages;
-    return seedStages(phys.e0, sample.ringHeight);
+    return seedStages(physSeed.e0, sample.ringHeight);
   });
+  /**
+   * Altura final do CP: H₀ menos o recalque acumulado no ÚLTIMO estágio — que
+   * pode ser de descarregamento, quando o CP recupera altura. É dela que saem
+   * o volume final, ρ final, e_f e Sr_f (ver lib/oedometer.ts).
+   */
+  const hFinalMm = useMemo(() => {
+    const ultimo = stages[stages.length - 1];
+    const h = sample.ringHeight - (ultimo?.finalDial ?? 0);
+    return h > 0 ? h : sample.ringHeight;
+  }, [stages, sample.ringHeight]);
+  const phys = useMemo(() => physicalIndices(sample, { hFinalMm }), [sample, hFinalMm]);
   const [selectedStage, setSelectedStage] = useState(5);
   const [activeTab, setActiveTab] = useState<string>("ficha");
   const [capsOpen, setCapsOpen] = useState(true);
@@ -4843,16 +4855,24 @@ function PrintableReport(p: ReportProps) {
           <table className="mt-2 w-full border-collapse text-[10px]">
             <tbody>
               {([
-                ["Massa da Amostra (g)", fmt(p.sample.wetMassInitial, 2), "Massa Específica dos Grãos (g/cm³)", fmt(p.sample.Gs, 3)],
-                ["Altura Inicial H_0 (mm)", fmt(p.sample.ringHeight, 2), "Massa Específica Aparente Úmida (g/cm³)", fmt(p.phys.rho_i, 2)],
-                ["Altura Final (mm)", fmt(p.ringHeight - (lastStage?.finalDial ?? 0), 2), "Massa Específica Aparente Seca (g/cm³)", fmt(p.phys.rho_d, 2)],
-                ["Diâmetro da Amostra (mm)", fmt(p.sample.ringDiameter, 2), "Tipo da Amostra", "Indeformada"],
-                ["Área da Amostra (cm²)", fmt(p.phys.A, 2), "Condição do Ensaio", "Inundado"],
-                ["Índice de Vazios Inicial e_0", fmt(p.phys.e0, 3), "Tipo de Célula", "Anel Fixo"],
-                ["Índice de Vazios Final e_f", fmt(allRows[allRows.length - 1]?.e, 3), "Drenagem", "Topo e Base"],
-                ["Umidade Inicial w_i (%)", fmt(p.phys.wi, 2), "Equipamento", "ADNS-05"],
-                ["Umidade Final w_f (%)", fmt(p.phys.wf, 2), "Caracterização Tátil-Visual", p.sample.description],
+                // Massas: as MESMAS que entram na conta (já descontado o anel,
+                // quando informado com ele) — antes a linha imprimia o campo
+                // bruto enquanto ρ usava a massa descontada, e os dois números
+                // não fechavam entre si.
+                ["Massa da Amostra (g)", fmt(p.phys.wetMassInitial, 2), "Massa Específica dos Grãos (g/cm³)", fmt(p.sample.Gs, 3)],
+                ["Massa Aparente Final (g)", fmt(p.phys.wetMassFinal, 2), "Massa Seca (g)", fmt(p.phys.dryMass, 2)],
+                ["Altura Inicial H_0 (mm)", fmt(p.sample.ringHeight, 2), "Massa Específica Aparente Úmida (g/cm³)", fmt(p.phys.rho_i, 3)],
+                ["Altura Final (mm)", fmt(p.phys.hFinal, 2), "Massa Específica Aparente Seca (g/cm³)", fmt(p.phys.rho_d, 3)],
+                ["Diâmetro da Amostra (mm)", fmt(p.sample.ringDiameter, 2), "Massa Esp. Aparente Úmida Final (g/cm³)", fmt(p.phys.rho_f, 3)],
+                ["Área da Amostra (cm²)", fmt(p.phys.A, 2), "Massa Esp. Aparente Seca Final (g/cm³)", fmt(p.phys.rho_d_final, 3)],
+                ["Índice de Vazios Inicial e_0", fmt(p.phys.e0, 3), "Índice de Vazios Final e_f", fmt(p.phys.ef, 3)],
+                ["Umidade Inicial w_i (%)", fmt(p.phys.wi, 2), "Umidade Final w_f (%)", fmt(p.phys.wf, 2)],
                 ["Grau de Saturação Inicial Sr_0 (%)", fmt(p.phys.Sr0, 2), "Grau de Saturação Final Sr_f (%)", fmt(p.phys.Srf, 2)],
+                ["Tipo da Amostra", "Indeformada", "Condição do Ensaio", "Inundado"],
+                ["Tipo de Célula", "Anel Fixo", "Drenagem", "Topo e Base"],
+                // Equipamento do Gantt (sample.equipment) — antes era o texto
+                // fixo "ADNS-05", que ignorava o equipamento alocado na programação.
+                ["Equipamento", p.sample.equipment || "—", "Caracterização Tátil-Visual", p.sample.description],
               ] as [string, React.ReactNode, string, React.ReactNode][]).map((row, i) => (
                 <tr key={i}>
                   <td className="w-[28%] border bg-[#f1f5f9] px-2 py-[3px] font-semibold">{subscriptify(row[0])}</td>
@@ -4941,8 +4961,13 @@ function PrintableReport(p: ReportProps) {
           <div className="mt-4 grid grid-cols-2 gap-6 max-w-[160mm] mx-auto">
             {p.photos && p.photos.length > 0 ? (
               [
-                p.photos.find((ph) => ph.phase === "moldagem") || p.photos[0],
-                p.photos.find((ph) => ph.phase === "pos_ensaio" || ph.phase === "ruptura" || ph.phase === "final") || p.photos[1]
+                // O campo é `kind` (features/lab/types.ts) — o mesmo que o
+                // PhotoUploader grava. Antes procurava por `ph.phase`, que não
+                // existe no projeto: nunca casava e caía no acaso da ordem.
+                p.photos.find((ph) => ph.kind === "moldagem") || p.photos[0],
+                p.photos.find((ph) => ph.kind === "ruptura")
+                  || p.photos.filter((ph) => ph.kind !== "moldagem")[0]
+                  || p.photos[1]
               ].filter(Boolean).map((ph, idx) => (
                 <div key={idx} className="flex flex-col rounded border border-gray-400 bg-white overflow-hidden shadow-sm">
                   <div className="bg-[#141414] px-2 py-1.5 text-center text-[9.5px] font-bold uppercase tracking-wider text-white">
