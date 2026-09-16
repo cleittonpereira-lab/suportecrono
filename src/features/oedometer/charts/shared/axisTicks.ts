@@ -87,3 +87,29 @@ export const fmtLogTickEndOnly = (maxVal: number) => (v: number) => {
   if (!isFinite(v) || v <= 0) return "";
   return Math.abs(Math.log10(v) - Math.log10(maxVal)) < 1e-9 ? exp2Str(v) : "";
 };
+
+/**
+ * Eixo aritmético com divisões IGUAIS e as duas pontas rotuladas.
+ *
+ * `niceTicks` começa no primeiro múltiplo redondo DENTRO do intervalo e para
+ * no último, deixando nas pontas sobras de tamanho arbitrário — é isso que
+ * fazia as divisões parecerem desiguais no laudo, e o que deixava um eixo sem
+ * o valor inicial ou sem o final. Aqui o DOMÍNIO é que se ajusta ao passo:
+ * todo intervalo entre marcas fica idêntico e as duas pontas aparecem.
+ */
+export const niceAxis = (
+  min: number,
+  max: number,
+  target = 6,
+): { domain: [number, number]; ticks: number[] } | undefined => {
+  if (!isFinite(min) || !isFinite(max) || max <= min) return undefined;
+  const rawStep = (max - min) / Math.max(1, target);
+  const pow = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const norm = rawStep / pow;
+  const step = norm < 1.5 ? pow : norm < 3 ? 2 * pow : norm < 7 ? 5 * pow : 10 * pow;
+  const lo = Math.floor(min / step) * step;
+  const hi = Math.ceil(max / step) * step;
+  const ticks: number[] = [];
+  for (let v = lo; v <= hi + step * 1e-6; v += step) ticks.push(+v.toFixed(10));
+  return { domain: [+lo.toFixed(10), +hi.toFixed(10)], ticks };
+};

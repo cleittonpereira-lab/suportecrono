@@ -194,7 +194,13 @@ export function cvTaylor(stage: Stage, Hdrain_mm: number) {
   for (let i = 1; i < pts.length; i++) {
     const f1 = pts[i - 1].y - (b + m90 * pts[i - 1].x);
     const f2 = pts[i].y - (b + m90 * pts[i].x);
-    if (f1 * f2 < 0) {
+    // Só vale o cruzamento DESCENDENTE: a curva vinha acima da reta de 90% e
+    // passa para baixo. Antes era `f1 * f2 < 0`, que aceita qualquer troca de
+    // sinal — e no início a folga entre as duas retas é de apenas 13% da
+    // inclinação vezes um √t de ~0,3, então qualquer ruído no primeiro ponto
+    // criava um cruzamento PARA CIMA logo no começo. O laço parava nele e
+    // devolvia um t90 quase nulo, inflando o Cv (0,848·Hd²/t90).
+    if (f1 > 0 && f2 <= 0) {
       const frac = f1 / (f1 - f2);
       t90sqrt = pts[i - 1].x + frac * (pts[i].x - pts[i - 1].x);
       break;

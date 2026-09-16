@@ -121,12 +121,12 @@ import {
 import {
   decimalsFor,
   fmtLogTick,
-  fmtLogTickEndOnly,
   fmtLogTickSci,
   fmtNiceTick,
   isDecade,
   logMinorTicks,
   logTicks,
+  niceAxis,
   niceTicks,
 } from "@/features/oedometer/charts/shared/axisTicks";
 import assinaturaMauricio from "@/assets/assinatura-mauricio.png";
@@ -2733,6 +2733,9 @@ export function AdensamentoPage() {
         }}
         aria-hidden
       >
+        {/* O PDF é capturado DESTE bloco, fora da tela: sem `photos` o laudo
+            salvo saía sem registro fotográfico, embora a visualização — outro
+            PrintableReport, logo acima — mostrasse as fotos. */}
         {pdfMount && (
           <PrintableReport
             sample={sample}
@@ -2745,6 +2748,7 @@ export function AdensamentoPage() {
             stages={stages}
             ringHeight={sample.ringHeight}
             e0={phys.e0}
+            photos={ctx?.photos || []}
             cvAdjust={cvAdjust}
             axisCfg={axisCfg}
           />
@@ -3742,7 +3746,7 @@ function MultiTaylorChart({
             <XAxis dataKey="x" type="number" domain={[0, 40]} ticks={[0, 5, 10, 15, 20, 25, 30, 35, 40]} tick={{ fontSize: 10, fill: "#111827" }} stroke="#4b5563">
               <RLabel value={'Raiz do Tempo - √t [√min]'} position="insideBottom" offset={-2} style={{ textAnchor: "middle", fontSize: 12, fontWeight: 700, fill: "#0f172a" }} />
             </XAxis>
-            <YAxis domain={[yMin, yMax]} ticks={niceTicks(yMin, yMax, 10)} tick={{ fontSize: 10, fill: "#111827" }} stroke="#4b5563" tickFormatter={(v) => fmt(v, 2)}>
+            <YAxis domain={niceAxis(yMin, yMax, 10)?.domain ?? [yMin, yMax]} ticks={niceAxis(yMin, yMax, 10)?.ticks} tick={{ fontSize: 10, fill: "#111827" }} stroke="#4b5563" tickFormatter={(v) => fmt(v, 2)}>
               <AxisLabelY value="Altura do Corpo de Prova - H [mm]" />
             </YAxis>
             <Tooltip formatter={(v: number) => `${fmt(v, 3)} mm`} labelFormatter={(v) => `√t = ${fmt(Number(v), 2)}`} contentStyle={{ fontSize: 11 }} />
@@ -3866,7 +3870,7 @@ function MultiCasagrandeChart({
             >
               <RLabel value={'Tempo - t [min] (escala log)'} position="insideBottom" offset={-2} style={{ textAnchor: "middle", fontSize: 12, fontWeight: 700, fill: "#0f172a" }} />
             </XAxis>
-            <YAxis domain={[yMin, yMax]} ticks={niceTicks(yMin, yMax, 10)} tick={{ fontSize: 10, fill: "#111827" }} stroke="#4b5563" tickFormatter={(v) => fmt(v, 2)}>
+            <YAxis domain={niceAxis(yMin, yMax, 10)?.domain ?? [yMin, yMax]} ticks={niceAxis(yMin, yMax, 10)?.ticks} tick={{ fontSize: 10, fill: "#111827" }} stroke="#4b5563" tickFormatter={(v) => fmt(v, 2)}>
               <AxisLabelY value="Altura do Corpo de Prova - H [mm]" />
             </YAxis>
             <Tooltip formatter={(v: number) => `${fmt(v, 3)} mm`} labelFormatter={(v) => `t = ${fmt(Number(v), 2)} min`} contentStyle={{ fontSize: 11 }} />
@@ -4144,7 +4148,7 @@ function CaVsSigmaChart({ rows, sigmaP, height = 280, sigmaLogDomain, caMax }: {
             <XAxis dataKey="sigma" type="number" scale="log" domain={[xMin, xMax]} ticks={logTicks(xMin, xMax)} tickFormatter={fmtLogTick} tick={{ fontSize: 10, fill: "#111827" }} stroke="#4b5563">
               <RLabel value={"Tensão Vertical Efetiva - σ'ᵥ [kPa]"} position="insideBottom" offset={-2} style={{ textAnchor: "middle", fontSize: 12, fontWeight: 700, fill: "#0f172a" }} />
             </XAxis>
-            <YAxis domain={[0, yMax]} ticks={niceTicks(0, yMax, 6)} tick={{ fontSize: 10, fill: "#111827" }} stroke="#4b5563" tickFormatter={fmtNiceTick(yMax)}>
+            <YAxis domain={niceAxis(0, yMax, 6)?.domain ?? [0, yMax]} ticks={niceAxis(0, yMax, 6)?.ticks} tick={{ fontSize: 10, fill: "#111827" }} stroke="#4b5563" tickFormatter={fmtNiceTick(yMax)}>
               <AxisLabelY value="Coef. de Adensamento Secundário - Cα [-]" />
             </YAxis>
             <Tooltip formatter={(v: number) => fmt(v, 4)} labelFormatter={(v) => `σ' = ${v} kPa`} contentStyle={{ fontSize: 11 }} />
@@ -4168,10 +4172,10 @@ function EvsSigmaArithmeticChart({ curve, height = 280, eDomain, sigmaArithMax }
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 8, right: 18, bottom: 38, left: 25 }}>
             <CartesianGrid stroke="#d7d7d7" />
-            <XAxis dataKey="sigma" type="number" domain={[0, xMax]} ticks={niceTicks(0, xMax, 8)} tick={{ fontSize: 10, fill: "#111827" }} stroke="#4b5563">
+            <XAxis dataKey="sigma" type="number" domain={niceAxis(0, xMax, 8)?.domain ?? [0, xMax]} ticks={niceAxis(0, xMax, 8)?.ticks} tick={{ fontSize: 10, fill: "#111827" }} stroke="#4b5563">
               <RLabel value={"Tensão Vertical Efetiva - σ'ᵥ [kPa]"} position="insideBottom" offset={-2} style={{ textAnchor: "middle", fontSize: 12, fontWeight: 700, fill: "#0f172a" }} />
             </XAxis>
-            <YAxis domain={[yMin, yMax]} ticks={niceTicks(yMin, yMax, 8)} tick={{ fontSize: 10, fill: "#111827" }} stroke="#4b5563" tickFormatter={fmtNiceTick(yMax)}>
+            <YAxis domain={niceAxis(yMin, yMax, 8)?.domain ?? [yMin, yMax]} ticks={niceAxis(yMin, yMax, 8)?.ticks} tick={{ fontSize: 10, fill: "#111827" }} stroke="#4b5563" tickFormatter={fmtNiceTick(yMax)}>
               <AxisLabelY value="Índice de Vazios - e [-]" />
             </YAxis>
             <Tooltip formatter={(v: number) => fmt(v, 4)} labelFormatter={(v) => `σ' = ${v} kPa`} contentStyle={{ fontSize: 11 }} />
@@ -4197,7 +4201,7 @@ function NormalizedVoidRatioChart({ curve, e0, height = 540, sigmaLogDomain, eNo
             <XAxis dataKey="sigma" type="number" scale="log" domain={[xMin, xMax]} ticks={logTicks(xMin, xMax)} tickFormatter={fmtLogTick} tick={{ fontSize: 10, fill: "#111827" }} stroke="#4b5563">
               <RLabel value={"Tensão Vertical Efetiva - σ'ᵥ [kPa]"} position="insideBottom" offset={-2} style={{ textAnchor: "middle", fontSize: 12, fontWeight: 700, fill: "#0f172a" }} />
             </XAxis>
-            <YAxis domain={[yMin, yMax]} ticks={niceTicks(yMin, yMax, 10)} tick={{ fontSize: 10, fill: "#111827" }} stroke="#4b5563" tickFormatter={(v) => fmt(v, 2)}>
+            <YAxis domain={niceAxis(yMin, yMax, 10)?.domain ?? [yMin, yMax]} ticks={niceAxis(yMin, yMax, 10)?.ticks} tick={{ fontSize: 10, fill: "#111827" }} stroke="#4b5563" tickFormatter={(v) => fmt(v, 2)}>
               <AxisLabelY value="Índice de Vazios Normalizado - e/e₀ [-]" />
             </YAxis>
             <Tooltip formatter={(v: number) => fmt(v, 4)} labelFormatter={(v) => `σ' = ${v} kPa`} contentStyle={{ fontSize: 11 }} />
@@ -4222,7 +4226,7 @@ function HydraulicVsSigmaChart({ rows, sigmaP, height = 280, sigmaLogDomain, kvL
             <XAxis dataKey="sigma" type="number" scale="log" domain={[xMin, xMax]} ticks={logTicks(xMin, xMax)} tickFormatter={fmtLogTick} tick={{ fontSize: 10, fill: "#111827" }} stroke="#4b5563">
               <RLabel value={"Tensão Vertical Efetiva - σ'ᵥ [kPa]"} position="insideBottom" offset={-2} style={{ textAnchor: "middle", fontSize: 12, fontWeight: 700, fill: "#0f172a" }} />
             </XAxis>
-            <YAxis scale="log" domain={[kvMin, kvMax]} ticks={logTicks(kvMin, kvMax)} tickFormatter={fmtLogTickEndOnly(kvMax)} tick={{ fontSize: 10, fill: "#111827" }} stroke="#4b5563">
+            <YAxis scale="log" domain={[kvMin, kvMax]} ticks={logTicks(kvMin, kvMax)} tickFormatter={fmtLogTickSci} tick={{ fontSize: 10, fill: "#111827" }} stroke="#4b5563">
               <AxisLabelY value="Permeabilidade - kv [cm/s]" />
             </YAxis>
             <Tooltip formatter={(v: number) => exp2(v)} labelFormatter={(v) => `σ' = ${v} kPa`} contentStyle={{ fontSize: 11 }} />
@@ -4246,10 +4250,10 @@ function VoidRatioVsHydraulicChart({ rows, ps, height = 280, eDomain, kvLogDomai
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 8, right: 18, bottom: 38, left: 25 }}>
             <CartesianGrid stroke="#d7d7d7" />
-            <XAxis dataKey="kv" type="number" scale="log" domain={[kvMin, kvMax]} ticks={logTicks(kvMin, kvMax)} tickFormatter={fmtLogTickEndOnly(kvMax)} tick={{ fontSize: 10, fill: "#111827" }} stroke="#4b5563">
+            <XAxis dataKey="kv" type="number" scale="log" domain={[kvMin, kvMax]} ticks={logTicks(kvMin, kvMax)} tickFormatter={fmtLogTickSci} tick={{ fontSize: 10, fill: "#111827" }} stroke="#4b5563">
               <RLabel value={'Permeabilidade - k [cm/s]'} position="insideBottom" offset={-2} style={{ textAnchor: "middle", fontSize: 12, fontWeight: 700, fill: "#0f172a" }} />
             </XAxis>
-            <YAxis domain={[yMin, yMax]} ticks={niceTicks(yMin, yMax, 8)} tick={{ fontSize: 10, fill: "#111827" }} stroke="#4b5563" tickFormatter={fmtNiceTick(yMax)}>
+            <YAxis domain={niceAxis(yMin, yMax, 8)?.domain ?? [yMin, yMax]} ticks={niceAxis(yMin, yMax, 8)?.ticks} tick={{ fontSize: 10, fill: "#111827" }} stroke="#4b5563" tickFormatter={fmtNiceTick(yMax)}>
               <AxisLabelY value="Índice de Vazios - e [-]" />
             </YAxis>
             <Tooltip formatter={(v: number) => fmt(v, 4)} contentStyle={{ fontSize: 11 }} />
@@ -4274,10 +4278,10 @@ function EedoVsSigmaChart({ rows, height = 280, sigmaArithMax, eedoMax }: { rows
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 8, right: 18, bottom: 38, left: 25 }}>
             <CartesianGrid stroke="#cbd5e1" strokeDasharray="2 3" />
-            <XAxis dataKey="sigma" type="number" domain={[0, xMax]} ticks={niceTicks(0, xMax, 8)} tick={{ fontSize: 11, fill: "#334155" }} stroke="#64748b">
+            <XAxis dataKey="sigma" type="number" domain={niceAxis(0, xMax, 8)?.domain ?? [0, xMax]} ticks={niceAxis(0, xMax, 8)?.ticks} tick={{ fontSize: 11, fill: "#334155" }} stroke="#64748b">
               <RLabel value={"Tensão Vertical Efetiva - σ'ᵥ [kPa]"} position="insideBottom" offset={-2} style={{ textAnchor: "middle", fontSize: 12, fontWeight: 700, fill: "#0f172a" }} />
             </XAxis>
-            <YAxis domain={[0, yMax]} ticks={niceTicks(0, yMax, 6)} tick={{ fontSize: 11, fill: "#334155" }} stroke="#64748b" tickFormatter={fmtNiceTick(yMax)}>
+            <YAxis domain={niceAxis(0, yMax, 6)?.domain ?? [0, yMax]} ticks={niceAxis(0, yMax, 6)?.ticks} tick={{ fontSize: 11, fill: "#334155" }} stroke="#64748b" tickFormatter={fmtNiceTick(yMax)}>
               <AxisLabelY value="Módulo Edométrico - E'edo [MPa]" />
             </YAxis>
             <Tooltip formatter={(v: number) => fmt(v, 2) + " MPa"} labelFormatter={(v) => `σ' = ${v} kPa`} contentStyle={{ fontSize: 11 }} />
@@ -4929,7 +4933,7 @@ function PrintableReport(p: ReportProps) {
         <div className="flex-1 pt-3">
           <SectionBar>Índice de Vazios versus Tensão Vertical Efetiva (escala mono-log)</SectionBar>
           <div className="mt-2 border border-gray-300 bg-white" style={{ height: 340, padding: 8 }}>
-            <EvsSigmaChart curve={p.eCurve} cas={null} ps={null} e0={p.phys.e0} height={320} eDomain={eDomain} sigmaLogDomain={sigmaLogDomain} />
+            <EvsSigmaChart curve={p.eCurve} cas={p.cas} ps={p.ps} e0={p.phys.e0} height={320} eDomain={eDomain} sigmaLogDomain={sigmaLogDomain} />
           </div>
           <SectionBar className="mt-3">Índice de Vazios versus Tensão Vertical Efetiva (escala aritmética)</SectionBar>
           <div className="mt-2 border border-gray-300 bg-white" style={{ height: 340, padding: 8 }}>

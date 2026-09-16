@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { physicalIndices, ringArea, ringVolume, type MoistureCapsule, type SampleProps } from "./oedometer";
+import { cvTaylor, physicalIndices, ringArea, ringVolume, type MoistureCapsule, type SampleProps, type Stage } from "./oedometer";
 
 /** Cápsula que resulta exatamente na umidade `w` (%): ms = 100 g. */
 const capsulaDe = (w: number): MoistureCapsule => ({ tara: 0, dry: 100, wet: 100 + w });
@@ -116,5 +116,51 @@ describe("índices físicos do adensamento", () => {
     expect(p.ef).toBeLessThan(0.3); // quase sem vazios
     expect(p.Srf).toBeGreaterThan(105); // fisicamente impossível
     expect(p.avisos.join(" ")).toMatch(/saturação final impossível/i);
+  });
+});
+
+describe("Cv por Taylor (raiz do tempo)", () => {
+  /**
+   * Curva sintética com t90 conhecido: segue a reta inicial (inclinação 0,1)
+   * até √t = 4 e depois achata (0,02). O cruzamento com a reta de 90%
+   * (inclinação 0,1/1,15) cai em √t ≈ 4,8 → t90 ≈ 23 min.
+   */
+  const curva = (perturbarPrimeiro = 0): Stage => {
+    const ts = [0.25, 0.5, 1, 2, 4, 8, 15, 30, 60, 120, 240];
+    const readings = ts.map((t) => {
+      const x = Math.sqrt(t);
+      const d = x <= 4 ? 0.1 * x : 0.4 + 0.02 * (x - 4);
+      return { t, d };
+    });
+    readings[0].d += perturbarPrimeiro;
+    return { sigma: 100, readings, finalDial: readings[readings.length - 1].d };
+  };
+
+  it("acha o t90 no cruzamento descendente da curva com a reta de 90%", () => {
+    const r = cvTaylor(curva(), 10);
+    expect(r).not.toBeNull();
+    expect(r!.t90).toBeGreaterThan(15);
+    expect(r!.t90).toBeLessThan(35);
+    expect(r!.cv).toBeCloseTo((0.848 * 1 * 1) / (r!.t90 * 60), 12);
+  });
+
+  it("ruído no primeiro ponto não cria um t90 quase nulo", () => {
+    // Este é o defeito relatado pelo laboratório: a reta cruzava a curva no
+    // lugar certo no gráfico, mas o cálculo mordia um cruzamento PARA CIMA no
+    // início e devolvia t90 ≈ 0, inflando o Cv.
+    const r = cvTaylor(curva(-0.01), 10);
+    expect(r).not.toBeNull();
+    expect(r!.t90).toBeGreaterThan(5);
+    // Fica na mesma ordem de grandeza do caso limpo. Não exigimos igualdade:
+    // perturbar o primeiro ponto muda o ajuste por mínimos quadrados da reta
+    // inicial e desloca o cruzamento de verdade — é por isso que a tela
+    // oferece ajuste manual da reta (cvAdjust).
+    const limpo = cvTaylor(curva(), 10)!;
+    expect(Math.abs(r!.t90 - limpo.t90) / limpo.t90).toBeLessThan(0.3);
+  });
+
+  it("curva que nunca cruza a reta de 90% devolve null em vez de chute", () => {
+    const readings = [0.25, 0.5, 1, 2, 4, 8].map((t) => ({ t, d: 0.1 * Math.sqrt(t) }));
+    expect(cvTaylor({ sigma: 100, readings, finalDial: 0.28 }, 10)).toBeNull();
   });
 });
