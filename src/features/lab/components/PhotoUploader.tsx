@@ -15,15 +15,37 @@ import { uploadPhoto } from "@/lib/photo-upload.functions";
  * relatórios do laboratório é sincronizada (a cada poucos segundos, por
  * toda aba aberta). Se o envio falhar, guarda só o base64 mesmo — a foto
  * não se perde, só fica mais pesada no JSON até o próximo salvamento.
+ *
+ * `uploadPhoto` pode devolver uma URL que parece certa mas não abre depois
+ * (ex.: sem credencial do Drive configurada no servidor, ele grava num
+ * fallback local que não sobrevive em produção) — quem chama aqui descarta
+ * o `dataUrl` assim que recebe uma URL, então uma URL falsa positiva perde
+ * a foto de vez. Por isso confere se a URL abre de verdade antes de confiar
+ * nela; se não abrir, trata como falha (mantém o `dataUrl`).
  */
 async function uploadAndGetUrl(dataUrl: string): Promise<string | undefined> {
   try {
     const res = await uploadPhoto({ data: { dataUrl, namePrefix: "ensaio" } });
-    return res.url;
+    if (!res.url) return undefined;
+    if (await urlAbreDeVerdade(res.url)) return res.url;
+    console.warn("[PhotoUploader] Upload devolveu URL, mas ela não abre — mantendo local:", res.url);
+    return undefined;
   } catch (err) {
     console.warn("[PhotoUploader] Falha ao enviar foto pro Drive, mantendo local:", err);
     return undefined;
   }
+}
+
+/** Confere com retentativa curta — cobre o atraso normal de propagação. */
+async function urlAbreDeVerdade(url: string): Promise<boolean> {
+  for (let tentativa = 0; tentativa < 3; tentativa++) {
+    try {
+      const res = await fetch(url, { method: "GET", cache: "no-store" });
+      if (res.ok) return true;
+    } catch {}
+    await new Promise((r) => setTimeout(r, 400 * (tentativa + 1)));
+  }
+  return false;
 }
 
 interface Props {

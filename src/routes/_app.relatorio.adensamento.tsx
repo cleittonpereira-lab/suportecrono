@@ -2486,6 +2486,7 @@ export function AdensamentoPage() {
                           stages={stages}
                           ringHeight={sample.ringHeight}
                           e0={phys.e0}
+                          photos={ctx?.photos || []}
                           validation={validation}
                           cvAdjust={cvAdjust}
                           axisCfg={axisCfg}
@@ -3388,16 +3389,6 @@ function EvsSigmaChart({
 
   const yMin = yMinTmp;
   const yMax = yMaxTmp;
-  const annotationStyle = (sigma: number, e: number, dx = 0, dy = 0): React.CSSProperties => {
-    const xPct = (Math.log10(sigma) - Math.log10(xDomain[0])) / (Math.log10(xDomain[1]) - Math.log10(xDomain[0]));
-    const yPct = 1 - (e - yMin) / (yMax - yMin);
-    return {
-      left: `${8 + xPct * 82}%`,
-      top: `${6 + yPct * 76}%`,
-      transform: `translate(${dx}px, ${dy}px)`,
-    };
-  };
-
   const lx = (sigma: number) => Math.log10(sigma);
   return (
     <ChartFrame height={height} xLabel={"Tensão Vertical Efetiva σ'ᵥ [kPa]"} yLabel={"Índice de Vazios - e [-]"}>
@@ -3456,7 +3447,7 @@ function EvsSigmaChart({
                 strokeWidth={1.4}
                 strokeDasharray="2 3"
                 ifOverflow="visible"
-                label={showResults ? { value: "Tangente em P", position: "insideTopLeft", fill: SLATE_SOFT, fontSize: 10, fontWeight: 600 } : undefined}
+                label={showResults ? { value: "Tangente em P", position: "insideBottomLeft", fill: SLATE_SOFT, fontSize: 10, fontWeight: 600 } : undefined}
               />
             )}
             <ReferenceLine
@@ -3474,12 +3465,14 @@ function EvsSigmaChart({
                 strokeWidth={2}
                 strokeDasharray="5 3"
                 ifOverflow="visible"
-                label={showResults ? { value: "Bissetriz", position: "insideTop", fill: GREEN, fontSize: 10, fontWeight: 700 } : undefined}
+                label={showResults ? { value: "Bissetriz", position: "insideTopLeft", fill: GREEN, fontSize: 10, fontWeight: 700 } : undefined}
               />
             )}
-            <ReferenceLine x={lx(cas.sigmaP)} stroke={GREEN} strokeWidth={2} strokeDasharray="3 2" label={showResults ? { value: `σ'ᵥₘ Casagrande = ${fmt(cas.sigmaP, 0)} kPa`, position: "top", fill: GREEN, fontSize: 12, fontWeight: 700 } : undefined} />
+            {/* Só o rótulo da reta (topo) diz o valor — o ponto abaixo é só o
+                marcador "P", sem repetir o número (era a 3ª repetição do
+                mesmo valor no gráfico, empilhada em cima da curva). */}
+            <ReferenceLine x={lx(cas.sigmaP)} stroke={GREEN} strokeWidth={2} strokeDasharray="3 2" label={showResults ? { value: `σ'ᵥₘ = ${fmt(cas.sigmaP, 0)} kPa`, position: "top", fill: GREEN, fontSize: 12, fontWeight: 700 } : undefined} />
             <ReferenceDot x={cas.point.x} y={cas.point.y} r={5} fill={GREEN} stroke="#fff" label={showResults ? { value: "P", position: "top", fill: GREEN, fontSize: 12, fontWeight: 700 } : undefined} />
-            <ReferenceDot x={lx(cas.sigmaP)} y={cas.intersection.y} r={6} fill={GREEN} stroke="#fff" label={showResults ? { value: `Cas. ${fmt(cas.sigmaP, 0)} kPa`, position: "right", fill: GREEN, fontSize: 12, fontWeight: 700 } : undefined} />
           </>
         )}
 
@@ -3491,7 +3484,7 @@ function EvsSigmaChart({
                 stroke={RED}
                 strokeWidth={1.8}
                 ifOverflow="visible"
-                label={showResults ? { value: "Reta virgem (PS)", position: "insideBottomLeft", fill: RED, fontSize: 10, fontWeight: 600 } : undefined}
+                label={showResults ? { value: "Reta virgem", position: "insideBottomLeft", fill: RED, fontSize: 10, fontWeight: 600 } : undefined}
               />
             )}
             <ReferenceLine
@@ -3502,7 +3495,8 @@ function EvsSigmaChart({
               ifOverflow="visible"
               label={showResults ? { value: `e₀ = ${fmt(ps.e0Line, 3)}`, position: "insideTopLeft", fill: PURPLE, fontSize: 10, fontWeight: 600 } : undefined}
             />
-            {/* Vertical A→B */}
+            {/* Vertical A→B e horizontal B→C — só o traço; A/B/C já identificam
+                os pontos, o valor sai uma única vez na reta σ'ᵥₘ embaixo. */}
             <ReferenceLine
               segment={[{ x: lx(ps.A.sigma), y: ps.A.y }, { x: lx(ps.B.sigma), y: ps.B.y }]}
               stroke={PURPLE}
@@ -3510,7 +3504,6 @@ function EvsSigmaChart({
               strokeDasharray="4 2"
               ifOverflow="visible"
             />
-            {/* Horizontal B→C */}
             <ReferenceLine
               segment={[{ x: lx(ps.B.sigma), y: ps.B.y }, { x: lx(ps.C.sigma), y: ps.C.y }]}
               stroke={PURPLE}
@@ -3518,15 +3511,12 @@ function EvsSigmaChart({
               strokeDasharray="4 2"
               ifOverflow="visible"
             />
-            <ReferenceLine x={lx(ps.A.sigma)} stroke={PURPLE} strokeWidth={1.3} strokeDasharray="4 2" label={showResults ? { value: `A→B σ'A=${fmt(ps.A.sigma, 0)} kPa`, position: "top", fill: PURPLE, fontSize: 10, fontWeight: 600 } : undefined} />
-            <ReferenceLine y={ps.B.y} stroke={PURPLE} strokeWidth={1.3} strokeDasharray="4 2" label={showResults ? { value: `B→C e=${fmt(ps.B.y, 3)}`, position: "right", fill: PURPLE, fontSize: 10, fontWeight: 600 } : undefined} />
             <ReferenceDot x={lx(ps.A.sigma)} y={ps.A.y} r={4} fill={PURPLE} stroke="#fff" label={showResults ? { value: "A", position: "top", fill: PURPLE, fontSize: 11, fontWeight: 700 } : undefined} />
             <ReferenceDot x={lx(ps.B.sigma)} y={ps.B.y} r={4} fill={PURPLE} stroke="#fff" label={showResults ? { value: "B", position: "left", fill: PURPLE, fontSize: 11, fontWeight: 700 } : undefined} />
-            <ReferenceDot x={lx(ps.C.sigma)} y={ps.C.y} r={6} fill={PURPLE} stroke="#fff" label={showResults ? { value: `C / PS ${fmt(ps.sigmaP, 0)} kPa`, position: "right", fill: PURPLE, fontSize: 12, fontWeight: 700 } : undefined} />
-            <ReferenceLine x={lx(ps.sigmaP)} stroke={PURPLE} strokeWidth={2} strokeDasharray="3 3" label={showResults ? { value: `σ'ᵥₘ Pacheco Silva = ${fmt(ps.sigmaP, 0)} kPa`, position: "insideTopRight", fill: PURPLE, fontSize: 12, fontWeight: 700 } : undefined} />
+            <ReferenceDot x={lx(ps.C.sigma)} y={ps.C.y} r={6} fill={PURPLE} stroke="#fff" label={showResults ? { value: "C", position: "right", fill: PURPLE, fontSize: 12, fontWeight: 700 } : undefined} />
+            <ReferenceLine x={lx(ps.sigmaP)} stroke={PURPLE} strokeWidth={2} strokeDasharray="3 3" label={showResults ? { value: `σ'ᵥₘ = ${fmt(ps.sigmaP, 0)} kPa`, position: "insideBottomRight", fill: PURPLE, fontSize: 12, fontWeight: 700 } : undefined} />
           </>
         )}
-
 
         {/* Unload / Reload branch */}
         {unloadPts.length > 1 && (
@@ -3556,37 +3546,6 @@ function EvsSigmaChart({
         />
       </ComposedChart>
     </ResponsiveContainer>
-      {showResults && cas && (
-        <div
-          className="pointer-events-none absolute z-10 rounded-md border bg-background/95 px-2 py-1 text-[11px] font-semibold shadow-sm"
-          style={{ ...annotationStyle(cas.sigmaP, cas.intersection.y, 8, -26), borderColor: GREEN, color: GREEN }}
-        >
-          σ'ᵥₘ Casagrande<br />{fmt(cas.sigmaP, 2)} kPa
-        </div>
-      )}
-      {showResults && ps && (
-        <div
-          className="pointer-events-none absolute z-10 rounded-md border bg-background/95 px-2 py-1 text-[11px] font-semibold shadow-sm"
-          style={{ ...annotationStyle(ps.sigmaP, ps.C.y, 8, 8), borderColor: PURPLE, color: PURPLE }}
-        >
-          σ'ᵥₘ Pacheco Silva<br />{fmt(ps.sigmaP, 2)} kPa
-        </div>
-      )}
-      {showResults && cas && (
-        <div
-          className="pointer-events-none absolute z-10 rounded-full border bg-background/95 px-1.5 py-0.5 text-[10px] font-bold shadow-sm"
-          style={{ ...annotationStyle(Math.pow(10, cas.point.x), cas.point.y, -18, -22), borderColor: GREEN, color: GREEN }}
-        >
-          P
-        </div>
-      )}
-      {showResults && ps && (
-        <>
-          <div className="pointer-events-none absolute z-10 rounded-full border bg-background/95 px-1.5 py-0.5 text-[10px] font-bold shadow-sm" style={{ ...annotationStyle(ps.A.sigma, ps.A.y, -12, -20), borderColor: PURPLE, color: PURPLE }}>A</div>
-          <div className="pointer-events-none absolute z-10 rounded-full border bg-background/95 px-1.5 py-0.5 text-[10px] font-bold shadow-sm" style={{ ...annotationStyle(ps.B.sigma, ps.B.y, -20, 2), borderColor: PURPLE, color: PURPLE }}>B</div>
-          <div className="pointer-events-none absolute z-10 rounded-full border bg-background/95 px-1.5 py-0.5 text-[10px] font-bold shadow-sm" style={{ ...annotationStyle(ps.C.sigma, ps.C.y, -8, -18), borderColor: PURPLE, color: PURPLE }}>C</div>
-        </>
-      )}
     </ChartFrame>
   );
 }
@@ -5110,9 +5069,33 @@ function PrintableReport(p: ReportProps) {
             <ReportHeader sample={p.sample} page={6} total={total} />
             <div className="flex-1 pt-3">
               <SectionBar>Determinação da Tensão de Pré-Adensamento - Métodos de Casagrande e Pacheco Silva</SectionBar>
-              <div className="mt-2 border border-gray-300 bg-white" style={{ height: 420, padding: 8 }}>
-                <EvsSigmaChart curve={p.eCurve} cas={casMostrado} ps={psMostrado} e0={p.phys.e0} height={400} eDomain={eDomain} sigmaLogDomain={sigmaLogDomain} />
-              </div>
+              {/* Um gráfico por método (não os dois empilhados): cada um só
+                  desenha a própria construção, então as retas e legendas de
+                  um não pisam nas do outro. */}
+              {casMostrado || psMostrado ? (
+                <div className={`mt-2 grid gap-2 ${casMostrado && psMostrado ? "grid-cols-2" : "grid-cols-1"}`}>
+                  {casMostrado && (
+                    <div className="border border-gray-300 bg-white" style={{ height: 380, padding: 6 }}>
+                      <div className="mb-1 text-center text-[10px] font-bold uppercase tracking-wide text-emerald-700">
+                        Determinação por Casagrande (1936)
+                      </div>
+                      <EvsSigmaChart curve={p.eCurve} cas={casMostrado} ps={null} e0={p.phys.e0} height={350} eDomain={eDomain} sigmaLogDomain={sigmaLogDomain} />
+                    </div>
+                  )}
+                  {psMostrado && (
+                    <div className="border border-gray-300 bg-white" style={{ height: 380, padding: 6 }}>
+                      <div className="mb-1 text-center text-[10px] font-bold uppercase tracking-wide text-purple-700">
+                        Determinação por Pacheco Silva (1970)
+                      </div>
+                      <EvsSigmaChart curve={p.eCurve} cas={null} ps={psMostrado} e0={p.phys.e0} height={350} eDomain={eDomain} sigmaLogDomain={sigmaLogDomain} />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="mt-2 rounded border border-gray-300 bg-gray-50 p-4 text-center text-[10px] text-gray-500">
+                  Nenhum método de pré-adensamento validado ainda (aba Análise Gráfica).
+                </div>
+              )}
               <SectionBar className="mt-3">Resultados do Ensaio de Adensamento Edométrico</SectionBar>
               <table className="mt-2 w-full border-collapse text-[9.5px]">
                 <tbody>
