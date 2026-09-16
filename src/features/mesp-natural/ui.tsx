@@ -481,6 +481,44 @@ export function MEspAWorkspace({
 // =====================================================================
 // Scanner
 // =====================================================================
+
+/**
+ * Reduz a foto antes de mandar pro leitor de QR (ZXing, via html5-qrcode).
+ * Fotos de iPhone chegam enormes (4000px+ de lado, HEIC convertido pro navio
+ * em JPEG) — o leitor de QR do laboratório relatou "não achou o QR" numa
+ * foto onde o QR estava nítido e centralizado; imagem grande demais é uma
+ * causa conhecida disso (custo de binarização, e o próprio decoder amostra a
+ * imagem em resoluções menores por dentro). Sem redimensionar aqui, cada
+ * navegador/aparelho decide um resultado diferente pro MESMO QR. Se a foto já
+ * for pequena, devolve o arquivo original (não recomprime à toa).
+ */
+async function encolherFotoParaLeitura(file: File, ladoMaximo = 1600): Promise<File> {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const maior = Math.max(bitmap.width, bitmap.height);
+    if (maior <= ladoMaximo) {
+      bitmap.close?.();
+      return file;
+    }
+    const escala = ladoMaximo / maior;
+    const w = Math.round(bitmap.width * escala);
+    const h = Math.round(bitmap.height * escala);
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close?.();
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+    if (!blob) return file;
+    return new File([blob], file.name.replace(/\.\w+$/, ".jpg"), { type: "image/jpeg" });
+  } catch {
+    // createImageBitmap pode falhar em formatos incomuns — segue com o original.
+    return file;
+  }
+}
+
 export function ScannerCard({ onIdentified }: { onIdentified: (id: Identificacao, pendenciaId: string | null) => void }) {
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
@@ -601,9 +639,20 @@ export function ScannerCard({ onIdentified }: { onIdentified: (id: Identificacao
       return;
     }
     setScanning(true);
-    // 1) Caminho preferencial: BarcodeDetector nativa (Chrome/Edge/Android/iOS 17+)
+    // 1) Caminho preferencial: BarcodeDetector nativa (Chrome/Edge/Android).
     //    Muito mais fluido que html5-qrcode — usa GPU/aceleração do navegador.
-    const BD = (window as unknown as { BarcodeDetector?: {
+    // A Apple nunca embarcou essa API no WebKit (só existe onde o Chromium
+    // roda de verdade) — em iPhone/iPad TODO navegador usa WebKit por baixo
+    // (política da própria Apple), então "tem BarcodeDetector" ali normalmente
+    // é um polyfill incompleto: relatado pelo laboratório como tela da câmera
+    // preta e sem nenhuma leitura, tanto ao vivo quanto na foto. Forçamos o
+    // html5-qrcode (mais testado em iPhone — é ele quem já trata câmera
+    // grande-angular/macro do iPhone logo abaixo) sempre que for iOS.
+    const isIOS =
+      typeof navigator !== "undefined" &&
+      (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+        (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
+    const BD = isIOS ? undefined : (window as unknown as { BarcodeDetector?: {
       new (opts?: { formats?: string[] }): { detect: (src: CanvasImageSource) => Promise<Array<{ rawValue: string }>> };
       getSupportedFormats?: () => Promise<string[]>;
     } }).BarcodeDetector;
@@ -784,7 +833,8 @@ export function ScannerCard({ onIdentified }: { onIdentified: (id: Identificacao
       }
       const scanner = new mod.Html5Qrcode(photoContainerId);
       try {
-        const decoded = await scanner.scanFile(file, true);
+        const arquivoParaLeitura = await encolherFotoParaLeitura(file);
+        const decoded = await scanner.scanFile(arquivoParaLeitura, true);
         // Foto: identifica direto, sem contagem de 2s
         const parsed = parseQrPayload(decoded);
         if (!parsed) {
