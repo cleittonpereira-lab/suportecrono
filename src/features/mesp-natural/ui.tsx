@@ -483,6 +483,24 @@ export function MEspAWorkspace({
 // =====================================================================
 
 /**
+ * A Apple nunca embarcou a BarcodeDetector API no WebKit (só existe onde o
+ * Chromium roda de verdade) — em iPhone/iPad TODO navegador usa WebKit por
+ * baixo (política da própria Apple), então "tem BarcodeDetector" ali
+ * normalmente é um polyfill incompleto: relatado pelo laboratório como tela
+ * da câmera preta e sem nenhuma leitura, tanto ao vivo quanto na foto. Usada
+ * pra pular esse caminho (do app E de dentro do html5-qrcode, que TAMBÉM
+ * tenta a mesma API por padrão se não for avisado — ver `useBarCodeDetectorIfSupported`
+ * abaixo) sempre que for iOS.
+ */
+function isIOSDevice(): boolean {
+  return (
+    typeof navigator !== "undefined" &&
+    (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1))
+  );
+}
+
+/**
  * Reduz a foto antes de mandar pro leitor de QR (ZXing, via html5-qrcode).
  * Fotos de iPhone chegam enormes (4000px+ de lado, HEIC convertido pro navio
  * em JPEG) — o leitor de QR do laboratório relatou "não achou o QR" numa
@@ -641,17 +659,8 @@ export function ScannerCard({ onIdentified }: { onIdentified: (id: Identificacao
     setScanning(true);
     // 1) Caminho preferencial: BarcodeDetector nativa (Chrome/Edge/Android).
     //    Muito mais fluido que html5-qrcode — usa GPU/aceleração do navegador.
-    // A Apple nunca embarcou essa API no WebKit (só existe onde o Chromium
-    // roda de verdade) — em iPhone/iPad TODO navegador usa WebKit por baixo
-    // (política da própria Apple), então "tem BarcodeDetector" ali normalmente
-    // é um polyfill incompleto: relatado pelo laboratório como tela da câmera
-    // preta e sem nenhuma leitura, tanto ao vivo quanto na foto. Forçamos o
-    // html5-qrcode (mais testado em iPhone — é ele quem já trata câmera
-    // grande-angular/macro do iPhone logo abaixo) sempre que for iOS.
-    const isIOS =
-      typeof navigator !== "undefined" &&
-      (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
-        (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
+    //    Pulado em iOS — ver `isIOSDevice`.
+    const isIOS = isIOSDevice();
     const BD = isIOS ? undefined : (window as unknown as { BarcodeDetector?: {
       new (opts?: { formats?: string[] }): { detect: (src: CanvasImageSource) => Promise<Array<{ rawValue: string }>> };
       getSupportedFormats?: () => Promise<string[]>;
@@ -721,7 +730,17 @@ export function ScannerCard({ onIdentified }: { onIdentified: (id: Identificacao
       }
       const mod = await import("html5-qrcode");
       await new Promise((r) => setTimeout(r, 30));
-      const scanner = new mod.Html5Qrcode(containerId);
+      // O html5-qrcode TAMBÉM tenta a BarcodeDetector nativa por dentro por
+      // padrão (é a mesma API que travamos acima pro caminho "nativo" do
+      // app) — e essa escolha é feita AQUI, na hora de criar a instância, não
+      // no `.start()` mais abaixo (o tipo do `.start()` nem tem esse campo;
+      // um valor ali é ignorado em silêncio). Foi por isto que a 1ª correção
+      // não resolveu no iPhone: o `experimentalFeatures` tinha ido pro lugar
+      // errado.
+      const scanner = new mod.Html5Qrcode(containerId, {
+        verbose: false,
+        useBarCodeDetectorIfSupported: !isIOS,
+      });
       scannerRef.current = scanner as unknown as typeof scannerRef.current;
       const readerConfig = {
         fps: 24,
@@ -732,7 +751,6 @@ export function ScannerCard({ onIdentified }: { onIdentified: (id: Identificacao
         },
         aspectRatio: 1.0,
         disableFlip: true,
-        experimentalFeatures: { useBarCodeDetectorIfSupported: true },
       };
       // Opção principal: câmera dinâmica. O navegador escolhe a câmera traseira
       // disponível sem exigir que o usuário selecione deviceId manualmente.
@@ -831,7 +849,14 @@ export function ScannerCard({ onIdentified }: { onIdentified: (id: Identificacao
         document.body.appendChild(host);
         temp = true;
       }
-      const scanner = new mod.Html5Qrcode(photoContainerId);
+      // Sem isto, o html5-qrcode tenta a BarcodeDetector nativa por padrão
+      // (mesma API travada acima pro scanner ao vivo) mesmo pra ler uma foto
+      // parada — no iPhone essa tentativa falhava silenciosamente e só então
+      // caía pro ZXing, que por sua vez também não achava o QR.
+      const scanner = new mod.Html5Qrcode(photoContainerId, {
+        verbose: false,
+        useBarCodeDetectorIfSupported: !isIOSDevice(),
+      });
       try {
         const arquivoParaLeitura = await encolherFotoParaLeitura(file);
         const decoded = await scanner.scanFile(arquivoParaLeitura, true);
