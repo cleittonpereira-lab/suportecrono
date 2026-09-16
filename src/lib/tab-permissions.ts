@@ -65,7 +65,7 @@ export const TAB_META: Record<TabKey, { label: string; adminOnly?: boolean; porC
   relatorio_os: { label: "Relatório · OS / Amostras" },
   relatorio_pendentes: { label: "Relatório · Central de Relatórios" },
   relatorio_adensamento: { label: "Relatório · Adensamento" },
-  relatorio_triaxial: { label: "Relatório · Triaxial CID" },
+  relatorio_triaxial: { label: "Relatório · Triaxial (CID/CIU/UU)" },
   relatorio_mesp_a: { label: "Relatório · M.ESP.A Natural" },
   relatorio_cisalhamento: { label: "Relatório · Cisalhamento Direto" },
   relatorio_emissoes: { label: "Relatório · Emissões" },
@@ -106,6 +106,8 @@ export function pathToTab(pathname: string): TabKey | null {
   if (pathname.startsWith("/relatorio/pendentes")) return "relatorio_pendentes";
   if (pathname.startsWith("/relatorio/adensamento")) return "relatorio_adensamento";
   if (pathname.startsWith("/relatorio/triaxial-cid")) return "relatorio_triaxial";
+  if (pathname.startsWith("/relatorio/triaxial-ciu")) return "relatorio_triaxial";
+  if (pathname.startsWith("/relatorio/triaxial-uu")) return "relatorio_triaxial";
   if (pathname.startsWith("/relatorio/mesp-a-natural") || pathname.startsWith("/relatorio/mesp-a")) return "relatorio_mesp_a";
   if (pathname.includes("/relatorio/cisalhamento-direto") || pathname.includes("/modelos-relatorios/cisalhamento-direto")) return "relatorio_cisalhamento";
   if (pathname.startsWith("/relatorio/emissoes")) return "relatorio_emissoes";

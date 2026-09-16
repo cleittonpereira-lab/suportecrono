@@ -71,6 +71,8 @@ import { Route as AppRelatorioModuloResilienciaRouteImport } from './routes/_app
 import { Route as AppRelatorioPendentesRouteImport } from './routes/_app.relatorio.pendentes'
 import { Route as AppRelatorioPermVRouteImport } from './routes/_app.relatorio.perm-v'
 import { Route as AppRelatorioTriaxialCidRouteImport } from './routes/_app.relatorio.triaxial-cid'
+import { Route as AppRelatorioTriaxialCiuRouteImport } from './routes/_app.relatorio.triaxial-ciu'
+import { Route as AppRelatorioTriaxialUuRouteImport } from './routes/_app.relatorio.triaxial-uu'
 import { Route as AppRelatorioUmidadeNaturalRouteImport } from './routes/_app.relatorio.umidade-natural'
 import { Route as ApiPhotoFileIdRouteImport } from './routes/api.photo.$fileId'
 import { Route as AppRelatorioDigitalizacaoIndexRouteImport } from './routes/_app.relatorio.digitalizacao.index'
@@ -420,6 +422,16 @@ const AppRelatorioTriaxialCidRoute = AppRelatorioTriaxialCidRouteImport.update({
   path: '/relatorio/triaxial-cid',
   getParentRoute: () => AppRoute,
 } as any)
+const AppRelatorioTriaxialCiuRoute = AppRelatorioTriaxialCiuRouteImport.update({
+  id: '/relatorio/triaxial-ciu',
+  path: '/relatorio/triaxial-ciu',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppRelatorioTriaxialUuRoute = AppRelatorioTriaxialUuRouteImport.update({
+  id: '/relatorio/triaxial-uu',
+  path: '/relatorio/triaxial-uu',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppRelatorioUmidadeNaturalRoute =
   AppRelatorioUmidadeNaturalRouteImport.update({
     id: '/relatorio/umidade-natural',
@@ -579,6 +591,8 @@ export interface FileRoutesByFullPath {
   '/relatorio/pendentes': typeof AppRelatorioPendentesRoute
   '/relatorio/perm-v': typeof AppRelatorioPermVRoute
   '/relatorio/triaxial-cid': typeof AppRelatorioTriaxialCidRoute
+  '/relatorio/triaxial-ciu': typeof AppRelatorioTriaxialCiuRoute
+  '/relatorio/triaxial-uu': typeof AppRelatorioTriaxialUuRoute
   '/relatorio/umidade-natural': typeof AppRelatorioUmidadeNaturalRoute
   '/api/photo/$fileId': typeof ApiPhotoFileIdRoute
   '/modelos-relatorios/': typeof AppModelosRelatoriosIndexRoute
@@ -658,6 +672,8 @@ export interface FileRoutesByTo {
   '/relatorio/pendentes': typeof AppRelatorioPendentesRoute
   '/relatorio/perm-v': typeof AppRelatorioPermVRoute
   '/relatorio/triaxial-cid': typeof AppRelatorioTriaxialCidRoute
+  '/relatorio/triaxial-ciu': typeof AppRelatorioTriaxialCiuRoute
+  '/relatorio/triaxial-uu': typeof AppRelatorioTriaxialUuRoute
   '/relatorio/umidade-natural': typeof AppRelatorioUmidadeNaturalRoute
   '/api/photo/$fileId': typeof ApiPhotoFileIdRoute
   '/modelos-relatorios': typeof AppModelosRelatoriosIndexRoute
@@ -740,6 +756,8 @@ export interface FileRoutesById {
   '/_app/relatorio/pendentes': typeof AppRelatorioPendentesRoute
   '/_app/relatorio/perm-v': typeof AppRelatorioPermVRoute
   '/_app/relatorio/triaxial-cid': typeof AppRelatorioTriaxialCidRoute
+  '/_app/relatorio/triaxial-ciu': typeof AppRelatorioTriaxialCiuRoute
+  '/_app/relatorio/triaxial-uu': typeof AppRelatorioTriaxialUuRoute
   '/_app/relatorio/umidade-natural': typeof AppRelatorioUmidadeNaturalRoute
   '/api/photo/$fileId': typeof ApiPhotoFileIdRoute
   '/_app/modelos-relatorios/': typeof AppModelosRelatoriosIndexRoute
@@ -822,6 +840,8 @@ export interface FileRouteTypes {
     | '/relatorio/pendentes'
     | '/relatorio/perm-v'
     | '/relatorio/triaxial-cid'
+    | '/relatorio/triaxial-ciu'
+    | '/relatorio/triaxial-uu'
     | '/relatorio/umidade-natural'
     | '/api/photo/$fileId'
     | '/modelos-relatorios/'
@@ -901,6 +921,8 @@ export interface FileRouteTypes {
     | '/relatorio/pendentes'
     | '/relatorio/perm-v'
     | '/relatorio/triaxial-cid'
+    | '/relatorio/triaxial-ciu'
+    | '/relatorio/triaxial-uu'
     | '/relatorio/umidade-natural'
     | '/api/photo/$fileId'
     | '/modelos-relatorios'
@@ -982,6 +1004,8 @@ export interface FileRouteTypes {
     | '/_app/relatorio/pendentes'
     | '/_app/relatorio/perm-v'
     | '/_app/relatorio/triaxial-cid'
+    | '/_app/relatorio/triaxial-ciu'
+    | '/_app/relatorio/triaxial-uu'
     | '/_app/relatorio/umidade-natural'
     | '/api/photo/$fileId'
     | '/_app/modelos-relatorios/'
@@ -1453,6 +1477,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRelatorioTriaxialCidRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/relatorio/triaxial-ciu': {
+      id: '/_app/relatorio/triaxial-ciu'
+      path: '/relatorio/triaxial-ciu'
+      fullPath: '/relatorio/triaxial-ciu'
+      preLoaderRoute: typeof AppRelatorioTriaxialCiuRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/relatorio/triaxial-uu': {
+      id: '/_app/relatorio/triaxial-uu'
+      path: '/relatorio/triaxial-uu'
+      fullPath: '/relatorio/triaxial-uu'
+      preLoaderRoute: typeof AppRelatorioTriaxialUuRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/relatorio/umidade-natural': {
       id: '/_app/relatorio/umidade-natural'
       path: '/relatorio/umidade-natural'
@@ -1670,6 +1708,8 @@ interface AppRouteChildren {
   AppRelatorioPendentesRoute: typeof AppRelatorioPendentesRoute
   AppRelatorioPermVRoute: typeof AppRelatorioPermVRoute
   AppRelatorioTriaxialCidRoute: typeof AppRelatorioTriaxialCidRoute
+  AppRelatorioTriaxialCiuRoute: typeof AppRelatorioTriaxialCiuRoute
+  AppRelatorioTriaxialUuRoute: typeof AppRelatorioTriaxialUuRoute
   AppRelatorioUmidadeNaturalRoute: typeof AppRelatorioUmidadeNaturalRoute
   AppModelosRelatoriosIndexRoute: typeof AppModelosRelatoriosIndexRoute
   AppProgramacaoIndexRoute: typeof AppProgramacaoIndexRoute
@@ -1736,6 +1776,8 @@ const AppRouteChildren: AppRouteChildren = {
   AppRelatorioPendentesRoute: AppRelatorioPendentesRoute,
   AppRelatorioPermVRoute: AppRelatorioPermVRoute,
   AppRelatorioTriaxialCidRoute: AppRelatorioTriaxialCidRoute,
+  AppRelatorioTriaxialCiuRoute: AppRelatorioTriaxialCiuRoute,
+  AppRelatorioTriaxialUuRoute: AppRelatorioTriaxialUuRoute,
   AppRelatorioUmidadeNaturalRoute: AppRelatorioUmidadeNaturalRoute,
   AppModelosRelatoriosIndexRoute: AppModelosRelatoriosIndexRoute,
   AppProgramacaoIndexRoute: AppProgramacaoIndexRoute,

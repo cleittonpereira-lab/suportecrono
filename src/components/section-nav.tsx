@@ -117,6 +117,8 @@ const SECTIONS: readonly Section[] = [
       { title: "Cisalhamento Direto", url: "/relatorio/cisalhamento-direto", icon: Beaker },
       { title: "Adensamento", url: "/relatorio/adensamento", icon: Beaker },
       { title: "Triaxial CID", url: "/relatorio/triaxial-cid", icon: FlaskConical },
+      { title: "Triaxial CIU", url: "/relatorio/triaxial-ciu", icon: FlaskConical },
+      { title: "Triaxial UU", url: "/relatorio/triaxial-uu", icon: FlaskConical },
       { title: "M.ESP.A Natural", url: "/relatorio/mesp-a", icon: FlaskConical },
       { title: "ASF.DAP (Densidade Aparente)", url: "/relatorio/asf-dap", icon: Beaker },
       { title: "ASF.TB (Teor de Betume)", url: "/relatorio/asf-tb", icon: Beaker },

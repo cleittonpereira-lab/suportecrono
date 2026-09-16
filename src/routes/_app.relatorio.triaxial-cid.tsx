@@ -116,6 +116,15 @@ const NORMS_CIU: ReportNorm[] = [
 
 type TestType = "cid" | "ciu" | "uu";
 
+/**
+ * CID, CIU e UU são ensaios diferentes — envoltória, gráficos e cálculo mudam
+ * conforme o tipo (ver features/triaxial-cid/types.ts). Por isso o tipo do
+ * ensaio registrado no laboratório (Programação/Central) MANDA aqui; nunca é
+ * escolha livre na tela — ver `testType` travado em `TriaxialCidPageInner`.
+ */
+const testTypeFromEnsaioTipo = (tipo: string | undefined): TestType =>
+  tipo === "triaxial-uu" ? "uu" : tipo === "triaxial-ciu" ? "ciu" : "cid";
+
 const normsFor = (testType: TestType) => (testType === "uu" ? NORMS_UU : testType === "ciu" ? NORMS_CIU : NORMS_CID);
 /** @deprecated use `normsFor("cid")` — mantido para não quebrar referências existentes. */
 const NORMS = NORMS_CID;
@@ -282,10 +291,9 @@ export function TriaxialCidPage() {
         date: new Date().toISOString().split("T")[0],
         typedBy: draft?.sample?.typedBy || ctx.ensaio.operator || currentUserName,
         condition: "saturado",
-        // Deriva o tipo de ensaio (CID x CIU x UU) do tipo do ensaio registrado
-        // no laboratório na primeira abertura — depois disso o campo é
-        // independente e o usuário pode ajustar na aba Amostra, igual `condition`.
-        testType: ctx.ensaio.tipo === "triaxial-uu" ? "uu" : ctx.ensaio.tipo === "triaxial-ciu" ? "ciu" : "cid",
+        // Deriva do tipo do ensaio registrado no laboratório. Travado — ver
+        // `tipoTravado`/`testType` abaixo: CID, CIU e UU nunca se confundem.
+        testType: testTypeFromEnsaioTipo(ctx.ensaio.tipo),
         sampleType: "Bloco Indeformado",
         equipment: (ctx.ensaio.payload as any)?.sample?.equipment ||
           (ctx.ensaio.tipo === "triaxial-uu" ? "Triaxial UU" : ctx.ensaio.tipo === "triaxial-ciu" ? "Triaxial CIU" : "Triaxial CID"),
@@ -305,8 +313,13 @@ export function TriaxialCidPage() {
   const [sample, setSample] = useState<TriaxialSample>(
     () => (draft?.sample ? { ...initialSample, ...draft.sample } : initialSample),
   );
+  // Trava o tipo do ensaio (CID/CIU/UU) no que está registrado no laboratório
+  // — são ensaios diferentes (envoltória, gráficos e cálculo mudam conforme o
+  // tipo), então isto NUNCA é escolha livre na tela quando há um ensaio real
+  // (ctx). Sem ctx (modelo/rascunho avulso) segue o que está em `sample`.
+  const tipoTravado = ctx ? testTypeFromEnsaioTipo(ctx.ensaio.tipo) : null;
   // Amostras existentes não têm `testType` gravado — tratadas como "cid" (compat).
-  const testType = sample.testType ?? "cid";
+  const testType = tipoTravado ?? (sample.testType ?? "cid");
   const isUU = testType === "uu";
   const isCIU = testType === "ciu";
 
@@ -315,6 +328,16 @@ export function TriaxialCidPage() {
       setSample((prev) => ({ ...prev, typedBy: currentUserName }));
     }
   }, [currentUserName]);
+
+  // Autocorrige `sample.testType` gravado se ficou divergente do ensaio (ex.:
+  // trocado antes desta trava existir) — sem isto, o campo travado na tela
+  // corrige a EXIBIÇÃO mas o PDF/relatório salvo (que lê `sample.testType`
+  // direto) continuaria com o tipo errado.
+  useEffect(() => {
+    if (tipoTravado && sample.testType !== tipoTravado) {
+      setSample((prev) => ({ ...prev, testType: tipoTravado }));
+    }
+  }, [tipoTravado]);
 
   // Resolução automática e instantânea de Furo, Profundidade e Metadados do Gantt
   useEffect(() => {
@@ -1544,6 +1567,7 @@ export function TriaxialCidPage() {
                   <Label className="text-xs">Tipo de ensaio</Label>
                   <Select
                     value={testType}
+                    disabled={!!tipoTravado}
                     onValueChange={(v) => {
                       updateSample("testType", v as TestType);
                       if (v === "uu" && (tab === "saturacao" || tab === "adensamento")) setTab("cisalhamento");
@@ -1556,6 +1580,12 @@ export function TriaxialCidPage() {
                       <SelectItem value="uu">UU — Não Consolidado Não Drenado</SelectItem>
                     </SelectContent>
                   </Select>
+                  {tipoTravado && (
+                    <p className="mt-1 text-[10px] text-muted-foreground">
+                      Definido pelo tipo do ensaio na Programação/Central — são ensaios diferentes,
+                      não dá pra trocar por aqui.
+                    </p>
+                  )}
                 </div>
                 {!isUU && (
                   <div>
