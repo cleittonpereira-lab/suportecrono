@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useNavigate } from "@tanstack/react-router";
 import { detectMethodology, methodologyRoute, type SupportedMethodology } from "@/features/mesp-natural/calc";
+import { laudoDoEnsaio, montarMapa } from "@/lib/compatibilidade-laudos";
 import { labStore, useLabState } from "@/features/lab/store";
 import { ENSAIO_LABEL, type EnsaioTipo } from "@/features/lab/types";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -348,6 +349,9 @@ function CentralRelatoriosPage() {
     queryKey: ["prox-ensaios-tipos"],
     queryFn: async () => rows0Fn({ data: { sheet: "Tipos de Ensaio" } }),
   });
+  // Sigla → laudo como o laboratório declarou em Programação → Tipos de Ensaio
+  // (coluna "Tipo de Relatório"). Antes a Central ignorava essa coluna.
+  const mapaLaudos = useMemo(() => montarMapa(tiposProg as any[]), [tiposProg]);
 
   const { data: equipsProg = [] } = useQuery({
     queryKey: ["prox-ensaios-equips"],
@@ -582,7 +586,9 @@ function CentralRelatoriosPage() {
   }
 
   function abrirDigitacao(r: PendenciaDigitacao) {
-    const tipo = detectMethodology(r.ensaio, r.tipo_ensaio);
+    // A tabela do laboratório manda; a sigla é a reserva. Devolve a VARIANTE
+    // do triaxial (CID/CIU/UU) — antes só existia "triaxial-cid".
+    const tipo = laudoDoEnsaio(r.ensaio, r.tipo_ensaio, mapaLaudos);
     if (!tipo) return avisarSemLaudo(r.ensaio);
     abrirPorTipo(tipo, r.os, r.amostra ?? "", undefined, undefined, r.id, r.ensaio, r.status);
   }
@@ -1088,7 +1094,7 @@ function CentralRelatoriosPage() {
                                           : "bg-primary text-primary-foreground hover:bg-primary/90"
                                   }`}
                                   onClick={() => {
-                                    const tipo = detectMethodology(item.ensaio, item.tipoEnsaioNome);
+                                    const tipo = laudoDoEnsaio(item.ensaio, item.tipoEnsaioNome, mapaLaudos);
                                     if (!tipo) return avisarSemLaudo(item.ensaio);
                                     abrirPorTipo(tipo, item.os, item.amostra, cad?.tomador, cad?.obra, pendExistente?.id, item.ensaio, pendExistente?.status);
                                   }}

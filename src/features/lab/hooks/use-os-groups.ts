@@ -7,7 +7,7 @@ import { listPendenciasDigitacao, type PendenciaDigitacao } from "@/lib/lab-pend
 import { listRows } from "@/lib/programacao.functions";
 import { useCadastroByOs } from "@/hooks/use-cadastro-by-os";
 import { useAuth } from "@/hooks/use-auth";
-import { detectMethodology } from "@/features/mesp-natural/calc";
+import { laudoDoEnsaio, montarMapa } from "@/lib/compatibilidade-laudos";
 import { normOs } from "@/lib/schedule-utils";
 import { parseGanttSampleData } from "@/lib/sample-parser";
 import { combinarEtapas, normalizarEtapa, type EtapaComBancada, type EtapaLaudo } from "@/lib/etapa-laudo";
@@ -136,6 +136,10 @@ export function useOsGroups() {
 
     const enMap = new Map(ensaiosProg.map((e) => [e.id, e]));
     const tpMap = new Map(tiposProg.map((t) => [t.id, t]));
+    // Sigla → laudo como o laboratório declarou em Tipos de Ensaio. Sem isto, uma
+    // sigla de casa (ex.: "TRI4.CU") caía no reserva "cisalhamento-direto" e o
+    // ensaio CIU aparecia na OS como Cisalhamento Direto.
+    const mapaLaudos = montarMapa(tiposProg as any[]);
 
     const groups = new Map<string, { group: OsGroup; itemsMap: Map<string, EnsaioItemOS> }>();
 
@@ -162,7 +166,7 @@ export function useOsGroups() {
     // Helper para chave canônica única por amostra + metodologia
     const getTestKey = (amostraCodeOrId: string, tipoOrSigla: string) => {
       const amKey = (amostraCodeOrId || "AM-01").trim().toLowerCase();
-      const m = detectMethodology(tipoOrSigla, tipoOrSigla) || "cisalhamento-direto";
+      const m = laudoDoEnsaio(tipoOrSigla, tipoOrSigla, mapaLaudos) || "cisalhamento-direto";
       return `${amKey}::${m}`;
     };
 
@@ -232,7 +236,7 @@ export function useOsGroups() {
       if (!gData) continue;
       const { group: g, itemsMap } = gData;
 
-      const m = detectMethodology(p.ensaio, p.tipo_ensaio) || "cisalhamento-direto";
+      const m = laudoDoEnsaio(p.ensaio, p.tipo_ensaio, mapaLaudos) || "cisalhamento-direto";
       const tipo = m as EnsaioTipo;
       const amName = p.amostra || "AM-01";
       const enKey = `${normOs(p.os)}:${amName}:${p.ensaio}`;
@@ -304,7 +308,7 @@ export function useOsGroups() {
       const details = extractSampleDetails(a);
       const sampleIdent = details.codigo || a?.codigo_amostra || a?.identificacao || "—";
       const siglaEnsaio = t?.sigla || t?.codigo || e?.sigla || e?.codigo || t?.nome || "Ensaio";
-      const m = detectMethodology(siglaEnsaio, t?.nome) || "cisalhamento-direto";
+      const m = laudoDoEnsaio(siglaEnsaio, t?.nome, mapaLaudos) || "cisalhamento-direto";
       const tipo = m as EnsaioTipo;
 
       const enKey = `${normOs(osNum)}:${sampleIdent}:${siglaEnsaio}`;

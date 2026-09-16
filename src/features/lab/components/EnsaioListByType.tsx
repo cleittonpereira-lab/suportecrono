@@ -46,7 +46,15 @@ import {
 import { listRows } from "@/lib/programacao.functions";
 import { useCadastroByOs } from "@/hooks/use-cadastro-by-os";
 import { evaluateSla, formatHours } from "@/lib/sla-calc";
-import { detectMethodology } from "@/features/mesp-natural/calc";
+import { laudoDoEnsaio, montarMapa } from "@/lib/compatibilidade-laudos";
+
+/** CID, CID saturado e CID natural aparecem juntos; os demais só com o próprio tipo. */
+const FAMILIA_CID: EnsaioTipo[] = ["triaxial-cid", "triaxial-cid-sat", "triaxial-cid-nat"];
+function mesmaFamiliaDeLaudo(alvo: EnsaioTipo | null | undefined, tipo: EnsaioTipo): boolean {
+  if (!alvo) return false;
+  if (FAMILIA_CID.includes(tipo)) return FAMILIA_CID.includes(alvo);
+  return alvo === tipo;
+}
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
@@ -140,6 +148,7 @@ export function EnsaioListByType({ tipo }: { tipo: EnsaioTipo }) {
     queryKey: ["prox-ensaios-tipos"],
     queryFn: async () => rows0Fn({ data: { sheet: "Tipos de Ensaio" } }),
   });
+  const mapaLaudos = useMemo(() => montarMapa(tiposProg as any[]), [tiposProg]);
 
   const { data: equipsProg = [] } = useQuery({
     queryKey: ["prox-ensaios-equips"],
@@ -160,27 +169,16 @@ export function EnsaioListByType({ tipo }: { tipo: EnsaioTipo }) {
         const t = e ? tpMap.get(e.tipo_ensaio_id ?? "") : undefined;
         const eq = p.equipamento_id ? eqMap.get(p.equipamento_id) : undefined;
         const nomeEnsaio = t?.nome ?? e?.status ?? "";
-        const m = detectMethodology(nomeEnsaio, t?.nome);
         // Mapeamento explícito cadastrado em "Tipos de Ensaio" (Programação ·
         // Cadastro) — quando configurado, é autoritativo e substitui o
         // adivinhamento por texto abaixo. Sem isso, ensaios com sigla fora do
         // padrão (ex.: "TRI4.UU") podiam cair no ensaio errado por engano.
         const tipoRelatorio = (t?.tipo_relatorio as string | undefined) || undefined;
 
-        // Verifica se corresponde ao tipo atual
-        const match = tipoRelatorio
-          ? tipoRelatorio === tipo
-          : (tipo === "cisalhamento-direto" && (m === "cisalhamento-direto" || nomeEnsaio.toLowerCase().includes("cisalh"))) ||
-            (tipo === "adensamento" && (m === "adensamento" || nomeEnsaio.toLowerCase().includes("adens"))) ||
-            ((tipo === "triaxial-cid" || tipo === "triaxial-cid-sat" || tipo === "triaxial-cid-nat") &&
-              (m === "triaxial-cid" || nomeEnsaio.toLowerCase().includes("tri"))) ||
-            (tipo === "triaxial-uu" && /\buu\b|\btri\.?\s*uu\b/i.test(nomeEnsaio)) ||
-            (tipo === "triaxial-ciu" && /\bciu\b|\btri\.?\s*ciu\b/i.test(nomeEnsaio)) ||
-            (tipo === "mesp-a" && (m === "mesp-a" || nomeEnsaio.toLowerCase().includes("mesp"))) ||
-            (tipo === "asf-dap" && (m === "asf-dap" || nomeEnsaio.toLowerCase().includes("densidade aparente"))) ||
-            (tipo === "asf-tb" && (m === "asf-tb" || nomeEnsaio.toLowerCase().includes("teor de betume"))) ||
-            (tipo === "perm-v" && nomeEnsaio.toLowerCase().includes("permeabilidade")) ||
-            (tipo === "compressao-simples" && nomeEnsaio.toLowerCase().includes("compress"));
+        // A configuração manda; sem ela, o reconhecimento pela sigla, que conhece
+        // as variantes do triaxial (CID/CIU/UU) — ver lib/compatibilidade-laudos.ts.
+        const alvo = (tipoRelatorio as EnsaioTipo | undefined) ?? laudoDoEnsaio(nomeEnsaio, t?.nome, mapaLaudos);
+        const match = mesmaFamiliaDeLaudo(alvo, tipo);
 
         if (!match) return null;
 
@@ -209,26 +207,16 @@ export function EnsaioListByType({ tipo }: { tipo: EnsaioTipo }) {
         };
       })
       .filter((x): x is NonNullable<typeof x> => x !== null);
-  }, [progs, amostrasProg, ensaiosProg, tiposProg, equipsProg, tipo]);
+  }, [progs, amostrasProg, ensaiosProg, tiposProg, equipsProg, tipo, mapaLaudos]);
 
   // Filtra pendências de digitação deste tipo
   const laudosItems = useMemo(() => {
     return pendencias.filter((r) => {
-      const m = detectMethodology(r.ensaio, r.tipo_ensaio);
-      if (tipo === "cisalhamento-direto") return m === "cisalhamento-direto" || r.tipo_ensaio === "cisalhamento-direto";
-      if (tipo === "adensamento") return m === "adensamento" || r.tipo_ensaio === "adensamento";
-      if (tipo === "triaxial-cid" || tipo === "triaxial-cid-sat" || tipo === "triaxial-cid-nat")
-        return m === "triaxial-cid" || r.tipo_ensaio?.includes("triaxial");
-      if (tipo === "triaxial-uu") return /\buu\b|\btri\.?\s*uu\b/i.test(r.ensaio ?? "") || r.tipo_ensaio === "triaxial-uu";
-      if (tipo === "triaxial-ciu") return /\bciu\b|\btri\.?\s*ciu\b/i.test(r.ensaio ?? "") || r.tipo_ensaio === "triaxial-ciu";
-      if (tipo === "mesp-a") return m === "mesp-a" || r.tipo_ensaio === "mesp-a";
-      if (tipo === "asf-dap") return m === "asf-dap" || r.tipo_ensaio === "asf-dap";
-      if (tipo === "asf-tb") return m === "asf-tb" || r.tipo_ensaio === "asf-tb";
-      if (tipo === "perm-v") return r.tipo_ensaio === "perm-v" || /permeabilidade/i.test(r.ensaio ?? "");
-      if (tipo === "compressao-simples") return r.tipo_ensaio === "compressao-simples" || /compress/i.test(r.ensaio ?? "");
-      return false;
+      // Mesma regra da Central: a configuração manda, a sigla é a reserva.
+      // Antes "TRI4.CU" não casava com /ciu/ e sumia da lista do CIU.
+      return mesmaFamiliaDeLaudo(laudoDoEnsaio(r.ensaio, r.tipo_ensaio, mapaLaudos), tipo);
     });
-  }, [pendencias, tipo]);
+  }, [mapaLaudos, pendencias, tipo]);
 
   // Contadores específicos deste tipo
   const counts = useMemo(() => {

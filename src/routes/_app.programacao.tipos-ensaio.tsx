@@ -168,7 +168,7 @@ function TiposEnsaioPage() {
     },
     onSuccess: () => {
       toast.success(editing ? "Tipo atualizado" : "Tipo criado");
-      qc.invalidateQueries({ queryKey: ["tipos_ensaio"] });
+      qc.invalidateQueries({ queryKey: ["tipos_ensaio"] }); qc.invalidateQueries({ queryKey: ["prox-ensaios-tipos"] }); // mapa de laudos da Central
       setOpen(false); setEditing(null);
     },
     onError: (e: any) => toast.error(e.message ?? "Erro"),
@@ -179,7 +179,7 @@ function TiposEnsaioPage() {
       await updateRow({ data: { sheet: SHEET_TIPOS, id, patch } });
     },
     onSuccess: (_d, vars) => {
-      qc.invalidateQueries({ queryKey: ["tipos_ensaio"] });
+      qc.invalidateQueries({ queryKey: ["tipos_ensaio"] }); qc.invalidateQueries({ queryKey: ["prox-ensaios-tipos"] }); // mapa de laudos da Central
       setDrafts((prev) => {
         const next = { ...prev };
         delete next[vars.id];
@@ -196,7 +196,7 @@ function TiposEnsaioPage() {
     },
     onSuccess: () => {
       toast.success("Tipo removido");
-      qc.invalidateQueries({ queryKey: ["tipos_ensaio"] });
+      qc.invalidateQueries({ queryKey: ["tipos_ensaio"] }); qc.invalidateQueries({ queryKey: ["prox-ensaios-tipos"] }); // mapa de laudos da Central
     },
     onError: (e: any) => toast.error(e.message ?? "Erro"),
   });
@@ -210,7 +210,7 @@ function TiposEnsaioPage() {
     onSuccess: (_d, ids) => {
       toast.success(`${ids.length} tipo(s) removido(s)`);
       setSelected(new Set());
-      qc.invalidateQueries({ queryKey: ["tipos_ensaio"] });
+      qc.invalidateQueries({ queryKey: ["tipos_ensaio"] }); qc.invalidateQueries({ queryKey: ["prox-ensaios-tipos"] }); // mapa de laudos da Central
     },
     onError: (e: any) => toast.error(e.message ?? "Erro ao remover em lote"),
   });
