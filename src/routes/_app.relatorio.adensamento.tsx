@@ -1632,6 +1632,33 @@ export function AdensamentoPage() {
                     />
                   </div>
                   <div>
+                    <Label className="text-xs text-muted-foreground">Tipo da Amostra</Label>
+                    <Select
+                      value={sample.sampleType ?? "Indeformada"}
+                      onValueChange={(v) => updateSample("sampleType", v)}
+                    >
+                      <SelectTrigger className="h-8 text-xs mt-0.5"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Indeformada" className="text-xs">Indeformada</SelectItem>
+                        <SelectItem value="Deformada" className="text-xs">Deformada</SelectItem>
+                        <SelectItem value="Compactada" className="text-xs">Compactada</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Condição do Ensaio</Label>
+                    <Select
+                      value={sample.testCondition ?? "Inundado"}
+                      onValueChange={(v) => updateSample("testCondition", v)}
+                    >
+                      <SelectTrigger className="h-8 text-xs mt-0.5"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Inundado" className="text-xs">Inundado</SelectItem>
+                        <SelectItem value="Não inundado" className="text-xs">Não inundado</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
                     <Label className="text-xs text-muted-foreground">Data do Ensaio</Label>
                     <Input
                       type="text"
@@ -4872,7 +4899,7 @@ function PrintableReport(p: ReportProps) {
                 ["Índice de Vazios Inicial e_0", fmt(p.phys.e0, 3), "Índice de Vazios Final e_f", fmt(p.phys.ef, 3)],
                 ["Umidade Inicial w_i (%)", fmt(p.phys.wi, 2), "Umidade Final w_f (%)", fmt(p.phys.wf, 2)],
                 ["Grau de Saturação Inicial Sr_0 (%)", fmt(p.phys.Sr0, 2), "Grau de Saturação Final Sr_f (%)", fmt(p.phys.Srf, 2)],
-                ["Tipo da Amostra", "Indeformada", "Condição do Ensaio", "Inundado"],
+                ["Tipo da Amostra", p.sample.sampleType || "Indeformada", "Condição do Ensaio", p.sample.testCondition || "Inundado"],
                 ["Tipo de Célula", "Anel Fixo", "Drenagem", "Topo e Base"],
                 // Equipamento do Gantt (sample.equipment) — antes era o texto
                 // fixo "ADNS-05", que ignorava o equipamento alocado na programação.

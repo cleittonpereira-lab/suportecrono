@@ -48,6 +48,11 @@ export interface OedSampleProps {
 export interface OedStageReading {
   t: number; // tempo decorrido em minutos
   d: number; // recalque / leitura acumulada em mm
+  /**
+   * Ponto ESTIMADO por extrapolação do trecho secundário (6 h / 12 h / 24 h),
+   * não medido pela prensa. Quem lê o laudo precisa poder distinguir.
+   */
+  interpolada?: boolean;
 }
 
 export interface OedStage {

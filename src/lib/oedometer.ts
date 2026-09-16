@@ -26,6 +26,14 @@ export interface SampleProps {
   os: string;
   granulometricDescription: string;
   equipment?: string;
+  /**
+   * Tipo da amostra ensaiada — escolhido na ficha e impresso no laudo.
+   * Era texto fixo "Indeformada" no relatório; o padrão mantém os laudos
+   * antigos iguais.
+   */
+  sampleType?: string; // "Indeformada" | "Deformada" | "Compactada"
+  /** Condição do ensaio — escolhida na ficha e impressa no laudo. */
+  testCondition?: string; // "Inundado" | "Não inundado"
   ringNumber?: string;
   ringMass?: number;
   wetMassInitialWithRing?: number;
