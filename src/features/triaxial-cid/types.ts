@@ -10,6 +10,8 @@
  *  - Tempo: min
  */
 
+import type { RegistroDeAjuste, VariavelAjustavel } from "@/lib/ajuste-curvas";
+
 export interface TriaxialSample {
   // Identificação (mesmo shape do ReportSample)
   client: string;
@@ -196,6 +198,13 @@ export interface TriaxialSpecimen {
     consolidationCount: number;
     shearCount: number;
   };
+  /**
+   * Curvas filtradas/ajustadas neste CP, por variável (só admin e gestor).
+   * Guarda o dado medido antes do primeiro ajuste, o método e quem aplicou —
+   * ajustar muda o pico e, com ele, c' e φ', então tem de ser reversível e
+   * rastreável. Ver `lib/ajuste-curvas.ts`.
+   */
+  ajustesDeCurva?: Partial<Record<VariavelAjustavel, RegistroDeAjuste>>;
 }
 
 export interface FailurePoint {

@@ -57,7 +57,8 @@ import { History, Trash2, Eye } from "lucide-react";
 import { Cloud, CloudCheck, CloudAlert, ExternalLink, RefreshCw } from "lucide-react";
 import { PickerWithCreate } from "@/features/triaxial-cid/PickerWithCreate";
 import { useAuth } from "@/hooks/use-auth";
-import { podeVerificar } from "@/lib/papeis";
+import { podeAjustarCurvas, podeVerificar } from "@/lib/papeis";
+import { AjusteCurvasDialog } from "@/features/triaxial-cid/components/AjusteCurvasDialog";
 import { syncRevision, fetchDriveStatus } from "@/features/triaxial-cid/driveSync";
 import { getWorkflowStatuses } from "@/lib/driveSync.functions";
 import { buildScopeId } from "@/lib/scope";
@@ -2068,6 +2069,18 @@ export function TriaxialCidPage() {
           {/* CISALHAMENTO */}
           <TabsContent value="cisalhamento" className="mt-4 space-y-4">
             <CpSelector specimens={sortedSpecimens} selectedId={selectedCpId} onSelect={setSelectedCpId} isUU={isUU} />
+            {/* Ajuste/filtragem de curvas: só admin e gestor (lib/papeis.ts). */}
+            {podeAjustarCurvas({ role }) && (
+              <div className="flex justify-end">
+                <AjusteCurvasDialog
+                  sample={sample}
+                  specimens={sortedSpecimens}
+                  selecionadoId={selectedCpId}
+                  autor={{ id: user?.id, nome: displayName }}
+                  onGravar={(cpId, patch) => updateSpecimen(cpId, patch)}
+                />
+              </div>
+            )}
             <ShearPhaseSection
               cp={cp}
               res={res}

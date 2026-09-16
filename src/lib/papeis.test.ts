@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { exigirPermissaoNoFluxo, podeAprovar, podeConcluirFora, podeVerificar } from "./papeis";
+import { exigirPermissaoNoFluxo, podeAjustarCurvas, podeAprovar, podeConcluirFora, podeVerificar } from "./papeis";
 
 describe("papéis no fluxo de aprovação", () => {
   it("digitador não verifica nem aprova", () => {
@@ -38,6 +38,21 @@ describe("papéis no fluxo de aprovação", () => {
       /concluído fora/,
     );
     expect(() => exigirPermissaoNoFluxo({ role: "gestor", labRole: "nenhum" }, "concluir_fora")).not.toThrow();
+  });
+
+  it("ajustar curvas: só admin e gestor — nem quem verifica por papel de laboratório", () => {
+    expect(podeAjustarCurvas({ role: "admin", labRole: "aprovador" })).toBe(true);
+    expect(podeAjustarCurvas({ role: "gestor", labRole: "nenhum" })).toBe(true);
+    // Verifica laudo, mas não decide tratar o dado bruto:
+    expect(podeVerificar({ role: "usuario", labRole: "aprovador" })).toBe(true);
+    expect(podeAjustarCurvas({ role: "usuario", labRole: "aprovador" })).toBe(false);
+    expect(podeAjustarCurvas({ role: "usuario", labRole: "verificador" })).toBe(false);
+    expect(podeAjustarCurvas({ role: "usuario", labRole: "digitador" })).toBe(false);
+    expect(podeAjustarCurvas(null)).toBe(false);
+    expect(() => exigirPermissaoNoFluxo({ role: "usuario", labRole: "verificador" }, "ajustar_curvas")).toThrow(
+      /ajusta e filtra curvas/,
+    );
+    expect(() => exigirPermissaoNoFluxo({ role: "gestor" }, "ajustar_curvas")).not.toThrow();
   });
 
   it("convidado ou sem identidade: nada", () => {

@@ -16,7 +16,7 @@
  */
 
 export type PapelDoUsuario = { role?: string | null; labRole?: string | null };
-export type AcaoDoFluxo = "verificar" | "aprovar" | "concluir_fora";
+export type AcaoDoFluxo = "verificar" | "aprovar" | "concluir_fora" | "ajustar_curvas";
 
 export function podeVerificar(p: PapelDoUsuario | null | undefined): boolean {
   if (!p) return false;
@@ -31,15 +31,34 @@ export function podeAprovar(p: PapelDoUsuario | null | undefined): boolean {
 /** "Concluído fora (Excel)": a mesma regra de quem verifica. */
 export const podeConcluirFora = podeVerificar;
 
+/**
+ * Ajustar/filtrar curvas de ensaio: só administrador e gestor.
+ *
+ * É mais restrito que verificar, de propósito. Filtrar uma curva muda o pico e,
+ * por consequência, c' e φ' do laudo — é juízo de engenharia sobre o dado
+ * medido, não conferência do que foi digitado. Quem verifica por papel de
+ * laboratório (verificador/aprovador sem ser admin ou gestor) confere; não
+ * decide tratar o dado bruto.
+ */
+export function podeAjustarCurvas(p: PapelDoUsuario | null | undefined): boolean {
+  if (!p) return false;
+  return p.role === "admin" || p.role === "gestor";
+}
+
 const RECUSA: Record<AcaoDoFluxo, string> = {
   verificar: "Sem permissão: só verificador, aprovador, gestor ou administrador verifica laudos.",
   aprovar: "Sem permissão: só o aprovador (responsável técnico) ou o administrador aprova laudos.",
   concluir_fora:
     "Sem permissão: só verificador, aprovador, gestor ou administrador marca laudo como concluído fora (Excel).",
+  ajustar_curvas: "Sem permissão: só gestor ou administrador ajusta e filtra curvas de ensaio.",
 };
 
 /** Para o servidor: recusa a ação se o papel não permite. */
 export function exigirPermissaoNoFluxo(p: PapelDoUsuario | null | undefined, acao: AcaoDoFluxo): void {
-  const pode = acao === "aprovar" ? podeAprovar(p) : acao === "verificar" ? podeVerificar(p) : podeConcluirFora(p);
+  const pode =
+    acao === "aprovar" ? podeAprovar(p)
+    : acao === "verificar" ? podeVerificar(p)
+    : acao === "ajustar_curvas" ? podeAjustarCurvas(p)
+    : podeConcluirFora(p);
   if (!pode) throw new Error(RECUSA[acao]);
 }
