@@ -84,14 +84,21 @@ export function applyPsAdjustment(
   };
 }
 
-/** Reencontra t90 a partir da reta ajustada de U=90% (Taylor). */
+/**
+ * Reencontra t90 a partir da reta ajustada de U=90% (Taylor).
+ * Só vale o cruzamento DESCENDENTE — mesma razão do `cvTaylor` em
+ * `lib/oedometer.ts`: com `f1 * f2 <= 0` (qualquer troca de sinal), ruído no
+ * primeiro ponto cria um cruzamento PARA CIMA logo no início e devolve um t90
+ * quase nulo. Sem esta mesma trava aqui, ajustar a reta manualmente reabria o
+ * defeito que já tinha sido corrigido no cálculo automático.
+ */
 export function findTaylorT90(stage: Stage, d0: number, slope90: number, fallback: number) {
   const pts = stage.readings.filter((r) => r.t > 0).map((r) => ({ x: Math.sqrt(r.t), y: r.d }));
   for (let i = 1; i < pts.length; i++) {
     const f1 = pts[i - 1].y - (d0 + slope90 * pts[i - 1].x);
     const f2 = pts[i].y - (d0 + slope90 * pts[i].x);
-    if (f1 * f2 <= 0) {
-      const frac = f1 / (f1 - f2 || 1);
+    if (f1 > 0 && f2 <= 0) {
+      const frac = f1 / (f1 - f2);
       const sqrtT = pts[i - 1].x + frac * (pts[i].x - pts[i - 1].x);
       return Math.max(0.0001, sqrtT ** 2);
     }

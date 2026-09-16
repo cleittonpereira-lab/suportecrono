@@ -2190,7 +2190,15 @@ export function AdensamentoPage() {
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
                   <CardTitle className="text-primary">Leituras do Defletômetro × Tempo</CardTitle>
-                  <CardDescription>Deslocamentos cumulativos (mm). Todas as células são editáveis.</CardDescription>
+                  <CardDescription>
+                    Deslocamentos cumulativos (mm). Todas as células são editáveis.
+                    {stages.some((st) => st.readings.some((r) => (r as any).interpolada)) && (
+                      <span className="ml-1 inline-flex items-center gap-1 text-amber-700">
+                        · <span className="inline-block h-2.5 w-2.5 rounded-sm border border-amber-400 bg-amber-50" />
+                        estimado por extrapolação (não medido)
+                      </span>
+                    )}
+                  </CardDescription>
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
@@ -2232,11 +2240,14 @@ export function AdensamentoPage() {
                         {st.readings.map((r, ri) => (
                           <TableCell key={ri} className="p-1">
                             <Input
-                              className="h-7 w-20 text-right text-xs tabular-nums"
+                              className={`h-7 w-20 text-right text-xs tabular-nums ${
+                                (r as any).interpolada ? "border-amber-400 bg-amber-50 text-amber-900" : ""
+                              }`}
                               type="number"
                               step="0.0001"
                               value={r.d}
                               onChange={(e) => updateReading(si, ri, Number(e.target.value))}
+                              title={(r as any).interpolada ? "Estimado por extrapolação (não medido pela prensa)" : undefined}
                             />
                           </TableCell>
                         ))}
@@ -2323,8 +2334,8 @@ export function AdensamentoPage() {
                   <CardTitle className="text-primary">Cv por Estágio — Taylor (√t) e Casagrande (log t)</CardTitle>
                   <CardDescription>
                     σ' = {stageData.sigma} kPa · Hd = {fmt(stageHdrain, 3)} mm (dupla drenagem) · Cv Taylor ={" "}
-                    {selectedIsLoading ? (tay ? exp2(tay.cv) + " cm²/s" : "—") : "não calculado em descarregamento"} · Cv Casagrande ={" "}
-                    {selectedIsLoading ? (cgr ? exp2(cgr.cv) + " cm²/s" : "—") : "não calculado em descarregamento"}
+                    {selectedIsLoading ? (tay ? <>{exp2(tay.cv)} cm²/s</> : "—") : "não calculado em descarregamento"} · Cv Casagrande ={" "}
+                    {selectedIsLoading ? (cgr ? <>{exp2(cgr.cv)} cm²/s</> : "—") : "não calculado em descarregamento"}
                   </CardDescription>
                 </div>
                 <div className="flex items-center gap-3">
@@ -2475,6 +2486,7 @@ export function AdensamentoPage() {
                           stages={stages}
                           ringHeight={sample.ringHeight}
                           e0={phys.e0}
+                          validation={validation}
                           cvAdjust={cvAdjust}
                           axisCfg={axisCfg}
                         />
@@ -2739,6 +2751,7 @@ export function AdensamentoPage() {
               ccr={ccr}
               cvTable={cvTable}
               photos={ctx?.photos || []}
+              validation={validation}
               axisCfg={axisCfg}
               ringHeight={sample.ringHeight}
               e0={phys.e0}
@@ -2776,6 +2789,7 @@ export function AdensamentoPage() {
             ringHeight={sample.ringHeight}
             e0={phys.e0}
             photos={ctx?.photos || []}
+            validation={validation}
             cvAdjust={cvAdjust}
             axisCfg={axisCfg}
           />
@@ -4505,7 +4519,7 @@ function CvCalcTable({
           <TableRow><TableCell>Reta 1,15√t / U90</TableCell><TableCell className="text-right font-mono">{taylor ? `ΔH = ${fmt(taylor.slope90, 5)}·√t + ${fmt(taylor.d0, 5)}` : "—"}</TableCell></TableRow>
           <TableRow><TableCell>t90</TableCell><TableCell className="text-right font-mono">{taylor ? `${fmt(taylor.t90, 3)} min = ${fmt(taylor.t90_s, 1)} s` : "—"}</TableCell></TableRow>
           <TableRow><TableCell>Hd</TableCell><TableCell className="text-right font-mono">{fmt(Hdrain, 3)} mm = {fmt(hdCm, 4)} cm</TableCell></TableRow>
-          <TableRow className="bg-primary/5"><TableCell className="font-semibold">Cv = 0,848·Hd²/t90</TableCell><TableCell className="text-right font-mono font-bold text-primary">{taylor ? `${exp2(taylor.cv)} cm²/s` : "—"}</TableCell></TableRow>
+          <TableRow className="bg-primary/5"><TableCell className="font-semibold">Cv = 0,848·Hd²/t90</TableCell><TableCell className="text-right font-mono font-bold text-primary">{taylor ? <>{exp2(taylor.cv)} cm²/s</> : "—"}</TableCell></TableRow>
         </TableBody>
       </Table>
       <Table className="text-[11px]">
@@ -4517,7 +4531,7 @@ function CvCalcTable({
           <TableRow><TableCell>Reta secundária</TableCell><TableCell className="text-right font-mono">{cgr ? `ΔH = ${fmt(cgr.secondary.m, 5)}·log(t) + ${fmt(cgr.secondary.b, 5)}` : "—"}</TableCell></TableRow>
           <TableRow><TableCell>ΔH0 / ΔH100 / ΔH50</TableCell><TableCell className="text-right font-mono">{cgr ? `${fmt(cgr.d0, 4)} / ${fmt(cgr.d100, 4)} / ${fmt(cgr.d50, 4)} mm` : "—"}</TableCell></TableRow>
           <TableRow><TableCell>t50</TableCell><TableCell className="text-right font-mono">{cgr ? `${fmt(cgr.t50, 3)} min = ${fmt(cgr.t50_s, 1)} s` : "—"}</TableCell></TableRow>
-          <TableRow className="bg-primary/5"><TableCell className="font-semibold">Cv = 0,197·Hd²/t50</TableCell><TableCell className="text-right font-mono font-bold text-primary">{cgr ? `${exp2(cgr.cv)} cm²/s` : "—"}</TableCell></TableRow>
+          <TableRow className="bg-primary/5"><TableCell className="font-semibold">Cv = 0,197·Hd²/t50</TableCell><TableCell className="text-right font-mono font-bold text-primary">{cgr ? <>{exp2(cgr.cv)} cm²/s</> : "—"}</TableCell></TableRow>
         </TableBody>
       </Table>
     </div>
@@ -4661,6 +4675,8 @@ type ReportProps = {
   ringHeight: number;
   e0: number;
   photos?: any[];
+  /** Quais resultados o técnico validou (chaves "pre:cas"/"pre:ps"/"pre:cc" e por estágio). Método não validado não sai no laudo. */
+  validation?: ValidationState;
   cvAdjust?: Record<number, CvLineAdjust>;
   axisCfg?: {
     eMin: number; eMax: number;
@@ -4860,7 +4876,12 @@ function PrintableReport(p: ReportProps) {
   const allRows = p.cvTable;
   const loadingRows = p.cvTable.filter((r) => r.phase !== "unload");
   const lastStage = p.stages[p.stages.length - 1];
-  const total = 10;
+  // Anexo: só os estágios com Cv VALIDADO (Taylor e/ou Casagrande) na aba
+  // Análise Gráfica entram no laudo — mesmo critério da página 6.
+  const anexoRows = p.cvTable.filter(
+    (r) => r.phase === "load" && (r.validatedTaylor || r.validatedCasagrande),
+  );
+  const total = 10 + anexoRows.length;
 
   // Domínios compartilhados — todos os gráficos com o mesmo eixo (e, σ') usam os mesmos limites.
   const eDomain: [number, number] = p.axisCfg
@@ -4960,7 +4981,10 @@ function PrintableReport(p: ReportProps) {
         <div className="flex-1 pt-3">
           <SectionBar>Índice de Vazios versus Tensão Vertical Efetiva (escala mono-log)</SectionBar>
           <div className="mt-2 border border-gray-300 bg-white" style={{ height: 340, padding: 8 }}>
-            <EvsSigmaChart curve={p.eCurve} cas={p.cas} ps={p.ps} e0={p.phys.e0} height={320} eDomain={eDomain} sigmaLogDomain={sigmaLogDomain} />
+            {/* Curva limpa — sem retas/letras de pré-adensamento. Os métodos
+                (Casagrande/Pacheco Silva) têm página própria (6), com as
+                construções; aqui é só o dado medido. */}
+            <EvsSigmaChart curve={p.eCurve} cas={null} ps={null} e0={p.phys.e0} height={320} eDomain={eDomain} sigmaLogDomain={sigmaLogDomain} />
           </div>
           <SectionBar className="mt-3">Índice de Vazios versus Tensão Vertical Efetiva (escala aritmética)</SectionBar>
           <div className="mt-2 border border-gray-300 bg-white" style={{ height: 340, padding: 8 }}>
@@ -5006,7 +5030,7 @@ function PrintableReport(p: ReportProps) {
                   </div>
                   <div className="relative w-full aspect-[3/4] bg-slate-100 flex items-center justify-center overflow-hidden">
                     <img
-                      src={ph.url}
+                      src={ph.url || ph.dataUrl}
                       alt={ph.caption || (idx === 0 ? "Moldagem" : "Pós-Ensaio")}
                       crossOrigin="anonymous"
                       className="w-full h-full object-cover"
@@ -5071,29 +5095,48 @@ function PrintableReport(p: ReportProps) {
       </div>
 
       {/* PAGE 6: preconsolidation methods */}
-      <div data-pdf-page style={pageStyle}>
-        <ReportHeader sample={p.sample} page={6} total={total} />
-        <div className="flex-1 pt-3">
-          <SectionBar>Determinação da Tensão de Pré-Adensamento - Métodos de Casagrande e Pacheco Silva</SectionBar>
-          <div className="mt-2 border border-gray-300 bg-white" style={{ height: 420, padding: 8 }}>
-            <EvsSigmaChart curve={p.eCurve} cas={p.cas} ps={p.ps} e0={p.phys.e0} height={400} eDomain={eDomain} sigmaLogDomain={sigmaLogDomain} />
+      {(() => {
+        // Sem `validation` salva (laudo de antes desta trava), mostra tudo —
+        // não some resultado de laudo antigo por retroatividade. Com
+        // `validation`, o método sai do laudo se o técnico desmarcou.
+        const semValidacao = p.validation == null;
+        const casOk = semValidacao || !!p.validation?.["pre:cas"];
+        const psOk = semValidacao || !!p.validation?.["pre:ps"];
+        const casMostrado = casOk ? p.cas : null;
+        const psMostrado = psOk ? p.ps : null;
+        const pendentes = [!casOk && "Casagrande", !psOk && "Pacheco Silva"].filter(Boolean) as string[];
+        return (
+          <div data-pdf-page style={pageStyle}>
+            <ReportHeader sample={p.sample} page={6} total={total} />
+            <div className="flex-1 pt-3">
+              <SectionBar>Determinação da Tensão de Pré-Adensamento - Métodos de Casagrande e Pacheco Silva</SectionBar>
+              <div className="mt-2 border border-gray-300 bg-white" style={{ height: 420, padding: 8 }}>
+                <EvsSigmaChart curve={p.eCurve} cas={casMostrado} ps={psMostrado} e0={p.phys.e0} height={400} eDomain={eDomain} sigmaLogDomain={sigmaLogDomain} />
+              </div>
+              <SectionBar className="mt-3">Resultados do Ensaio de Adensamento Edométrico</SectionBar>
+              <table className="mt-2 w-full border-collapse text-[9.5px]">
+                <tbody>
+                  {[
+                    ["Índice de Recompressão - Cr", fmt(p.ccr.Cr, 3)],
+                    ["Índice de Compressão - Cc", fmt(p.ccr.Cc, 3)],
+                    ["Tensão de Pré-Adensamento - σ'ᵥₘ Casagrande [kPa]", casMostrado ? fmt(casMostrado.sigmaP, 2) : "—"],
+                    ["Tensão de Pré-Adensamento - σ'ᵥₘ Pacheco Silva [kPa]", psMostrado ? fmt(psMostrado.sigmaP, 2) : "—"],
+                    ["Índice de Vazios na Tensão de Pré-Adensamento - eσ'ᵥₘ", psMostrado ? fmt(psMostrado.C.y, 3) : "—"],
+                  ].map((row, i) => <tr key={i}><td className="w-1/2 border bg-[#d4c2aa] p-1 font-semibold">{row[0]}</td><td className="border p-1 text-center">{row[1]}</td></tr>)}
+                </tbody>
+              </table>
+              {pendentes.length > 0 && (
+                <div className="mt-2 rounded border border-amber-500 bg-amber-50 p-2 text-[9px] text-amber-900">
+                  <b>Observação:</b> {pendentes.join(" e ")} não {pendentes.length > 1 ? "foram validados" : "foi validado"} pela
+                  conferência técnica (aba Análise Gráfica) e por isso não {pendentes.length > 1 ? "aparecem" : "aparece"} neste laudo.
+                </div>
+              )}
+              <div className="mt-2 text-[8px] text-gray-700">² PACHECO SILVA, F. Uma Nova Construção Gráfica para Determinação da Pressão de Pré-adensamento de uma Amostra de Solo, 1970. CASAGRANDE, A., The Determination of the Preconsolidation Load and Its Practical Significance, 1936.</div>
+            </div>
+            <ReportFooter sample={p.sample} />
           </div>
-          <SectionBar className="mt-3">Resultados do Ensaio de Adensamento Edométrico</SectionBar>
-          <table className="mt-2 w-full border-collapse text-[9.5px]">
-            <tbody>
-              {[
-                ["Índice de Recompressão - Cr", fmt(p.ccr.Cr, 3)],
-                ["Índice de Compressão - Cc", fmt(p.ccr.Cc, 3)],
-                ["Tensão de Pré-Adensamento - σ'ᵥₘ Casagrande [kPa]", p.cas ? fmt(p.cas.sigmaP, 2) : "—"],
-                ["Tensão de Pré-Adensamento - σ'ᵥₘ Pacheco Silva [kPa]", p.ps ? fmt(p.ps.sigmaP, 2) : "—"],
-                ["Índice de Vazios na Tensão de Pré-Adensamento - eσ'ᵥₘ", p.ps ? fmt(p.ps.C.y, 3) : "—"],
-              ].map((row, i) => <tr key={i}><td className="w-1/2 border bg-[#d4c2aa] p-1 font-semibold">{row[0]}</td><td className="border p-1 text-center">{row[1]}</td></tr>)}
-            </tbody>
-          </table>
-          <div className="mt-2 text-[8px] text-gray-700">² PACHECO SILVA, F. Uma Nova Construção Gráfica para Determinação da Pressão de Pré-adensamento de uma Amostra de Solo, 1970. CASAGRANDE, A., The Determination of the Preconsolidation Load and Its Practical Significance, 1936.</div>
-        </div>
-        <ReportFooter sample={p.sample} />
-      </div>
+        );
+      })()}
 
       {/* PAGE 7: Cv + Cα */}
       <div data-pdf-page style={pageStyle}>
@@ -5152,6 +5195,138 @@ function PrintableReport(p: ReportProps) {
         </div>
         <ReportFooter sample={p.sample} />
       </div>
+
+      {/* ANEXO: memória de cálculo do Cv — só estágios validados na Análise Gráfica */}
+      {anexoRows.map((row, idx) => (
+        <AnexoCvPage
+          key={row.stageIndex}
+          row={row}
+          stage={p.stages[row.stageIndex]}
+          ringHeight={p.ringHeight}
+          cvAdjust={p.cvAdjust}
+          sample={p.sample}
+          page={11 + idx}
+          total={total}
+        />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Uma página de anexo por estágio validado: o gráfico (Taylor e/ou
+ * Casagrande, o(s) que o técnico validou) e a memória de cálculo passo a
+ * passo — mesma conta de `CvMemorial` (tela), reaproveitada aqui para o PDF.
+ */
+function AnexoCvPage({
+  row,
+  stage,
+  ringHeight,
+  cvAdjust,
+  sample,
+  page,
+  total,
+}: {
+  row: { stageIndex: number; sigma: number; Hdrain: number; validatedTaylor: boolean; validatedCasagrande: boolean };
+  stage: Stage;
+  ringHeight: number;
+  cvAdjust?: Record<number, CvLineAdjust>;
+  sample: SampleProps;
+  page: number;
+  total: number;
+}) {
+  const Hdrain_mm = row.Hdrain;
+  const Hd_cm = Hdrain_mm / 10;
+  const baseT = cvTaylor(stage, Hdrain_mm);
+  const tay = applyTaylorAdjustment(stage, Hdrain_mm, baseT, cvAdjust?.[row.stageIndex]);
+  const baseC = cvCasagrande(stage, Hdrain_mm);
+  const cgr = applyCgrAdjustment(stage, Hdrain_mm, baseC, cvAdjust?.[row.stageIndex]);
+  const sqrtData = (stage.readings || []).map((r) => ({ x: +Math.sqrt(r.t).toFixed(4), d: r.d, t: r.t }));
+  const logData = (stage.readings || [])
+    .filter((r) => r.t > 0)
+    .map((r) => ({ x: +Math.log10(r.t).toFixed(4), d: r.d, t: r.t }));
+  const cols = row.validatedTaylor && row.validatedCasagrande ? "md:grid-cols-2" : "md:grid-cols-1";
+
+  return (
+    <div data-pdf-page style={pageStyle}>
+      <ReportHeader sample={sample} page={page} total={total} />
+      <div className="flex-1 pt-3">
+        <SectionBar>
+          Anexo — Memória de Cálculo do Cv — Estágio {row.stageIndex + 1} (σ' = {fmt(row.sigma, 0)} kPa)
+        </SectionBar>
+
+        <div className={`mt-3 grid gap-3 ${cols}`}>
+          {row.validatedTaylor && (
+            <div className="border border-gray-300 bg-white" style={{ height: 230, padding: 4 }}>
+              <TaylorChart data={sqrtData} taylor={tay} ringHeight={ringHeight} height={220} showResults />
+            </div>
+          )}
+          {row.validatedCasagrande && (
+            <div className="border border-gray-300 bg-white" style={{ height: 230, padding: 4 }}>
+              <CasagrandeTimeChart data={logData} cgr={cgr} ringHeight={ringHeight} height={220} showResults />
+            </div>
+          )}
+        </div>
+
+        <div className={`mt-3 grid gap-3 ${cols}`}>
+          {row.validatedTaylor && (
+            <div className="rounded-md border border-gray-300 p-3">
+              <div className="mb-2 text-[10.5px] font-bold uppercase tracking-wide text-primary">
+                Taylor (√t) — Cv = 0,848·Hd² / t₉₀
+              </div>
+              {tay ? (
+                <ol className="space-y-1.5 text-[10px]">
+                  <Step n={1} title="Reta tangente inicial à curva √t × ΔH">
+                    <code>ΔH = {fmt(tay.slope, 5)}·√t + {fmt(tay.d0, 5)}</code>
+                  </Step>
+                  <Step n={2} title="Reta U90 com inclinação m/1,15">
+                    <code>ΔH = {fmt(tay.slope90, 5)}·√t + {fmt(tay.d0, 5)}</code>
+                  </Step>
+                  <Step n={3} title="t₉₀ na interseção da curva com a reta U90">
+                    <code>t₉₀ = {fmt(tay.t90, 3)} min = {fmt(tay.t90_s, 1)} s</code>
+                  </Step>
+                  <Step n={4} title="Cv (Taylor)">
+                    <code>Cv = 0,848 · ({fmt(Hd_cm, 4)})² / {fmt(tay.t90_s, 1)}</code>
+                    <code className="font-bold text-primary">Cv = {exp2(tay.cv)} cm²/s</code>
+                  </Step>
+                </ol>
+              ) : (
+                <div className="text-[10px] text-gray-500">Sem dados.</div>
+              )}
+            </div>
+          )}
+          {row.validatedCasagrande && (
+            <div className="rounded-md border border-gray-300 p-3">
+              <div className="mb-2 text-[10.5px] font-bold uppercase tracking-wide text-primary">
+                Casagrande (log t) — Cv = 0,197·Hd² / t₅₀
+              </div>
+              {cgr ? (
+                <ol className="space-y-1.5 text-[10px]">
+                  <Step n={1} title="Reta primária (adensamento primário)">
+                    <code>ΔH = {fmt(cgr.primary.m, 5)}·log(t) + {fmt(cgr.primary.b, 5)}</code>
+                  </Step>
+                  <Step n={2} title="Reta secundária (compressão secundária)">
+                    <code>ΔH = {fmt(cgr.secondary.m, 5)}·log(t) + {fmt(cgr.secondary.b, 5)}</code>
+                  </Step>
+                  <Step n={3} title="d₁₀₀ na interseção das retas; d₀ por correção parabólica">
+                    <code>d₀ = {fmt(cgr.d0, 4)} mm · d₁₀₀ = {fmt(cgr.d100, 4)} mm · d₅₀ = {fmt(cgr.d50, 4)} mm</code>
+                  </Step>
+                  <Step n={4} title="t₅₀ na curva no nível d₅₀">
+                    <code>t₅₀ = {fmt(cgr.t50, 3)} min = {fmt(cgr.t50_s, 1)} s</code>
+                  </Step>
+                  <Step n={5} title="Cv (Casagrande)">
+                    <code>Cv = 0,197 · ({fmt(Hd_cm, 4)})² / {fmt(cgr.t50_s, 1)}</code>
+                    <code className="font-bold text-primary">Cv = {exp2(cgr.cv)} cm²/s</code>
+                  </Step>
+                </ol>
+              ) : (
+                <div className="text-[10px] text-gray-500">Sem dados.</div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+      <ReportFooter sample={sample} />
     </div>
   );
 }
