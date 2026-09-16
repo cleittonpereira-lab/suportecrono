@@ -225,14 +225,22 @@ function Bloco({ titulo, direita, children }: { titulo: string; direita?: string
   );
 }
 
-/** Páginas do laudo: 1 com os resultados; 2 com o registro fotográfico, se houver fotos. */
+/**
+ * Páginas do laudo: 1 com teor de betume + tabela de granulometria; 2 com a
+ * curva granulométrica + notas; 3 com o registro fotográfico, se houver
+ * fotos. Antes a página 1 acumulava tudo (tabela, gráfico e notas) — com uma
+ * faixa DNIT selecionada (colunas extra) o miolo da folha ficava perto do
+ * limite e as notas saíam espremidas contra o rodapé. Separar em duas
+ * páginas garante espaço mesmo com a faixa ligada, em vez de torcer pra
+ * caber.
+ */
 function paginasDoLaudo(sample: AsfTbSample, photos: Photo[]): ReactElement[] {
   const betume = massaBetume(sample.massaAmostra, sample.massaAgregado);
   const teor = teorBetume(sample.massaAmostra, sample.massaAgregado);
   const g = calcularGranulometria(sample);
   const faixa = sample.mostrarFaixa ? FAIXAS_DNIT_031[sample.faixa] : null;
   const temFotos = photos.length > 0;
-  const total = temFotos ? 2 : 1;
+  const total = temFotos ? 3 : 2;
   const titulo = "TEOR DE BETUME E GRANULOMETRIA DO AGREGADO EXTRAÍDO";
   const algumForaDaFaixa = !!(faixa && g?.linhas.some((l) => foraDaFaixa(sample.faixa, l.aberturaMm, l.pctPassante)));
 
@@ -329,6 +337,10 @@ function paginasDoLaudo(sample: AsfTbSample, photos: Photo[]): ReactElement[] {
           )}
         </Bloco>
 
+      </div>
+    </ReportPage>,
+    <ReportPage key="p2" sample={sample as unknown as ReportSample} page={2} total={total} title={titulo} norms={NORMAS}>
+      <div className="space-y-2 text-[10px] text-[#141414]">
         {g && g.linhas.length > 0 && (
           <Bloco titulo="Curva granulométrica">
             <div className="px-1 pt-1">
@@ -369,7 +381,7 @@ function paginasDoLaudo(sample: AsfTbSample, photos: Photo[]): ReactElement[] {
 
   if (temFotos) {
     paginas.push(
-      <ReportPage key="p2" sample={sample as unknown as ReportSample} page={2} total={total} title={titulo} norms={NORMAS}>
+      <ReportPage key="p3" sample={sample as unknown as ReportSample} page={3} total={total} title={titulo} norms={NORMAS}>
         <Bloco titulo="Registro fotográfico">
           <div className="grid grid-cols-3 gap-1 p-1">
             {photos.map((p) => (
@@ -993,7 +1005,7 @@ export function AsfTbPage() {
           <AmostraSummaryCard
             reportNumber={sample.reportNumber}
             osNumero={sample.os}
-            subtitle={`${sample.client || "—"} · ${sample.local || "—"}`}
+            subtitle={`${sample.client || "—"} · ${sample.local || "—"} · Furo ${sample.borehole || "—"} · Prof. ${sample.depth || "—"}`}
           >
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <TxtField label="Cliente" value={sample.client} onChange={(v) => updateSample("client", v)} />
@@ -1002,6 +1014,8 @@ export function AsfTbPage() {
               <TxtField label="Amostra" value={sample.reportNumber} onChange={(v) => updateSample("reportNumber", v)} />
               <TxtField label="Local / Serviço" value={sample.local} onChange={(v) => updateSample("local", v)} />
               <TxtField label="Código" value={sample.code} onChange={(v) => updateSample("code", v)} />
+              <TxtField label="Furo" value={sample.borehole} onChange={(v) => updateSample("borehole", v)} />
+              <TxtField label="Profundidade" value={sample.depth} onChange={(v) => updateSample("depth", v)} />
               <div className="col-span-2 md:col-span-2">
                 <TxtField label="Descrição" value={sample.description} onChange={(v) => updateSample("description", v)} />
               </div>

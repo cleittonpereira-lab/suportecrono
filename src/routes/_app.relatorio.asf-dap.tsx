@@ -957,7 +957,7 @@ export function ASFPage() {
           <AmostraSummaryCard
             reportNumber={sample.reportNumber}
             osNumero={sample.os}
-            subtitle={`${sample.client || "—"} · ${sample.local || "—"}`}
+            subtitle={`${sample.client || "—"} · ${sample.local || "—"} · Furo ${sample.borehole || "—"} · Prof. ${sample.depth || "—"}`}
           >
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <TxtField label="Cliente" value={sample.client} onChange={(v) => updateSample("client", v)} />
@@ -966,6 +966,8 @@ export function ASFPage() {
               <TxtField label="Amostra" value={sample.reportNumber} onChange={(v) => updateSample("reportNumber", v)} />
               <TxtField label="Local / Serviço" value={sample.local} onChange={(v) => updateSample("local", v)} />
               <TxtField label="Código" value={sample.code} onChange={(v) => updateSample("code", v)} />
+              <TxtField label="Furo" value={sample.borehole} onChange={(v) => updateSample("borehole", v)} />
+              <TxtField label="Profundidade" value={sample.depth} onChange={(v) => updateSample("depth", v)} />
               <div className="col-span-2 md:col-span-2">
                 <TxtField label="Descrição" value={sample.description} onChange={(v) => updateSample("description", v)} />
               </div>
