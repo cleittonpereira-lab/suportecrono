@@ -181,10 +181,11 @@ export function PhotoUploader({ title, kind, photos = [], onAdd, onRemove, onUpd
           onOpenChange={(o) => { if (!o) setPendingUpload(null); }}
           onSave={async (dataUrl, bytes) => {
             const url = await uploadAndGetUrl(dataUrl);
-            // Se o envio deu certo, não guarda o base64 também — senão o
-            // JSON do ensaio continua tão pesado quanto antes. Só mantém
-            // `dataUrl` cheio quando o envio falhou (única cópia que sobrou).
-            onAdd({ dataUrl: url ? "" : dataUrl, bytes, kind: pendingUpload.kind, caption: pendingUpload.caption, url });
+            // Mantém o base64 mesmo quando o envio dá certo: uma URL que abre
+            // agora não garante que abre depois (arquivo movido, falha
+            // temporária do Drive) — sem o dataUrl de reserva, isso quebrava a
+            // foto pra sempre no laudo, sem nenhuma cópia sobrando.
+            onAdd({ dataUrl, bytes, kind: pendingUpload.kind, caption: pendingUpload.caption, url });
             setPendingUpload(null);
             toast.success("Foto adicionada e enquadrada com sucesso!");
           }}
@@ -199,9 +200,10 @@ export function PhotoUploader({ title, kind, photos = [], onAdd, onRemove, onUpd
           onOpenChange={(o) => { if (!o) setEditing(null); }}
           onSave={async (dataUrl, bytes) => {
             // Recorte muda os pixels — a URL antiga (se houver) fica errada,
-            // reenvia a foto recortada como um novo arquivo no Drive.
+            // reenvia a foto recortada como um novo arquivo no Drive. Mantém
+            // o dataUrl mesmo com envio ok — mesmo motivo do onAdd acima.
             const url = await uploadAndGetUrl(dataUrl);
-            onUpdate(editing.id, { dataUrl: url ? "" : dataUrl, bytes, url });
+            onUpdate(editing.id, { dataUrl, bytes, url });
             setEditing(null);
             toast.success("Recorte atualizado");
           }}
