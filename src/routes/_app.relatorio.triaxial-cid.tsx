@@ -1077,13 +1077,14 @@ export function TriaxialCidPage() {
             <DialogDescription>
               O arquivo <strong>{ntPickerState.filename}</strong> contém mais de um
               ensaio (coluna NT). Escolha qual deles deseja importar para este CP.
-              Ensaios que não sejam CID (sem etapa "Ruptura Dren.") ficam
-              desabilitados.
+              {testType === "cid"
+                ? ' Ensaios sem etapa "Ruptura Dren." ficam desabilitados (este é um ensaio CID).'
+                : ' Ensaios sem etapa "Ruptura Não Dren." ficam desabilitados (este é um ensaio CIU/UU).'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
             {ntPickerState.tests.map((t) => {
-              const canImport = t.hasDrained;
+              const canImport = testType === "cid" ? t.hasDrained : t.hasUndrained;
               const sigma =
                 t.sigmaRupture ?? t.sigmaAdens;
               const sigmaTxt = sigma != null ? `σ₃ ≈ ${sigma.toFixed(0)} kPa` : "σ₃ n/d";
@@ -1112,7 +1113,9 @@ export function TriaxialCidPage() {
                   </div>
                   {!canImport && (
                     <div className="text-xs text-destructive mt-1">
-                      Não é CID (sem "Ruptura Dren.") — não pode ser importado neste módulo.
+                      {testType === "cid"
+                        ? 'Não tem "Ruptura Dren." — não serve pra este ensaio CID.'
+                        : 'Não tem "Ruptura Não Dren." — não serve pra este ensaio CIU/UU.'}
                     </div>
                   )}
                 </button>
@@ -1833,7 +1836,7 @@ export function TriaxialCidPage() {
                             const { parseOwnTecXlsx } = await import(
                               "@/features/triaxial-cid/importXlsx"
                             );
-                            const data = await parseOwnTecXlsx(buf, file.name, { selectedNT });
+                            const data = await parseOwnTecXlsx(buf, file.name, { selectedNT, tipo: testType });
                             if (!data.consolidation.length && !data.shear.length) {
                               toast.error("Nenhum dado reconhecido no arquivo.");
                               return;

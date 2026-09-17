@@ -55,6 +55,7 @@ import { labStore } from "@/features/lab/store";
 import { EnsaioListByType } from "@/features/lab/components/EnsaioListByType";
 import { ReportPage, type ReportSample } from "@/components/report/ReportShell";
 import { EnsaioBadgesRow, EnsaioTitleBlock, AmostraSummaryCard, ResponsaveisBar } from "@/components/report/EnsaioReportHeader";
+import { SampleEditDialog } from "@/components/SampleEditDialog";
 import type { Photo } from "@/features/lab/types";
 import {
   ASF_TB_NOME,
@@ -119,15 +120,6 @@ export const Route = createFileRoute("/_app/relatorio/asf-tb")({
     ],
   }),
 });
-
-function TxtField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  return (
-    <div>
-      <Label className="text-[10px] uppercase text-muted-foreground">{label}</Label>
-      <Input value={value} onChange={(e) => onChange(e.target.value)} className="h-8 text-xs" />
-    </div>
-  );
-}
 
 function NumInput({
   value, onChange, className = "w-24", placeholder, disabled, ariaLabel,
@@ -459,6 +451,7 @@ export function AsfTbPage() {
   }, [currentUserName]);
 
   const [saveBusy, setSaveBusy] = useState(false);
+  const [sampleEditOpen, setSampleEditOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [tab, setTab] = useState("ensaio");
 
@@ -602,7 +595,8 @@ export function AsfTbPage() {
     prefillCheckedRef.current = true;
     const jaTemDados =
       sample.massaAmostra != null || sample.massaAgregado != null || sample.peneiras.some((p) => p.retida != null);
-    if (jaTemDados) return;
+    const jaTemFotos = (ctx.photos ?? []).length > 0;
+    if (jaTemDados && jaTemFotos) return;
     let cancelled = false;
     (async () => {
       try {
@@ -613,9 +607,21 @@ export function AsfTbPage() {
           tipo: "asf-tb",
         });
         const fp = pend?.payload as unknown as Partial<AsfTbFieldPayload> | undefined;
-        if (cancelled || !fp?.medidas) return;
-        setSample((prev) => ({ ...prev, ...normalizarMedidas(fp.medidas) }));
-        toast.success("Dados pré-preenchidos da digitação na bancada — confira antes de continuar.");
+        if (cancelled || !fp) return;
+        let preencheu = false;
+        if (!jaTemDados && fp.medidas) {
+          setSample((prev) => ({ ...prev, ...normalizarMedidas(fp.medidas) }));
+          preencheu = true;
+        }
+        // Fotos tiradas na bancada (celular) ficam só no payload da pendência —
+        // sem isto, nunca chegavam ao relatório do escritório.
+        if (!jaTemFotos && Array.isArray(fp.fotos) && fp.fotos.length > 0) {
+          for (const foto of fp.fotos) {
+            ctx.addPhoto({ dataUrl: foto.dataUrl, kind: "outro", caption: foto.caption });
+          }
+          preencheu = true;
+        }
+        if (preencheu) toast.success("Dados pré-preenchidos da digitação na bancada — confira antes de continuar.");
       } catch (err) {
         console.warn("[ASF.TB prefill] Falha:", err);
       }
@@ -1006,22 +1012,47 @@ export function AsfTbPage() {
             reportNumber={sample.reportNumber}
             osNumero={sample.os}
             subtitle={`${sample.client || "—"} · ${sample.local || "—"} · Furo ${sample.borehole || "—"} · Prof. ${sample.depth || "—"}`}
-          >
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <TxtField label="Cliente" value={sample.client} onChange={(v) => updateSample("client", v)} />
-              <TxtField label="Obra" value={sample.workNumber} onChange={(v) => updateSample("workNumber", v)} />
-              <TxtField label="O.S." value={sample.os} onChange={(v) => updateSample("os", v)} />
-              <TxtField label="Amostra" value={sample.reportNumber} onChange={(v) => updateSample("reportNumber", v)} />
-              <TxtField label="Local / Serviço" value={sample.local} onChange={(v) => updateSample("local", v)} />
-              <TxtField label="Código" value={sample.code} onChange={(v) => updateSample("code", v)} />
-              <TxtField label="Furo" value={sample.borehole} onChange={(v) => updateSample("borehole", v)} />
-              <TxtField label="Profundidade" value={sample.depth} onChange={(v) => updateSample("depth", v)} />
-              <div className="col-span-2 md:col-span-2">
-                <TxtField label="Descrição" value={sample.description} onChange={(v) => updateSample("description", v)} />
-              </div>
-            </div>
-          </AmostraSummaryCard>
+            onEditClick={() => setSampleEditOpen(true)}
+          />
         </div>
+
+        <SampleEditDialog
+          open={sampleEditOpen}
+          onOpenChange={setSampleEditOpen}
+          data={{
+            osId: ctx?.os?.id,
+            amostraId: ctx?.amostra?.id,
+            osNumero: sample.os,
+            client: sample.client,
+            workNumber: sample.workNumber,
+            local: sample.local,
+            technicalResp: sample.technicalResp,
+            revision: String(sample.revision ?? "0"),
+            reportNumber: sample.reportNumber,
+            code: sample.code,
+            borehole: sample.borehole,
+            depth: sample.depth,
+            description: sample.description,
+            granulometricDescription: sample.granulometricDescription,
+            equipment: sample.equipment,
+          }}
+          onSave={(updated) => {
+            setSample((prev) => ({
+              ...prev,
+              client: updated.client || prev.client,
+              workNumber: updated.workNumber || prev.workNumber,
+              local: updated.local || prev.local,
+              technicalResp: updated.technicalResp || prev.technicalResp,
+              reportNumber: updated.reportNumber || prev.reportNumber,
+              code: updated.code || prev.code,
+              borehole: updated.borehole || prev.borehole,
+              depth: updated.depth || prev.depth,
+              description: updated.description || prev.description,
+              granulometricDescription: updated.granulometricDescription || prev.granulometricDescription,
+              equipment: updated.equipment || prev.equipment,
+            }));
+          }}
+        />
 
         <Tabs value={tab} onValueChange={setTab} className="flex-1 overflow-hidden flex flex-col">
           <div className="flex items-center gap-2">

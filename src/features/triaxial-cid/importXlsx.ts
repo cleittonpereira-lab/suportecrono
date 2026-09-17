@@ -117,7 +117,7 @@ function findOwnTecHeader(grid: Grid): { row: number; cols: Record<string, numbe
   return null;
 }
 
-function parseOwnTecTable(grid: Grid, selectedNT?: string) {
+function parseOwnTecTable(grid: Grid, selectedNT?: string, exigirDrenado = true) {
   const hdr = findOwnTecHeader(grid);
   if (!hdr)
     return {
@@ -208,8 +208,9 @@ function parseOwnTecTable(grid: Grid, selectedNT?: string) {
       continue;
     }
 
-    // Para CID importamos apenas a etapa "Ruptura Dren." (drenada)
-    if (etapa.includes("ruptura") && isDrained) {
+    // CID: só a etapa "Ruptura Dren." (drenada). CIU/UU: o oposto — a
+    // ruptura DELES é não drenada, é isso que faz o ensaio ser CIU/UU.
+    if (etapa.includes("ruptura") && isDrained === exigirDrenado) {
       const eaPct = cols.defAxial != null ? asNum(row[cols.defAxial]) : null;
       if (eaPct == null) continue;
       shear.push({
@@ -312,6 +313,19 @@ function findSection(grid: Grid, marker: string): number {
   return -1;
 }
 
+/** Como `findSection`, mas exige também um segundo padrão na mesma célula (ex.: "ruptura" + "não dren"). */
+function findSectionMatching(grid: Grid, marker: string, extra: RegExp): number {
+  for (let r = 0; r < grid.length; r++) {
+    const row = grid[r];
+    if (!row) continue;
+    for (let c = 0; c < row.length; c++) {
+      const t = norm(row[c]).replace(/[\/\-_.]/g, " ").replace(/\s+/g, " ");
+      if (t.includes(marker) && extra.test(t)) return r;
+    }
+  }
+  return -1;
+}
+
 /**
  * Escaneia a planilha OWNTEC e retorna a lista de ensaios (agrupados por NT)
  * encontrados, junto com as etapas de cada um. Não extrai dados numéricos —
@@ -344,8 +358,13 @@ export async function listOwnTecTests(buffer: ArrayBuffer): Promise<OwnTecTestSu
 export async function parseOwnTecXlsx(
   buffer: ArrayBuffer,
   filename: string,
-  opts: { selectedNT?: string } = {},
+  opts: { selectedNT?: string; tipo?: "cid" | "ciu" | "uu" } = {},
 ): Promise<ImportedRawData> {
+  // CID precisa da etapa DRENADA ("Ruptura Dren."); CIU e UU são justamente o
+  // contrário — o cisalhamento É não drenado (CIU mede poropressão; UU nem
+  // consolida). Sem isto, o módulo recusava a planilha certa de um CIU/UU
+  // alegando "só aceita CID", quando na verdade CID é que não serviria ali.
+  const exigirDrenado = (opts.tipo ?? "cid") === "cid";
   if (import.meta.env.SSR) throw new Error("parseOwnTecXlsx só roda no navegador");
   const XLSX = await import("xlsx");
   const wb = XLSX.read(buffer, { type: "array" });
@@ -373,7 +392,7 @@ export async function parseOwnTecXlsx(
       raw: true,
     }) as Grid;
 
-    const table = parseOwnTecTable(grid, selectedNT);
+    const table = parseOwnTecTable(grid, selectedNT, exigirDrenado);
     if (table.hasHeader) sawHeader = true;
     if (table.hasDrained) sawDrained = true;
     if (table.hasUndrained) sawUndrained = true;
@@ -421,9 +440,12 @@ export async function parseOwnTecXlsx(
           }
         }
       }
-      const rpRow = findSection(grid, "ruptura dren");
+      // CID procura a seção "Ruptura Dren."; CIU/UU procuram "Ruptura Não
+      // Dren." (a grafia varia: "N/Dren.", "N Dren.", "Não Dren." — todas
+      // batem com "ruptura" + a checagem de "n dren"/"nao dren" acima).
+      const rpRow = exigirDrenado ? findSection(grid, "ruptura dren") : findSectionMatching(grid, "ruptura", /n(ao)?\s*dren/);
       if (rpRow >= 0) {
-        sectionDrained = true;
+        if (exigirDrenado) sectionDrained = true; else sectionUndrained = true;
         const hdr = findHeaderRow(grid, rpRow, [
           "def",
           "axial",
@@ -466,18 +488,22 @@ export async function parseOwnTecXlsx(
     }
   }
 
-  // Gatilho de segurança: rejeitar ensaios que não sejam CID.
-  // Rejeita se:
-  //  (a) cabeçalho OWNTEC identificado mas sem "Ruptura Dren.", ou
-  //  (b) modo por seções encontrou apenas "Ruptura" (sem "Dren.") ou
-  //      explicitamente "Ruptura NÃO Dren." (CIU/UU).
+  // Gatilho de segurança: rejeitar planilha da etapa errada pro tipo do
+  // ensaio. CID precisa de "Ruptura Dren."; CIU/UU precisam do oposto —
+  // "Ruptura Não Dren." é justamente o que caracteriza esses dois.
   const anyDrained = sawDrained || sectionDrained;
-  const anyUndrainedOnly = (sawUndrained || sectionUndrained) && !anyDrained;
-  if ((sawHeader && !sawDrained) || anyUndrainedOnly) {
+  const anyUndrained = sawUndrained || sectionUndrained;
+  const anyEsperado = exigirDrenado ? anyDrained : anyUndrained;
+  const anySoOOposto = !anyEsperado && (exigirDrenado ? anyUndrained : anyDrained);
+  if ((sawHeader && !anyEsperado) || anySoOOposto) {
     throw new Error(
-      (sawUndrained || sectionUndrained)
-        ? "Arquivo rejeitado: contém apenas etapa de ruptura NÃO DRENADA (CIU/UU). Este módulo aceita apenas ensaios CID (Ruptura Dren.)."
-        : "Arquivo rejeitado: nenhuma etapa 'Ruptura Dren.' encontrada. Este módulo aceita apenas ensaios CID.",
+      exigirDrenado
+        ? (anyUndrained
+            ? "Arquivo rejeitado: contém apenas etapa de ruptura NÃO DRENADA (CIU/UU). Este ensaio é CID e precisa da etapa 'Ruptura Dren.'."
+            : "Arquivo rejeitado: nenhuma etapa 'Ruptura Dren.' encontrada. Este ensaio é CID.")
+        : (anyDrained
+            ? "Arquivo rejeitado: contém apenas etapa de ruptura DRENADA (CID). Este ensaio é CIU/UU e precisa da etapa 'Ruptura Não Dren.'."
+            : "Arquivo rejeitado: nenhuma etapa de ruptura NÃO DRENADA ('Ruptura N/Dren.') encontrada — necessária para CIU/UU."),
     );
   }
 

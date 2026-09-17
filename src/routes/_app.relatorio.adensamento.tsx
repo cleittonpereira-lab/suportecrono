@@ -3129,8 +3129,8 @@ function CvLineEditor({
       <ValidationPanel
         title="Validação das contas do estágio"
         items={[
-          { key: validationKey(stageIndex, "taylor"), label: `Taylor: t90 = ${taylor ? fmt(taylor.t90, 3) : "—"} min · Cv = ${taylor ? exp2(taylor.cv) : "—"} cm²/s` },
-          { key: validationKey(stageIndex, "casagrande"), label: `Casagrande: t50 = ${cgr ? fmt(cgr.t50, 3) : "—"} min · Cv = ${cgr ? exp2(cgr.cv) : "—"} cm²/s` },
+          { key: validationKey(stageIndex, "taylor"), label: `Taylor: t90 = ${taylor ? fmt(taylor.t90, 3) : "—"} min · Cv = ${taylor ? exp2Str(taylor.cv) : "—"} cm²/s` },
+          { key: validationKey(stageIndex, "casagrande"), label: `Casagrande: t50 = ${cgr ? fmt(cgr.t50, 3) : "—"} min · Cv = ${cgr ? exp2Str(cgr.cv) : "—"} cm²/s` },
           { key: validationKey(stageIndex, "resumo"), label: "Conferência do estágio no quadro resumo" },
         ]}
         validation={validation}
@@ -3428,6 +3428,13 @@ function EvsSigmaChart({
           wrapperStyle={{ fontSize: 10, lineHeight: "16px", paddingTop: 6 }}
         />
 
+        {/* Nenhuma reta de construção leva rótulo de texto: P, a bissetriz, a
+            tangente e a horizontal convergem geometricamente no MESMO canto
+            do gráfico (é assim que o método funciona) — texto em cada uma
+            virava sobreposição garantida ali. A legenda das cores fica numa
+            legenda abaixo do gráfico (fora do SVG, sem risco de colidir); só
+            o resultado final (linha vertical) e o ponto "P"/"A"/"B"/"C" têm
+            rótulo, cada valor aparecendo uma única vez. */}
         {cas && (
           <>
             {casVirginSeg && (
@@ -3437,7 +3444,6 @@ function EvsSigmaChart({
                 strokeWidth={1.8}
                 strokeDasharray="6 3"
                 ifOverflow="visible"
-                label={showResults ? { value: "Reta virgem", position: "insideBottomRight", fill: RED, fontSize: 10, fontWeight: 600 } : undefined}
               />
             )}
             {casTangentSeg && (
@@ -3447,7 +3453,6 @@ function EvsSigmaChart({
                 strokeWidth={1.4}
                 strokeDasharray="2 3"
                 ifOverflow="visible"
-                label={showResults ? { value: "Tangente em P", position: "insideBottomLeft", fill: SLATE_SOFT, fontSize: 10, fontWeight: 600 } : undefined}
               />
             )}
             <ReferenceLine
@@ -3456,7 +3461,6 @@ function EvsSigmaChart({
               strokeWidth={1.4}
               strokeDasharray="2 3"
               ifOverflow="visible"
-              label={showResults ? { value: "Horizontal em P", position: "insideTopRight", fill: SLATE_SOFT, fontSize: 10, fontWeight: 600 } : undefined}
             />
             {casBisectorSeg && (
               <ReferenceLine
@@ -3465,14 +3469,10 @@ function EvsSigmaChart({
                 strokeWidth={2}
                 strokeDasharray="5 3"
                 ifOverflow="visible"
-                label={showResults ? { value: "Bissetriz", position: "insideTopLeft", fill: GREEN, fontSize: 10, fontWeight: 700 } : undefined}
               />
             )}
-            {/* Só o rótulo da reta (topo) diz o valor — o ponto abaixo é só o
-                marcador "P", sem repetir o número (era a 3ª repetição do
-                mesmo valor no gráfico, empilhada em cima da curva). */}
             <ReferenceLine x={lx(cas.sigmaP)} stroke={GREEN} strokeWidth={2} strokeDasharray="3 2" label={showResults ? { value: `σ'ᵥₘ = ${fmt(cas.sigmaP, 0)} kPa`, position: "top", fill: GREEN, fontSize: 12, fontWeight: 700 } : undefined} />
-            <ReferenceDot x={cas.point.x} y={cas.point.y} r={5} fill={GREEN} stroke="#fff" label={showResults ? { value: "P", position: "top", fill: GREEN, fontSize: 12, fontWeight: 700 } : undefined} />
+            <ReferenceDot x={cas.point.x} y={cas.point.y} r={5} fill={GREEN} stroke="#fff" label={showResults ? { value: "P", position: "right", fill: GREEN, fontSize: 12, fontWeight: 700 } : undefined} />
           </>
         )}
 
@@ -3484,7 +3484,6 @@ function EvsSigmaChart({
                 stroke={RED}
                 strokeWidth={1.8}
                 ifOverflow="visible"
-                label={showResults ? { value: "Reta virgem", position: "insideBottomLeft", fill: RED, fontSize: 10, fontWeight: 600 } : undefined}
               />
             )}
             <ReferenceLine
@@ -3493,10 +3492,7 @@ function EvsSigmaChart({
               strokeWidth={1.4}
               strokeDasharray="3 2"
               ifOverflow="visible"
-              label={showResults ? { value: `e₀ = ${fmt(ps.e0Line, 3)}`, position: "insideTopLeft", fill: PURPLE, fontSize: 10, fontWeight: 600 } : undefined}
             />
-            {/* Vertical A→B e horizontal B→C — só o traço; A/B/C já identificam
-                os pontos, o valor sai uma única vez na reta σ'ᵥₘ embaixo. */}
             <ReferenceLine
               segment={[{ x: lx(ps.A.sigma), y: ps.A.y }, { x: lx(ps.B.sigma), y: ps.B.y }]}
               stroke={PURPLE}
@@ -3546,7 +3542,30 @@ function EvsSigmaChart({
         />
       </ComposedChart>
     </ResponsiveContainer>
+    {showResults && cas && (
+      <div className="flex flex-wrap justify-center gap-x-4 gap-y-0.5 pb-1 text-[9px] text-muted-foreground">
+        <LegendaCor cor={RED} texto="Reta virgem" />
+        <LegendaCor cor={SLATE_SOFT} texto="Tangente / horizontal em P" />
+        <LegendaCor cor={GREEN} texto="Bissetriz" />
+      </div>
+    )}
+    {showResults && ps && (
+      <div className="flex flex-wrap justify-center gap-x-4 gap-y-0.5 pb-1 text-[9px] text-muted-foreground">
+        <LegendaCor cor={RED} texto="Reta virgem" />
+        <LegendaCor cor={PURPLE} texto="e₀ e construção A → B → C" />
+      </div>
+    )}
     </ChartFrame>
+  );
+}
+
+/** Amostra de cor + texto — usada na legenda das retas de construção (fora do SVG, sem risco de colidir com o gráfico). */
+function LegendaCor({ cor, texto }: { cor: string; texto: string }) {
+  return (
+    <span className="flex items-center gap-1">
+      <span className="inline-block h-[2px] w-4" style={{ backgroundColor: cor }} />
+      {texto}
+    </span>
   );
 }
 
