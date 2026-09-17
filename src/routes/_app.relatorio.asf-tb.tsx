@@ -8,6 +8,7 @@ import { EditingPresenceBanner } from "@/components/DraftActivityInfo";
 import { buildScopeId } from "@/lib/scope";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useRef, useState, useEffect, type ReactElement } from "react";
+import { flushSync } from "react-dom";
 import { useCadastroByOs } from "@/hooks/use-cadastro-by-os";
 import { useAuth } from "@/hooks/use-auth";
 import { podeAprovar, podeVerificar } from "@/lib/papeis";
@@ -779,13 +780,21 @@ export function AsfTbPage() {
 
   const handleSaveVersion = async (opts?: { skipVerification?: boolean }) => {
     const skipVerification = opts?.skipVerification === true;
-    setSample((prev) => ({ ...prev, typedBy: currentUserName }));
     setWfStatus(skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao");
     setSaveBusy(true);
     const tid = toast.loading("Gerando e salvando versão PDF…");
     try {
-      const blob = await buildReportPdfBlob();
+      // A Revisão impressa no cabeçalho/rodapé (sample.revision) acompanha o
+      // número da revisão do laudo — sem isto, ficava travada no valor
+      // digitado manualmente (ex.: "0"), mesmo já sendo a Rev-01, Rev-02...
+      // flushSync força o re-render ANTES de capturar o PDF (buildReportPdfBlob
+      // lê o DOM já renderizado, não o estado React diretamente) — e
+      // `sampleAtualizado` (não a `sample` capturada no fechamento desta
+      // função) é o que vai pro rascunho/Drive, senão salvava a revisão antiga.
       const rev = await nextRev(scopeId);
+      const sampleAtualizado = { ...sample, typedBy: currentUserName, revision: String(rev) };
+      flushSync(() => setSample(sampleAtualizado));
+      const blob = await buildReportPdfBlob();
       const filename = `ASF-TB_${nomeBase()}_Rev-${String(rev).padStart(2, "0")}.pdf`;
       const saved = await saveVersion({ scopeId, rev, filename, size: blob.size, pdfBlob: blob });
       await refreshVersions();
@@ -796,11 +805,11 @@ export function AsfTbPage() {
           rev: saved.rev,
           pdfBlob: blob,
           pdfFilename: filename,
-          sample,
+          sample: sampleAtualizado,
           photos: ctx?.photos || [],
           ctxOs: ctx?.os,
           ctxAmostra: ctx?.amostra,
-          ctxEnsaio: { tipo: "asf-tb", nome: sample.reportNumber },
+          ctxEnsaio: { tipo: "asf-tb", nome: sampleAtualizado.reportNumber },
           fotos: fotosParaDrive(),
         });
         if (resDrive?.folderUrl) setDriveFolderUrl(resDrive.folderUrl);
@@ -815,15 +824,15 @@ export function AsfTbPage() {
           filename,
           skipVerification,
           index: {
-            os_numero: sample.os,
-            os_cliente: sample.client,
-            amostra_code: sample.reportNumber || sample.code,
+            os_numero: sampleAtualizado.os,
+            os_cliente: sampleAtualizado.client,
+            amostra_code: sampleAtualizado.reportNumber || sampleAtualizado.code,
             ensaio_tipo: "asf-tb",
             ensaio_nome: ASF_TB_NOME,
           },
         },
       });
-      const currentDraft = { sample, photos: ctx?.photos || [] };
+      const currentDraft = { sample: sampleAtualizado, photos: ctx?.photos || [] };
       saveDraft(scopeId, currentDraft, { id: user?.id, name: displayName });
       if (ctx && ctx.os && ctx.amostra && ctx.ensaio) {
         labStore.patchEnsaio(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, {
@@ -861,6 +870,10 @@ export function AsfTbPage() {
     const tid = toast.loading("Atualizando o PDF desta revisão…");
     try {
       const revAtual = approvals[0]?.rev ?? 0;
+      // Mesmo cuidado do handleSaveVersion: garante que a Revisão impressa
+      // bate com a revisão real do laudo, mesmo que tenha ficado desatualizada.
+      const sampleAtualizado = { ...sample, revision: String(revAtual) };
+      flushSync(() => setSample(sampleAtualizado));
       const blob = await buildReportPdfBlob();
       const filename = `ASF-TB_${nomeBase()}_Rev-${String(revAtual).padStart(2, "0")}.pdf`;
       const atual = versions.find((v) => v.rev === revAtual);
@@ -877,11 +890,11 @@ export function AsfTbPage() {
           rev: revAtual,
           pdfBlob: blob,
           pdfFilename: filename,
-          sample,
+          sample: sampleAtualizado,
           photos: ctx?.photos || [],
           ctxOs: ctx?.os,
           ctxAmostra: ctx?.amostra,
-          ctxEnsaio: { tipo: "asf-tb", nome: sample.reportNumber },
+          ctxEnsaio: { tipo: "asf-tb", nome: sampleAtualizado.reportNumber },
           fotos: fotosParaDrive(),
           // Substitui deliberadamente o PDF da MESMA revisão já emitida.
           reemissao: true,
@@ -890,7 +903,7 @@ export function AsfTbPage() {
         console.warn("Drive sync standby:", err);
       }
 
-      const currentDraft = { sample, photos: ctx?.photos || [] };
+      const currentDraft = { sample: sampleAtualizado, photos: ctx?.photos || [] };
       saveDraft(scopeId, currentDraft, { id: user?.id, name: displayName });
       if (ctx && ctx.os && ctx.amostra && ctx.ensaio) {
         labStore.patchEnsaio(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, { payload: currentDraft });
