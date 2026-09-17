@@ -58,6 +58,8 @@ import { ReportPage, type ReportSample } from "@/components/report/ReportShell";
 import { EnsaioBadgesRow, EnsaioTitleBlock, AmostraSummaryCard, ResponsaveisBar } from "@/components/report/EnsaioReportHeader";
 import { SampleEditDialog } from "@/components/SampleEditDialog";
 import type { Photo } from "@/features/lab/types";
+import { fotosPublicadas } from "@/features/lab/photos";
+import { BlockingOverlay } from "@/components/BlockingOverlay";
 import {
   ASF_TB_NOME,
   SOLVENTES_SUGERIDOS,
@@ -227,7 +229,8 @@ function Bloco({ titulo, direita, children }: { titulo: string; direita?: string
  * páginas garante espaço mesmo com a faixa ligada, em vez de torcer pra
  * caber.
  */
-function paginasDoLaudo(sample: AsfTbSample, photos: Photo[]): ReactElement[] {
+function paginasDoLaudo(sample: AsfTbSample, photosRecebidas: Photo[]): ReactElement[] {
+  const photos = fotosPublicadas(photosRecebidas);
   const betume = massaBetume(sample.massaAmostra, sample.massaAgregado);
   const teor = teorBetume(sample.massaAmostra, sample.massaAgregado);
   const g = calcularGranulometria(sample);
@@ -877,6 +880,10 @@ export function AsfTbPage() {
 
   return (
     <>
+      <BlockingOverlay
+        open={saveBusy || decideBusy}
+        message={decideBusy ? "Registrando a decisão…" : "Salvando o laudo…"}
+      />
       {/* Diálogo de Decisão / Aprovação */}
       <Dialog open={decideOpen !== null} onOpenChange={(o) => !o && setDecideOpen(null)}>
         <DialogContent className="sm:max-w-md">

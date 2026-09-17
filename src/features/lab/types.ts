@@ -65,6 +65,12 @@ export interface Photo {
    * moldagem/ruptura. Em Adensamento (CP único) fica indefinido.
    */
   specimenId?: string;
+  /**
+   * `false` tira a foto do PDF gerado (Registro Fotográfico) sem apagá-la —
+   * continua no editor e pode ser republicada depois. Ausente/`true` = publica
+   * (comportamento de antes desta opção, pra fotos já existentes).
+   */
+  publicar?: boolean;
 }
 
 export interface Amostra {

@@ -72,6 +72,8 @@ import { CheckCircle2,
   MessageSquareQuote, XCircle, Clock, Send } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { PhotoUploader } from "@/features/lab/components/PhotoUploader";
+import { fotosPublicadas } from "@/features/lab/photos";
+import { BlockingOverlay } from "@/components/BlockingOverlay";
 import { WorkflowFarol } from "@/features/lab/components/WorkflowFarol";
 import { useOptionalLabEnsaio } from "@/features/lab/context";
 import { labStore } from "@/features/lab/store";
@@ -2326,6 +2328,10 @@ export function TriaxialCidPage() {
               )}
             </DialogContent>
           </Dialog>
+          <BlockingOverlay
+            open={saveBusy || decideBusy}
+            message={decideBusy ? "Registrando a decisão…" : "Salvando o laudo…"}
+          />
           <Dialog open={!!decideOpen} onOpenChange={(o) => !o && setDecideOpen(null)}>
             <DialogContent className="sm:max-w-md">
               {(() => {
@@ -3915,7 +3921,7 @@ function TriaxialReport({
   results,
   envelope,
   envelopePts,
-  photos,
+  photos: photosRecebidas,
   axisCfg,
 }: {
   sample: TriaxialSample & { coordN?: number | string; coordE?: number | string; coordCota?: number | string; coordDatum?: string };
@@ -3926,6 +3932,7 @@ function TriaxialReport({
   photos: import("@/features/lab/types").Photo[];
   axisCfg?: AxisCfg;
 }) {
+  const photos = fotosPublicadas(photosRecebidas);
   const perCpPages = specimens.length; // uma página por CP com gráficos + fotos
   const total = 6 + perCpPages + 2; // +2 → Glossário (Formulações e Convenções), 2 páginas
   const cfg: AxisCfg = axisCfg ?? {

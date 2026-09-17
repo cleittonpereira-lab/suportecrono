@@ -3,6 +3,7 @@ import { Camera, Crop, ImagePlus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import type { Photo } from "../types";
 import { fileToCompressedDataUrl, formatBytes } from "../photos";
@@ -119,15 +120,22 @@ export function PhotoUploader({ title, kind, photos = [], onAdd, onRemove, onUpd
         </p>
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-          {items.map((p) => (
+          {items.map((p) => {
+            const publicada = p.publicar !== false;
+            return (
             <div key={p.id} className="group relative overflow-hidden rounded-md border border-border bg-card">
-              <div className="flex aspect-[3/4] w-full items-center justify-center bg-black/5 overflow-hidden">
+              <div className={`flex aspect-[3/4] w-full items-center justify-center bg-black/5 overflow-hidden ${publicada ? "" : "opacity-40"}`}>
                 <img
                   src={p.url || p.dataUrl}
                   alt={p.caption ?? title}
                   className="h-full w-full object-cover"
                 />
               </div>
+              {!publicada && (
+                <span className="absolute left-1 top-1 rounded bg-black/70 px-1.5 py-0.5 text-[9px] font-medium text-white">
+                  Fora do PDF
+                </span>
+              )}
               <div className="p-2">
                 <Label className="text-[10px] text-muted-foreground">Legenda</Label>
                 <Input
@@ -136,33 +144,43 @@ export function PhotoUploader({ title, kind, photos = [], onAdd, onRemove, onUpd
                   placeholder="Ex.: Ruptura CP2 — face frontal"
                   className="h-7 text-xs"
                 />
-                <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground">
-                  <span>{formatBytes(p.bytes)}</span>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 px-1.5"
-                      onClick={() => setEditing(p)}
-                      aria-label="Editar recorte"
-                      title="Editar enquadramento"
-                    >
-                      <Crop className="h-3 w-3" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 px-1.5 text-destructive hover:text-destructive"
-                      onClick={() => onRemove(p.id)}
-                      aria-label="Remover foto"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
+                <div className="mt-1.5 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Switch
+                      checked={publicada}
+                      onCheckedChange={(checked) => onUpdate(p.id, { publicar: checked })}
+                      className="h-4 w-7 [&>span]:h-3 [&>span]:w-3 [&>span]:data-[state=checked]:translate-x-3"
+                      aria-label="Publicar no PDF"
+                    />
+                    <span className="text-[10px] text-muted-foreground">Publicar</span>
                   </div>
+                  <span className="text-[10px] text-muted-foreground">{formatBytes(p.bytes)}</span>
+                </div>
+                <div className="mt-1 flex items-center justify-end gap-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-1.5"
+                    onClick={() => setEditing(p)}
+                    aria-label="Editar recorte"
+                    title="Editar enquadramento"
+                  >
+                    <Crop className="h-3 w-3" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-1.5 text-destructive hover:text-destructive"
+                    onClick={() => onRemove(p.id)}
+                    aria-label="Remover foto"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

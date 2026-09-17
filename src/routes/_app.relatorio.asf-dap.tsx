@@ -44,6 +44,8 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { PhotoUploader } from "@/features/lab/components/PhotoUploader";
+import { fotosPublicadas } from "@/features/lab/photos";
+import { BlockingOverlay } from "@/components/BlockingOverlay";
 import { useOptionalLabEnsaio } from "@/features/lab/context";
 import { labStore } from "@/features/lab/store";
 import { EnsaioListByType } from "@/features/lab/components/EnsaioListByType";
@@ -134,11 +136,12 @@ function NumField({ label, value, onChange, className }: { label: string; value:
 /** Página única do laudo: identificação (via ReportHeader) + resultados por CP. */
 function ASFDapReportPage({
   sample,
-  photos = [],
+  photos: photosRecebidas = [],
 }: {
   sample: AsfDapSample;
   photos?: import("@/features/lab/types").Photo[];
 }) {
+  const photos = fotosPublicadas(photosRecebidas);
   const results = sample.corposDeProva.map((cp) => calcCp(cp, sample.tipoMistura, sample.dpa));
   const avg = (vals: (number | null | undefined)[]) => {
     const nums = vals.filter((v): v is number => v != null && isFinite(v));
@@ -825,6 +828,10 @@ export function ASFPage() {
 
   return (
     <>
+      <BlockingOverlay
+        open={saveBusy || decideBusy}
+        message={decideBusy ? "Registrando a decisão…" : "Salvando o laudo…"}
+      />
       {/* Diálogo de Decisão / Aprovação */}
       <Dialog open={decideOpen !== null} onOpenChange={(o) => !o && setDecideOpen(null)}>
         <DialogContent className="sm:max-w-md">

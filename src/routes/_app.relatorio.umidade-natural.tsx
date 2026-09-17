@@ -56,6 +56,7 @@ import {
 import { getWorkflowStatuses } from "@/lib/driveSync.functions";
 import { Textarea } from "@/components/ui/textarea";
 import { PhotoUploader } from "@/features/lab/components/PhotoUploader";
+import { BlockingOverlay } from "@/components/BlockingOverlay";
 import { useOptionalLabEnsaio } from "@/features/lab/context";
 import { labStore } from "@/features/lab/store";
 import { EnsaioListByType } from "@/features/lab/components/EnsaioListByType";
@@ -503,6 +504,10 @@ export function UNPage() {
 
   return (
     <>
+      <BlockingOverlay
+        open={saveBusy || decideBusy}
+        message={decideBusy ? "Registrando a decisão…" : "Salvando o laudo…"}
+      />
       {/* Diálogo de Decisão / Aprovação */}
       <Dialog open={decideOpen !== null} onOpenChange={(o) => !o && setDecideOpen(null)}>
         <DialogContent className="sm:max-w-md">

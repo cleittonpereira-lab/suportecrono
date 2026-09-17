@@ -39,6 +39,8 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { PhotoUploader } from "@/features/lab/components/PhotoUploader";
+import { fotosPublicadas } from "@/features/lab/photos";
+import { BlockingOverlay } from "@/components/BlockingOverlay";
 import { useOptionalLabEnsaio } from "@/features/lab/context";
 import { labStore } from "@/features/lab/store";
 import { EnsaioListByType } from "@/features/lab/components/EnsaioListByType";
@@ -146,12 +148,13 @@ function useCsResults(sample: CompressaoSimplesSample) {
 /** Página única do laudo: identificação + CP(s) + índices físicos (se aplicável) + resultado. */
 function CompressaoSimplesReportPage({
   sample,
-  photos = [],
+  photos: photosRecebidas = [],
 }: {
   sample: CompressaoSimplesSample;
   photos?: import("@/features/lab/types").Photo[];
 }) {
   const { comIndices, isCompleto, results, media } = useCsResults(sample);
+  const photos = fotosPublicadas(photosRecebidas);
   const fotosAntes = photos.filter((p) => p.kind === "moldagem");
   const fotosDepois = photos.filter((p) => p.kind === "ruptura");
 
@@ -914,6 +917,10 @@ export function CompressaoSimplesPage() {
 
   return (
     <>
+      <BlockingOverlay
+        open={saveBusy || decideBusy}
+        message={decideBusy ? "Registrando a decisão…" : "Salvando o laudo…"}
+      />
       <Dialog open={decideOpen !== null} onOpenChange={(o) => !o && setDecideOpen(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>

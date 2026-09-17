@@ -1,3 +1,10 @@
+import type { Photo } from "./types";
+
+/** Fotos que entram no Registro Fotográfico do PDF — exclui as marcadas como não publicadas. */
+export function fotosPublicadas(photos: Photo[]): Photo[] {
+  return (photos ?? []).filter((p) => p.publicar !== false);
+}
+
 /**
  * Utilitário: converte um File em data URL comprimida (JPEG).
  * Reduz para no máx 1600 px na maior aresta e qualidade 0.82 —

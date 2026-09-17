@@ -27,6 +27,8 @@ import { toast } from "sonner";
 import { rasterizarRelatorioParaPdf, waitForOffscreenEl, comTeto } from "@/lib/report-pdf";
 import { planejarPaginasPermV, type BlocoPermV } from "@/features/perm-v/reportLayout";
 import { PhotoAppendixPage } from "@/features/lab/components/PhotoAppendixPage";
+import { fotosPublicadas } from "@/features/lab/photos";
+import { BlockingOverlay } from "@/components/BlockingOverlay";
 import {
   listVersions, saveVersion, nextRev, deleteVersion, downloadVersion, type ReportVersion,
 } from "@/features/perm-v/report-versions";
@@ -583,13 +585,14 @@ function renderBlocoPermV(b: BlocoPermV, sample: PermVSample, c: CalcPermV, key:
  */
 function PermVReportPages({
   sample,
-  photos = [],
+  photos: photosRecebidas = [],
   folhaClassName = "",
 }: {
   sample: PermVSample;
   photos?: import("@/features/lab/types").Photo[];
   folhaClassName?: string;
 }) {
+  const photos = fotosPublicadas(photosRecebidas);
   const c = usePermVCalculos(sample);
   const temNota = c.naMedia < c.determinacoes.length;
   const plano = useMemo(
@@ -1111,6 +1114,10 @@ export function PermVPage() {
 
   return (
     <>
+      <BlockingOverlay
+        open={saveBusy || decideBusy}
+        message={decideBusy ? "Registrando a decisão…" : "Salvando o laudo…"}
+      />
       <Dialog open={decideOpen !== null} onOpenChange={(o) => !o && setDecideOpen(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>

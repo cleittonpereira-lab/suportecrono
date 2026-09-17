@@ -160,6 +160,8 @@ import {
 import type { Photo } from "@/features/lab/types";
 import { useOptionalLabEnsaio } from "@/features/lab/context";
 import { PhotoUploader } from "@/features/lab/components/PhotoUploader";
+import { fotosPublicadas } from "@/features/lab/photos";
+import { BlockingOverlay } from "@/components/BlockingOverlay";
 
 export const Route = createFileRoute("/_app/relatorio/adensamento")({
   head: () => ({
@@ -1215,6 +1217,7 @@ export function AdensamentoPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background p-4 lg:p-6 pb-20">
+      <BlockingOverlay open={savingVersion} message="Salvando o laudo…" />
       {/* Top Header com Farol e Ações (Padrão Cisalhamento Direto) */}
       <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
@@ -4860,6 +4863,7 @@ function PrintableReport(p: ReportProps) {
     (r) => r.phase === "load" && (r.validatedTaylor || r.validatedCasagrande),
   );
   const total = 10 + anexoRows.length;
+  const fotosOk = fotosPublicadas(p.photos ?? []);
 
   // Domínios compartilhados — todos os gráficos com o mesmo eixo (e, σ') usam os mesmos limites.
   const eDomain: [number, number] = p.axisCfg
@@ -4992,15 +4996,15 @@ function PrintableReport(p: ReportProps) {
           
           {/* Grid de 2 Fotos Centralizadas na Proporção 3:4 */}
           <div className="mt-4 grid grid-cols-2 gap-6 max-w-[160mm] mx-auto">
-            {p.photos && p.photos.length > 0 ? (
+            {fotosOk.length > 0 ? (
               [
                 // O campo é `kind` (features/lab/types.ts) — o mesmo que o
                 // PhotoUploader grava. Antes procurava por `ph.phase`, que não
                 // existe no projeto: nunca casava e caía no acaso da ordem.
-                p.photos.find((ph) => ph.kind === "moldagem") || p.photos[0],
-                p.photos.find((ph) => ph.kind === "ruptura")
-                  || p.photos.filter((ph) => ph.kind !== "moldagem")[0]
-                  || p.photos[1]
+                fotosOk.find((ph) => ph.kind === "moldagem") || fotosOk[0],
+                fotosOk.find((ph) => ph.kind === "ruptura")
+                  || fotosOk.filter((ph) => ph.kind !== "moldagem")[0]
+                  || fotosOk[1]
               ].filter(Boolean).map((ph, idx) => (
                 <div key={idx} className="flex flex-col rounded border border-gray-400 bg-white overflow-hidden shadow-sm">
                   <div className="bg-[#141414] px-2 py-1.5 text-center text-[9.5px] font-bold uppercase tracking-wider text-white">

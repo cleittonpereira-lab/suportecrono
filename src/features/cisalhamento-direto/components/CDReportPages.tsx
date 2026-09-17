@@ -718,16 +718,17 @@ export function CDReportPage4({
 export function CDReportPage5({
   sample,
   specimens,
-  photos = [],
+  photos: photosRecebidas = [],
   pageIndex = 0,
   totalPages = 6,
 }: {
   sample: CDSample;
   specimens: CDSpecimen[];
-  photos?: { id: string; dataUrl: string; url?: string; kind: string; specimenId?: string; caption?: string }[];
+  photos?: { id: string; dataUrl: string; url?: string; kind: string; specimenId?: string; caption?: string; publicar?: boolean }[];
   pageIndex?: number;
   totalPages?: number;
 }) {
+  const photos = photosRecebidas.filter((p) => p.publicar !== false);
   const title = getReportTitle(sample.testCondition);
   const cpsForPage = specimens.slice(pageIndex * 3, pageIndex * 3 + 3);
 
