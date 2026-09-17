@@ -31,6 +31,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -227,6 +228,7 @@ function CentralRelatoriosPage() {
   const [externoModal, setExternoModal] = useState<PendenciaDigitacao | null>(null);
   const [externoObs, setExternoObs] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<PendenciaDigitacao | null>(null);
+  const [excluirEnsaioTambem, setExcluirEnsaioTambem] = useState(false);
 
   // Queries
   const labState = useLabState();
@@ -574,10 +576,39 @@ function CentralRelatoriosPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["lab-pendencias"] });
       setDeleteConfirm(null);
+      setExcluirEnsaioTambem(false);
       toast.success("Pendência excluída.");
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  /**
+   * A Central reconstrói o card sozinha a partir do PRÓPRIO ensaio sempre que
+   * ele tem progresso (payload ou status além de "em digitação") — ver
+   * `allPendencias` acima. "Excluir pendência" some com o registro de
+   * acompanhamento, mas não com isso: pra um ensaio que já avançou (aguardando
+   * verificação/aprovação, por exemplo), o card sempre volta. Achar o
+   * ensaio real por trás do card permite excluí-lo de vez — usado só quando o
+   * usuário confirma explicitamente que quer apagar os dados, não só o card.
+   */
+  function acharEnsaioDaPendencia(p: PendenciaDigitacao): { osId: string; amId: string; enId: string } | null {
+    if (!labState?.os) return null;
+    const osN = normOs(p.os);
+    const amN = normAmostra(p.amostra || "");
+    const metN = normMethod(p.ensaio || p.tipo_ensaio);
+    for (const o of labState.os) {
+      if (normOs(o.numero) !== osN) continue;
+      for (const a of o.amostras) {
+        if (normAmostra(a.reportNumber || a.code || "") !== amN) continue;
+        for (const e of a.ensaios) {
+          if (e.id === p.id || normMethod(e.sigla || e.nome || e.tipo) === metN) {
+            return { osId: o.id, amId: a.id, enId: e.id };
+          }
+        }
+      }
+    }
+    return null;
+  }
 
   // Roteamento inteligente para os editores de laudo
   // Ensaio sem laudo no app avisa — antes abria o Triaxial (daqui) ou o Cisalhamento (da fila) no lugar.
@@ -1574,20 +1605,36 @@ function CentralRelatoriosPage() {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={Boolean(deleteConfirm)} onOpenChange={(o) => !o && setDeleteConfirm(null)}>
+      <AlertDialog open={Boolean(deleteConfirm)} onOpenChange={(o) => { if (!o) { setDeleteConfirm(null); setExcluirEnsaioTambem(false); } }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir pendência de digitação?</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogDescription asChild>
               {deleteConfirm && (
-                <>
-                  OS <strong>{deleteConfirm.os}</strong> · Amostra{" "}
-                  <strong>{deleteConfirm.amostra || "Amostra Geral"}</strong> ·{" "}
-                  <strong>{deleteConfirm.ensaio}</strong>
-                  <br />
-                  Isso remove a pendência da Central de Relatórios — se houver dados digitados,
-                  eles não serão apagados, apenas o card de acompanhamento. Não pode ser desfeito.
-                </>
+                <div className="space-y-3">
+                  <div>
+                    OS <strong>{deleteConfirm.os}</strong> · Amostra{" "}
+                    <strong>{deleteConfirm.amostra || "Amostra Geral"}</strong> ·{" "}
+                    <strong>{deleteConfirm.ensaio}</strong>
+                    <br />
+                    Isso remove a pendência da Central de Relatórios — se houver dados digitados,
+                    eles não serão apagados, apenas o card de acompanhamento. Se o ensaio já tem
+                    progresso, o card volta sozinho (é reconstruído a partir do próprio ensaio).
+                    Não pode ser desfeito.
+                  </div>
+                  <label className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-2.5 text-xs">
+                    <Checkbox
+                      checked={excluirEnsaioTambem}
+                      onCheckedChange={(v) => setExcluirEnsaioTambem(v === true)}
+                      className="mt-0.5"
+                    />
+                    <span>
+                      <strong className="text-destructive">Também excluir o ensaio e os dados digitados</strong> — use
+                      só se este for um ensaio criado por engano/duplicado (ex.: "Relatório avulso"). Apaga de vez,
+                      sem volta, e é o único jeito de fazer o card não voltar quando o ensaio já tem progresso.
+                    </span>
+                  </label>
+                </div>
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -1597,7 +1644,12 @@ function CentralRelatoriosPage() {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               disabled={removeMutation.isPending}
               onClick={() => {
-                if (deleteConfirm) removeMutation.mutate(deleteConfirm.id);
+                if (!deleteConfirm) return;
+                if (excluirEnsaioTambem) {
+                  const alvo = acharEnsaioDaPendencia(deleteConfirm);
+                  if (alvo) labStore.deleteEnsaio(alvo.osId, alvo.amId, alvo.enId);
+                }
+                removeMutation.mutate(deleteConfirm.id);
               }}
             >
               {removeMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Excluir"}
