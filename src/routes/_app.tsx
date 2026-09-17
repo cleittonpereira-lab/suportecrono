@@ -12,6 +12,7 @@ import { RefreshCw, ArrowLeft } from "lucide-react";
 import { useSchedule } from "@/hooks/use-schedule";
 import { fetchSchedule } from "@/lib/sheets.functions";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { NotificationBell } from "@/components/NotificationBell";
 import { AiAssistantFloating } from "@/components/ai-assistant-floating";
 import { SectionNav, useCurrentSection, primeiraUrlLiberada } from "@/components/section-nav";
 import { UserMenu } from "@/components/user-menu";
@@ -147,6 +148,7 @@ function AppLayout() {
                     Olá, <span className="font-medium text-foreground">{profile?.nome || user?.email?.split("@")[0]}</span>
                   </span>
                 )}
+                <NotificationBell />
                 <ThemeToggle />
                 <Button
                   variant="ghost"
@@ -183,6 +185,7 @@ function AppLayout() {
                       : "—"}
                   </span>
                 </div>
+                <NotificationBell />
                 <ThemeToggle />
                 <Button
                   variant="ghost"

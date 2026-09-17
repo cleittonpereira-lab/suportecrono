@@ -33,7 +33,7 @@ export interface Inscricao {
 }
 
 type ArquivoInscricoes = { inscricoes: Inscricao[] };
-type ArquivoCaixa = { avisos: Aviso[] };
+type ArquivoCaixa = { avisos: Aviso[]; lidoAte?: string };
 
 const nomeInscricoes = (userId: string) => `inscricoes-${userId}.json`;
 const nomeCaixa = (userId: string) => `caixa-${userId}.json`;
@@ -84,6 +84,22 @@ export async function avisosDesde(userId: string, desde: string | null): Promise
   const pasta = await ensureFolderPath(PASTA);
   const caixa = await readDriveJson<ArquivoCaixa>(nomeCaixa(userId), pasta);
   return avisosNovos(caixa?.avisos ?? [], desde);
+}
+
+/** A caixa de avisos da pessoa, para o sino de notificações (não mexe em "entregue" do push). */
+export async function minhaCaixa(userId: string): Promise<{ avisos: Aviso[]; lidoAte: string | null }> {
+  const pasta = await ensureFolderPath(PASTA);
+  const caixa = await readDriveJson<ArquivoCaixa>(nomeCaixa(userId), pasta);
+  return { avisos: caixa?.avisos ?? [], lidoAte: caixa?.lidoAte ?? null };
+}
+
+/** Marca a caixa como lida até agora — o sino zera o contador de não lidos. */
+export async function marcarCaixaLida(userId: string, ate: string): Promise<void> {
+  const pasta = await ensureFolderPath(PASTA);
+  await atualizarDriveJson<ArquivoCaixa>(nomeCaixa(userId), pasta, (atual) => {
+    if (atual?.lidoAte && atual.lidoAte >= ate) return null;
+    return { avisos: atual?.avisos ?? [], lidoAte: ate };
+  });
 }
 
 /** Um push sem conteúdo para cada aparelho; inscrições vencidas (404/410) saem da lista. */

@@ -31,6 +31,23 @@ export const cancelarAvisos = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+/** Caixa de avisos da pessoa logada — usada pelo sino de notificações no cabeçalho. */
+export const minhaCaixaDeAvisos = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const s = await import("./avisos.server");
+    return s.minhaCaixa((context as { userId: string }).userId);
+  });
+
+export const marcarAvisosLidos = createServerFn({ method: "POST" })
+  .middleware([exigirLogin])
+  .inputValidator((v: unknown) => z.object({ ate: z.string().min(1) }).parse(v))
+  .handler(async ({ data, context }) => {
+    const s = await import("./avisos.server");
+    await s.marcarCaixaLida((context as { userId: string }).userId, data.ate);
+    return { ok: true };
+  });
+
 export const situacaoDosAvisos = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
