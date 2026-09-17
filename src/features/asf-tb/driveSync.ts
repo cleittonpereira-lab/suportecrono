@@ -21,6 +21,8 @@ export interface SyncRevisionArgs {
   ctxAmostra?: { code?: string; description?: string };
   ctxEnsaio?: { tipo?: string; nome?: string };
   fotos?: DrivePhotoInput[];
+  /** Substitui deliberadamente o PDF de uma revisão já emitida (ver enviarRevisaoAoDrive). */
+  reemissao?: boolean;
 }
 
 /** Envia a revisão (PDF + dados) para a pasta do ensaio no Drive — mesmo contrato dos demais ensaios. */
@@ -56,6 +58,7 @@ export async function syncRevision(args: SyncRevisionArgs) {
         digitadoPor: args.sample.typedBy ?? "",
         equipamento: args.sample.equipment ?? "",
       },
+      reemissao: args.reemissao,
     },
   });
 }

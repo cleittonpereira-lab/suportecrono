@@ -28,6 +28,7 @@ import {
 import {
   listVersions,
   saveVersion,
+  updateVersionContent,
   nextRev,
   deleteVersion,
   downloadVersion,
@@ -835,6 +836,61 @@ export function AsfTbPage() {
     }
   };
 
+  /**
+   * Atualiza o PDF da revisão JÁ enviada com os dados atuais da tela — sem
+   * abrir uma revisão nova nem mexer no status/fluxo. Para quando o
+   * verificador/aprovador corrige um dado (obra, furo, amostra) durante a
+   * verificação e quer que a correção entre no PDF oficial, em vez de ficar
+   * só visível na tela.
+   */
+  const handleAtualizarPdfAtual = async () => {
+    if (saveBusy) return;
+    setSaveBusy(true);
+    const tid = toast.loading("Atualizando o PDF desta revisão…");
+    try {
+      const revAtual = approvals[0]?.rev ?? 0;
+      const blob = await buildReportPdfBlob();
+      const filename = `ASF-TB_${nomeBase()}_Rev-${String(revAtual).padStart(2, "0")}.pdf`;
+      const atual = versions.find((v) => v.rev === revAtual);
+      if (atual) {
+        await updateVersionContent(atual.id, { pdfBlob: blob, size: blob.size, filename });
+      } else {
+        await saveVersion({ scopeId, rev: revAtual, filename, size: blob.size, pdfBlob: blob });
+      }
+      await refreshVersions();
+
+      try {
+        await syncRevision({
+          scopeId,
+          rev: revAtual,
+          pdfBlob: blob,
+          pdfFilename: filename,
+          sample,
+          photos: ctx?.photos || [],
+          ctxOs: ctx?.os,
+          ctxAmostra: ctx?.amostra,
+          ctxEnsaio: { tipo: "asf-tb", nome: sample.reportNumber },
+          fotos: fotosParaDrive(),
+          // Substitui deliberadamente o PDF da MESMA revisão já emitida.
+          reemissao: true,
+        });
+      } catch (err) {
+        console.warn("Drive sync standby:", err);
+      }
+
+      const currentDraft = { sample, photos: ctx?.photos || [] };
+      saveDraft(scopeId, currentDraft, { id: user?.id, name: displayName });
+      if (ctx && ctx.os && ctx.amostra && ctx.ensaio) {
+        labStore.patchEnsaio(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, { payload: currentDraft });
+      }
+      toast.success(`PDF da Rev ${String(revAtual).padStart(2, "0")} atualizado com os dados atuais.`, { id: tid });
+    } catch (err) {
+      toast.error("Falha ao atualizar o PDF: " + (err instanceof Error ? err.message : String(err)), { id: tid });
+    } finally {
+      setSaveBusy(false);
+    }
+  };
+
   const rawSt = wfStatus || approvals[0]?.status || (ctx?.ensaio as any)?.status || "digitacao";
   const isAguardandoVerif = rawSt === "aguardando_verificacao" || rawSt === "pendente_verificacao" || rawSt === "digitado" || rawSt === "verificacao";
   const isAguardandoAprov = rawSt === "aguardando_aprovacao" || rawSt === "pendente_aprovacao" || rawSt === "verificado";
@@ -967,8 +1023,8 @@ export function AsfTbPage() {
                     <ShieldCheck className="h-4 w-4" /> Verificar Laudo
                   </Button>
                 )}
-                <Button variant="outline" size="sm" onClick={() => handleSaveVersion()} disabled={saveBusy} className="text-xs">
-                  Atualizar / Gerar Nova Prévia
+                <Button variant="outline" size="sm" onClick={handleAtualizarPdfAtual} disabled={saveBusy} className="text-xs">
+                  Atualizar PDF com os dados atuais
                 </Button>
               </div>
             )}
@@ -987,6 +1043,9 @@ export function AsfTbPage() {
                     <CheckCircle2 className="h-4 w-4" /> Aprovar Laudo Oficial
                   </Button>
                 )}
+                <Button variant="outline" size="sm" onClick={handleAtualizarPdfAtual} disabled={saveBusy} className="text-xs">
+                  Atualizar PDF com os dados atuais
+                </Button>
               </div>
             )}
 

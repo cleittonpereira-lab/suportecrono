@@ -84,6 +84,24 @@ export async function saveVersion(
   return full;
 }
 
+/**
+ * Substitui o PDF de uma revisão JÁ enviada (mesmo id/rev/createdAt) — usada
+ * quando o verificador/aprovador corrige um dado (ex.: obra, furo) e quer
+ * que o PDF reflita isso ANTES de decidir, sem abrir uma revisão nova.
+ */
+export async function updateVersionContent(
+  id: string,
+  patch: { pdfBlob: Blob; size: number; filename?: string },
+): Promise<ReportVersion> {
+  return tx("readwrite", async (store) => {
+    const existing = (await reqAsPromise(store.get(id) as IDBRequest<ReportVersion | undefined>)) ?? null;
+    if (!existing) throw new Error("Versão não encontrada para atualizar.");
+    const updated: ReportVersion = { ...existing, ...patch };
+    await reqAsPromise(store.put(updated));
+    return updated;
+  });
+}
+
 export async function deleteVersion(id: string): Promise<void> {
   await tx("readwrite", (store) => reqAsPromise(store.delete(id)));
 }
