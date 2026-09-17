@@ -515,7 +515,13 @@ export function ASFPage() {
     if (!remoteLoaded || prefillCheckedRef.current || !ctx) return;
     prefillCheckedRef.current = true;
     const jaTemDados = sample.corposDeProva.some((cp) => cp.A != null || cp.B != null || cp.C != null);
-    const jaTemFotos = (ctx.photos ?? []).length > 0;
+    // "Já importei fotos" é um sinal PERSISTENTE (sample.fotosBancadaImportadas),
+    // não "ctx.photos está vazio agora" — apagar TODAS as fotos no escritório
+    // zerava ctx.photos, e a próxima abertura achava "nunca trouxe foto
+    // nenhuma" e reimportava as mesmas da pendência: a exclusão nunca "pegava"
+    // de vez. Também conta como "já importou" já ter QUALQUER foto agora
+    // (ensaios de antes desta correção, sem o sinalizador ainda gravado).
+    const jaTemFotos = sample.fotosBancadaImportadas === true || (ctx.photos ?? []).length > 0;
     if (jaTemDados && jaTemFotos) return;
     let cancelled = false;
     (async () => {
@@ -546,12 +552,16 @@ export function ASFPage() {
           preencheu = true;
         }
         // Fotos tiradas na bancada (celular) ficam só no payload da pendência —
-        // sem isto, nunca chegavam ao relatório do escritório.
-        if (!jaTemFotos && Array.isArray(fp.fotos) && fp.fotos.length > 0) {
-          for (const foto of fp.fotos) {
-            ctx.addPhoto({ dataUrl: foto.dataUrl, kind: "outro", caption: foto.caption });
+        // sem isto, nunca chegavam ao relatório do escritório. Marca como
+        // importada mesmo sem nenhuma foto pra trazer, pra nunca mais tentar.
+        if (!jaTemFotos) {
+          if (Array.isArray(fp.fotos) && fp.fotos.length > 0) {
+            for (const foto of fp.fotos) {
+              ctx.addPhoto({ dataUrl: foto.dataUrl, kind: "outro", caption: foto.caption });
+            }
+            preencheu = true;
           }
-          preencheu = true;
+          setSample((prev) => ({ ...prev, fotosBancadaImportadas: true }));
         }
         if (preencheu) toast.success("Dados pré-preenchidos da digitalização de campo — confira antes de continuar.");
       } catch (err) {

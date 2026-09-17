@@ -129,6 +129,14 @@ export interface AsfTbSample extends AsfTbMedidas {
   faixa: AsfTbFaixa;
   /** Mostra a faixa no gráfico e na tabela do laudo. */
   mostrarFaixa: boolean;
+  /**
+   * Já tentou puxar as fotos da digitação da bancada pra este relatório —
+   * mesmo que não tivesse nenhuma foto pra trazer. Sem isto, apagar TODAS as
+   * fotos no escritório fazia `ctx.photos` voltar a zero, e a próxima vez que
+   * a tela abrisse achava que "ainda não tinha foto nenhuma" e trazia de
+   * volta as mesmas fotos da pendência — a exclusão nunca "pegava" de vez.
+   */
+  fotosBancadaImportadas?: boolean;
 }
 
 export function seedAsfTbSample(partial?: Partial<AsfTbSample>): AsfTbSample {

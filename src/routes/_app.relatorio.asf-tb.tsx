@@ -601,8 +601,15 @@ export function AsfTbPage() {
     prefillCheckedRef.current = true;
     const temMassas = sample.massaAmostra != null || sample.massaAgregado != null;
     const temPeneiras = sample.peneiras.some((p) => p.retida != null);
-    const temFotos = (ctx.photos ?? []).length > 0;
-    if (temMassas && temPeneiras && temFotos) return;
+    // "Já importei fotos da bancada" é um sinal PERSISTENTE (sample.fotosBancadaImportadas),
+    // não "ctx.photos está vazio agora" — quem apagasse TODAS as fotos no
+    // escritório zerava ctx.photos, e a próxima abertura achava "nunca trouxe
+    // foto nenhuma" e reimportava as mesmas fotos da pendência: a exclusão
+    // nunca "pegava" de vez. Também conta como "já importou" já ter QUALQUER
+    // foto agora (ensaios de antes desta correção, sem o sinalizador ainda
+    // gravado) — evita duplicar foto de quem já tinha sido importada certo.
+    const jaImportouFotos = sample.fotosBancadaImportadas === true || (ctx.photos ?? []).length > 0;
+    if (temMassas && temPeneiras && jaImportouFotos) return;
     let cancelled = false;
     (async () => {
       try {
@@ -634,12 +641,17 @@ export function AsfTbPage() {
           }
         }
         // Fotos tiradas na bancada (celular) ficam só no payload da pendência —
-        // sem isto, nunca chegavam ao relatório do escritório.
-        if (!temFotos && Array.isArray(fp.fotos) && fp.fotos.length > 0) {
-          for (const foto of fp.fotos) {
-            ctx.addPhoto({ dataUrl: foto.dataUrl, kind: "outro", caption: foto.caption });
+        // sem isto, nunca chegavam ao relatório do escritório. Marca como
+        // importada mesmo se não houver nenhuma foto pra trazer, pra este
+        // efeito nunca mais tentar de novo nesta tela.
+        if (!jaImportouFotos) {
+          if (Array.isArray(fp.fotos) && fp.fotos.length > 0) {
+            for (const foto of fp.fotos) {
+              ctx.addPhoto({ dataUrl: foto.dataUrl, kind: "outro", caption: foto.caption });
+            }
+            preencheu = true;
           }
-          preencheu = true;
+          setSample((prev) => ({ ...prev, fotosBancadaImportadas: true }));
         }
         if (preencheu) toast.success("Dados pré-preenchidos da digitação na bancada — confira antes de continuar.");
       } catch (err) {
