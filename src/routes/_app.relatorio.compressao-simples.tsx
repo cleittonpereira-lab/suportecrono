@@ -296,7 +296,7 @@ function CompressaoSimplesReportPage({
                 <div className="mb-0.5 text-center text-[8px] font-semibold uppercase text-[#141414]/70">Antes do ensaio</div>
                 <div className="grid grid-cols-2 gap-1">
                   {fotosAntes.map((p) => (
-                    <div key={p.id} className="aspect-square overflow-hidden rounded border border-[#141414]/40 bg-white">
+                    <div key={p.id} className="aspect-[3/4] overflow-hidden rounded border border-[#141414]/40 bg-white">
                       <img src={p.url || p.dataUrl} alt="Antes do ensaio" crossOrigin="anonymous" className="h-full w-full object-cover" />
                     </div>
                   ))}
@@ -307,7 +307,7 @@ function CompressaoSimplesReportPage({
                 <div className="mb-0.5 text-center text-[8px] font-semibold uppercase text-[#141414]/70">Após a ruptura</div>
                 <div className="grid grid-cols-2 gap-1">
                   {fotosDepois.map((p) => (
-                    <div key={p.id} className="aspect-square overflow-hidden rounded border border-[#141414]/40 bg-white">
+                    <div key={p.id} className="aspect-[3/4] overflow-hidden rounded border border-[#141414]/40 bg-white">
                       <img src={p.url || p.dataUrl} alt="Após a ruptura" crossOrigin="anonymous" className="h-full w-full object-cover" />
                     </div>
                   ))}
@@ -546,6 +546,13 @@ export function CompressaoSimplesPage() {
         if (cancelled || !fp) return;
 
         const jaTemDados = sample.corposDeProva.some((cp) => cp.alturas.some((v) => v > 0) || cp.diametros.some((v) => v > 0));
+        // "Já importei fotos" é um sinal PERSISTENTE (sample.fotosBancadaImportadas),
+        // não "ctx.photos está vazio agora" — apagar TODAS as fotos no escritório
+        // zerava ctx.photos, e a próxima abertura achava "nunca trouxe foto
+        // nenhuma" e reimportava as mesmas da pendência: a exclusão nunca "pegava"
+        // de vez. Também conta como "já importou" já ter QUALQUER foto agora
+        // (ensaios de antes desta correção, sem o sinalizador ainda gravado).
+        const jaTemFotos = sample.fotosBancadaImportadas === true || (ctx.photos ?? []).length > 0;
         const furoQr = fp.ident?.furo?.trim();
         const profQr = fp.ident?.profundidade?.trim();
         const operadorQr = fp.ident?.operadorNome?.trim();
@@ -581,19 +588,23 @@ export function CompressaoSimplesPage() {
           // Fotos da digitação de campo vivem numa lista própria da pendência,
           // separada da lista que o relatório usa (ctx.photos). Nunca se
           // fundem sozinhas — então na primeira vez que o relatório é aberto
-          // (e só se ele ainda não tiver nenhuma foto própria, pra não gerar
-          // duplicata a cada carga), absorvemos as fotos de campo pra dentro
-          // de ctx.photos. Daí em diante ctx.photos é a única fonte, usada
-          // tanto pelo escritório quanto pelo relatório.
-          if ((ctx.photos ?? []).length === 0 && Array.isArray(fp.fotos) && fp.fotos.length > 0) {
-            for (const foto of fp.fotos) {
-              ctx.addPhoto({
-                dataUrl: foto.dataUrl,
-                bytes: foto.bytes,
-                kind: foto.fase === "antes" ? "moldagem" : "ruptura",
-                caption: foto.caption,
-              });
+          // (e só se ainda não tiver tentado antes, pra não gerar duplicata
+          // nem trazer de volta foto que o escritório apagou de propósito),
+          // absorvemos as fotos de campo pra dentro de ctx.photos. Daí em
+          // diante ctx.photos é a única fonte, usada tanto pelo escritório
+          // quanto pelo relatório.
+          if (!jaTemFotos) {
+            if (Array.isArray(fp.fotos) && fp.fotos.length > 0) {
+              for (const foto of fp.fotos) {
+                ctx.addPhoto({
+                  dataUrl: foto.dataUrl,
+                  bytes: foto.bytes,
+                  kind: foto.fase === "antes" ? "moldagem" : "ruptura",
+                  caption: foto.caption,
+                });
+              }
             }
+            setSample((prev) => ({ ...prev, fotosBancadaImportadas: true }));
           }
         }
 

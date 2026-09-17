@@ -86,6 +86,14 @@ export interface CompressaoSimplesSample {
   massaEspecificaGraos: number | null;
 
   corposDeProva: CsCorpoDeProva[];
+  /**
+   * Já tentou puxar as fotos da digitalização de campo pra este relatório —
+   * mesmo que não tivesse nenhuma foto pra trazer. Sem isto, apagar TODAS as
+   * fotos no escritório fazia `ctx.photos` voltar a zero, e a próxima vez que
+   * a tela abrisse achava que "ainda não tinha foto nenhuma" e trazia de
+   * volta as mesmas fotos da pendência — a exclusão nunca "pegava" de vez.
+   */
+  fotosBancadaImportadas?: boolean;
 }
 
 export function newCsCapsula(): CsCapsula {
