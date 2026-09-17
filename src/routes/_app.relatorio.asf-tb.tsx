@@ -377,7 +377,7 @@ function paginasDoLaudo(sample: AsfTbSample, photos: Photo[]): ReactElement[] {
         <Bloco titulo="Registro fotográfico">
           <div className="grid grid-cols-3 gap-1 p-1">
             {photos.map((p) => (
-              <div key={p.id} className="aspect-[4/3] overflow-hidden rounded border border-[#141414]/40 bg-white">
+              <div key={p.id} className="aspect-[3/4] overflow-hidden rounded border border-[#141414]/40 bg-white">
                 <img src={p.url || p.dataUrl} alt="Registro fotográfico" crossOrigin="anonymous" className="h-full w-full object-cover" />
               </div>
             ))}
@@ -589,14 +589,19 @@ export function AsfTbPage() {
   }, [scopeId]);
 
   // Pré-preenchimento pela digitação da bancada (celular) — só na primeira
-  // carga e só se ainda não houver medidas, pra não sobrescrever edição feita no escritório.
+  // carga de CADA VEZ que a tela é aberta, e só preenche o que ainda estiver
+  // vazio no escritório. O ASF.TB é feito em duas etapas que podem acontecer
+  // em dias diferentes (extração do betume, depois lavagem/peneiramento do
+  // agregado) — se travasse tudo assim que UMA das partes chegasse, quem
+  // terminasse o peneiramento depois nunca veria esses dados aparecerem
+  // aqui, mesmo já digitados na bancada.
   useEffect(() => {
     if (!remoteLoaded || prefillCheckedRef.current || !ctx) return;
     prefillCheckedRef.current = true;
-    const jaTemDados =
-      sample.massaAmostra != null || sample.massaAgregado != null || sample.peneiras.some((p) => p.retida != null);
-    const jaTemFotos = (ctx.photos ?? []).length > 0;
-    if (jaTemDados && jaTemFotos) return;
+    const temMassas = sample.massaAmostra != null || sample.massaAgregado != null;
+    const temPeneiras = sample.peneiras.some((p) => p.retida != null);
+    const temFotos = (ctx.photos ?? []).length > 0;
+    if (temMassas && temPeneiras && temFotos) return;
     let cancelled = false;
     (async () => {
       try {
@@ -609,13 +614,27 @@ export function AsfTbPage() {
         const fp = pend?.payload as unknown as Partial<AsfTbFieldPayload> | undefined;
         if (cancelled || !fp) return;
         let preencheu = false;
-        if (!jaTemDados && fp.medidas) {
-          setSample((prev) => ({ ...prev, ...normalizarMedidas(fp.medidas) }));
-          preencheu = true;
+        if (fp.medidas) {
+          const m = normalizarMedidas(fp.medidas);
+          const trazMassas = !temMassas && (m.massaAmostra != null || m.massaAgregado != null);
+          const trazPeneiras = !temPeneiras && m.peneiras.some((p) => p.retida != null);
+          if (trazMassas || trazPeneiras) {
+            setSample((prev) => ({
+              ...prev,
+              massaAmostra: trazMassas ? m.massaAmostra : prev.massaAmostra,
+              massaAgregado: trazMassas ? m.massaAgregado : prev.massaAgregado,
+              solvente: trazMassas && m.solvente ? m.solvente : prev.solvente,
+              massaInicialGranulometria: trazPeneiras ? m.massaInicialGranulometria : prev.massaInicialGranulometria,
+              massaAposLavagem: trazPeneiras ? m.massaAposLavagem : prev.massaAposLavagem,
+              fundo: trazPeneiras ? m.fundo : prev.fundo,
+              peneiras: trazPeneiras ? m.peneiras : prev.peneiras,
+            }));
+            preencheu = true;
+          }
         }
         // Fotos tiradas na bancada (celular) ficam só no payload da pendência —
         // sem isto, nunca chegavam ao relatório do escritório.
-        if (!jaTemFotos && Array.isArray(fp.fotos) && fp.fotos.length > 0) {
+        if (!temFotos && Array.isArray(fp.fotos) && fp.fotos.length > 0) {
           for (const foto of fp.fotos) {
             ctx.addPhoto({ dataUrl: foto.dataUrl, kind: "outro", caption: foto.caption });
           }

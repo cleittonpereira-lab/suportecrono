@@ -267,7 +267,7 @@ function ASFDapReportPage({
             </div>
             <div className="grid grid-cols-4 gap-1 p-1">
               {photos.map((p) => (
-                <div key={p.id} className="aspect-square overflow-hidden rounded border border-[#141414]/40 bg-white">
+                <div key={p.id} className="aspect-[3/4] overflow-hidden rounded border border-[#141414]/40 bg-white">
                   <img
                     src={p.url || p.dataUrl}
                     alt="Registro fotográfico"
