@@ -20,12 +20,24 @@ export type AcaoDeSincronizacao<L extends VersaoLocalMin = VersaoLocalMin> =
   /** Baixar o PDF do Drive (e trocar a cópia local, se houver). */
   | { tipo: "baixar"; remota: RevisaoRemota; substitui?: L }
   /** Mesmo PDF, só o nome local mudou para o nome oficial do Drive. */
-  | { tipo: "renomear"; remota: RevisaoRemota; local: L };
+  | { tipo: "renomear"; remota: RevisaoRemota; local: L }
+  /** Duplicata da mesma revisão (duas chamadas concorrentes já tratou a rev): só apaga. */
+  | { tipo: "remover_duplicata"; local: L };
 
 export function planoDeSincronizacao<L extends VersaoLocalMin>(locais: L[], remotas: RevisaoRemota[]): AcaoDeSincronizacao<L>[] {
   const acoes: AcaoDeSincronizacao<L>[] = [];
   for (const remota of remotas) {
-    const local = locais.find((v) => v.rev === remota.rev);
+    // Duas chamadas concorrentes a sincronizarVersoesComDrive (ex.: o aviso em
+    // tempo real disparando enquanto o mount ainda está sincronizando) podiam
+    // ler a mesma lista local "antes" e cada uma gravar sua própria cópia —
+    // gerando várias linhas idênticas para a mesma revisão. Entre duplicatas,
+    // prefere a que já foi marcada como vinda do Drive (mais completa); as
+    // demais são só lixo a apagar.
+    const candidatos = locais.filter((v) => v.rev === remota.rev);
+    const local = candidatos.find((v) => v.note?.startsWith(MARCA_DO_DRIVE)) ?? candidatos[0];
+    for (const extra of candidatos) {
+      if (extra !== local) acoes.push({ tipo: "remover_duplicata", local: extra });
+    }
     if (!local) {
       acoes.push({ tipo: "baixar", remota });
       continue;

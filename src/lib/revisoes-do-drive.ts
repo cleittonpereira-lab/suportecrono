@@ -32,8 +32,32 @@ function base64ParaBlob(b64: string): Blob {
   return new Blob([buf], { type: "application/pdf" });
 }
 
+/**
+ * Uma chamada por vez por ensaio — o aviso em tempo real (debounce de 800ms)
+ * e o `refreshVersions()` do mount/das ações de salvar podiam disparar quase
+ * juntos; cada chamada lia a MESMA lista local "antes" e gravava sua própria
+ * cópia da mesma revisão, criando várias linhas idênticas (nunca uma corrida
+ * de verdade em paralelo — é só await de I/O — mas o intervalo entre ler e
+ * gravar é o bastante pra duas chamadas se cruzarem).
+ */
+const emAndamento = new Map<string, Promise<boolean>>();
+
 /** Devolve `true` se mudou alguma coisa na lista local (a tela relê). */
 export async function sincronizarVersoesComDrive(
+  scopeId: string,
+  locais: (VersaoLocalMin & { pdfBlob: Blob })[],
+  modulo: ModuloDeVersoes,
+): Promise<boolean> {
+  const emVoo = emAndamento.get(scopeId);
+  if (emVoo) return emVoo;
+  const promessa = sincronizarAgora(scopeId, locais, modulo).finally(() => {
+    if (emAndamento.get(scopeId) === promessa) emAndamento.delete(scopeId);
+  });
+  emAndamento.set(scopeId, promessa);
+  return promessa;
+}
+
+async function sincronizarAgora(
   scopeId: string,
   locais: (VersaoLocalMin & { pdfBlob: Blob })[],
   modulo: ModuloDeVersoes,
@@ -49,6 +73,11 @@ export async function sincronizarVersoesComDrive(
   let mudou = false;
   for (const acao of planoDeSincronizacao(locais, remotas)) {
     try {
+      if (acao.tipo === "remover_duplicata") {
+        await modulo.deleteVersion(acao.local.id);
+        mudou = true;
+        continue;
+      }
       const pdfBlob =
         acao.tipo === "renomear"
           ? acao.local.pdfBlob
@@ -67,7 +96,8 @@ export async function sincronizarVersoesComDrive(
       if (anterior) await modulo.deleteVersion(anterior.id);
       mudou = true;
     } catch (err) {
-      console.warn(`[versões] Falha ao trazer a Rev-${String(acao.remota.rev).padStart(2, "0")} do Drive:`, err);
+      const rev = acao.tipo === "remover_duplicata" ? acao.local.rev : acao.remota.rev;
+      console.warn(`[versões] Falha ao trazer a Rev-${String(rev).padStart(2, "0")} do Drive:`, err);
     }
   }
   return mudou;

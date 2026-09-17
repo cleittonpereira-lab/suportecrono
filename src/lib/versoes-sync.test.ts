@@ -43,4 +43,20 @@ describe("versões: o que trazer do Drive", () => {
   it("versão local que não está no Drive fica como está", () => {
     expect(planoDeSincronizacao([local(3, "2026-09-14T17:00:00Z")], [])).toEqual([]);
   });
+
+  it("duas cópias locais da mesma revisão (corrida entre sincronizações): mantém uma, remove a outra", () => {
+    const a = local(0, "2026-09-14T17:12:34Z", { id: "va" });
+    const b = local(0, "2026-09-14T17:12:34Z", { id: "vb" });
+    const acoes = planoDeSincronizacao([a, b], [remota(0, "2026-09-14T17:12:45Z")]);
+    expect(acoes).toHaveLength(2);
+    expect(acoes).toContainEqual({ tipo: "remover_duplicata", local: b });
+    expect(acoes.find((a) => a.tipo === "renomear")).toMatchObject({ tipo: "renomear", local: a });
+  });
+
+  it("duplicatas: a já marcada como vinda do Drive é a que fica", () => {
+    const a = local(0, "2026-09-14T17:12:34Z", { id: "va" });
+    const b = local(0, "2026-09-14T17:12:34Z", { id: "vb", note: MARCA_DO_DRIVE + "2026-09-14T17:12:45Z" });
+    const acoes = planoDeSincronizacao([a, b], [remota(0, "2026-09-14T17:12:45Z")]);
+    expect(acoes).toEqual([{ tipo: "remover_duplicata", local: a }]);
+  });
 });
