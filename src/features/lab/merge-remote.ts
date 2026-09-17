@@ -5,7 +5,7 @@
  * `dirtyIds` (entidades com gravação pendente/em voo) entra como parâmetro em
  * vez de ser lido do módulo.
  */
-import type { LabState } from "./types";
+import type { LabState, Photo } from "./types";
 
 /**
  * Por quanto tempo uma entidade criada nesta tela continua valendo mesmo sem
@@ -45,6 +45,28 @@ export function isLocalNewer(local: { updatedAt: string } | undefined, remote: {
 export function reuseIfUnchanged<T>(local: T | undefined, remote: T): T {
   if (local !== undefined && JSON.stringify(local) === JSON.stringify(remote)) return local;
   return remote;
+}
+
+/**
+ * O carregamento em massa (`syncLabTree`) devolve as fotos "leves" — sem
+ * `dataUrl` — pra não sobrecarregar o Worker a cada atualização periódica
+ * (a cada 15s por aba aberta). Sem isto, um ensaio que não estivesse "sujo"
+ * nem mais novo que o servidor adotava o ensaio remoto INTEIRO (efeito
+ * colateral de manter status/campos de texto atualizados entre abas) — e
+ * junto vinham as fotos leves, apagando o conteúdo que a tela já tinha
+ * carregado: a foto aparecia certa por alguns segundos e sumia sozinha no
+ * próximo refresh periódico. Mesma lógica de `preservarConteudoDasFotos`
+ * no servidor (lib/lab-entities.functions.ts), duplicada aqui porque este
+ * módulo roda no navegador e aquele é só-servidor.
+ */
+function preservarFotos(recebidas: Photo[] | undefined, existentes: Photo[] | undefined): Photo[] | undefined {
+  if (!recebidas || !existentes?.length) return recebidas;
+  const porId = new Map(existentes.map((p) => [p.id, p]));
+  return recebidas.map((p) => {
+    if (p.dataUrl || p.url) return p;
+    const antiga = porId.get(p.id);
+    return antiga?.dataUrl ? { ...p, dataUrl: antiga.dataUrl } : p;
+  });
 }
 
 /** Entidade que só existe localmente deve ser mantida? */
@@ -87,7 +109,11 @@ export function mergeRemote(
       const mergedEnsaios = remoteA.ensaios.map((remoteE) => {
         const localE = localEnMap.get(remoteE.id);
         if ((dirtyIds.has(remoteE.id) || isLocalNewer(localE, remoteE)) && localE) return localE;
-        return reuseIfUnchanged(localE, remoteE);
+        const remoteEComFotos =
+          remoteE.photos && localE?.photos
+            ? { ...remoteE, photos: preservarFotos(remoteE.photos, localE.photos) }
+            : remoteE;
+        return reuseIfUnchanged(localE, remoteEComFotos);
       });
       const localOnlyEnsaios = (localA?.ensaios ?? []).filter(
         (e) => !remoteEnIds.has(e.id) && manterSoLocal(e, dirtyIds, agora),

@@ -87,6 +87,29 @@ describe("mergeRemote — conteúdo", () => {
     expect((r.os[0].amostras[0].ensaios[0] as { operator?: string }).operator).toBe("novo");
   });
 
+  it("foto carregada não some quando o servidor manda a versão leve (sem dataUrl) no refresh periódico", () => {
+    const fotoCompleta = { id: "ph1", dataUrl: "data:image/jpeg;base64,AAAA", createdAt: ha(3_600_000), kind: "outro" };
+    const fotoLeve = { ...fotoCompleta, dataUrl: "" };
+    const local = estado(os("os1", [amostra("am1", [ensaio("en1", { photos: [fotoCompleta] })])]));
+    const remoto = estado(os("os1", [amostra("am1", [ensaio("en1", { photos: [fotoLeve] })])]));
+
+    const r = mergeRemote(local, remoto, semSujos, AGORA);
+    const fotos = (r.os[0].amostras[0].ensaios[0] as { photos: { dataUrl: string }[] }).photos;
+    expect(fotos[0].dataUrl).toBe(fotoCompleta.dataUrl);
+  });
+
+  it("foto com arquivo no Drive (url) não recebe o base64 antigo de volta", () => {
+    const fotoAntiga = { id: "ph1", dataUrl: "data:image/jpeg;base64,AAAA", createdAt: ha(3_600_000), kind: "outro" };
+    const fotoMigrada = { id: "ph1", dataUrl: "", url: "/api/photo/abc", createdAt: ha(3_600_000), kind: "outro" };
+    const local = estado(os("os1", [amostra("am1", [ensaio("en1", { photos: [fotoAntiga] })])]));
+    const remoto = estado(os("os1", [amostra("am1", [ensaio("en1", { photos: [fotoMigrada] })])]));
+
+    const r = mergeRemote(local, remoto, semSujos, AGORA);
+    const fotos = (r.os[0].amostras[0].ensaios[0] as { photos: { dataUrl: string; url?: string }[] }).photos;
+    expect(fotos[0].dataUrl).toBe("");
+    expect(fotos[0].url).toBe("/api/photo/abc");
+  });
+
   it("reaproveita o mesmo objeto quando nada mudou (não dispara autosave à toa)", () => {
     const en = ensaio("en1");
     const local = estado(os("os1", [amostra("am1", [en])]));
