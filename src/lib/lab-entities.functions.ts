@@ -419,6 +419,8 @@ const EnsaioInput = z.object({
   sigla: z.string().optional(),
   operator: z.string().optional(),
   photos: z.array(z.record(z.unknown())).optional(),
+  /** Fotos que este cliente via como atuais ANTES desta gravação — ver mesclarEnsaio. */
+  photosBase: z.array(z.record(z.unknown())).optional(),
   payload: z.unknown().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -457,6 +459,38 @@ export function preservarConteudoDasFotos(recebidas: Photo[], existentes: Photo[
     const antiga = porId.get(p.id);
     return antiga?.dataUrl ? { ...p, dataUrl: antiga.dataUrl } : p;
   });
+}
+
+/**
+ * Mescla fotos de três pontas: o que o servidor tem AGORA (`existentes`,
+ * pode já incluir mudanças de outra aba/pessoa que este cliente ainda não
+ * viu), o que este cliente via como base ANTES da própria mudança
+ * (`base`) e o que ele quer gravar agora (`recebidas`). Sem isto, duas
+ * pessoas na mesma amostra — uma adicionando foto, outra editando um campo
+ * de texto — cada gravação mandava sua própria cópia inteira de `photos`;
+ * a que chegasse por último apagava a foto que a outra tinha acabado de
+ * adicionar (ou trazia de volta uma que a outra tinha acabado de excluir).
+ * Compara por id contra `base` pra descobrir a INTENÇÃO deste cliente
+ * (o que ele adicionou/removeu/editou), e aplica só essa intenção em cima
+ * do estado atual do servidor — a mudança de quem gravou por último nunca
+ * é descartada.
+ */
+export function mesclarFotos(existentes: Photo[] | null | undefined, base: Photo[] | null | undefined, recebidas: Photo[]): Photo[] {
+  if (!base) return recebidas;
+  const atuais = existentes ?? [];
+  const baseIds = new Set(base.map((p) => p.id));
+  const recebidasPorId = new Map(recebidas.map((p) => [p.id, p]));
+  const removidasPeloCliente = new Set(base.filter((p) => !recebidasPorId.has(p.id)).map((p) => p.id));
+  const adicionadasPeloCliente = recebidas.filter((p) => !baseIds.has(p.id));
+
+  const mantidas = atuais
+    .filter((p) => !removidasPeloCliente.has(p.id))
+    .map((p) => {
+      const editada = recebidasPorId.get(p.id);
+      return editada ? { ...p, ...editada } : p;
+    });
+  const idsMantidos = new Set(mantidas.map((p) => p.id));
+  return [...mantidas, ...adicionadasPeloCliente.filter((p) => !idsMantidos.has(p.id))];
 }
 
 const STATUS_SO_DO_FLUXO = new Set(["aguardando_verificacao", "aguardando_aprovacao", "aprovado", "concluido"]);
@@ -503,7 +537,10 @@ export function mesclarEnsaio(
     sigla: data.sigla ?? existing?.sigla ?? null,
     operator: data.operator ?? existing?.operator ?? null,
     photos: data.photos
-      ? preservarConteudoDasFotos(data.photos as unknown as Photo[], existing?.photos)
+      ? preservarConteudoDasFotos(
+          mesclarFotos(existing?.photos, data.photosBase as unknown as Photo[] | undefined, data.photos as unknown as Photo[]),
+          existing?.photos,
+        )
       : (existing?.photos ?? []),
     payload:
       data.payload !== undefined && !temRascunhoCompartilhado ? data.payload : (existing?.payload ?? null),

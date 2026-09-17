@@ -241,6 +241,27 @@ function scheduleSaveAmostra(osId: string, am: Amostra) {
   });
 }
 
+/**
+ * Última versão de `photos` que este cliente sabe que o servidor tinha —
+ * atualizada quando dados remotos entram no estado local (hydrate, merge) e
+ * depois de cada gravação bem-sucedida. Lida só na hora de RODAR a gravação
+ * (nunca no agendamento): duas mudanças locais de foto dentro da mesma
+ * janela de debounce viram uma única gravação, e capturar a base cedo demais
+ * comparava contra um estado local ainda não confirmado pelo servidor,
+ * podendo descartar a primeira das duas mudanças. Ver `mesclarFotos`.
+ */
+const fotosBaseConfirmada = new Map<string, Photo[]>();
+
+function sincronizarBaseDeFotos(estado: LabState): void {
+  for (const os of estado.os) {
+    for (const am of os.amostras) {
+      for (const en of am.ensaios) {
+        fotosBaseConfirmada.set(en.id, en.photos ?? []);
+      }
+    }
+  }
+}
+
 function scheduleSaveEnsaio(amostraId: string, en: Ensaio) {
   scheduleEntitySave(en.id, async () => {
     await upsertEnsaioFn({
@@ -254,11 +275,13 @@ function scheduleSaveEnsaio(amostraId: string, en: Ensaio) {
         sigla: en.sigla,
         operator: en.operator,
         photos: en.photos as unknown as Record<string, unknown>[],
+        photosBase: fotosBaseConfirmada.get(en.id) as unknown as Record<string, unknown>[] | undefined,
         payload: en.payload,
         createdAt: en.createdAt,
         updatedAt: en.updatedAt,
       },
     });
+    fotosBaseConfirmada.set(en.id, en.photos ?? []);
   });
 }
 
@@ -314,6 +337,7 @@ async function hydrate(): Promise<void> {
         // carregamento da página e o fim do hydrate eram descartadas da memória
         // (embora já agendadas para o Drive), virando fantasmas.
         state = isEmptyState(state) ? res.state : mergeRemote(state, res.state, dirtyIds);
+        sincronizarBaseDeFotos(state);
       } else if (isEmptyState(state)) {
         // As tabelas novas (lab_os/lab_amostras/lab_ensaios) ainda não têm
         // dados — pode ser instalação nova, ou a migração dos dados antigos
@@ -368,6 +392,7 @@ async function refreshFromRemote(): Promise<void> {
       // Nada mudou no Drive: não refaz a fusão nem redesenha a tela.
       if (res.mudou && res.state) {
         state = mergeRemote(state, res.state, dirtyIds);
+        sincronizarBaseDeFotos(state);
         persistLocal();
         listeners.forEach((l) => l());
       }

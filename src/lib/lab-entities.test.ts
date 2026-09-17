@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mesclarEnsaio, mudaAlgo, preservarConteudoDasFotos, type EnsaioFile } from "./lab-entities.functions";
+import { mesclarEnsaio, mesclarFotos, mudaAlgo, preservarConteudoDasFotos, type EnsaioFile } from "./lab-entities.functions";
 import type { Photo } from "@/features/lab/types";
 
 const base = {
@@ -86,6 +86,37 @@ describe("fotos leves do carregamento em massa", () => {
 
   it("foto removida pelo cliente continua removida", () => {
     expect(preservarConteudoDasFotos([], [fotoAntiga])).toEqual([]);
+  });
+});
+
+const foto = (id: string): Photo => ({ id, dataUrl: `data:${id}`, createdAt: base.createdAt, kind: "outro" });
+
+describe("mesclarFotos (duas pessoas no mesmo ensaio)", () => {
+  it("sem base (chamador antigo/sem controle): aceita as recebidas como estão", () => {
+    expect(mesclarFotos([foto("a")], undefined, [foto("b")])).toEqual([foto("b")]);
+  });
+
+  it("outra aba adicionou uma foto que este cliente nem sabia que existia: não apaga", () => {
+    // Este cliente só editou um campo de texto — sua base e o que ele manda são iguais.
+    const r = mesclarFotos([foto("a")], [], []);
+    expect(r).toEqual([foto("a")]);
+  });
+
+  it("este cliente adiciona uma foto enquanto o servidor já tinha outra de outra aba", () => {
+    const r = mesclarFotos([foto("a")], [], [foto("b")]);
+    expect(r.map((p) => p.id).sort()).toEqual(["a", "b"]);
+  });
+
+  it("este cliente apaga uma foto que ele conhecia; preserva a que outra aba adicionou depois", () => {
+    // Base = [a]: este cliente viu só "a" da última vez. Servidor já tem [a, c].
+    const r = mesclarFotos([foto("a"), foto("c")], [foto("a")], []);
+    expect(r.map((p) => p.id)).toEqual(["c"]);
+  });
+
+  it("este cliente edita a legenda de uma foto que outra aba também tocou (conteúdo, não a lista)", () => {
+    const editada = { ...foto("a"), caption: "Ruptura CP2" };
+    const r = mesclarFotos([foto("a")], [foto("a")], [editada]);
+    expect(r).toEqual([editada]);
   });
 });
 
