@@ -1,7 +1,6 @@
 import { SyncStatusBadge } from "@/components/SyncStatusBadge";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useRef, useState } from "react";
-import { flushSync } from "react-dom";
 import { useCadastroByOs } from "@/hooks/use-cadastro-by-os";
 import {
   CartesianGrid,
@@ -41,7 +40,7 @@ import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger }
 import { toast } from "sonner";
 import { ReportPage, type ReportNorm } from "@/components/report/ReportShell";
 import { SampleEditDialog } from "@/components/SampleEditDialog";
-import { toPng } from "html-to-image";
+import { rasterizarRelatorioParaPdf, waitForOffscreenEl } from "@/lib/report-pdf";
 import {
   listVersions,
   saveVersion,
@@ -62,7 +61,6 @@ import { AjusteCurvasDialog } from "@/features/triaxial-cid/components/AjusteCur
 import { syncRevision, fetchDriveStatus } from "@/features/triaxial-cid/driveSync";
 import { getWorkflowStatuses } from "@/lib/driveSync.functions";
 import { buildScopeId } from "@/lib/scope";
-import { marcarAssinaturasNoPdf } from "@/lib/assinaturas-pdf";
 import {
   listApprovals,
   requestApproval,
@@ -751,28 +749,26 @@ export function TriaxialCidPage() {
   /**
    * Renderiza o PDF do relatório e devolve como Blob (para salvar como versão).
    */
+  /**
+   * Gera o PDF pelo módulo único de captura (lib/report-pdf.ts), que espera
+   * cada foto carregar de verdade antes de capturar (com retentativa e
+   * timeout) — a implementação antiga (toPng direto, sem espera nenhuma)
+   * capturava o que estivesse na tela naquele instante; uma foto recém-
+   * adicionada ou ainda vindo do Drive saía em branco/desatualizada no PDF,
+   * mesmo já visível no editor. Foto que falhar interrompe a geração (é o
+   * laudo oficial) em vez de sair silenciosamente sem a imagem.
+   */
   const buildReportPdfBlob = async (): Promise<Blob> => {
-    if (import.meta.env.SSR) throw new Error("buildReportPdfBlob só roda no navegador");
-    if (!reportRef.current) throw new Error("Relatório não montado.");
-    const pages = Array.from(
-      reportRef.current.querySelectorAll<HTMLElement>(".printable-report"),
-    );
-    if (pages.length === 0) throw new Error("Nenhuma página do relatório encontrada.");
-    const { jsPDF } = await import("jspdf");
-    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-    const W = 210, H = 297;
-    for (let i = 0; i < pages.length; i++) {
-      // eslint-disable-next-line no-await-in-loop
-      const dataUrl = await toPng(pages[i], {
-        pixelRatio: 2,
-        cacheBust: false,
-        backgroundColor: "#ffffff",
-      });
-      if (i > 0) pdf.addPage("a4", "portrait");
-      pdf.addImage(dataUrl, "PNG", 0, 0, W, H, undefined, "FAST");
+    const el = await waitForOffscreenEl(() => reportRef.current, "Relatório não montado.");
+    const { blob, folhasCortadas } = await rasterizarRelatorioParaPdf(el, {
+      fotosObrigatorias: true,
+    });
+    if (folhasCortadas.length > 0) {
+      toast.warning(
+        `Conteúdo cortado: ${folhasCortadas.map((f) => `folha ${f.folha} (+${f.excessoPx}px)`).join(", ")}. Avise o suporte.`,
+      );
     }
-    marcarAssinaturasNoPdf(pdf, pages);
-    return pdf.output("blob");
+    return blob;
   };
 
   const handleSaveVersion = async (opts?: { skipVerification?: boolean }) => {

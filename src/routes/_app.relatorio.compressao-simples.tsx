@@ -23,14 +23,13 @@ import {
   Beaker, History, FileText, Upload, Plus, Trash2, FileSpreadsheet,
 } from "lucide-react";
 import { toast } from "sonner";
-import { toPng } from "html-to-image";
+import { rasterizarRelatorioParaPdf, waitForOffscreenEl } from "@/lib/report-pdf";
 import {
   listVersions, saveVersion, nextRev, deleteVersion, downloadVersion, replaceVersionPdf, type ReportVersion,
 } from "@/features/compressao-simples/report-versions";
 import { sincronizarVersoesComDrive, useVersoesAoVivo } from "@/lib/revisoes-do-drive";
 import { syncRevision, fetchDriveStatus } from "@/features/compressao-simples/driveSync";
 import { ReportVersionsPanel } from "@/components/report/ReportVersionsPanel";
-import { marcarAssinaturasNoPdf } from "@/lib/assinaturas-pdf";
 import {
   listApprovals, requestApproval, verifyApproval, decideApproval, type ApprovalRow,
 } from "@/lib/approvals-com-pdf";
@@ -656,46 +655,26 @@ export function CompressaoSimplesPage() {
 
   const { comIndices, isCompleto, results, media } = useCsResults(sample);
 
+  /**
+   * Gera o PDF pelo módulo único de captura (lib/report-pdf.ts), que espera
+   * cada foto carregar de verdade antes de capturar (com retentativa e
+   * timeout) — a implementação antiga (toPng direto + 200ms fixo) capturava
+   * o que estivesse na tela naquele instante; uma foto recém-adicionada ou
+   * ainda vindo do Drive saía em branco/desatualizada no PDF, mesmo já
+   * visível no editor. Foto que falhar interrompe a geração (é o laudo
+   * oficial) em vez de sair silenciosamente sem a imagem.
+   */
   const buildReportPdfBlob = async (): Promise<Blob> => {
-    if (import.meta.env.SSR) throw new Error("buildReportPdfBlob só roda no navegador");
-    const el = reportRef.current;
-    if (!el) throw new Error("Container do relatório não encontrado.");
-
-    const prevStyle = {
-      position: el.style.position, top: el.style.top, left: el.style.left,
-      width: el.style.width, zIndex: el.style.zIndex, opacity: el.style.opacity, visibility: el.style.visibility,
-    };
-    Object.assign(el.style, {
-      position: "fixed", top: "0", left: "0", width: "210mm", background: "#ffffff",
-      pointerEvents: "none", zIndex: "2147483647", opacity: "1", visibility: "visible",
+    const el = await waitForOffscreenEl(() => reportRef.current, "Container do relatório não encontrado.");
+    const { blob, folhasCortadas } = await rasterizarRelatorioParaPdf(el, {
+      fotosObrigatorias: true,
     });
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
-    await new Promise((r) => setTimeout(r, 200));
-
-    try {
-      const pages = Array.from(el.querySelectorAll<HTMLElement>(".printable-report"));
-      if (pages.length === 0) throw new Error("Nenhuma página do relatório encontrada.");
-      const { jsPDF } = await import("jspdf");
-      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
-      const W = 210, H = 297;
-      for (let i = 0; i < pages.length; i++) {
-        const page = pages[i];
-        const dataUrl = await toPng(page, {
-          pixelRatio: 2.5, cacheBust: false, backgroundColor: "#ffffff",
-          style: {
-            transform: "none", margin: "0", padding: "5mm 8mm", width: "210mm", height: "297mm",
-            maxWidth: "210mm", maxHeight: "297mm", boxSizing: "border-box", overflow: "hidden",
-          },
-          filter: (node) => !(node instanceof HTMLElement && node.classList.contains("no-print")),
-        });
-        if (i > 0) pdf.addPage("a4", "portrait");
-        pdf.addImage(dataUrl, "PNG", 0, 0, W, H, undefined, "FAST");
-      }
-      marcarAssinaturasNoPdf(pdf, pages);
-      return pdf.output("blob");
-    } finally {
-      Object.assign(el.style, prevStyle);
+    if (folhasCortadas.length > 0) {
+      toast.warning(
+        `Conteúdo cortado: ${folhasCortadas.map((f) => `folha ${f.folha} (+${f.excessoPx}px)`).join(", ")}. Avise o suporte.`,
+      );
     }
+    return blob;
   };
 
   const handleGeneratePdf = async () => {
@@ -796,6 +775,55 @@ export function CompressaoSimplesPage() {
         { id: tid, duration: 10000 },
       );
     } finally { setSaveBusy(false); }
+  };
+
+  /**
+   * Atualiza o PDF da revisão JÁ enviada com os dados atuais da tela (fotos,
+   * medidas, texto) — sem abrir uma revisão nova nem mexer no status/fluxo.
+   * Para quando o verificador/aprovador muda algo (ex.: adiciona/troca uma
+   * foto) durante a verificação e quer que a correção entre no PDF oficial,
+   * em vez de ficar só visível na tela.
+   */
+  const handleAtualizarPdfAtual = async () => {
+    if (saveBusy) return;
+    setSaveBusy(true);
+    const tid = toast.loading("Atualizando o PDF desta revisão…");
+    try {
+      const revAtual = approvals[0]?.rev ?? 0;
+      const blob = await buildReportPdfBlob();
+      const base = (sample.workNumber || sample.os || "relatorio").toString().replace(/[^\w-]+/g, "_");
+      const filename = `COMP-SIMPLES_${base}_Rev-${String(revAtual).padStart(2, "0")}.pdf`;
+      const versao = versions.find((v) => v.rev === revAtual);
+      if (versao) {
+        await replaceVersionPdf(versao.id, blob, blob.size);
+      } else {
+        await saveVersion({ scopeId, rev: revAtual, filename, size: blob.size, pdfBlob: blob });
+      }
+      await refreshVersions();
+
+      try {
+        await syncRevision({
+          scopeId, rev: revAtual, pdfBlob: blob, pdfFilename: filename, sample,
+          photos: ctx?.photos || [], ctxOs: ctx?.os, ctxAmostra: ctx?.amostra,
+          ctxEnsaio: { tipo: "compressao-simples", nome: sample.reportNumber }, fotos: fotosParaDrive(),
+          // Substitui deliberadamente o PDF da MESMA revisão já emitida.
+          reemissao: true,
+        });
+      } catch (err) {
+        console.warn("Drive sync standby:", err);
+      }
+
+      const currentDraft = { sample, photos: ctx?.photos || [] };
+      saveDraft(scopeId, currentDraft, { id: user?.id, name: displayName });
+      if (ctx && ctx.os && ctx.amostra && ctx.ensaio) {
+        labStore.patchEnsaio(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, { payload: currentDraft });
+      }
+      toast.success(`PDF da Rev ${String(revAtual).padStart(2, "0")} atualizado com os dados atuais.`, { id: tid });
+    } catch (err) {
+      toast.error("Falha ao atualizar o PDF: " + (err instanceof Error ? err.message : String(err)), { id: tid });
+    } finally {
+      setSaveBusy(false);
+    }
   };
 
   /**
@@ -1003,8 +1031,8 @@ export function CompressaoSimplesPage() {
                     <ShieldCheck className="h-4 w-4" /> Verificar Laudo
                   </Button>
                 )}
-                <Button variant="outline" size="sm" onClick={() => handleSaveVersion()} disabled={saveBusy} className="text-xs">
-                  Atualizar / Gerar Nova Prévia
+                <Button variant="outline" size="sm" onClick={handleAtualizarPdfAtual} disabled={saveBusy} className="text-xs">
+                  Atualizar PDF com os dados atuais
                 </Button>
               </div>
             )}
@@ -1023,6 +1051,9 @@ export function CompressaoSimplesPage() {
                     <CheckCircle2 className="h-4 w-4" /> Aprovar Laudo Oficial
                   </Button>
                 )}
+                <Button variant="outline" size="sm" onClick={handleAtualizarPdfAtual} disabled={saveBusy} className="text-xs">
+                  Atualizar PDF com os dados atuais
+                </Button>
               </div>
             )}
 

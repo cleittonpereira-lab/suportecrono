@@ -22,7 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Download, Send, ShieldCheck, CheckCircle2, Beaker, History, FileText, Filter, Layers } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { toPng } from "html-to-image";
+import { rasterizarRelatorioParaPdf, waitForOffscreenEl } from "@/lib/report-pdf";
 import {
   CartesianGrid, ComposedChart, Line, ResponsiveContainer, XAxis, YAxis, Label as RLabel,
 } from "recharts";
@@ -38,7 +38,6 @@ import {
 import { sincronizarVersoesComDrive, useVersoesAoVivo } from "@/lib/revisoes-do-drive";
 import { syncRevision, fetchDriveStatus } from "@/features/asf-tb/driveSync";
 import { ReportVersionsPanel } from "@/components/report/ReportVersionsPanel";
-import { marcarAssinaturasNoPdf } from "@/lib/assinaturas-pdf";
 import {
   listApprovals,
   requestApproval,
@@ -690,72 +689,26 @@ export function AsfTbPage() {
   const massaInicialPadrao = massaInicialDoPeneiramento({ massaInicialGranulometria: null, massaAgregado: sample.massaAgregado });
   const paginas = useMemo(() => paginasDoLaudo(sample, ctx?.photos ?? []), [sample, ctx?.photos]);
 
+  /**
+   * Gera o PDF pelo módulo único de captura (lib/report-pdf.ts), que espera
+   * cada foto carregar de verdade antes de capturar (com retentativa e
+   * timeout) — a implementação antiga (toPng direto + 200ms fixo) capturava
+   * o que estivesse na tela naquele instante; uma foto recém-adicionada ou
+   * ainda vindo do Drive saía em branco/desatualizada no PDF, mesmo já
+   * visível no editor. Foto que falhar interrompe a geração (é o laudo
+   * oficial) em vez de sair silenciosamente sem a imagem.
+   */
   const buildReportPdfBlob = async (): Promise<Blob> => {
-    if (import.meta.env.SSR) throw new Error("buildReportPdfBlob só roda no navegador");
-    const el = reportRef.current;
-    if (!el) throw new Error("Container do relatório não encontrado.");
-
-    const prevStyle = {
-      position: el.style.position,
-      top: el.style.top,
-      left: el.style.left,
-      width: el.style.width,
-      zIndex: el.style.zIndex,
-      opacity: el.style.opacity,
-      visibility: el.style.visibility,
-    };
-
-    Object.assign(el.style, {
-      position: "fixed",
-      top: "0",
-      left: "0",
-      width: "210mm",
-      background: "#ffffff",
-      pointerEvents: "none",
-      zIndex: "2147483647",
-      opacity: "1",
-      visibility: "visible",
+    const el = await waitForOffscreenEl(() => reportRef.current, "Container do relatório não encontrado.");
+    const { blob, folhasCortadas } = await rasterizarRelatorioParaPdf(el, {
+      fotosObrigatorias: true,
     });
-
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
-    await new Promise((r) => setTimeout(r, 200));
-
-    try {
-      const pages = Array.from(el.querySelectorAll<HTMLElement>(".printable-report"));
-      if (pages.length === 0) throw new Error("Nenhuma página do relatório encontrada.");
-
-      const { jsPDF } = await import("jspdf");
-      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
-      const W = 210, H = 297;
-
-      for (let i = 0; i < pages.length; i++) {
-        const dataUrl = await toPng(pages[i], {
-          pixelRatio: 2.5,
-          cacheBust: false,
-          backgroundColor: "#ffffff",
-          style: {
-            transform: "none",
-            margin: "0",
-            padding: "5mm 8mm",
-            width: "210mm",
-            height: "297mm",
-            maxWidth: "210mm",
-            maxHeight: "297mm",
-            boxSizing: "border-box",
-            overflow: "hidden",
-          },
-          filter: (node) => !(node instanceof HTMLElement && node.classList.contains("no-print")),
-        });
-
-        if (i > 0) pdf.addPage("a4", "portrait");
-        pdf.addImage(dataUrl, "PNG", 0, 0, W, H, undefined, "FAST");
-      }
-
-      marcarAssinaturasNoPdf(pdf, pages);
-      return pdf.output("blob");
-    } finally {
-      Object.assign(el.style, prevStyle);
+    if (folhasCortadas.length > 0) {
+      toast.warning(
+        `Conteúdo cortado: ${folhasCortadas.map((f) => `folha ${f.folha} (+${f.excessoPx}px)`).join(", ")}. Avise o suporte.`,
+      );
     }
+    return blob;
   };
 
   const nomeBase = () => (sample.workNumber || sample.os || "relatorio").toString().replace(/[^\w-]+/g, "_");
