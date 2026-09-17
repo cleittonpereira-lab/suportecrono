@@ -50,7 +50,13 @@ export async function completarPdfDaRevisao(
   aprovacao: AprovacaoDoPdf | null,
   base64?: string,
 ): Promise<{ bytes: Uint8Array; situacao: SituacaoPdf; erroAoGravar?: string }> {
-  const original = base64ParaBytes(base64 ?? (await getRevisionPdfBase64({ data: { scopeId, rev } })).base64);
+  let base64Final = base64;
+  if (base64Final === undefined) {
+    const resp = await getRevisionPdfBase64({ data: { scopeId, rev } });
+    if (!resp?.base64) throw new Error("O servidor não devolveu o PDF (resposta vazia — provável instabilidade momentânea).");
+    base64Final = resp.base64;
+  }
+  const original = base64ParaBytes(base64Final);
   const r = await carimbarAssinaturas(original, assinaturasDaAprovacao(aprovacao));
   if (r.semMarcas) return { bytes: original, situacao: "sem-marcas" };
   if (!r.mudou) return { bytes: original, situacao: "ja-estava-completo" };
