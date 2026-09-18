@@ -23,6 +23,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PainelAnalises } from "@/features/gestao/PainelAnalises";
 import { useSchedule } from "@/hooks/use-schedule";
 import { listRows } from "@/lib/programacao.functions";
 import { SHEET_AMOSTRAS, SHEET_ENSAIOS, SHEET_EQUIPS, SHEET_PROGS, SHEET_TIPOS, parseProgramacaoRow } from "@/lib/programacao-model";
@@ -888,6 +890,7 @@ export function PainelCoordenador() {
   const [setor, setSetor] = useState<Setor>("todos");
   const [diasBancada, setDiasBancada] = useState<number>(7);
   const [detalhe, setDetalhe] = useState<DetalheAberto | null>(null);
+  const [visao, setVisao] = useState<"operacao" | "analises">("operacao");
   const { data: schedule, isLoading: carregandoCronograma } = useSchedule();
 
   const datasFn = useServerFn(listarDatasAcordadas);
@@ -914,11 +917,12 @@ export function PainelCoordenador() {
   const entregues = useEntregues();
 
   // As mesmas fontes que o servidor usa no agendamento (lib/painel-coordenador.ts → entradaDasFontes).
-  const entrada = useMemo(() => {
+  // Sem `setor` — a mesma base serve pro painel do setor escolhido e pra
+  // comparação entre setores (Análises), sem repetir as consultas.
+  const fontesBase = useMemo(() => {
     if (carregando) return null;
-    return entradaDasFontes({
+    return {
       hoje: isoHoje(),
-      setor,
       cronograma: schedule?.rows ?? [],
       datasAcordadas: datas.data ?? {},
       chegada: chegada.data as { columns?: { id: string }[]; tasks?: Record<string, unknown[]> } | undefined,
@@ -928,8 +932,14 @@ export function PainelCoordenador() {
       tipos: tipos.data ?? [],
       equipamentos: equips.data ?? [],
       pendencias: pend.data ?? [],
-    });
-  }, [carregando, setor, schedule, datas.data, chegada.data, amostras.data, ensaios.data, progs.data, tipos.data, equips.data, pend.data]);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [carregando, schedule, datas.data, chegada.data, amostras.data, ensaios.data, progs.data, tipos.data, equips.data, pend.data]);
+
+  const entrada = useMemo(
+    () => (fontesBase ? entradaDasFontes({ ...fontesBase, setor }) : null),
+    [fontesBase, setor],
+  );
   const modelo = useMemo(() => (entrada ? montarPainel(entrada) : null), [entrada]);
   const bancadaJanela = useMemo(
     () => (entrada ? montarBancadaComJanela(entrada, diasBancada) : null),
@@ -939,6 +949,16 @@ export function PainelCoordenador() {
     () => (entrada ? montarDesempenho(entrada, entregues.data?.rows ?? []) : null),
     [entrada, entregues.data],
   );
+
+  /** Comparação entre setores (Análises) — mesma base, um `montarDesempenho` por setor. */
+  const desempenhoPorSetor = useMemo(() => {
+    if (!fontesBase) return [];
+    return (["Especiais", "Convencionais", "Dosagem"] as const).map((s) => {
+      const e = entradaDasFontes({ ...fontesBase, setor: s });
+      return { setor: s, d: montarDesempenho(e, entregues.data?.rows ?? []) };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fontesBase, entregues.data]);
 
   const atualizar = () => {
     qc.invalidateQueries({ queryKey: ["coordenacao"] });
@@ -993,6 +1013,12 @@ export function PainelCoordenador() {
         </p>
       ) : (
         <>
+        <Tabs value={visao} onValueChange={(v) => setVisao(v as typeof visao)}>
+          <TabsList>
+            <TabsTrigger value="operacao">Operação</TabsTrigger>
+            <TabsTrigger value="analises">Análises</TabsTrigger>
+          </TabsList>
+          <TabsContent value="operacao" className="mt-4 space-y-6">
           <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
             <Tile
               titulo="Amostras recebidas (7 dias)"
@@ -1217,6 +1243,19 @@ export function PainelCoordenador() {
               </CardContent>
             </Card>
           )}
+          </TabsContent>
+
+          <TabsContent value="analises" className="mt-4">
+            <PainelAnalises
+              esteira={modelo.esteira}
+              prazos={modelo.prazos}
+              bancada={bancadaJanela}
+              laudos={modelo.laudos}
+              desempenho={desempenho}
+              desempenhoPorSetor={desempenhoPorSetor}
+            />
+          </TabsContent>
+        </Tabs>
 
           <PainelDeDetalhe
             aberto={detalhe}

@@ -33,6 +33,8 @@ export type Desempenho = {
   semanas: string[];
   series: SerieSemanal[];
   noPrazo: { pct: number | null; noPrazo: number; total: number; pctAnterior: number | null };
+  /** % no prazo em cada uma das 8 semanas (mesmo índice de `semanas`) — null quando a semana não teve entrega com data programada. */
+  pctNoPrazoPorSemana: (number | null)[];
   tempoAteEntrega: { mediana: number | null; n: number };
 };
 
@@ -114,6 +116,7 @@ export function montarDesempenho(e: EntradaPainel, entregas: Entrega[]): Desempe
   };
   const agora = noPrazoEntre(inicio, e.hoje);
   const antes = noPrazoEntre(somaDias(inicio, -7 * SEMANAS_DESEMPENHO), somaDias(inicio, -1));
+  const pctNoPrazoPorSemana = semanas.map((seg) => noPrazoEntre(seg, somaDias(seg, 6)).pct);
 
   const primeiraChegada = new Map<string, string>();
   for (const c of e.chegadas) {
@@ -152,6 +155,7 @@ export function montarDesempenho(e: EntradaPainel, entregas: Entrega[]): Desempe
       serie("entregues", "OS entregues", entregues, { to: "/entregas" }),
     ],
     noPrazo: { ...agora, pctAnterior: antes.pct },
+    pctNoPrazoPorSemana,
     tempoAteEntrega: { mediana, n: tempos.length },
   };
 }

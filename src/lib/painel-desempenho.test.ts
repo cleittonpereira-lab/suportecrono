@@ -78,6 +78,15 @@ describe("montarDesempenho", () => {
     expect(d.noPrazo).toEqual({ pct: 50, noPrazo: 1, total: 2, pctAnterior: 100 });
   });
 
+  it("% no prazo por semana — null quando a semana não teve entrega programada", () => {
+    const d = montarDesempenho(entrada(), ENTREGAS);
+    // Semana atual (14/09-20/09): só a entrega de 17962-26, sem data programada (Cronograma sem dataPostagem antes) → nenhuma entrega postada nela.
+    expect(d.pctNoPrazoPorSemana).toHaveLength(8);
+    // 09/09 (17000-25, no prazo) cai na semana de 07/09-13/09.
+    const semanaDaEntrega = d.semanas.indexOf("2026-09-07");
+    expect(d.pctNoPrazoPorSemana[semanaDaEntrega]).toBe(100);
+  });
+
   it("da chegada à entrega, só com a chegada da OS registrada", () => {
     const d = montarDesempenho(entrada(), ENTREGAS);
     expect(d.tempoAteEntrega).toEqual({ mediana: 8, n: 1 }); // 17000-25: 01/09 → 09/09
