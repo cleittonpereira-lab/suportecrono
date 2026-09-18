@@ -204,37 +204,39 @@ function FotosPage({
   );
 }
 
-function NotasPage({ sample, page, total }: { sample: PLTSample; page: number; total: number }) {
+function NotasBloco({ sample }: { sample: PLTSample }) {
   return (
-    <ReportPage sample={sample as unknown as ReportSample} page={page} total={total} title={PLT_TITLE} norms={PLT_NORMS}>
-      <div className="border border-[#141414] text-[10px] text-[#141414]">
-        <div className="rounded-t border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-center text-[9.5px] font-bold uppercase text-[#141414]">
-          Notas
-        </div>
-        <div className="space-y-0.5 p-2 text-[8px] leading-tight">
-          <div>¹ {sample.equipment ? `Ensaio realizado em ${sample.equipment}.` : "Ensaio realizado em equipamento elétrico."}</div>
-          <div>² Fator K = Bieniawski, Z.T. The Point-Load Test in Geotechnical Practice, Engineering Geology (9) 1-11.</div>
-          <div>³ Estimativa da Resistência à Compressão Simples (RCU).</div>
-          <div>d = diametral; a = axial; b = bloco; i = amostra irregular; ⟂ = perpendicular ao plano de fraqueza; // = paralelo ao plano de fraqueza.</div>
-          <div>Is = Índice de Resistência à Carga Pontual Não Corrigido. Fator F = Fator de Correção de Forma. Fator K = Fator de Conversão Genérico de Índice para Resistência.</div>
-          {sample.determinacoes.some((d) => d.excluidaDaMedia) && <div>* Amostra não considerada na média — ruptura sem validade.</div>}
-          <div className="pt-1 text-[#141414]/70">
-            K = 0,1808 × D[mm] + 13,824 — ajuste linear sobre a tabela de Bieniawski:{" "}
-            {TABELA_BIENIAWSKI_K.map((t) => `${t.coreSizeMm}mm→${t.k}`).join(" · ")}.
-          </div>
+    <div className="border border-[#141414] text-[10px] text-[#141414]">
+      <div className="rounded-t border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-center text-[9.5px] font-bold uppercase text-[#141414]">
+        Notas
+      </div>
+      <div className="space-y-0.5 p-2 text-[8px] leading-tight">
+        <div>¹ {sample.equipment ? `Ensaio realizado em ${sample.equipment}.` : "Ensaio realizado em equipamento elétrico."}</div>
+        <div>² Fator K = Bieniawski, Z.T. The Point-Load Test in Geotechnical Practice, Engineering Geology (9) 1-11.</div>
+        <div>³ Estimativa da Resistência à Compressão Simples (RCU).</div>
+        <div>d = diametral; a = axial; b = bloco; i = amostra irregular; ⟂ = perpendicular ao plano de fraqueza; // = paralelo ao plano de fraqueza.</div>
+        <div>Is = Índice de Resistência à Carga Pontual Não Corrigido. Fator F = Fator de Correção de Forma. Fator K = Fator de Conversão Genérico de Índice para Resistência.</div>
+        {sample.determinacoes.some((d) => d.excluidaDaMedia) && <div>* Amostra não considerada na média — ruptura sem validade.</div>}
+        <div className="pt-1 text-[#141414]/70">
+          K = 0,1808 × D[mm] + 13,824 — ajuste linear sobre a tabela de Bieniawski:{" "}
+          {TABELA_BIENIAWSKI_K.map((t) => `${t.coreSizeMm}mm→${t.k}`).join(" · ")}.
         </div>
       </div>
-    </ReportPage>
+    </div>
   );
 }
 
 /**
- * Laudo com paginação dinâmica: página 1 (identificação + resultado +
- * médias) nunca leva fotos nem notas — antes, tudo espremido numa página só
- * fazia o rodapé (assinatura) estourar pra fora da folha quando havia
- * várias fotos, cortando inclusive a seção de Notas. Fotos ganham página(s)
- * própria(s) (agrupadas por CP, na ordem do resultado) e Notas sempre fecha
- * numa página dedicada — nunca é cortada.
+ * Laudo com paginação dinâmica: página 1 leva identificação + resultado +
+ * médias + notas juntos (cabem tranquilamente numa folha só — pedido do
+ * usuário: "notas podem vir antes das fotos, abaixo das tabelas, pra
+ * economizar espaço"; a versão anterior dava a cada seção sua própria
+ * página e o resultado ficava com páginas quase vazias). Só as fotos
+ * ganham página(s) própria(s) (agrupadas por CP, na ordem do resultado) —
+ * é a única seção cujo tamanho é imprevisível (pode não ter nenhuma foto
+ * ou dezenas). Isso resolve as duas queixas: nunca mais corta Notas (não
+ * compete mais por espaço com uma leva grande de fotos) e não gera páginas
+ * penduradas quase em branco quando há poucas fotos ou nenhuma.
  */
 function PLTReportPage({
   sample,
@@ -249,7 +251,7 @@ function PLTReportPage({
 
   const gruposFotos = agruparFotosPorCp(sample.determinacoes, photos);
   const paginasFotos = paginarFotos(gruposFotos, MAX_FOTOS_POR_PAGINA);
-  const total = 1 /* resultado + médias */ + paginasFotos.length + 1 /* notas */;
+  const total = 1 /* resultado + médias + notas */ + paginasFotos.length;
 
   return (
     <>
@@ -328,14 +330,14 @@ function PLTReportPage({
               </tbody>
             </table>
           </div>
+
+          <NotasBloco sample={sample} />
         </div>
       </ReportPage>
 
       {paginasFotos.map((grupos, idx) => (
         <FotosPage key={idx} sample={sample} grupos={grupos} page={2 + idx} total={total} />
       ))}
-
-      <NotasPage sample={sample} page={total} total={total} />
     </>
   );
 }

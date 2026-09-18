@@ -42,6 +42,12 @@ export interface AsfDapSample {
   dpa: number | null;
   dpaCalibracao: { m1: number | null; m2: number | null; m3: number | null; m4: number | null };
   corposDeProva: AsfDapCp[];
+  /**
+   * Mostra no relatório as 4 leituras de altura e 4 de diâmetro de cada CP
+   * (em vez de só a média) — útil quando o CP não é uniforme e a variação
+   * entre leituras importa pra auditoria do resultado. Default ligado.
+   */
+  mostrarDimensoesDetalhadas?: boolean;
   fotos?: AsfDapPhoto[];
   /**
    * Já tentou puxar as fotos da digitalização de campo pra este relatório —
@@ -84,6 +90,7 @@ export function seedAsfDapSample(partial?: Partial<AsfDapSample>): AsfDapSample 
     dpa: null,
     dpaCalibracao: { m1: null, m2: null, m3: null, m4: null },
     corposDeProva: [newAsfDapCp("CP1"), newAsfDapCp("CP2"), newAsfDapCp("CP3")],
+    mostrarDimensoesDetalhadas: true,
     ...partial,
   };
 }

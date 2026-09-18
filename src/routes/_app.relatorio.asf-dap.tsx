@@ -12,8 +12,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Download, Gauge, Send, ShieldCheck, Plus, Trash2, CheckCircle2, Calculator,
+  Download, Gauge, Send, ShieldCheck, Plus, Trash2, CheckCircle2,
   Beaker, History, FileText,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -56,8 +57,8 @@ import type { AsfDapSample, AsfDapCp } from "@/features/asf-dap/types";
 import { seedAsfDapSample, newAsfDapCp } from "@/features/asf-dap/types";
 import type { AsfDapTipoMistura, AsfDapFieldPayload } from "@/features/asf-dap/ui";
 import {
-  pctAguaAbsorvida, gmbDensa, meaFromGmb, gmbComFilme,
-  volumeCaliper, meaAberta, gmbFromMea, vvPct, dPvc,
+  pctAguaAbsorvida, gmbDensa, meaFromGmb,
+  volumeCaliper, meaAberta, gmbFromMea, vvPct,
 } from "@/features/asf-dap/calc";
 import { loadDraft, saveDraft, fetchRemoteDraft, flushDraft } from "@/features/asf-dap/draftStore";
 import { listPendenciasDigitacao } from "@/lib/lab-pendencias.functions";
@@ -66,7 +67,16 @@ import { findMatchingPendencia } from "@/lib/pendencia-match";
 const fmt = (n: number | null | undefined, d = 2) =>
   n == null || !isFinite(n) ? "—" : n.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
 
-/** Resultado calculado de um CP, conforme o ramo da norma aplicável (§7). */
+/**
+ * Resultado calculado de um CP, conforme o ramo da norma aplicável (§7).
+ *
+ * Decisão do laboratório: mesmo quando a água absorvida ultrapassa 2% (o
+ * limite da norma pra exigir o revestimento com filme PVC, §7.2), o Gmb
+ * continua calculado pelo método padrão (Eq.6, A/(C−B)) — o laboratório não
+ * faz o ensaio de revestimento com filme. `needsFilme` continua calculado
+ * e exibido como aviso informativo (a água absorvida real do CP), mas não
+ * bloqueia nem troca a fórmula usada.
+ */
 function calcCp(cp: AsfDapCp, tipoMistura: AsfDapTipoMistura, dpa: number | null) {
   if (tipoMistura === "aberta") {
     const V = volumeCaliper(cp.alturas, cp.diametros);
@@ -77,14 +87,7 @@ function calcCp(cp: AsfDapCp, tipoMistura: AsfDapTipoMistura, dpa: number | null
   }
   const pct = cp.A != null && cp.B != null && cp.C != null ? pctAguaAbsorvida(cp.A, cp.B, cp.C) : null;
   const needsFilme = pct != null && pct > 2;
-  let gmb: number | null = null;
-  if (needsFilme) {
-    if (cp.A != null && cp.E != null && cp.F != null && dpa != null) {
-      gmb = gmbComFilme(cp.A, cp.E, cp.F, dpa);
-    }
-  } else if (cp.A != null && cp.B != null && cp.C != null) {
-    gmb = gmbDensa(cp.A, cp.B, cp.C);
-  }
+  const gmb = cp.A != null && cp.B != null && cp.C != null ? gmbDensa(cp.A, cp.B, cp.C) : null;
   const mea = gmb != null ? meaFromGmb(gmb) : null;
   const vv = gmb != null && cp.gmm ? vvPct(gmb, cp.gmm) : null;
   return { pct, needsFilme, V: null, mea, gmb, vv };
@@ -233,6 +236,73 @@ function ASFDapReportPage({
           </table>
         </div>
 
+        {sample.mostrarDimensoesDetalhadas && (
+          <div className="border border-[#141414]">
+            <div className="rounded-t border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-center text-[9.5px] font-bold uppercase text-[#141414]">
+              Dimensões dos Corpos de Prova (leituras individuais, paquímetro)
+            </div>
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-[#141414]/5 text-[8px] font-semibold">
+                  <td className="border border-[#141414] px-1 py-0.5 text-center" rowSpan={2}>CP</td>
+                  <td className="border border-[#141414] px-1 py-0.5 text-center" colSpan={4}>Altura (cm)</td>
+                  <td className="border border-[#141414] px-1 py-0.5 text-center" colSpan={4}>Diâmetro (cm)</td>
+                </tr>
+                <tr className="bg-[#141414]/5 text-[8px] font-semibold">
+                  {[1, 2, 3, 4].map((n) => <td key={`h${n}`} className="border border-[#141414] px-1 py-0.5 text-center">{n}</td>)}
+                  {[1, 2, 3, 4].map((n) => <td key={`d${n}`} className="border border-[#141414] px-1 py-0.5 text-center">{n}</td>)}
+                </tr>
+              </thead>
+              <tbody>
+                {sample.corposDeProva.map((cp, i) => (
+                  <tr key={cp.id}>
+                    <td className="border border-[#141414] px-1 py-0.5 text-center font-semibold">{cp.label || `CP${i + 1}`}</td>
+                    {cp.alturas.map((v, j) => <td key={`h${j}`} className="border border-[#141414] px-1 py-0.5 text-center">{fmt(v, 2)}</td>)}
+                    {cp.diametros.map((v, j) => <td key={`d${j}`} className="border border-[#141414] px-1 py-0.5 text-center">{fmt(v, 2)}</td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="border-t border-[#141414]/40 px-2 py-1 text-[8px] text-[#141414]/70 leading-tight">
+              Leituras individuais mostradas por se tratar de corpo(s) de prova não uniforme(s) — a variação entre leituras fica visível pra auditoria do resultado, além da média já usada no cálculo.
+            </div>
+          </div>
+        )}
+
+        <div className="border border-[#141414]">
+          <div className="rounded-t border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-center text-[9.5px] font-bold uppercase text-[#141414]">
+            Memória de Cálculo
+          </div>
+          <div className="space-y-1.5 p-2 text-[8.5px] leading-tight">
+            {sample.corposDeProva.map((cp, i) => {
+              const r = results[i];
+              return (
+                <div key={cp.id} className="border-b border-[#141414]/20 pb-1 last:border-0 last:pb-0">
+                  <span className="font-semibold">{cp.label || `CP${i + 1}`}: </span>
+                  {sample.tipoMistura === "densa" ? (
+                    cp.A != null && cp.B != null && cp.C != null ? (
+                      <>
+                        Gmb = A/(C−B) = {fmt(cp.A, 2)}/({fmt(cp.C, 2)}−{fmt(cp.B, 2)}) = {fmt(cp.A, 2)}/{fmt((cp.C ?? 0) - (cp.B ?? 0), 2)} = <b>{fmt(r.gmb, 3)}</b>
+                        {" · "}
+                        %h = 100×(C−A)/(C−B) = 100×({fmt(cp.C, 2)}−{fmt(cp.A, 2)})/({fmt(cp.C, 2)}−{fmt(cp.B, 2)}) = <b>{fmt(r.pct, 1)}%</b>
+                      </>
+                    ) : (
+                      <span className="text-[#141414]/50">dados insuficientes (A, B, C)</span>
+                    )
+                  ) : cp.A != null && r.V != null ? (
+                    <>
+                      MEa = A/V = {fmt(cp.A, 2)}/{fmt(r.V, 2)} = <b>{fmt(r.mea, 4)} g/cm³</b>
+                      {" · "}Gmb = MEa/0,9971 = <b>{fmt(r.gmb, 3)}</b>
+                    </>
+                  ) : (
+                    <span className="text-[#141414]/50">dados insuficientes (A, dimensões)</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         {sample.tipoMistura === "densa" && sample.dpa != null && (
           <div className="border border-[#141414] px-2 py-1.5 flex items-center justify-between">
             <span className="text-[9.5px] font-semibold uppercase">Densidade do filme PVC (Dpa)</span>
@@ -294,13 +364,7 @@ function ASFDapReportPage({
                 <div><b>A</b> — massa do corpo de prova seca ao ar (g)</div>
                 <div><b>B</b> — massa do corpo de prova imersa em água (g)</div>
                 <div><b>C</b> — massa do corpo de prova saturada, superfície seca (g)</div>
-                {anyNeedsFilme && (
-                  <>
-                    <div><b>E</b> — massa do corpo de prova revestido (filme PVC), seca ao ar (g)</div>
-                    <div><b>F</b> — massa do corpo de prova revestido (filme PVC), imersa em água (g)</div>
-                  </>
-                )}
-                <div><b>Água abs.</b> — % de água absorvida (§6.1.4) — acima de 2% exige revestimento com filme PVC</div>
+                <div><b>Água abs.</b> — % de água absorvida (§6.1.4), calculada pra todos os CPs pelo método padrão (item abaixo)</div>
               </>
             ) : (
               <div><b>A</b> — massa do corpo de prova seca ao ar (g) · <b>V</b> — volume do corpo de prova, obtido por paquímetro (cm³)</div>
@@ -311,6 +375,7 @@ function ASFDapReportPage({
           </div>
           <div className="border-t border-[#141414]/40 px-2 py-1 text-[8px] text-[#141414]/70 leading-tight">
             Gmb = A/(C−B) (mistura densa) ou MEa = A/V (mistura aberta), conforme DNIT 428/2022-ME.
+            {anyNeedsFilme && " Gmb calculado pelo método padrão (A/(C−B)) mesmo nos CPs com água absorvida acima de 2% — sem o revestimento com filme PVC do §7.2."}
           </div>
         </div>
       </div>
@@ -606,7 +671,6 @@ export function ASFPage() {
     () => sample.corposDeProva.map((cp) => calcCp(cp, sample.tipoMistura, sample.dpa)),
     [sample.corposDeProva, sample.tipoMistura, sample.dpa],
   );
-  const algumCpPrecisaFilme = results.some((r) => r.needsFilme);
 
   /**
    * Gera o PDF pelo módulo único de captura (lib/report-pdf.ts), que espera
@@ -812,19 +876,6 @@ export function ASFPage() {
   const isAguardandoAprov = rawSt === "aguardando_aprovacao" || rawSt === "pendente_aprovacao" || rawSt === "verificado";
   const isAprovado = rawSt === "aprovado" || rawSt === "concluido";
   const rev = approvals[0]?.rev ?? 0;
-
-  function patchDpaCalibracao(p: Partial<AsfDapSample["dpaCalibracao"]>) {
-    setSample((s) => {
-      const cal = { ...s.dpaCalibracao, ...p };
-      const { m1, m2, m3, m4 } = cal;
-      let dpa = s.dpa;
-      if (m1 != null && m2 != null && m3 != null && m4 != null) {
-        const calc = dPvc(m1, m2, m3, m4);
-        if (calc != null) dpa = calc;
-      }
-      return { ...s, dpaCalibracao: cal, dpa };
-    });
-  }
 
   return (
     <>
@@ -1102,29 +1153,19 @@ export function ASFPage() {
               Aberta (vazios ≥ 10%) — §6.3
             </Button>
           </CardContent>
+          <CardContent className="pt-0">
+            <label className="flex items-start gap-2 text-xs cursor-pointer">
+              <Checkbox
+                checked={sample.mostrarDimensoesDetalhadas ?? true}
+                onCheckedChange={(v) => updateSample("mostrarDimensoesDetalhadas", !!v)}
+              />
+              <span>
+                Mostrar no relatório as 4 leituras de altura e diâmetro de cada CP (não só a média) — útil quando o
+                CP não é uniforme
+              </span>
+            </label>
+          </CardContent>
         </Card>
-
-        {sample.tipoMistura === "densa" && algumCpPrecisaFilme && (
-          <Card className="mb-4 border-amber-500/40 bg-amber-500/[0.04]">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Densidade do filme PVC (Dpa)</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <NumField label="Dpa (adimensional)" value={sample.dpa} onChange={(v) => updateSample("dpa", v)} />
-              <details className="text-xs">
-                <summary className="cursor-pointer flex items-center gap-1.5 text-muted-foreground">
-                  <Calculator className="h-3.5 w-3.5" /> Calcular a partir da calibração do cilindro
-                </summary>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2 max-w-lg">
-                  <NumField label="m1 · cilindro seco [g]" value={sample.dpaCalibracao.m1} onChange={(v) => patchDpaCalibracao({ m1: v })} />
-                  <NumField label="m2 · cilindro na água [g]" value={sample.dpaCalibracao.m2} onChange={(v) => patchDpaCalibracao({ m2: v })} />
-                  <NumField label="m3 · revestido seco [g]" value={sample.dpaCalibracao.m3} onChange={(v) => patchDpaCalibracao({ m3: v })} />
-                  <NumField label="m4 · revestido na água [g]" value={sample.dpaCalibracao.m4} onChange={(v) => patchDpaCalibracao({ m4: v })} />
-                </div>
-              </details>
-            </CardContent>
-          </Card>
-        )}
 
         {/* Corpos de prova */}
         <Card className="mb-4">
@@ -1158,15 +1199,9 @@ export function ASFPage() {
                         <NumField label="C · massa saturada sup. seca [g]" value={cp.C} onChange={(v) => updateCp(i, { C: v })} />
                       </div>
                       {r.pct != null && (
-                        <Badge variant={r.needsFilme ? "destructive" : "secondary"} className="text-[10px]">
-                          Água absorvida: {r.pct.toFixed(1)}% {r.needsFilme ? "— precisa de filme PVC" : ""}
+                        <Badge variant={r.needsFilme ? "outline" : "secondary"} className="text-[10px]">
+                          Água absorvida: {r.pct.toFixed(1)}% {r.needsFilme ? "— acima de 2% (Gmb calculado pelo método padrão)" : ""}
                         </Badge>
-                      )}
-                      {r.needsFilme && (
-                        <div className="flex flex-wrap gap-2 pt-1 border-t mt-2">
-                          <NumField label="E · revestido seco ao ar [g]" value={cp.E} onChange={(v) => updateCp(i, { E: v })} />
-                          <NumField label="F · revestido imerso [g]" value={cp.F} onChange={(v) => updateCp(i, { F: v })} />
-                        </div>
                       )}
                     </>
                   ) : (

@@ -62,6 +62,12 @@ export function PhotoUploader({ title, kind, photos = [], onAdd, onRemove, onUpd
   const inputRef = useRef<HTMLInputElement>(null);
   const items = (photos || []).filter((p) => p && p.kind === kind);
   const [editing, setEditing] = useState<Photo | null>(null);
+  /**
+   * URLs do Drive que falharam ao carregar nesta sessão (rede instável,
+   * propagação lenta, sessão expirada) — a miniatura cai pro `dataUrl` local
+   * em vez de ficar com o ícone de imagem quebrada pra sempre.
+   */
+  const [urlFalhou, setUrlFalhou] = useState<Set<string>>(new Set());
   const [pendingUpload, setPendingUpload] = useState<{
     dataUrl: string;
     bytes: number;
@@ -126,9 +132,14 @@ export function PhotoUploader({ title, kind, photos = [], onAdd, onRemove, onUpd
             <div key={p.id} className="group relative overflow-hidden rounded-md border border-border bg-card">
               <div className={`flex aspect-[3/4] w-full items-center justify-center bg-black/5 overflow-hidden ${publicada ? "" : "opacity-40"}`}>
                 <img
-                  src={p.url || p.dataUrl}
+                  src={p.url && !urlFalhou.has(p.id) ? p.url : p.dataUrl}
                   alt={p.caption ?? title}
                   className="h-full w-full object-cover"
+                  onError={() => {
+                    if (p.url && !urlFalhou.has(p.id)) {
+                      setUrlFalhou((prev) => new Set(prev).add(p.id));
+                    }
+                  }}
                 />
               </div>
               {!publicada && (

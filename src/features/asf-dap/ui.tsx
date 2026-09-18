@@ -22,13 +22,13 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import {
   ArrowLeft, Save, CheckCircle2, Plus, Trash2, Beaker,
-  ImagePlus, Camera, AlertTriangle, Calculator,
+  ImagePlus, Camera,
 } from "lucide-react";
 import { fileToCompressedDataUrl, formatBytes } from "@/features/lab/photos";
 import { atualizarPendenciaOuGuardar, criarPendenciaOuGuardar, usePendenciaDaBancada } from "@/lib/fila-offline";
 import { getLabEnsaioSnapshot } from "@/lib/lab-ensaios.functions";
 import type { Photo } from "@/features/lab/types";
-import { pctAguaAbsorvida, dPvc } from "./calc";
+import { pctAguaAbsorvida } from "./calc";
 
 // -------- Tipos do payload de campo (ASF.DAP) --------
 export type AsfDapTipoMistura = "densa" | "aberta";
@@ -297,20 +297,6 @@ export function AsfDapWorkspace({
     queueMicrotask(saveToServer);
   }
 
-  // Mini-calculadora de Dpa (§6.2.4) a partir da calibração do cilindro.
-  function patchDpaCalibracao(p: Partial<AsfDapFieldPayload["dpaCalibracao"]>) {
-    setData((d) => {
-      const cal = { ...d.dpaCalibracao, ...p };
-      const { m1, m2, m3, m4 } = cal;
-      let dpa = d.dpa;
-      if (m1 != null && m2 != null && m3 != null && m4 != null) {
-        const calc = dPvc(m1, m2, m3, m4);
-        if (calc != null) dpa = calc;
-      }
-      return { ...d, dpaCalibracao: cal, dpa };
-    });
-  }
-
   async function handlePhotos(files: FileList | null) {
     if (!files || !files.length) return;
     for (const f of Array.from(files)) {
@@ -396,7 +382,6 @@ export function AsfDapWorkspace({
     }
   }
 
-  const algumCpPrecisaFilme = data.corposDeProva.some((cp) => cp.needsFilme);
 
   return (
     <div className="space-y-4">
@@ -448,41 +433,6 @@ export function AsfDapWorkspace({
         </CardContent>
       </Card>
 
-      {data.tipoMistura === "densa" && algumCpPrecisaFilme && (
-        <Card className="border-amber-500/40 bg-amber-500/[0.04]">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2 text-amber-700 dark:text-amber-400">
-              <AlertTriangle className="h-4 w-4" />
-              Densidade do filme PVC (Dpa)
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Algum CP passou de 2% de água absorvida — precisa ser revestido com filme PVC (§6.2). Informe o Dpa diretamente ou calcule a partir da calibração do cilindro.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 gap-2 max-w-xs">
-              <FieldNum
-                label="Dpa (adimensional)"
-                value={data.dpa}
-                onChange={(v) => setData((d) => ({ ...d, dpa: v }))}
-                onCommit={saveToServer}
-              />
-            </div>
-            <details className="text-xs">
-              <summary className="cursor-pointer flex items-center gap-1.5 text-muted-foreground">
-                <Calculator className="h-3.5 w-3.5" /> Calcular a partir da calibração do cilindro
-              </summary>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
-                <FieldNum label="m1 · cilindro seco [g]" value={data.dpaCalibracao.m1} onChange={(v) => patchDpaCalibracao({ m1: v })} onCommit={saveToServer} />
-                <FieldNum label="m2 · cilindro na água [g]" value={data.dpaCalibracao.m2} onChange={(v) => patchDpaCalibracao({ m2: v })} onCommit={saveToServer} />
-                <FieldNum label="m3 · revestido seco [g]" value={data.dpaCalibracao.m3} onChange={(v) => patchDpaCalibracao({ m3: v })} onCommit={saveToServer} />
-                <FieldNum label="m4 · revestido na água [g]" value={data.dpaCalibracao.m4} onChange={(v) => patchDpaCalibracao({ m4: v })} onCommit={saveToServer} />
-              </div>
-            </details>
-          </CardContent>
-        </Card>
-      )}
-
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base flex items-center justify-between">
@@ -514,15 +464,9 @@ export function AsfDapWorkspace({
                       <FieldNum label="C · massa saturada sup. seca [g]" value={cp.C} onChange={(v) => updateCp(i, { C: v })} onCommit={saveToServer} />
                     </div>
                     {pct != null && (
-                      <Badge variant={pct > 2 ? "destructive" : "secondary"} className="text-[10px]">
-                        Água absorvida: {pct.toFixed(1)}% {pct > 2 ? "— precisa de filme PVC" : ""}
+                      <Badge variant={pct > 2 ? "outline" : "secondary"} className="text-[10px]">
+                        Água absorvida: {pct.toFixed(1)}% {pct > 2 ? "— acima de 2% (Gmb calculado pelo método padrão mesmo assim)" : ""}
                       </Badge>
-                    )}
-                    {cp.needsFilme && (
-                      <div className="grid grid-cols-2 gap-2 pt-1 border-t mt-2">
-                        <FieldNum label="E · revestido seco ao ar [g]" value={cp.E} onChange={(v) => updateCp(i, { E: v })} onCommit={saveToServer} />
-                        <FieldNum label="F · revestido imerso [g]" value={cp.F} onChange={(v) => updateCp(i, { F: v })} onCommit={saveToServer} />
-                      </div>
                     )}
                   </>
                 ) : (
