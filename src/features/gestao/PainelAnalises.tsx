@@ -6,11 +6,11 @@
  * aba Operação já calculou (`PainelModelo`/`Bancada`/`Desempenho`).
  */
 import {
-  Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ReferenceLine, XAxis, YAxis,
+  Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, ReferenceLine, XAxis, YAxis,
 } from "recharts";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import type { Desempenho, SerieSemanal } from "@/lib/painel-desempenho";
-import type { Bancada as BancadaModelo, EtapaDeLaudo, EtapaEsteira, LinhaPrazo } from "@/lib/painel-coordenador";
+import type { Bancada as BancadaModelo, EtapaDeLaudo, EtapaEsteira, LinhaPrazo, Producao } from "@/lib/painel-coordenador";
 
 function CardAnalise({
   titulo, subtitulo, leitura, children,
@@ -276,10 +276,133 @@ function GraficoSlaPorSetor({ dados }: { dados: { setor: string; d: Desempenho }
   );
 }
 
+/* --------------------------- 8) SLA por setor — tendência --------------------------- */
+
+const COR_SETOR: Record<string, string> = {
+  Especiais: "var(--chart-1)",
+  Convencionais: "var(--chart-2)",
+  Dosagem: "var(--chart-3)",
+};
+
+function GraficoSlaPorSetorTendencia({ dados }: { dados: { setor: string; d: Desempenho }[] }) {
+  const comDados = dados.filter((x) => x.d.pctNoPrazoPorSemana.some((v) => v != null));
+  if (comDados.length === 0) return null;
+  const semanas = comDados[0].d.semanas;
+  const linhas = semanas.map((sem, i) => {
+    const linha: Record<string, string | number | null> = { semana: br(sem) };
+    for (const x of comDados) linha[x.setor] = x.d.pctNoPrazoPorSemana[i];
+    return linha;
+  });
+  // Setor com maior queda da primeira pra última semana com dado, pra citar na leitura.
+  let piorQueda: { setor: string; delta: number } | null = null;
+  for (const x of comDados) {
+    const validos = x.d.pctNoPrazoPorSemana.map((v, i) => ({ v, i })).filter((p): p is { v: number; i: number } => p.v != null);
+    if (validos.length < 2) continue;
+    const delta = validos[validos.length - 1].v - validos[0].v;
+    if (!piorQueda || delta < piorQueda.delta) piorQueda = { setor: x.setor, delta };
+  }
+  const config = Object.fromEntries(comDados.map((x) => [x.setor, { label: x.setor, color: COR_SETOR[x.setor] ?? "var(--chart-4)" }])) as ChartConfig;
+  return (
+    <CardAnalise
+      titulo="Cumprimento de prazo por setor — tendência semanal"
+      subtitulo="% no prazo em cada uma das 8 semanas, por setor"
+      leitura={
+        piorQueda && piorQueda.delta < 0
+          ? `${piorQueda.setor} caiu ${Math.abs(piorQueda.delta)} p.p. da primeira pra última semana com dado — vale olhar o que mudou lá.`
+          : "Nenhum setor com queda entre a primeira e a última semana com dado."
+      }
+    >
+      <ChartContainer config={config} className="h-[240px] w-full">
+        <LineChart data={linhas} margin={{ left: -20, right: 8, top: 4, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+          <XAxis dataKey="semana" tickLine={false} axisLine={false} fontSize={10} />
+          <YAxis tickLine={false} axisLine={false} fontSize={10} domain={[0, 100]} unit="%" />
+          <ChartTooltip content={<ChartTooltipContent />} />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+          {comDados.map((x) => (
+            <Line key={x.setor} dataKey={x.setor} stroke={COR_SETOR[x.setor] ?? "var(--chart-4)"} strokeWidth={2} dot={{ r: 2.5 }} connectNulls isAnimationActive={false} />
+          ))}
+        </LineChart>
+      </ChartContainer>
+    </CardAnalise>
+  );
+}
+
+/* --------------------------- 9) produção por pessoa (digitalização) --------------------------- */
+
+function GraficoProducaoPorPessoa({ producao }: { producao: Producao }) {
+  const porNome = new Map<string, { nome: string; campo: number; digitacao: number }>();
+  for (const p of producao.operadores) porNome.set(p.nome, { nome: p.nome, campo: p.total, digitacao: porNome.get(p.nome)?.digitacao ?? 0 });
+  for (const p of producao.digitadores) {
+    const atual = porNome.get(p.nome) ?? { nome: p.nome, campo: 0, digitacao: 0 };
+    atual.digitacao = p.total;
+    porNome.set(p.nome, atual);
+  }
+  const dados = [...porNome.values()].sort((a, b) => (b.campo + b.digitacao) - (a.campo + a.digitacao)).slice(0, 12);
+  if (dados.length === 0) {
+    return (
+      <CardAnalise titulo="Produção por pessoa — campo e digitação" subtitulo={`desde ${br(producao.desde)}`}>
+        <SemDados />
+      </CardAnalise>
+    );
+  }
+  const lider = [...dados].sort((a, b) => (b.campo + b.digitacao) - (a.campo + a.digitacao))[0];
+  const config = {
+    campo: { label: "Registrado em campo", color: "var(--chart-1)" },
+    digitacao: { label: "Digitado", color: "var(--chart-2)" },
+  } satisfies ChartConfig;
+  return (
+    <CardAnalise
+      titulo="Produção por pessoa — campo e digitação"
+      subtitulo={`ensaios registrados (campo) e laudos digitados, desde ${br(producao.desde)} — não vem do Gantt`}
+      leitura={`Maior produção no período: ${lider.nome} (${lider.campo} em campo, ${lider.digitacao} digitado(s)).`}
+    >
+      <ChartContainer config={config} className="h-[240px] w-full">
+        <BarChart data={dados} margin={{ left: -20, right: 8, top: 4, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+          <XAxis dataKey="nome" tickLine={false} axisLine={false} fontSize={9.5} interval={0} angle={-20} textAnchor="end" height={50} />
+          <YAxis tickLine={false} axisLine={false} fontSize={10} allowDecimals={false} />
+          <ChartTooltip content={<ChartTooltipContent />} />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+          <Bar dataKey="campo" stackId="a" fill="var(--color-campo)" radius={[0, 0, 0, 0]} />
+          <Bar dataKey="digitacao" stackId="a" fill="var(--color-digitacao)" radius={[4, 4, 0, 0]} />
+        </BarChart>
+      </ChartContainer>
+    </CardAnalise>
+  );
+}
+
+/* --------------------------- 10) carga atual por tipo de ensaio --------------------------- */
+
+function GraficoPorTipo({ porTipo }: { porTipo: { nome: string; total: number }[] }) {
+  const dados = [...porTipo].sort((a, b) => b.total - a.total).slice(0, 10);
+  if (dados.length === 0) return <CardAnalise titulo="Carga atual por tipo de ensaio"><SemDados /></CardAnalise>;
+  const total = dados.reduce((s, x) => s + x.total, 0);
+  const maior = dados[0];
+  const config = { total: { label: "Ensaios ativos", color: "var(--chart-5)" } } satisfies ChartConfig;
+  return (
+    <CardAnalise
+      titulo="Carga atual por tipo de ensaio"
+      subtitulo="ensaios ativos agora (não concluídos), por tipo"
+      leitura={`${maior.nome} é o que mais ocupa a operação agora: ${maior.total} de ${total} ensaios ativos (${Math.round((maior.total / total) * 100)}%).`}
+    >
+      <ChartContainer config={config} className="h-[240px] w-full">
+        <BarChart data={dados} layout="vertical" margin={{ left: 8, right: 24, top: 4, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+          <XAxis type="number" tickLine={false} axisLine={false} fontSize={10} allowDecimals={false} />
+          <YAxis type="category" dataKey="nome" tickLine={false} axisLine={false} fontSize={10} width={140} />
+          <ChartTooltip content={<ChartTooltipContent />} />
+          <Bar dataKey="total" fill="var(--color-total)" radius={[0, 4, 4, 0]} />
+        </BarChart>
+      </ChartContainer>
+    </CardAnalise>
+  );
+}
+
 /* ------------------------------------ topo ------------------------------------ */
 
 export function PainelAnalises({
-  esteira, prazos, bancada, laudos, desempenho, desempenhoPorSetor,
+  esteira, prazos, bancada, laudos, desempenho, desempenhoPorSetor, producao, porTipo,
 }: {
   esteira: EtapaEsteira[];
   prazos: LinhaPrazo[];
@@ -287,6 +410,8 @@ export function PainelAnalises({
   laudos: EtapaDeLaudo[];
   desempenho: Desempenho | null;
   desempenhoPorSetor: { setor: string; d: Desempenho }[];
+  producao: Producao;
+  porTipo: { nome: string; total: number }[];
 }) {
   return (
     <div className="space-y-4">
@@ -306,10 +431,13 @@ export function PainelAnalises({
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {desempenho && <GraficoNoPrazoSemanal d={desempenho} />}
         <GraficoSlaPorSetor dados={desempenhoPorSetor} />
+        <GraficoSlaPorSetorTendencia dados={desempenhoPorSetor} />
         <GraficoDistribuicaoPrazos prazos={prazos} />
         <GraficoIdadeLaudos laudos={laudos} />
         <GraficoUtilizacaoBancada bancada={bancada} />
         <GraficoEsteira esteira={esteira} />
+        <GraficoPorTipo porTipo={porTipo} />
+        <GraficoProducaoPorPessoa producao={producao} />
       </div>
     </div>
   );

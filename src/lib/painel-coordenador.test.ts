@@ -6,6 +6,7 @@ import {
   montarPainel,
   osDaChegada,
   paraIso,
+  producaoDigitalizacao,
   proximosDiasUteis,
   type EntradaPainel,
 } from "./painel-coordenador";
@@ -235,9 +236,30 @@ describe("detalhe ao clicar (Fase 4 — painel interativo)", () => {
     expect(detalhes.aguardandoProgramacao.map((x) => x.ensaio).sort()).toEqual(["Caracterização", "Ensaio"]);
   });
 
+  it("detalhes.porTipo soma os ensaios ativos por tipo", () => {
+    const { detalhes } = montarPainel(base());
+    const total = detalhes.porTipo.reduce((s, x) => s + x.total, 0);
+    expect(total).toBe(4); // e1..e4, todos ativos no fixture
+    expect(detalhes.porTipo.find((x) => x.nome === "Adensamento")).toMatchObject({ total: 1 });
+  });
+
   it("detalhes.emAndamento lista quem está em execução agora", () => {
     const { detalhes } = montarPainel(base());
     expect(detalhes.emAndamento).toMatchObject([{ ensaio: "Adensamento", os: "17891-26", amostra: "SH-01", tecnico: "Rodrigo" }]);
+  });
+
+  it("produção da digitalização — operador conta pela criação, digitador pela última atualização", () => {
+    const p = producaoDigitalizacao(base(), 7);
+    expect(p.operadores).toMatchObject([{ nome: "Rodrigo", total: 1 }]);
+    expect(p.operadores[0].itens[0]).toMatchObject({ id: "l2", ensaio: "Adensamento", os: "17891-26" });
+    expect(p.digitadores).toMatchObject([{ nome: "Ana", total: 1 }]);
+    expect(p.digitadores[0].itens[0]).toMatchObject({ id: "l1", ensaio: "Triaxial CID" });
+  });
+
+  it("produção — fora da janela de dias não entra", () => {
+    const p = producaoDigitalizacao(base(), 3); // 13/09 a 15/09 — a atualização de l1 (10/09) fica de fora
+    expect(p.digitadores).toEqual([]);
+    expect(p.operadores).toMatchObject([{ nome: "Rodrigo", total: 1 }]); // l2 é de hoje (15/09)
   });
 
   it("montarBancadaComJanela abre mais dias sem precisar de nova consulta", () => {

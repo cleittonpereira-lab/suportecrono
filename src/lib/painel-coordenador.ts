@@ -65,7 +65,10 @@ export type EntradaPainel = {
     os: string;
     amostra?: string | null;
     ensaio: string;
+    tipo_ensaio?: string | null;
     status: string;
+    /** "digitalizacao" = veio do escaneamento de QR em campo; "gantt"/"avulso" = criada de outro jeito. */
+    origem?: string | null;
     created_at: string;
     updated_at?: string | null;
     operador_nome?: string | null;
@@ -188,6 +191,8 @@ export type Detalhes = {
   aguardandoProgramacao: ItemAguardando[];
   emAndamento: ItemEmAndamento[];
   laudosParados: LaudoNaEtapa[];
+  /** Ensaios ativos (não concluídos/cancelados) agora, por tipo — a composição da carga atual. */
+  porTipo: { nome: string; total: number }[];
 };
 
 export type PainelModelo = {
@@ -530,6 +535,15 @@ export function montarPainel(e: EntradaPainel): PainelModelo {
       papel: p.status === "verificado" ? "verificado por" : p.status === "digitado" ? "enviado por" : p.digitador_nome ? "com" : "operador",
       idade: idadeLaudo(p),
     })),
+    porTipo: (() => {
+      const porNome = new Map<string, number>();
+      for (const en of ensaiosNoEscopo) {
+        if (!ativo(en)) continue;
+        const nome = nomeEnsaio(en);
+        porNome.set(nome, (porNome.get(nome) ?? 0) + 1);
+      }
+      return [...porNome.entries()].map(([nome, total]) => ({ nome, total })).sort((a, b) => b.total - a.total);
+    })(),
   };
 
   // Esteira: cada etapa com o que está nela agora e quanto está parado; o gargalo é a maior proporção parada.
@@ -652,6 +666,62 @@ export function montarBancadaComJanela(e: EntradaPainel, dias: number): Bancada 
   const { nomeDoEquipamento, progNoEscopo, rotuloDaProg } = prepararEscopo(e);
   const progsAtivas = e.programacoes.filter((p) => p.status !== "concluido" && progNoEscopo(p));
   return montarBancada(e, e.hoje, progsAtivas, nomeDoEquipamento, rotuloDaProg, dias);
+}
+
+/* ------------------------------ Fase 5: produção da digitalização ------------------------------ */
+
+export type ItemProducao = { id: string; ensaio: string; os: string; amostra: string | null; quando: string };
+export type PessoaProducao = { nome: string; total: number; itens: ItemProducao[] };
+export type Producao = {
+  /** Primeiro dia da janela ("AAAA-MM-DD"). */
+  desde: string;
+  dias: number;
+  /** Quem executou/registrou o ensaio em campo (`operador_nome` da pendência) — a carga do Gantt não enxerga isto. */
+  operadores: PessoaProducao[];
+  /** Quem digitou o relatório no escritório (`digitador_nome`). */
+  digitadores: PessoaProducao[];
+};
+
+/**
+ * Produção por pessoa a partir das pendências de digitação — o que a "Carga
+ * de trabalho" (Fase 2, só Programação/Gantt) não enxerga: quem de fato
+ * executou/registrou o ensaio em campo (operador) e quem digitou o relatório
+ * (digitador), pendência por pendência, dentro da janela de dias pedida.
+ * Operador conta pela criação da pendência (quando o campo terminou);
+ * digitador conta pela última atualização (quando a digitação avançou).
+ */
+export function producaoDigitalizacao(e: EntradaPainel, dias: number): Producao {
+  const { noEscopo } = prepararEscopo(e);
+  const desde = somaDias(e.hoje, -(dias - 1));
+  const naJanela = (iso: string | null | undefined) => {
+    const d = paraIso(iso);
+    return !!d && d >= desde && d <= e.hoje;
+  };
+
+  function agrupar(campo: "operador_nome" | "digitador_nome", quandoDe: (p: EntradaPainel["pendencias"][number]) => string | null | undefined): PessoaProducao[] {
+    const porNome = new Map<string, PessoaProducao>();
+    for (const p of e.pendencias) {
+      if (!noEscopo(chaveOs(p.os))) continue;
+      const nome = (p[campo] ?? "").trim();
+      if (!nome) continue;
+      const quando = paraIso(quandoDe(p));
+      if (!quando || !naJanela(quando)) continue;
+      const pessoa = porNome.get(nome) ?? { nome, total: 0, itens: [] };
+      pessoa.total++;
+      pessoa.itens.push({ id: p.id, ensaio: p.ensaio, os: p.os, amostra: p.amostra ?? null, quando });
+      porNome.set(nome, pessoa);
+    }
+    return [...porNome.values()]
+      .map((pessoa) => ({ ...pessoa, itens: pessoa.itens.sort((a, b) => b.quando.localeCompare(a.quando)) }))
+      .sort((a, b) => b.total - a.total || a.nome.localeCompare(b.nome, "pt-BR"));
+  }
+
+  return {
+    desde,
+    dias,
+    operadores: agrupar("operador_nome", (p) => p.created_at),
+    digitadores: agrupar("digitador_nome", (p) => p.updated_at ?? p.created_at),
+  };
 }
 
 /* ------------------------------ Fase 2: bancada ------------------------------ */

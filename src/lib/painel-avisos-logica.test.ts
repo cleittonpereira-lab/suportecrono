@@ -46,7 +46,7 @@ function modelo(tiles: Partial<PainelModelo["tiles"]> = {}, gargalo?: string): P
     alertas: [],
     bancada: { dias: [], equipamentos: [], tecnicos: [], longos: [] },
     laudos: [],
-    detalhes: { recebidas: [], noRecebimento: [], aguardandoProgramacao: [], emAndamento: [], laudosParados: [] },
+    detalhes: { recebidas: [], noRecebimento: [], aguardandoProgramacao: [], emAndamento: [], laudosParados: [], porTipo: [] },
   };
 }
 

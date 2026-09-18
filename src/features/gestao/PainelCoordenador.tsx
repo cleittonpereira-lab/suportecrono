@@ -41,6 +41,7 @@ import {
   entradaDasFontes,
   montarBancadaComJanela,
   montarPainel,
+  producaoDigitalizacao,
   somaDias,
   type Bancada as BancadaModelo,
   type CargaTecnico,
@@ -53,6 +54,8 @@ import {
   type LaudoNaEtapa,
   type LinhaPrazo,
   type PainelModelo,
+  type PessoaProducao,
+  type Producao,
   type Setor,
 } from "@/lib/painel-coordenador";
 
@@ -88,14 +91,19 @@ type DetalheAberto =
   | { tipo: "prazo"; chave: string }
   | { tipo: "equipamento"; id: string }
   | { tipo: "tecnico"; nome: string }
+  | { tipo: "producao"; papel: "operador" | "digitador"; nome: string }
+  | { tipo: "porTipo" }
   | { tipo: "semana"; chave: SerieSemanal["chave"] };
 
 const JANELAS_BANCADA = [7, 14, 30] as const;
+const JANELAS_PRODUCAO = [7, 15, 30] as const;
 
-function SeletorJanela({ dias, onChange }: { dias: number; onChange: (n: number) => void }) {
+function SeletorJanela({
+  dias, onChange, opcoes = JANELAS_BANCADA, sufixo = "d",
+}: { dias: number; onChange: (n: number) => void; opcoes?: readonly number[]; sufixo?: string }) {
   return (
-    <div className="flex gap-1 rounded-md border bg-muted/40 p-0.5" role="tablist" aria-label="Dias úteis exibidos">
-      {JANELAS_BANCADA.map((n) => (
+    <div className="flex gap-1 rounded-md border bg-muted/40 p-0.5" role="tablist" aria-label="Janela de dias">
+      {opcoes.map((n) => (
         <button
           key={n}
           type="button"
@@ -106,7 +114,7 @@ function SeletorJanela({ dias, onChange }: { dias: number; onChange: (n: number)
             dias === n ? "bg-background shadow-sm text-foreground font-medium" : "text-muted-foreground hover:text-foreground"
           }`}
         >
-          {n}d
+          {n}{sufixo}
         </button>
       ))}
     </div>
@@ -223,7 +231,7 @@ function TabelaPrazos({ linhas, onLinha }: { linhas: LinhaPrazo[]; onLinha: (cha
 
 /** O conteúdo do painel de detalhe — muda conforme o quadro que foi clicado. */
 function ConteudoDetalhe({
-  aberto, modelo, bancadaJanela, diasBancada, onDiasBancada, desempenho, onAbrirPrazo,
+  aberto, modelo, bancadaJanela, diasBancada, onDiasBancada, desempenho, onAbrirPrazo, producao, diasProducao, onDiasProducao,
 }: {
   aberto: DetalheAberto;
   modelo: PainelModelo;
@@ -232,6 +240,9 @@ function ConteudoDetalhe({
   onDiasBancada: (n: number) => void;
   desempenho: Desempenho | null;
   onAbrirPrazo: (chave: string) => void;
+  producao: Producao;
+  diasProducao: number;
+  onDiasProducao: (n: number) => void;
 }) {
   switch (aberto.tipo) {
     case "recebidas":
@@ -435,6 +446,56 @@ function ConteudoDetalhe({
         </div>
       );
     }
+    case "producao": {
+      const lista = aberto.papel === "operador" ? producao.operadores : producao.digitadores;
+      const pessoa = lista.find((p) => p.nome === aberto.nome);
+      return (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-muted-foreground">Janela de dias</span>
+            <SeletorJanela dias={diasProducao} onChange={onDiasProducao} opcoes={[7, 15, 30]} />
+          </div>
+          {!pessoa ? <LinhaVazia>Sem registros nesta janela.</LinhaVazia> : (
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/40">
+                  <TableHead>Ensaio</TableHead><TableHead>OS · Amostra</TableHead><TableHead className="text-right">Quando</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pessoa.itens.map((i) => (
+                  <TableRow key={i.id}>
+                    <TableCell className="text-xs font-medium">{i.ensaio}</TableCell>
+                    <TableCell className="text-xs">{i.os}{i.amostra ? <div className="text-[10px] text-muted-foreground">{i.amostra}</div> : null}</TableCell>
+                    <TableCell className="text-right text-xs tabular-nums">{br(i.quando)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </div>
+      );
+    }
+    case "porTipo": {
+      if (modelo.detalhes.porTipo.length === 0) return <LinhaVazia>Nenhum ensaio ativo agora.</LinhaVazia>;
+      const total = modelo.detalhes.porTipo.reduce((s, x) => s + x.total, 0);
+      return (
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/40"><TableHead>Tipo de ensaio</TableHead><TableHead className="text-right">Ativos agora</TableHead><TableHead className="text-right">% da carga</TableHead></TableRow>
+          </TableHeader>
+          <TableBody>
+            {modelo.detalhes.porTipo.map((t) => (
+              <TableRow key={t.nome}>
+                <TableCell className="text-xs font-medium">{t.nome}</TableCell>
+                <TableCell className="text-right text-xs tabular-nums">{t.total}</TableCell>
+                <TableCell className="text-right text-xs tabular-nums text-muted-foreground">{Math.round((t.total / total) * 100)}%</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      );
+    }
     case "semana": {
       const s = desempenho?.series.find((x) => x.chave === aberto.chave);
       if (!s || !desempenho) return <LinhaVazia>Sem dados de desempenho ainda.</LinhaVazia>;
@@ -478,12 +539,18 @@ const TITULOS_DETALHE: Record<DetalheAberto["tipo"], (a: DetalheAberto, modelo: 
     const nome = a.tipo === "equipamento" ? modelo.bancada.equipamentos.find((q) => q.id === a.id)?.nome : undefined;
     return { titulo: nome ?? "Equipamento", subtitulo: "ocupação e programações", destino: { to: "/programacao/gantt" } };
   },
-  tecnico: (a) => ({ titulo: a.tipo === "tecnico" ? a.nome : "Técnico", subtitulo: "agenda na bancada", destino: { to: "/programacao/gantt" } }),
+  tecnico: (a) => ({ titulo: a.tipo === "tecnico" ? a.nome : "Técnico", subtitulo: "agenda na bancada (Gantt)", destino: { to: "/programacao/gantt" } }),
+  producao: (a) => ({
+    titulo: a.tipo === "producao" ? a.nome : "Produção",
+    subtitulo: a.tipo === "producao" ? (a.papel === "operador" ? "ensaios registrados em campo" : "laudos digitados") : undefined,
+    destino: { to: "/relatorio/pendentes", search: { tab: "fluxo-relatorios" } },
+  }),
+  porTipo: () => ({ titulo: "Carga atual por tipo de ensaio", subtitulo: "ensaios ativos agora", destino: { to: "/programacao/gantt" } }),
   semana: () => ({ titulo: "Desempenho por semana", destino: { to: "/analises" } }),
 };
 
 function PainelDeDetalhe({
-  aberto, onClose, modelo, bancadaJanela, diasBancada, onDiasBancada, desempenho, onAbrirPrazo,
+  aberto, onClose, modelo, bancadaJanela, diasBancada, onDiasBancada, desempenho, onAbrirPrazo, producao, diasProducao, onDiasProducao,
 }: {
   aberto: DetalheAberto | null;
   onClose: () => void;
@@ -493,6 +560,9 @@ function PainelDeDetalhe({
   onDiasBancada: (n: number) => void;
   desempenho: Desempenho | null;
   onAbrirPrazo: (chave: string) => void;
+  producao: Producao | null;
+  diasProducao: number;
+  onDiasProducao: (n: number) => void;
 }) {
   const info = aberto && modelo ? TITULOS_DETALHE[aberto.tipo](aberto, modelo) : null;
   return (
@@ -513,7 +583,7 @@ function PainelDeDetalhe({
             )}
           </SheetHeader>
         )}
-        {aberto && modelo && bancadaJanela && (
+        {aberto && modelo && bancadaJanela && producao && (
           <ConteudoDetalhe
             aberto={aberto}
             modelo={modelo}
@@ -522,6 +592,9 @@ function PainelDeDetalhe({
             onDiasBancada={onDiasBancada}
             desempenho={desempenho}
             onAbrirPrazo={onAbrirPrazo}
+            producao={producao}
+            diasProducao={diasProducao}
+            onDiasProducao={onDiasProducao}
           />
         )}
       </SheetContent>
@@ -761,6 +834,69 @@ function TabelaTecnicos({ tecnicos, onTecnico }: { tecnicos: CargaTecnico[]; onT
   );
 }
 
+/**
+ * Produção por pessoa a partir das pendências de digitação (campo `origem` de
+ * `lab-pendencias`) — o que a Carga de trabalho (só Programação/Gantt) não
+ * enxerga: quem executou/registrou em campo (operador) e quem digitou o
+ * relatório no escritório (digitador).
+ */
+function TabelaProducao({
+  titulo, pessoas, vazio, onPessoa,
+}: { titulo: string; pessoas: PessoaProducao[]; vazio: string; onPessoa: (nome: string) => void }) {
+  return (
+    <div>
+      <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{titulo}</div>
+      {pessoas.length === 0 ? (
+        <p className="text-xs text-muted-foreground">{vazio}</p>
+      ) : (
+        <Table>
+          <TableBody>
+            {pessoas.map((p) => (
+              <TableRow key={p.nome} className="cursor-pointer hover:bg-muted/50" onClick={() => onPessoa(p.nome)}>
+                <TableCell className="text-xs font-medium">{p.nome}</TableCell>
+                <TableCell className="text-right text-xs tabular-nums text-muted-foreground">{p.total} ensaio(s)</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </div>
+  );
+}
+
+function CardProducao({
+  producao, diasProducao, onDiasProducao, onPessoa,
+}: { producao: Producao; diasProducao: number; onDiasProducao: (n: number) => void; onPessoa: (papel: "operador" | "digitador", nome: string) => void }) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm flex items-baseline justify-between gap-2 flex-wrap">
+          Produção · digitalização e digitação
+          <SeletorJanela dias={diasProducao} onChange={onDiasProducao} opcoes={JANELAS_PRODUCAO} sufixo="d" />
+        </CardTitle>
+        <p className="text-[11px] text-muted-foreground">
+          Quem executou o ensaio em campo e quem digitou o relatório — não vem do Gantt, vem das pendências de
+          digitação. Desde {br(producao.desde)}.
+        </p>
+      </CardHeader>
+      <CardContent className="grid gap-4 sm:grid-cols-2">
+        <TabelaProducao
+          titulo="Operadores em campo"
+          pessoas={producao.operadores}
+          vazio="Nenhum registro de campo (digitalização) nesta janela."
+          onPessoa={(nome) => onPessoa("operador", nome)}
+        />
+        <TabelaProducao
+          titulo="Digitadores"
+          pessoas={producao.digitadores}
+          vazio="Nenhum laudo digitado nesta janela."
+          onPessoa={(nome) => onPessoa("digitador", nome)}
+        />
+      </CardContent>
+    </Card>
+  );
+}
+
 function ColunasLaudos({ etapas, onEtapa }: { etapas: EtapaDeLaudo[]; onEtapa: (chave: EtapaDeLaudo["chave"]) => void }) {
   return (
     <div className="grid gap-3 md:grid-cols-3">
@@ -889,6 +1025,7 @@ export function PainelCoordenador() {
   const qc = useQueryClient();
   const [setor, setSetor] = useState<Setor>("todos");
   const [diasBancada, setDiasBancada] = useState<number>(7);
+  const [diasProducao, setDiasProducao] = useState<number>(7);
   const [detalhe, setDetalhe] = useState<DetalheAberto | null>(null);
   const [visao, setVisao] = useState<"operacao" | "analises">("operacao");
   const { data: schedule, isLoading: carregandoCronograma } = useSchedule();
@@ -944,6 +1081,10 @@ export function PainelCoordenador() {
   const bancadaJanela = useMemo(
     () => (entrada ? montarBancadaComJanela(entrada, diasBancada) : null),
     [entrada, diasBancada],
+  );
+  const producao = useMemo(
+    () => (entrada ? producaoDigitalizacao(entrada, diasProducao) : null),
+    [entrada, diasProducao],
   );
   const desempenho = useMemo(
     () => (entrada ? montarDesempenho(entrada, entregues.data?.rows ?? []) : null),
@@ -1007,7 +1148,7 @@ export function PainelCoordenador() {
 
       {falha && <p className="text-sm text-destructive">Não foi possível ler parte dos dados: {falha.message}</p>}
 
-      {!modelo || !bancadaJanela ? (
+      {!modelo || !bancadaJanela || !producao ? (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" /> Lendo chegada, programação, cronograma e laudos…
         </p>
@@ -1063,7 +1204,12 @@ export function PainelCoordenador() {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm flex items-baseline justify-between gap-2 flex-wrap">
                 Esteira da operação
-                <span className="text-xs font-normal text-muted-foreground">o que está em cada etapa agora — clique numa etapa pra ver a lista</span>
+                <span className="flex items-center gap-3 text-xs font-normal text-muted-foreground">
+                  o que está em cada etapa agora — clique numa etapa pra ver a lista
+                  <button type="button" onClick={() => setDetalhe({ tipo: "porTipo" })} className="text-primary hover:underline">
+                    ver por tipo de ensaio
+                  </button>
+                </span>
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -1212,6 +1358,10 @@ export function PainelCoordenador() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm">Técnicos · carga de trabalho</CardTitle>
+                <p className="text-[11px] text-muted-foreground">
+                  Só o que está na Programação (Gantt) — quem foi <em>escalado</em>. Quem de fato executou/registrou
+                  em campo está em "Produção", abaixo.
+                </p>
               </CardHeader>
               <CardContent className="p-0">
                 <TabelaTecnicos tecnicos={bancadaJanela.tecnicos} onTecnico={(nome) => setDetalhe({ tipo: "tecnico", nome })} />
@@ -1229,6 +1379,15 @@ export function PainelCoordenador() {
               </CardContent>
             </Card>
           </div>
+
+          {producao && (
+            <CardProducao
+              producao={producao}
+              diasProducao={diasProducao}
+              onDiasProducao={setDiasProducao}
+              onPessoa={(papel, nome) => setDetalhe({ tipo: "producao", papel, nome })}
+            />
+          )}
 
           {desempenho && (
             <Card>
@@ -1253,6 +1412,8 @@ export function PainelCoordenador() {
               laudos={modelo.laudos}
               desempenho={desempenho}
               desempenhoPorSetor={desempenhoPorSetor}
+              producao={producao}
+              porTipo={modelo.detalhes.porTipo}
             />
           </TabsContent>
         </Tabs>
@@ -1266,6 +1427,9 @@ export function PainelCoordenador() {
             onDiasBancada={setDiasBancada}
             desempenho={desempenho}
             onAbrirPrazo={(chave) => setDetalhe({ tipo: "prazo", chave })}
+            producao={producao}
+            diasProducao={diasProducao}
+            onDiasProducao={setDiasProducao}
           />
         </>
       )}
