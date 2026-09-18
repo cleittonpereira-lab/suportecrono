@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Beaker, FlaskConical, FileText, Gauge, Droplets, Layers } from "lucide-react";
+import { ArrowRight, Beaker, FlaskConical, FileText, Gauge, Droplets, Layers, Hammer } from "lucide-react";
 
 export const Route = createFileRoute("/_app/modelos-relatorios/")({
   ssr: false,
@@ -127,6 +127,15 @@ const MODELOS = [
     norma: "NBR 12770 / NBR 15845-5 / NBR 12025",
     icon: Gauge,
     tag: "COMP",
+  },
+  {
+    to: "/modelos-relatorios/load-test" as const,
+    titulo: "Point Load Test (LOAD.TEST)",
+    descricao:
+      "Modelo do relatório de índice de resistência à carga pontual de rocha, com determinações dinâmicas e correção de tamanho (Is, Is(50), Fator K).",
+    norma: "ASTM D5731-16 / ISRM 2016",
+    icon: Hammer,
+    tag: "LOAD.TEST",
   },
 ];
 

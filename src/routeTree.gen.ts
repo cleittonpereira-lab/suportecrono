@@ -42,6 +42,7 @@ import { Route as AppModelosRelatoriosAsfDapRouteImport } from './routes/_app.mo
 import { Route as AppModelosRelatoriosAsfTbRouteImport } from './routes/_app.modelos-relatorios.asf-tb'
 import { Route as AppModelosRelatoriosCisalhamentoDiretoRouteImport } from './routes/_app.modelos-relatorios.cisalhamento-direto'
 import { Route as AppModelosRelatoriosCompressaoSimplesRouteImport } from './routes/_app.modelos-relatorios.compressao-simples'
+import { Route as AppModelosRelatoriosLoadTestRouteImport } from './routes/_app.modelos-relatorios.load-test'
 import { Route as AppModelosRelatoriosMespANaturalRouteImport } from './routes/_app.modelos-relatorios.mesp-a-natural'
 import { Route as AppModelosRelatoriosModuloResilienciaRouteImport } from './routes/_app.modelos-relatorios.modulo-resiliencia'
 import { Route as AppModelosRelatoriosPermVRouteImport } from './routes/_app.modelos-relatorios.perm-v'
@@ -262,6 +263,12 @@ const AppModelosRelatoriosCompressaoSimplesRoute =
   AppModelosRelatoriosCompressaoSimplesRouteImport.update({
     id: '/modelos-relatorios/compressao-simples',
     path: '/modelos-relatorios/compressao-simples',
+    getParentRoute: () => AppRoute,
+  } as any)
+const AppModelosRelatoriosLoadTestRoute =
+  AppModelosRelatoriosLoadTestRouteImport.update({
+    id: '/modelos-relatorios/load-test',
+    path: '/modelos-relatorios/load-test',
     getParentRoute: () => AppRoute,
   } as any)
 const AppModelosRelatoriosMespANaturalRoute =
@@ -577,6 +584,7 @@ export interface FileRoutesByFullPath {
   '/modelos-relatorios/asf-tb': typeof AppModelosRelatoriosAsfTbRoute
   '/modelos-relatorios/cisalhamento-direto': typeof AppModelosRelatoriosCisalhamentoDiretoRoute
   '/modelos-relatorios/compressao-simples': typeof AppModelosRelatoriosCompressaoSimplesRoute
+  '/modelos-relatorios/load-test': typeof AppModelosRelatoriosLoadTestRoute
   '/modelos-relatorios/mesp-a-natural': typeof AppModelosRelatoriosMespANaturalRoute
   '/modelos-relatorios/modulo-resiliencia': typeof AppModelosRelatoriosModuloResilienciaRoute
   '/modelos-relatorios/perm-v': typeof AppModelosRelatoriosPermVRoute
@@ -661,6 +669,7 @@ export interface FileRoutesByTo {
   '/modelos-relatorios/asf-tb': typeof AppModelosRelatoriosAsfTbRoute
   '/modelos-relatorios/cisalhamento-direto': typeof AppModelosRelatoriosCisalhamentoDiretoRoute
   '/modelos-relatorios/compressao-simples': typeof AppModelosRelatoriosCompressaoSimplesRoute
+  '/modelos-relatorios/load-test': typeof AppModelosRelatoriosLoadTestRoute
   '/modelos-relatorios/mesp-a-natural': typeof AppModelosRelatoriosMespANaturalRoute
   '/modelos-relatorios/modulo-resiliencia': typeof AppModelosRelatoriosModuloResilienciaRoute
   '/modelos-relatorios/perm-v': typeof AppModelosRelatoriosPermVRoute
@@ -746,6 +755,7 @@ export interface FileRoutesById {
   '/_app/modelos-relatorios/asf-tb': typeof AppModelosRelatoriosAsfTbRoute
   '/_app/modelos-relatorios/cisalhamento-direto': typeof AppModelosRelatoriosCisalhamentoDiretoRoute
   '/_app/modelos-relatorios/compressao-simples': typeof AppModelosRelatoriosCompressaoSimplesRoute
+  '/_app/modelos-relatorios/load-test': typeof AppModelosRelatoriosLoadTestRoute
   '/_app/modelos-relatorios/mesp-a-natural': typeof AppModelosRelatoriosMespANaturalRoute
   '/_app/modelos-relatorios/modulo-resiliencia': typeof AppModelosRelatoriosModuloResilienciaRoute
   '/_app/modelos-relatorios/perm-v': typeof AppModelosRelatoriosPermVRoute
@@ -832,6 +842,7 @@ export interface FileRouteTypes {
     | '/modelos-relatorios/asf-tb'
     | '/modelos-relatorios/cisalhamento-direto'
     | '/modelos-relatorios/compressao-simples'
+    | '/modelos-relatorios/load-test'
     | '/modelos-relatorios/mesp-a-natural'
     | '/modelos-relatorios/modulo-resiliencia'
     | '/modelos-relatorios/perm-v'
@@ -916,6 +927,7 @@ export interface FileRouteTypes {
     | '/modelos-relatorios/asf-tb'
     | '/modelos-relatorios/cisalhamento-direto'
     | '/modelos-relatorios/compressao-simples'
+    | '/modelos-relatorios/load-test'
     | '/modelos-relatorios/mesp-a-natural'
     | '/modelos-relatorios/modulo-resiliencia'
     | '/modelos-relatorios/perm-v'
@@ -1000,6 +1012,7 @@ export interface FileRouteTypes {
     | '/_app/modelos-relatorios/asf-tb'
     | '/_app/modelos-relatorios/cisalhamento-direto'
     | '/_app/modelos-relatorios/compressao-simples'
+    | '/_app/modelos-relatorios/load-test'
     | '/_app/modelos-relatorios/mesp-a-natural'
     | '/_app/modelos-relatorios/modulo-resiliencia'
     | '/_app/modelos-relatorios/perm-v'
@@ -1297,6 +1310,13 @@ declare module '@tanstack/react-router' {
       path: '/modelos-relatorios/compressao-simples'
       fullPath: '/modelos-relatorios/compressao-simples'
       preLoaderRoute: typeof AppModelosRelatoriosCompressaoSimplesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/modelos-relatorios/load-test': {
+      id: '/_app/modelos-relatorios/load-test'
+      path: '/modelos-relatorios/load-test'
+      fullPath: '/modelos-relatorios/load-test'
+      preLoaderRoute: typeof AppModelosRelatoriosLoadTestRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/modelos-relatorios/mesp-a-natural': {
@@ -1723,6 +1743,7 @@ interface AppRouteChildren {
   AppModelosRelatoriosAsfTbRoute: typeof AppModelosRelatoriosAsfTbRoute
   AppModelosRelatoriosCisalhamentoDiretoRoute: typeof AppModelosRelatoriosCisalhamentoDiretoRoute
   AppModelosRelatoriosCompressaoSimplesRoute: typeof AppModelosRelatoriosCompressaoSimplesRoute
+  AppModelosRelatoriosLoadTestRoute: typeof AppModelosRelatoriosLoadTestRoute
   AppModelosRelatoriosMespANaturalRoute: typeof AppModelosRelatoriosMespANaturalRoute
   AppModelosRelatoriosModuloResilienciaRoute: typeof AppModelosRelatoriosModuloResilienciaRoute
   AppModelosRelatoriosPermVRoute: typeof AppModelosRelatoriosPermVRoute
@@ -1790,6 +1811,7 @@ const AppRouteChildren: AppRouteChildren = {
     AppModelosRelatoriosCisalhamentoDiretoRoute,
   AppModelosRelatoriosCompressaoSimplesRoute:
     AppModelosRelatoriosCompressaoSimplesRoute,
+  AppModelosRelatoriosLoadTestRoute: AppModelosRelatoriosLoadTestRoute,
   AppModelosRelatoriosMespANaturalRoute: AppModelosRelatoriosMespANaturalRoute,
   AppModelosRelatoriosModuloResilienciaRoute:
     AppModelosRelatoriosModuloResilienciaRoute,
