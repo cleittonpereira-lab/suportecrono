@@ -65,6 +65,7 @@ import { Route as AppRelatorioCisalhamentoDiretoRouteImport } from './routes/_ap
 import { Route as AppRelatorioCompressaoSimplesRouteImport } from './routes/_app.relatorio.compressao-simples'
 import { Route as AppRelatorioDigitalizacaoRouteImport } from './routes/_app.relatorio.digitalizacao'
 import { Route as AppRelatorioEmissoesRouteImport } from './routes/_app.relatorio.emissoes'
+import { Route as AppRelatorioLoadTestRouteImport } from './routes/_app.relatorio.load-test'
 import { Route as AppRelatorioMespARouteImport } from './routes/_app.relatorio.mesp-a'
 import { Route as AppRelatorioMespANaturalRouteImport } from './routes/_app.relatorio.mesp-a-natural'
 import { Route as AppRelatorioModuloResilienciaRouteImport } from './routes/_app.relatorio.modulo-resiliencia'
@@ -82,6 +83,7 @@ import { Route as AppRelatorioDigitalizacaoAsfTbRouteImport } from './routes/_ap
 import { Route as AppRelatorioDigitalizacaoCapsulasRouteImport } from './routes/_app.relatorio.digitalizacao.capsulas'
 import { Route as AppRelatorioDigitalizacaoCompressaoSimplesRouteImport } from './routes/_app.relatorio.digitalizacao.compressao-simples'
 import { Route as AppRelatorioDigitalizacaoFilaRouteImport } from './routes/_app.relatorio.digitalizacao.fila'
+import { Route as AppRelatorioDigitalizacaoLoadTestRouteImport } from './routes/_app.relatorio.digitalizacao.load-test'
 import { Route as AppRelatorioDigitalizacaoPendenciasRouteImport } from './routes/_app.relatorio.digitalizacao.pendencias'
 import { Route as AppRelatorioDigitalizacaoPermVRouteImport } from './routes/_app.relatorio.digitalizacao.perm-v'
 import { Route as AppRelatorioEspeciaisIndexRouteImport } from './routes/_app.relatorio.especiais.index'
@@ -390,6 +392,11 @@ const AppRelatorioEmissoesRoute = AppRelatorioEmissoesRouteImport.update({
   path: '/relatorio/emissoes',
   getParentRoute: () => AppRoute,
 } as any)
+const AppRelatorioLoadTestRoute = AppRelatorioLoadTestRouteImport.update({
+  id: '/relatorio/load-test',
+  path: '/relatorio/load-test',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppRelatorioMespARoute = AppRelatorioMespARouteImport.update({
   id: '/relatorio/mesp-a',
   path: '/relatorio/mesp-a',
@@ -483,6 +490,12 @@ const AppRelatorioDigitalizacaoFilaRoute =
   AppRelatorioDigitalizacaoFilaRouteImport.update({
     id: '/fila',
     path: '/fila',
+    getParentRoute: () => AppRelatorioDigitalizacaoRoute,
+  } as any)
+const AppRelatorioDigitalizacaoLoadTestRoute =
+  AppRelatorioDigitalizacaoLoadTestRouteImport.update({
+    id: '/load-test',
+    path: '/load-test',
     getParentRoute: () => AppRelatorioDigitalizacaoRoute,
   } as any)
 const AppRelatorioDigitalizacaoPendenciasRoute =
@@ -585,6 +598,7 @@ export interface FileRoutesByFullPath {
   '/relatorio/compressao-simples': typeof AppRelatorioCompressaoSimplesRoute
   '/relatorio/digitalizacao': typeof AppRelatorioDigitalizacaoRouteWithChildren
   '/relatorio/emissoes': typeof AppRelatorioEmissoesRoute
+  '/relatorio/load-test': typeof AppRelatorioLoadTestRoute
   '/relatorio/mesp-a': typeof AppRelatorioMespARoute
   '/relatorio/mesp-a-natural': typeof AppRelatorioMespANaturalRoute
   '/relatorio/modulo-resiliencia': typeof AppRelatorioModuloResilienciaRoute
@@ -604,6 +618,7 @@ export interface FileRoutesByFullPath {
   '/relatorio/digitalizacao/capsulas': typeof AppRelatorioDigitalizacaoCapsulasRoute
   '/relatorio/digitalizacao/compressao-simples': typeof AppRelatorioDigitalizacaoCompressaoSimplesRoute
   '/relatorio/digitalizacao/fila': typeof AppRelatorioDigitalizacaoFilaRoute
+  '/relatorio/digitalizacao/load-test': typeof AppRelatorioDigitalizacaoLoadTestRoute
   '/relatorio/digitalizacao/pendencias': typeof AppRelatorioDigitalizacaoPendenciasRoute
   '/relatorio/digitalizacao/perm-v': typeof AppRelatorioDigitalizacaoPermVRoute
   '/relatorio/especiais/$osNumero': typeof AppRelatorioEspeciaisOsNumeroRoute
@@ -666,6 +681,7 @@ export interface FileRoutesByTo {
   '/relatorio/cisalhamento-direto': typeof AppRelatorioCisalhamentoDiretoRoute
   '/relatorio/compressao-simples': typeof AppRelatorioCompressaoSimplesRoute
   '/relatorio/emissoes': typeof AppRelatorioEmissoesRoute
+  '/relatorio/load-test': typeof AppRelatorioLoadTestRoute
   '/relatorio/mesp-a': typeof AppRelatorioMespARoute
   '/relatorio/mesp-a-natural': typeof AppRelatorioMespANaturalRoute
   '/relatorio/modulo-resiliencia': typeof AppRelatorioModuloResilienciaRoute
@@ -685,6 +701,7 @@ export interface FileRoutesByTo {
   '/relatorio/digitalizacao/capsulas': typeof AppRelatorioDigitalizacaoCapsulasRoute
   '/relatorio/digitalizacao/compressao-simples': typeof AppRelatorioDigitalizacaoCompressaoSimplesRoute
   '/relatorio/digitalizacao/fila': typeof AppRelatorioDigitalizacaoFilaRoute
+  '/relatorio/digitalizacao/load-test': typeof AppRelatorioDigitalizacaoLoadTestRoute
   '/relatorio/digitalizacao/pendencias': typeof AppRelatorioDigitalizacaoPendenciasRoute
   '/relatorio/digitalizacao/perm-v': typeof AppRelatorioDigitalizacaoPermVRoute
   '/relatorio/especiais/$osNumero': typeof AppRelatorioEspeciaisOsNumeroRoute
@@ -750,6 +767,7 @@ export interface FileRoutesById {
   '/_app/relatorio/compressao-simples': typeof AppRelatorioCompressaoSimplesRoute
   '/_app/relatorio/digitalizacao': typeof AppRelatorioDigitalizacaoRouteWithChildren
   '/_app/relatorio/emissoes': typeof AppRelatorioEmissoesRoute
+  '/_app/relatorio/load-test': typeof AppRelatorioLoadTestRoute
   '/_app/relatorio/mesp-a': typeof AppRelatorioMespARoute
   '/_app/relatorio/mesp-a-natural': typeof AppRelatorioMespANaturalRoute
   '/_app/relatorio/modulo-resiliencia': typeof AppRelatorioModuloResilienciaRoute
@@ -769,6 +787,7 @@ export interface FileRoutesById {
   '/_app/relatorio/digitalizacao/capsulas': typeof AppRelatorioDigitalizacaoCapsulasRoute
   '/_app/relatorio/digitalizacao/compressao-simples': typeof AppRelatorioDigitalizacaoCompressaoSimplesRoute
   '/_app/relatorio/digitalizacao/fila': typeof AppRelatorioDigitalizacaoFilaRoute
+  '/_app/relatorio/digitalizacao/load-test': typeof AppRelatorioDigitalizacaoLoadTestRoute
   '/_app/relatorio/digitalizacao/pendencias': typeof AppRelatorioDigitalizacaoPendenciasRoute
   '/_app/relatorio/digitalizacao/perm-v': typeof AppRelatorioDigitalizacaoPermVRoute
   '/_app/relatorio/especiais/$osNumero': typeof AppRelatorioEspeciaisOsNumeroRoute
@@ -834,6 +853,7 @@ export interface FileRouteTypes {
     | '/relatorio/compressao-simples'
     | '/relatorio/digitalizacao'
     | '/relatorio/emissoes'
+    | '/relatorio/load-test'
     | '/relatorio/mesp-a'
     | '/relatorio/mesp-a-natural'
     | '/relatorio/modulo-resiliencia'
@@ -853,6 +873,7 @@ export interface FileRouteTypes {
     | '/relatorio/digitalizacao/capsulas'
     | '/relatorio/digitalizacao/compressao-simples'
     | '/relatorio/digitalizacao/fila'
+    | '/relatorio/digitalizacao/load-test'
     | '/relatorio/digitalizacao/pendencias'
     | '/relatorio/digitalizacao/perm-v'
     | '/relatorio/especiais/$osNumero'
@@ -915,6 +936,7 @@ export interface FileRouteTypes {
     | '/relatorio/cisalhamento-direto'
     | '/relatorio/compressao-simples'
     | '/relatorio/emissoes'
+    | '/relatorio/load-test'
     | '/relatorio/mesp-a'
     | '/relatorio/mesp-a-natural'
     | '/relatorio/modulo-resiliencia'
@@ -934,6 +956,7 @@ export interface FileRouteTypes {
     | '/relatorio/digitalizacao/capsulas'
     | '/relatorio/digitalizacao/compressao-simples'
     | '/relatorio/digitalizacao/fila'
+    | '/relatorio/digitalizacao/load-test'
     | '/relatorio/digitalizacao/pendencias'
     | '/relatorio/digitalizacao/perm-v'
     | '/relatorio/especiais/$osNumero'
@@ -998,6 +1021,7 @@ export interface FileRouteTypes {
     | '/_app/relatorio/compressao-simples'
     | '/_app/relatorio/digitalizacao'
     | '/_app/relatorio/emissoes'
+    | '/_app/relatorio/load-test'
     | '/_app/relatorio/mesp-a'
     | '/_app/relatorio/mesp-a-natural'
     | '/_app/relatorio/modulo-resiliencia'
@@ -1017,6 +1041,7 @@ export interface FileRouteTypes {
     | '/_app/relatorio/digitalizacao/capsulas'
     | '/_app/relatorio/digitalizacao/compressao-simples'
     | '/_app/relatorio/digitalizacao/fila'
+    | '/_app/relatorio/digitalizacao/load-test'
     | '/_app/relatorio/digitalizacao/pendencias'
     | '/_app/relatorio/digitalizacao/perm-v'
     | '/_app/relatorio/especiais/$osNumero'
@@ -1435,6 +1460,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRelatorioEmissoesRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/relatorio/load-test': {
+      id: '/_app/relatorio/load-test'
+      path: '/relatorio/load-test'
+      fullPath: '/relatorio/load-test'
+      preLoaderRoute: typeof AppRelatorioLoadTestRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/relatorio/mesp-a': {
       id: '/_app/relatorio/mesp-a'
       path: '/relatorio/mesp-a'
@@ -1554,6 +1586,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRelatorioDigitalizacaoFilaRouteImport
       parentRoute: typeof AppRelatorioDigitalizacaoRoute
     }
+    '/_app/relatorio/digitalizacao/load-test': {
+      id: '/_app/relatorio/digitalizacao/load-test'
+      path: '/load-test'
+      fullPath: '/relatorio/digitalizacao/load-test'
+      preLoaderRoute: typeof AppRelatorioDigitalizacaoLoadTestRouteImport
+      parentRoute: typeof AppRelatorioDigitalizacaoRoute
+    }
     '/_app/relatorio/digitalizacao/pendencias': {
       id: '/_app/relatorio/digitalizacao/pendencias'
       path: '/pendencias'
@@ -1631,6 +1670,7 @@ interface AppRelatorioDigitalizacaoRouteChildren {
   AppRelatorioDigitalizacaoCapsulasRoute: typeof AppRelatorioDigitalizacaoCapsulasRoute
   AppRelatorioDigitalizacaoCompressaoSimplesRoute: typeof AppRelatorioDigitalizacaoCompressaoSimplesRoute
   AppRelatorioDigitalizacaoFilaRoute: typeof AppRelatorioDigitalizacaoFilaRoute
+  AppRelatorioDigitalizacaoLoadTestRoute: typeof AppRelatorioDigitalizacaoLoadTestRoute
   AppRelatorioDigitalizacaoPendenciasRoute: typeof AppRelatorioDigitalizacaoPendenciasRoute
   AppRelatorioDigitalizacaoPermVRoute: typeof AppRelatorioDigitalizacaoPermVRoute
   AppRelatorioDigitalizacaoIndexRoute: typeof AppRelatorioDigitalizacaoIndexRoute
@@ -1647,6 +1687,8 @@ const AppRelatorioDigitalizacaoRouteChildren: AppRelatorioDigitalizacaoRouteChil
     AppRelatorioDigitalizacaoCompressaoSimplesRoute:
       AppRelatorioDigitalizacaoCompressaoSimplesRoute,
     AppRelatorioDigitalizacaoFilaRoute: AppRelatorioDigitalizacaoFilaRoute,
+    AppRelatorioDigitalizacaoLoadTestRoute:
+      AppRelatorioDigitalizacaoLoadTestRoute,
     AppRelatorioDigitalizacaoPendenciasRoute:
       AppRelatorioDigitalizacaoPendenciasRoute,
     AppRelatorioDigitalizacaoPermVRoute: AppRelatorioDigitalizacaoPermVRoute,
@@ -1702,6 +1744,7 @@ interface AppRouteChildren {
   AppRelatorioCompressaoSimplesRoute: typeof AppRelatorioCompressaoSimplesRoute
   AppRelatorioDigitalizacaoRoute: typeof AppRelatorioDigitalizacaoRouteWithChildren
   AppRelatorioEmissoesRoute: typeof AppRelatorioEmissoesRoute
+  AppRelatorioLoadTestRoute: typeof AppRelatorioLoadTestRoute
   AppRelatorioMespARoute: typeof AppRelatorioMespARoute
   AppRelatorioMespANaturalRoute: typeof AppRelatorioMespANaturalRoute
   AppRelatorioModuloResilienciaRoute: typeof AppRelatorioModuloResilienciaRoute
@@ -1770,6 +1813,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppRelatorioCompressaoSimplesRoute: AppRelatorioCompressaoSimplesRoute,
   AppRelatorioDigitalizacaoRoute: AppRelatorioDigitalizacaoRouteWithChildren,
   AppRelatorioEmissoesRoute: AppRelatorioEmissoesRoute,
+  AppRelatorioLoadTestRoute: AppRelatorioLoadTestRoute,
   AppRelatorioMespARoute: AppRelatorioMespARoute,
   AppRelatorioMespANaturalRoute: AppRelatorioMespANaturalRoute,
   AppRelatorioModuloResilienciaRoute: AppRelatorioModuloResilienciaRoute,

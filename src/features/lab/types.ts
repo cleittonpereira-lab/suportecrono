@@ -21,7 +21,8 @@ export type EnsaioTipo =
   | "asf-dap"            // Densidade Aparente de misturas asfálticas (DNIT 428/2022-ME)
   | "asf-tb"             // Teor de betume (DNER-ME 053/94) + granulometria do agregado extraído (DNIT 412/2025-ME)
   | "perm-v"             // Permeabilidade a Carga Variável — Método B (ABNT NBR 14545:2021)
-  | "compressao-simples"; // Compressão Simples — solo (NBR 12770), rocha (NBR 15845-5) e dosagem/solo-cimento (NBR 12025)
+  | "compressao-simples" // Compressão Simples — solo (NBR 12770), rocha (NBR 15845-5) e dosagem/solo-cimento (NBR 12025)
+  | "load-test";         // Point Load Test — Índice de Resistência à Carga Pontual de Rocha (ASTM D5731 / ISRM 2016)
 
 export type EnsaioStatus =
   | "rascunho"
@@ -148,6 +149,7 @@ export const ENSAIO_LABEL: Record<EnsaioTipo, string> = {
   "asf-tb": "Teor de Betume e Granulometria — ASF.TB (DNER-ME 053/94 · DNIT 412/2025-ME)",
   "perm-v": "Permeabilidade a Carga Variável — PERM.V (ABNT NBR 14545)",
   "compressao-simples": "Compressão Simples (NBR 12770 / NBR 15845-5 / NBR 12025)",
+  "load-test": "Point Load Test (ASTM D5731 / ISRM 2016)",
 };
 
 export const ENSAIO_DISPONIVEL: EnsaioTipo[] = [
@@ -164,6 +166,7 @@ export const ENSAIO_DISPONIVEL: EnsaioTipo[] = [
   "asf-tb",
   "perm-v",
   "compressao-simples",
+  "load-test",
 ];
 
 /**
@@ -256,5 +259,10 @@ export const ENSAIO_TAG: Record<EnsaioTipo, EnsaioTagInfo> = {
     aliases: ["COMP.R", "COMP.S"],
     className:
       "bg-indigo-500/15 text-indigo-700 border-indigo-500/40 dark:text-indigo-300",
+  },
+  "load-test": {
+    code: "LOAD.TEST",
+    className:
+      "bg-red-500/15 text-red-700 border-red-500/40 dark:text-red-300",
   },
 };

@@ -19,6 +19,8 @@ import { isPermVTag } from "@/features/perm-v/calc";
 import { dispatchPermV } from "@/features/perm-v/ui";
 import { isCompressaoSimplesTag } from "@/features/compressao-simples/calc";
 import { dispatchCompressaoSimples } from "@/features/compressao-simples/ui";
+import { isPLTTag } from "@/features/load-test/calc";
+import { dispatchLoadTest } from "@/features/load-test/ui";
 
 export type DigitScanPlugin = {
   /** Chave estável — normalmente o `codigo` cadastrado em Tipos de Ensaio. */
@@ -65,6 +67,13 @@ export const DIGIT_SCAN_REGISTRY: DigitScanPlugin[] = [
     match: isCompressaoSimplesTag,
     route: "/relatorio/digitalizacao/compressao-simples",
     dispatch: dispatchCompressaoSimples,
+  },
+  {
+    key: "LOAD.TEST",
+    label: "Point Load Test (LOAD.TEST)",
+    match: isPLTTag,
+    route: "/relatorio/digitalizacao/load-test",
+    dispatch: dispatchLoadTest,
   },
 ];
 

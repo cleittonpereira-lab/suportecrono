@@ -83,6 +83,7 @@ export function laudoPelaSigla(bruta: string | null | undefined): EnsaioTipo | n
   if (t.startsWith("comp") || t.includes("compressao")) return "compressao-simples";
   if (t.includes("resiliencia") || t.startsWith("mr")) return "modulo-resiliencia";
   if (t.includes("umid")) return "umidade-natural";
+  if (t.includes("loadtest") || t.includes("pointload")) return "load-test";
   return null;
 }
 

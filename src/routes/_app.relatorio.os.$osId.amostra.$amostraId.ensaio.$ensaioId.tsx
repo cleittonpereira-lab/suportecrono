@@ -20,6 +20,7 @@ import { ASFPage as AsfDapPageInner } from "@/routes/_app.relatorio.asf-dap";
 import { AsfTbPage as AsfTbPageInner } from "@/routes/_app.relatorio.asf-tb";
 import { PermVPage as PermVPageInner } from "@/routes/_app.relatorio.perm-v";
 import { CompressaoSimplesPage as CompressaoSimplesPageInner } from "@/routes/_app.relatorio.compressao-simples";
+import { PLTPage as LoadTestPageInner } from "@/routes/_app.relatorio.load-test";
 
 export const Route = createFileRoute(
   "/_app/relatorio/os/$osId/amostra/$amostraId/ensaio/$ensaioId",
@@ -312,6 +313,9 @@ function pickEditor(tipo: string): React.FC {
   }
   if (norm.includes("compressao") || norm.includes("compressão") || norm.includes("comp.")) {
     return CompressaoSimplesPageInner as unknown as React.FC;
+  }
+  if (norm.includes("load.test") || norm.includes("load-test") || norm.includes("loadtest") || norm.includes("point load")) {
+    return LoadTestPageInner as unknown as React.FC;
   }
   if (norm.includes("mesp") || norm.includes("m.esp")) {
     return MEspAEnsaioEditor as unknown as React.FC;

@@ -126,6 +126,7 @@ const SECTIONS: readonly Section[] = [
       { title: "Compressão Simples", url: "/relatorio/compressao-simples", icon: Gauge },
       { title: "Módulo de Resiliência", url: "/relatorio/modulo-resiliencia", icon: FlaskConical },
       { title: "Umidade Natural", url: "/relatorio/umidade-natural", icon: Beaker },
+      { title: "Point Load Test (LOAD.TEST)", url: "/relatorio/load-test", icon: Gauge },
     ],
   },
   {

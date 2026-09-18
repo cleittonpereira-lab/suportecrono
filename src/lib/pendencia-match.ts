@@ -40,6 +40,7 @@ export function normMethod(val: string | null | undefined): string {
   if (s.includes("m.esp") || s.includes("mesp") || s.includes("massa")) return "mesp-a";
   if (s.includes("umidade") || /^umid/.test(s)) return "umidade-natural";
   if (s.includes("resilien") || /^mr[.\d]/.test(s)) return "modulo-resiliencia";
+  if (s.includes("load.test") || s.includes("load-test") || s.includes("loadtest") || s.includes("point load")) return "load-test";
   return s;
 }
 

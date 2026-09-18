@@ -26,6 +26,7 @@ const SIGLA_POR_TIPO: Record<string, string> = {
   "triaxial-cid-nat": "TRI.CID",
   "triaxial-uu": "TRI.UU",
   "triaxial-ciu": "TRI.CIU",
+  "load-test": "LOAD.TEST",
 };
 
 /** Uma parte do nome: sem caracteres proibidos em nomes de arquivo, sem espaços e sem "_" (o separador). */
