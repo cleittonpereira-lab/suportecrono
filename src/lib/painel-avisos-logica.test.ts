@@ -24,6 +24,8 @@ function prazo(p: Partial<LinhaPrazo> & Pick<LinhaPrazo, "chave" | "situacao">):
     falta: "1 em bancada",
     diasAtraso: 0,
     motivoRisco: null,
+    ensaiosDetalhe: [],
+    laudosDetalhe: [],
     ...p,
   };
 }
@@ -44,6 +46,7 @@ function modelo(tiles: Partial<PainelModelo["tiles"]> = {}, gargalo?: string): P
     alertas: [],
     bancada: { dias: [], equipamentos: [], tecnicos: [], longos: [] },
     laudos: [],
+    detalhes: { recebidas: [], noRecebimento: [], aguardandoProgramacao: [], emAndamento: [], laudosParados: [] },
   };
 }
 

@@ -94,6 +94,9 @@ export type EtapaEsteira = {
   destino: Destino;
 };
 
+/** Um ensaio da OS, com a programação que ele tem (se tiver) — detalhe da linha de prazo. */
+export type ItemOSEnsaio = { id: string; ensaio: string; status: string; tecnico: string | null; inicio: string | null; fim: string | null };
+
 export type LinhaPrazo = {
   os: string;
   chave: string;
@@ -109,11 +112,30 @@ export type LinhaPrazo = {
   situacao: "atraso" | "risco" | "ok";
   diasAtraso: number;
   motivoRisco: string | null;
+  /** Todo ensaio desta OS (ativo ou não) — para o detalhe ao clicar na linha. */
+  ensaiosDetalhe: ItemOSEnsaio[];
+  /** Laudos em andamento desta OS — para o detalhe ao clicar na linha. */
+  laudosDetalhe: LaudoNaEtapa[];
 };
 
 export type Alerta = { nivel: "crit" | "warn"; texto: string; detalhe: string; destino: Destino };
 
 export type EstadoDia = "livre" | "ocupado" | "atrasado";
+
+/** Uma programação, para listar o que ocupa um equipamento ou a agenda de um técnico. */
+export type ItemBancada = {
+  id: string;
+  ensaio: string;
+  os: string;
+  amostra: string;
+  equipamento: string;
+  tecnico: string | null;
+  inicio: string | null;
+  fim: string | null;
+  status: string;
+  atrasado: boolean;
+};
+
 export type OcupacaoEquipamento = {
   id: string;
   nome: string;
@@ -123,8 +145,17 @@ export type OcupacaoEquipamento = {
   /** Dia útil em que termina o último ensaio da janela; null quando não há nada adiante. */
   livreEm: string | null;
   comAtraso: boolean;
+  /** As programações por trás do número — para o detalhe ao clicar. */
+  itens: ItemBancada[];
 };
-export type CargaTecnico = { nome: string; emExecucao: number; programados: number; alemDoPrevisto: number };
+export type CargaTecnico = {
+  nome: string;
+  emExecucao: number;
+  programados: number;
+  alemDoPrevisto: number;
+  /** As programações por trás dos números — para o detalhe ao clicar. */
+  itens: ItemBancada[];
+};
 export type EnsaioLongo = {
   id: string;
   ensaio: string;
@@ -142,6 +173,23 @@ export type Bancada = { dias: string[]; equipamentos: OcupacaoEquipamento[]; tec
 export type LaudoNaEtapa = { id: string; ensaio: string; os: string; amostra: string | null; pessoa: string | null; papel: string; idade: number };
 export type EtapaDeLaudo = { chave: "digitacao" | "verificacao" | "aprovacao"; nome: string; total: number; parados: number; itens: LaudoNaEtapa[] };
 
+export type ItemRecebida = { id: string; os: string; cliente: string; data: string | null; amostras: number; parado?: boolean };
+export type ItemAguardando = { id: string; ensaio: string; os: string; amostra: string; criadoEm: string | null; diasParado: number };
+export type ItemEmAndamento = {
+  id: string; ensaio: string; os: string; amostra: string; equipamento: string; tecnico: string | null;
+  fimPrevisto: string | null; alemDoPrevisto: boolean;
+};
+
+/** As listas por trás dos números dos tiles/esteira — para abrir o detalhe ao clicar. */
+export type Detalhes = {
+  recebidas: ItemRecebida[];
+  /** Tudo que ainda está no fluxo de chegada (etapa "Recebimento" da esteira) — não só os últimos 7 dias. */
+  noRecebimento: ItemRecebida[];
+  aguardandoProgramacao: ItemAguardando[];
+  emAndamento: ItemEmAndamento[];
+  laudosParados: LaudoNaEtapa[];
+};
+
 export type PainelModelo = {
   tiles: Tiles;
   esteira: EtapaEsteira[];
@@ -149,6 +197,7 @@ export type PainelModelo = {
   alertas: Alerta[];
   bancada: Bancada;
   laudos: EtapaDeLaudo[];
+  detalhes: Detalhes;
 };
 
 /* ------------------------------ Datas e OS ------------------------------ */
@@ -225,9 +274,13 @@ const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um :
 
 const ETAPAS_DE_LAUDO = new Set(["pendente", "em_digitacao", "digitado", "verificado"]);
 
-export function montarPainel(e: EntradaPainel): PainelModelo {
-  const { hoje } = e;
-
+/**
+ * Mapas e filtros de escopo (setor, ensaio ativo, rótulo de programação) —
+ * usado por `montarPainel` e por quem monta um detalhe à parte (ex.: a
+ * bancada com uma janela de dias diferente), pra não recalcular tudo de novo
+ * nem divergir do que o painel principal já decidiu.
+ */
+function prepararEscopo(e: EntradaPainel) {
   // Setor de cada OS, pelo Cronograma (uma OS pode estar em mais de um).
   const setoresDaOs = new Map<string, Set<string>>();
   for (const r of e.cronograma) {
@@ -263,6 +316,18 @@ export function montarPainel(e: EntradaPainel): PainelModelo {
     const am = en ? amostraPorId.get(en.amostra_id) : undefined;
     return { ensaio: en ? nomeEnsaio(en) : "Ensaio", os: am?.os_numero ?? "—", amostra: am?.codigo_amostra ?? "—" };
   };
+  return {
+    noEscopo, osDaAmostra, amostraPorId, nomeDoTipo, nomeDoEquipamento, progDoEnsaio, ensaioPorId,
+    nomeEnsaio, ativo, ensaiosNoEscopo, progNoEscopo, rotuloDaProg,
+  };
+}
+
+export function montarPainel(e: EntradaPainel): PainelModelo {
+  const { hoje } = e;
+  const {
+    noEscopo, osDaAmostra, amostraPorId, nomeDoEquipamento, progDoEnsaio, ensaioPorId,
+    nomeEnsaio, ativo, ensaiosNoEscopo, progNoEscopo, rotuloDaProg,
+  } = prepararEscopo(e);
 
   // 1) Recebimento — o próprio quadro de chegada tem o fluxo (Registro → … → OS no Sistema).
   const chegadas = e.chegadas
@@ -344,7 +409,8 @@ export function montarPainel(e: EntradaPainel): PainelModelo {
     const naoIniciados = progs.length - emBancada;
     const fins = progs.map((p) => p.data_fim).filter((d): d is string => !!d).sort();
     const ultimoFim = fins.length ? fins[fins.length - 1] : null;
-    const laudosDaOs = laudos.filter((p) => chaveOs(p.os) === k).length;
+    const laudosDaOsItens = laudos.filter((p) => chaveOs(p.os) === k);
+    const laudosDaOs = laudosDaOsItens.length;
 
     const partes: string[] = [];
     if (emBancada) partes.push(`${emBancada} em bancada`);
@@ -367,6 +433,27 @@ export function montarPainel(e: EntradaPainel): PainelModelo {
       motivoRisco = semProg > 0 ? "ensaio sem programação" : "ensaio não iniciado";
     }
 
+    const ensaiosDetalhe: ItemOSEnsaio[] = daOs.map((en) => {
+      const p = progDoEnsaio.get(en.id);
+      return {
+        id: en.id,
+        ensaio: nomeEnsaio(en),
+        status: p?.status ?? (ativo(en) ? "sem_programacao" : en.status),
+        tecnico: p?.tecnico ?? null,
+        inicio: p?.data_inicio ?? null,
+        fim: p?.data_fim ?? null,
+      };
+    });
+    const laudosDetalhe: LaudoNaEtapa[] = laudosDaOsItens.map((p) => ({
+      id: p.id,
+      ensaio: p.ensaio,
+      os: p.os,
+      amostra: p.amostra ?? null,
+      pessoa: p.verificador_nome || p.digitador_nome || p.operador_nome || null,
+      papel: p.status === "verificado" ? "verificado por" : p.status === "digitado" ? "enviado por" : p.digitador_nome ? "com" : "operador",
+      idade: idadeLaudo(p),
+    }));
+
     prazos.push({
       os: o.os,
       chave: k,
@@ -380,6 +467,8 @@ export function montarPainel(e: EntradaPainel): PainelModelo {
       situacao,
       diasAtraso,
       motivoRisco,
+      ensaiosDetalhe,
+      laudosDetalhe,
     });
   }
   const ordem = { atraso: 0, risco: 1, ok: 2 } as const;
@@ -397,6 +486,50 @@ export function montarPainel(e: EntradaPainel): PainelModelo {
     entregas7d: { total: proximas.length, emRisco: proximas.filter((p) => p.situacao === "risco").length },
     atrasadas: { total: atrasadas.length, maiorAtraso: atrasadas[0]?.diasAtraso ?? 0 },
     laudosParados: { total: laudosParados.length, maisAntigoDias: laudosParados[0] ? idadeLaudo(laudosParados[0]) : 0 },
+  };
+
+  // As listas por trás dos tiles/esteira — pro detalhe ao clicar.
+  const detalhes: Detalhes = {
+    recebidas: recentes.map((c) => ({
+      id: c.id, os: c.osNumero?.trim() || c.os || "—", cliente: c.osCliente, data: c.iso, amostras: c.amostras || 1,
+    })),
+    noRecebimento: noRecebimento
+      .map((c) => ({
+        id: c.id, os: c.osNumero?.trim() || c.os || "—", cliente: c.osCliente, data: c.iso, amostras: c.amostras || 1,
+        parado: !!c.iso && diasUteisEntre(c.iso, hoje) >= DIAS_UTEIS_PARADO,
+      }))
+      .sort((a, b) => Number(b.parado) - Number(a.parado) || (a.data ?? "").localeCompare(b.data ?? "")),
+    aguardandoProgramacao: aguardando
+      .map((en): ItemAguardando => {
+        const am = amostraPorId.get(en.amostra_id);
+        const iso = paraIso(en.created_at);
+        return {
+          id: en.id, ensaio: nomeEnsaio(en), os: am?.os_numero ?? "—", amostra: am?.codigo_amostra ?? "—",
+          criadoEm: iso, diasParado: iso ? diasUteisEntre(iso, hoje) : 0,
+        };
+      })
+      .sort((a, b) => b.diasParado - a.diasParado),
+    emAndamento: emExecucao
+      .map((p): ItemEmAndamento => {
+        const r = rotuloDaProg(p);
+        return {
+          id: p.id, ensaio: r.ensaio, os: r.os, amostra: r.amostra,
+          equipamento: (p.equipamento_id && nomeDoEquipamento.get(p.equipamento_id)) || "Sem equipamento",
+          tecnico: p.tecnico || null,
+          fimPrevisto: p.data_fim ?? null,
+          alemDoPrevisto: !!p.data_fim && p.data_fim < hoje,
+        };
+      })
+      .sort((a, b) => Number(b.alemDoPrevisto) - Number(a.alemDoPrevisto)),
+    laudosParados: laudosParados.map((p) => ({
+      id: p.id,
+      ensaio: p.ensaio,
+      os: p.os,
+      amostra: p.amostra ?? null,
+      pessoa: p.verificador_nome || p.digitador_nome || p.operador_nome || null,
+      papel: p.status === "verificado" ? "verificado por" : p.status === "digitado" ? "enviado por" : p.digitador_nome ? "com" : "operador",
+      idade: idadeLaudo(p),
+    })),
   };
 
   // Esteira: cada etapa com o que está nela agora e quanto está parado; o gargalo é a maior proporção parada.
@@ -504,9 +637,21 @@ export function montarPainel(e: EntradaPainel): PainelModelo {
     esteira,
     prazos,
     alertas,
-    bancada: montarBancada(e, hoje, progsAtivas, nomeDoEquipamento, rotuloDaProg),
+    bancada: montarBancada(e, hoje, progsAtivas, nomeDoEquipamento, rotuloDaProg, DIAS_BANCADA),
     laudos: montarLaudos(laudos, idadeLaudo),
+    detalhes,
   };
+}
+
+/**
+ * A bancada com uma janela de dias à escolha (o detalhe "ver mais datas" ao
+ * clicar na grade de ocupação) — reaproveita o mesmo escopo/filtro do painel
+ * principal, sem precisar buscar nada de novo (tudo já está em `entrada`).
+ */
+export function montarBancadaComJanela(e: EntradaPainel, dias: number): Bancada {
+  const { nomeDoEquipamento, progNoEscopo, rotuloDaProg } = prepararEscopo(e);
+  const progsAtivas = e.programacoes.filter((p) => p.status !== "concluido" && progNoEscopo(p));
+  return montarBancada(e, e.hoje, progsAtivas, nomeDoEquipamento, rotuloDaProg, dias);
 }
 
 /* ------------------------------ Fase 2: bancada ------------------------------ */
@@ -517,9 +662,18 @@ function montarBancada(
   progsAtivas: EntradaPainel["programacoes"],
   nomeDoEquipamento: Map<string, string>,
   rotuloDaProg: (p: EntradaPainel["programacoes"][number]) => { ensaio: string; os: string; amostra: string },
+  janelaDias: number = DIAS_BANCADA,
 ): Bancada {
-  const dias = proximosDiasUteis(hoje, DIAS_BANCADA);
+  const dias = proximosDiasUteis(hoje, janelaDias);
   const fimJanela = dias[dias.length - 1];
+  const itemDe = (p: EntradaPainel["programacoes"][number], equipamentoNome: string): ItemBancada => {
+    const r = rotuloDaProg(p);
+    return {
+      id: p.id, ...r, equipamento: equipamentoNome, tecnico: p.tecnico || null,
+      inicio: p.data_inicio ?? null, fim: p.data_fim ?? null, status: p.status,
+      atrasado: !!p.data_fim && p.data_fim < hoje && p.status === "em_execucao",
+    };
+  };
 
   // Ocupação: cada programação ocupa o equipamento do início ao fim previsto.
   const porEquipamento = new Map<string, EntradaPainel["programacoes"]>();
@@ -533,10 +687,12 @@ function montarBancada(
       : [...porEquipamento.keys()];
   const equipamentos = ids
     .map((id): OcupacaoEquipamento => {
+      const nome = id === "__sem__" ? "Sem equipamento" : nomeDoEquipamento.get(id) ?? "Equipamento removido";
       const estados: EstadoDia[] = dias.map(() => "livre");
       let ensaios = 0;
       let comAtraso = false;
       let ultimoFim: string | null = null;
+      const itens: ItemBancada[] = [];
       for (const p of porEquipamento.get(id) ?? []) {
         const ini = p.data_inicio;
         const fim = p.data_fim;
@@ -546,22 +702,26 @@ function montarBancada(
           estados[0] = "atrasado";
           comAtraso = true;
           ensaios++;
+          itens.push(itemDe(p, nome));
           continue;
         }
         if (ini > fimJanela || fim < dias[0]) continue;
         ensaios++;
+        itens.push(itemDe(p, nome));
         dias.forEach((d, i) => {
           if (ini <= d && d <= fim && estados[i] === "livre") estados[i] = "ocupado";
         });
         if (!ultimoFim || fim > ultimoFim) ultimoFim = fim;
       }
+      itens.sort((a, b) => (a.inicio ?? "").localeCompare(b.inicio ?? ""));
       return {
         id,
-        nome: id === "__sem__" ? "Sem equipamento" : nomeDoEquipamento.get(id) ?? "Equipamento removido",
+        nome,
         dias: estados,
         ensaios,
         livreEm: ultimoFim ? proximoDiaUtil(ultimoFim) : null,
         comAtraso,
+        itens,
       };
     })
     .filter((q) => q.id !== "__sem__" || q.ensaios > 0)
@@ -575,16 +735,20 @@ function montarBancada(
   const carga = new Map<string, CargaTecnico>();
   for (const p of progsAtivas) {
     const nome = (p.tecnico ?? "").trim() || "Sem técnico";
-    const c = carga.get(nome) ?? { nome, emExecucao: 0, programados: 0, alemDoPrevisto: 0 };
+    const c = carga.get(nome) ?? { nome, emExecucao: 0, programados: 0, alemDoPrevisto: 0, itens: [] };
+    const equipamentoNome = (p.equipamento_id && nomeDoEquipamento.get(p.equipamento_id)) || "Sem equipamento";
     if (p.status === "em_execucao") {
       c.emExecucao++;
       if (p.data_fim && p.data_fim < hoje) c.alemDoPrevisto++;
+      c.itens.push(itemDe(p, equipamentoNome));
     } else if (p.data_inicio && p.data_inicio <= fimJanela) {
       c.programados++;
+      c.itens.push(itemDe(p, equipamentoNome));
     }
     carga.set(nome, c);
   }
   const tecnicos = [...carga.values()]
+    .map((c) => ({ ...c, itens: c.itens.sort((a, b) => (a.inicio ?? "").localeCompare(b.inicio ?? "")) }))
     .filter((c) => c.emExecucao + c.programados > 0)
     .sort((a, b) =>
       a.nome === "Sem técnico" ? 1 : b.nome === "Sem técnico" ? -1 : b.emExecucao + b.programados - (a.emExecucao + a.programados) || a.nome.localeCompare(b.nome),
@@ -650,7 +814,9 @@ function montarLaudos(
       nome: et.nome,
       total: lista.length,
       parados: lista.filter((x) => x.idade >= DIAS_UTEIS_PARADO).length,
-      itens: lista.slice(0, 5),
+      // Lista completa (não corta mais em 5) — quem exibe o resumo compacto corta na tela;
+      // o detalhe ao clicar precisa de todos.
+      itens: lista,
     };
   });
 }

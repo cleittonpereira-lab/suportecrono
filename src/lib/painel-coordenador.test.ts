@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   chaveOs,
   diasUteisEntre,
+  montarBancadaComJanela,
   montarPainel,
   osDaChegada,
   paraIso,
@@ -201,10 +202,11 @@ describe("montarPainel — Fase 2", () => {
 
   it("carga por técnico e ensaios longos (dia N de M)", () => {
     const { bancada } = montarPainel(base());
-    expect(bancada.tecnicos).toEqual([
+    expect(bancada.tecnicos).toMatchObject([
       { nome: "Rodrigo", emExecucao: 1, programados: 0, alemDoPrevisto: 0 },
       { nome: "Sem técnico", emExecucao: 0, programados: 1, alemDoPrevisto: 0 },
     ]);
+    expect(bancada.tecnicos[0].itens).toHaveLength(1);
     expect(bancada.longos).toHaveLength(1);
     expect(bancada.longos[0]).toMatchObject({ ensaio: "Adensamento", os: "17891-26", dia: 5, de: 8, atrasado: false, tecnico: "Rodrigo" });
   });
@@ -216,5 +218,34 @@ describe("montarPainel — Fase 2", () => {
     expect(porChave.verificacao).toMatchObject({ total: 1, parados: 1 });
     expect(porChave.verificacao.itens[0]).toMatchObject({ pessoa: "Ana", papel: "enviado por", idade: 3 });
     expect(porChave.aprovacao.total).toBe(0);
+  });
+});
+
+describe("detalhe ao clicar (Fase 4 — painel interativo)", () => {
+  it("cada linha de prazo carrega os ensaios e laudos daquela OS", () => {
+    const { prazos } = montarPainel(base());
+    const linha = prazos.find((p) => p.chave === "17891-26")!;
+    expect(linha.ensaiosDetalhe.map((x) => x.ensaio).sort()).toEqual(["Adensamento", "Triaxial"]);
+    expect(linha.laudosDetalhe).toMatchObject([{ pessoa: "Rodrigo", ensaio: "Adensamento" }]);
+  });
+
+  it("detalhes.aguardandoProgramacao lista os ensaios ativos sem programação", () => {
+    const { detalhes } = montarPainel(base());
+    // e3 usa um tipo_ensaio_id ("te-cisalhamento") fora da lista de tipos do fixture — cai no rótulo padrão "Ensaio".
+    expect(detalhes.aguardandoProgramacao.map((x) => x.ensaio).sort()).toEqual(["Caracterização", "Ensaio"]);
+  });
+
+  it("detalhes.emAndamento lista quem está em execução agora", () => {
+    const { detalhes } = montarPainel(base());
+    expect(detalhes.emAndamento).toMatchObject([{ ensaio: "Adensamento", os: "17891-26", amostra: "SH-01", tecnico: "Rodrigo" }]);
+  });
+
+  it("montarBancadaComJanela abre mais dias sem precisar de nova consulta", () => {
+    const padrao = montarBancadaComJanela(base(), 7);
+    const ampliada = montarBancadaComJanela(base(), 14);
+    expect(padrao.dias).toHaveLength(7);
+    expect(ampliada.dias).toHaveLength(14);
+    const eq = ampliada.equipamentos.find((q) => q.id === "eq-ad")!;
+    expect(eq.itens).toMatchObject([{ id: "p1", ensaio: "Adensamento", os: "17891-26", tecnico: "Rodrigo" }]);
   });
 });
