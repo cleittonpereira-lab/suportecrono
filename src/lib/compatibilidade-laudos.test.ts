@@ -35,6 +35,12 @@ describe("sigla → laudo", () => {
     expect(laudoPelaSigla("COMP.A")).toBe("compressao-simples");
   });
 
+  it("Compressão Diametral (COMP.D/ASF.CD) não cai no catch-all de Compressão Simples", () => {
+    expect(laudoPelaSigla("COMP.D")).toBe("compressao-diametral");
+    expect(laudoPelaSigla("COMP.D.7")).toBe("compressao-diametral");
+    expect(laudoPelaSigla("ASF.CD")).toBe("compressao-diametral");
+  });
+
   it("sigla desconhecida não vira chute", () => {
     expect(laudoPelaSigla("XYZ.99")).toBeNull();
     expect(laudoPelaSigla("")).toBeNull();

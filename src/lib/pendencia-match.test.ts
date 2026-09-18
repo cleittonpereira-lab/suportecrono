@@ -54,6 +54,13 @@ describe("normMethod", () => {
     expect(normMethod("umidade-natural")).toBe("umidade-natural");
     expect(normMethod("modulo-resiliencia")).toBe("modulo-resiliencia");
   });
+
+  it("Compressão Diametral (ASF.CD/COMP.D) não cai em compressao-simples nem asf-dap", () => {
+    expect(normMethod("ASF.CD")).toBe("compressao-diametral");
+    expect(normMethod("COMP.D")).toBe("compressao-diametral");
+    expect(normMethod("COMP.D.7")).toBe("compressao-diametral");
+    expect(normMethod("Compressão Diametral — Asfalto")).toBe("compressao-diametral");
+  });
 });
 
 describe("findMatchingPendencia", () => {

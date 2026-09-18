@@ -80,6 +80,9 @@ export function laudoPelaSigla(bruta: string | null | undefined): EnsaioTipo | n
   if (t.includes("asftb") || t.includes("betume")) return "asf-tb";
   if (t.includes("asfdap") || t.includes("densidadeaparente")) return "asf-dap";
   if (t.startsWith("permv") || t.includes("permeabilidade")) return "perm-v";
+  // Compressão Diametral (COMP.D / ASF.CD) ANTES do catch-all "comp" de
+  // Compressão Simples, senão "compd" cairia em compressao-simples.
+  if (t.startsWith("compd") || t.startsWith("asfcd") || t.includes("compressaodiametral") || t.includes("tracaodiametral")) return "compressao-diametral";
   if (t.startsWith("comp") || t.includes("compressao")) return "compressao-simples";
   if (t.includes("resiliencia") || t.startsWith("mr")) return "modulo-resiliencia";
   if (t.includes("umid")) return "umidade-natural";

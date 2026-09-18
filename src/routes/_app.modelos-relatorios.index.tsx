@@ -129,6 +129,15 @@ const MODELOS = [
     tag: "COMP",
   },
   {
+    to: "/modelos-relatorios/compressao-diametral" as const,
+    titulo: "Compressão Diametral",
+    descricao:
+      "Modelo do relatório de resistência à tração por compressão diametral (ensaio brasileiro) em mistura asfáltica ou solo-cimento.",
+    norma: "DNER-ME 138/94 · DNIT 136/2010-ME",
+    icon: Gauge,
+    tag: "COMP.D",
+  },
+  {
     to: "/modelos-relatorios/load-test" as const,
     titulo: "Point Load Test (LOAD.TEST)",
     descricao:

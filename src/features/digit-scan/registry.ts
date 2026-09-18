@@ -19,6 +19,8 @@ import { isPermVTag } from "@/features/perm-v/calc";
 import { dispatchPermV } from "@/features/perm-v/ui";
 import { isCompressaoSimplesTag } from "@/features/compressao-simples/calc";
 import { dispatchCompressaoSimples } from "@/features/compressao-simples/ui";
+import { isCompressaoDiametralTag } from "@/features/compressao-diametral/calc";
+import { dispatchCompressaoDiametral } from "@/features/compressao-diametral/ui";
 import { isPLTTag } from "@/features/load-test/calc";
 import { dispatchLoadTest } from "@/features/load-test/ui";
 
@@ -67,6 +69,13 @@ export const DIGIT_SCAN_REGISTRY: DigitScanPlugin[] = [
     match: isCompressaoSimplesTag,
     route: "/relatorio/digitalizacao/compressao-simples",
     dispatch: dispatchCompressaoSimples,
+  },
+  {
+    key: "COMP.D",
+    label: "Compressão Diametral (ASF.CD / COMP.D)",
+    match: isCompressaoDiametralTag,
+    route: "/relatorio/digitalizacao/compressao-diametral",
+    dispatch: dispatchCompressaoDiametral,
   },
   {
     key: "LOAD.TEST",

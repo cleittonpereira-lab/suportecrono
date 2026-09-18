@@ -124,6 +124,7 @@ const SECTIONS: readonly Section[] = [
       { title: "ASF.TB (Teor de Betume)", url: "/relatorio/asf-tb", icon: Beaker },
       { title: "Permeabilidade Carga Variável (PERM.V)", url: "/relatorio/perm-v", icon: Droplets },
       { title: "Compressão Simples", url: "/relatorio/compressao-simples", icon: Gauge },
+      { title: "Compressão Diametral", url: "/relatorio/compressao-diametral", icon: Gauge },
       { title: "Módulo de Resiliência", url: "/relatorio/modulo-resiliencia", icon: FlaskConical },
       { title: "Umidade Natural", url: "/relatorio/umidade-natural", icon: Beaker },
       { title: "Point Load Test (LOAD.TEST)", url: "/relatorio/load-test", icon: Gauge },

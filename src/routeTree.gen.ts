@@ -41,6 +41,7 @@ import { Route as AppModelosRelatoriosAdensamentoRouteImport } from './routes/_a
 import { Route as AppModelosRelatoriosAsfDapRouteImport } from './routes/_app.modelos-relatorios.asf-dap'
 import { Route as AppModelosRelatoriosAsfTbRouteImport } from './routes/_app.modelos-relatorios.asf-tb'
 import { Route as AppModelosRelatoriosCisalhamentoDiretoRouteImport } from './routes/_app.modelos-relatorios.cisalhamento-direto'
+import { Route as AppModelosRelatoriosCompressaoDiametralRouteImport } from './routes/_app.modelos-relatorios.compressao-diametral'
 import { Route as AppModelosRelatoriosCompressaoSimplesRouteImport } from './routes/_app.modelos-relatorios.compressao-simples'
 import { Route as AppModelosRelatoriosLoadTestRouteImport } from './routes/_app.modelos-relatorios.load-test'
 import { Route as AppModelosRelatoriosMespANaturalRouteImport } from './routes/_app.modelos-relatorios.mesp-a-natural'
@@ -63,6 +64,7 @@ import { Route as AppRelatorioAdensamentoRouteImport } from './routes/_app.relat
 import { Route as AppRelatorioAsfDapRouteImport } from './routes/_app.relatorio.asf-dap'
 import { Route as AppRelatorioAsfTbRouteImport } from './routes/_app.relatorio.asf-tb'
 import { Route as AppRelatorioCisalhamentoDiretoRouteImport } from './routes/_app.relatorio.cisalhamento-direto'
+import { Route as AppRelatorioCompressaoDiametralRouteImport } from './routes/_app.relatorio.compressao-diametral'
 import { Route as AppRelatorioCompressaoSimplesRouteImport } from './routes/_app.relatorio.compressao-simples'
 import { Route as AppRelatorioDigitalizacaoRouteImport } from './routes/_app.relatorio.digitalizacao'
 import { Route as AppRelatorioEmissoesRouteImport } from './routes/_app.relatorio.emissoes'
@@ -82,6 +84,7 @@ import { Route as AppRelatorioDigitalizacaoAdensamentoRouteImport } from './rout
 import { Route as AppRelatorioDigitalizacaoAsfDapRouteImport } from './routes/_app.relatorio.digitalizacao.asf-dap'
 import { Route as AppRelatorioDigitalizacaoAsfTbRouteImport } from './routes/_app.relatorio.digitalizacao.asf-tb'
 import { Route as AppRelatorioDigitalizacaoCapsulasRouteImport } from './routes/_app.relatorio.digitalizacao.capsulas'
+import { Route as AppRelatorioDigitalizacaoCompressaoDiametralRouteImport } from './routes/_app.relatorio.digitalizacao.compressao-diametral'
 import { Route as AppRelatorioDigitalizacaoCompressaoSimplesRouteImport } from './routes/_app.relatorio.digitalizacao.compressao-simples'
 import { Route as AppRelatorioDigitalizacaoFilaRouteImport } from './routes/_app.relatorio.digitalizacao.fila'
 import { Route as AppRelatorioDigitalizacaoLoadTestRouteImport } from './routes/_app.relatorio.digitalizacao.load-test'
@@ -259,6 +262,12 @@ const AppModelosRelatoriosCisalhamentoDiretoRoute =
     path: '/modelos-relatorios/cisalhamento-direto',
     getParentRoute: () => AppRoute,
   } as any)
+const AppModelosRelatoriosCompressaoDiametralRoute =
+  AppModelosRelatoriosCompressaoDiametralRouteImport.update({
+    id: '/modelos-relatorios/compressao-diametral',
+    path: '/modelos-relatorios/compressao-diametral',
+    getParentRoute: () => AppRoute,
+  } as any)
 const AppModelosRelatoriosCompressaoSimplesRoute =
   AppModelosRelatoriosCompressaoSimplesRouteImport.update({
     id: '/modelos-relatorios/compressao-simples',
@@ -382,6 +391,12 @@ const AppRelatorioCisalhamentoDiretoRoute =
     path: '/relatorio/cisalhamento-direto',
     getParentRoute: () => AppRoute,
   } as any)
+const AppRelatorioCompressaoDiametralRoute =
+  AppRelatorioCompressaoDiametralRouteImport.update({
+    id: '/relatorio/compressao-diametral',
+    path: '/relatorio/compressao-diametral',
+    getParentRoute: () => AppRoute,
+  } as any)
 const AppRelatorioCompressaoSimplesRoute =
   AppRelatorioCompressaoSimplesRouteImport.update({
     id: '/relatorio/compressao-simples',
@@ -487,6 +502,12 @@ const AppRelatorioDigitalizacaoCapsulasRoute =
     path: '/capsulas',
     getParentRoute: () => AppRelatorioDigitalizacaoRoute,
   } as any)
+const AppRelatorioDigitalizacaoCompressaoDiametralRoute =
+  AppRelatorioDigitalizacaoCompressaoDiametralRouteImport.update({
+    id: '/compressao-diametral',
+    path: '/compressao-diametral',
+    getParentRoute: () => AppRelatorioDigitalizacaoRoute,
+  } as any)
 const AppRelatorioDigitalizacaoCompressaoSimplesRoute =
   AppRelatorioDigitalizacaoCompressaoSimplesRouteImport.update({
     id: '/compressao-simples',
@@ -583,6 +604,7 @@ export interface FileRoutesByFullPath {
   '/modelos-relatorios/asf-dap': typeof AppModelosRelatoriosAsfDapRoute
   '/modelos-relatorios/asf-tb': typeof AppModelosRelatoriosAsfTbRoute
   '/modelos-relatorios/cisalhamento-direto': typeof AppModelosRelatoriosCisalhamentoDiretoRoute
+  '/modelos-relatorios/compressao-diametral': typeof AppModelosRelatoriosCompressaoDiametralRoute
   '/modelos-relatorios/compressao-simples': typeof AppModelosRelatoriosCompressaoSimplesRoute
   '/modelos-relatorios/load-test': typeof AppModelosRelatoriosLoadTestRoute
   '/modelos-relatorios/mesp-a-natural': typeof AppModelosRelatoriosMespANaturalRoute
@@ -603,6 +625,7 @@ export interface FileRoutesByFullPath {
   '/relatorio/asf-dap': typeof AppRelatorioAsfDapRoute
   '/relatorio/asf-tb': typeof AppRelatorioAsfTbRoute
   '/relatorio/cisalhamento-direto': typeof AppRelatorioCisalhamentoDiretoRoute
+  '/relatorio/compressao-diametral': typeof AppRelatorioCompressaoDiametralRoute
   '/relatorio/compressao-simples': typeof AppRelatorioCompressaoSimplesRoute
   '/relatorio/digitalizacao': typeof AppRelatorioDigitalizacaoRouteWithChildren
   '/relatorio/emissoes': typeof AppRelatorioEmissoesRoute
@@ -624,6 +647,7 @@ export interface FileRoutesByFullPath {
   '/relatorio/digitalizacao/asf-dap': typeof AppRelatorioDigitalizacaoAsfDapRoute
   '/relatorio/digitalizacao/asf-tb': typeof AppRelatorioDigitalizacaoAsfTbRoute
   '/relatorio/digitalizacao/capsulas': typeof AppRelatorioDigitalizacaoCapsulasRoute
+  '/relatorio/digitalizacao/compressao-diametral': typeof AppRelatorioDigitalizacaoCompressaoDiametralRoute
   '/relatorio/digitalizacao/compressao-simples': typeof AppRelatorioDigitalizacaoCompressaoSimplesRoute
   '/relatorio/digitalizacao/fila': typeof AppRelatorioDigitalizacaoFilaRoute
   '/relatorio/digitalizacao/load-test': typeof AppRelatorioDigitalizacaoLoadTestRoute
@@ -668,6 +692,7 @@ export interface FileRoutesByTo {
   '/modelos-relatorios/asf-dap': typeof AppModelosRelatoriosAsfDapRoute
   '/modelos-relatorios/asf-tb': typeof AppModelosRelatoriosAsfTbRoute
   '/modelos-relatorios/cisalhamento-direto': typeof AppModelosRelatoriosCisalhamentoDiretoRoute
+  '/modelos-relatorios/compressao-diametral': typeof AppModelosRelatoriosCompressaoDiametralRoute
   '/modelos-relatorios/compressao-simples': typeof AppModelosRelatoriosCompressaoSimplesRoute
   '/modelos-relatorios/load-test': typeof AppModelosRelatoriosLoadTestRoute
   '/modelos-relatorios/mesp-a-natural': typeof AppModelosRelatoriosMespANaturalRoute
@@ -688,6 +713,7 @@ export interface FileRoutesByTo {
   '/relatorio/asf-dap': typeof AppRelatorioAsfDapRoute
   '/relatorio/asf-tb': typeof AppRelatorioAsfTbRoute
   '/relatorio/cisalhamento-direto': typeof AppRelatorioCisalhamentoDiretoRoute
+  '/relatorio/compressao-diametral': typeof AppRelatorioCompressaoDiametralRoute
   '/relatorio/compressao-simples': typeof AppRelatorioCompressaoSimplesRoute
   '/relatorio/emissoes': typeof AppRelatorioEmissoesRoute
   '/relatorio/load-test': typeof AppRelatorioLoadTestRoute
@@ -708,6 +734,7 @@ export interface FileRoutesByTo {
   '/relatorio/digitalizacao/asf-dap': typeof AppRelatorioDigitalizacaoAsfDapRoute
   '/relatorio/digitalizacao/asf-tb': typeof AppRelatorioDigitalizacaoAsfTbRoute
   '/relatorio/digitalizacao/capsulas': typeof AppRelatorioDigitalizacaoCapsulasRoute
+  '/relatorio/digitalizacao/compressao-diametral': typeof AppRelatorioDigitalizacaoCompressaoDiametralRoute
   '/relatorio/digitalizacao/compressao-simples': typeof AppRelatorioDigitalizacaoCompressaoSimplesRoute
   '/relatorio/digitalizacao/fila': typeof AppRelatorioDigitalizacaoFilaRoute
   '/relatorio/digitalizacao/load-test': typeof AppRelatorioDigitalizacaoLoadTestRoute
@@ -754,6 +781,7 @@ export interface FileRoutesById {
   '/_app/modelos-relatorios/asf-dap': typeof AppModelosRelatoriosAsfDapRoute
   '/_app/modelos-relatorios/asf-tb': typeof AppModelosRelatoriosAsfTbRoute
   '/_app/modelos-relatorios/cisalhamento-direto': typeof AppModelosRelatoriosCisalhamentoDiretoRoute
+  '/_app/modelos-relatorios/compressao-diametral': typeof AppModelosRelatoriosCompressaoDiametralRoute
   '/_app/modelos-relatorios/compressao-simples': typeof AppModelosRelatoriosCompressaoSimplesRoute
   '/_app/modelos-relatorios/load-test': typeof AppModelosRelatoriosLoadTestRoute
   '/_app/modelos-relatorios/mesp-a-natural': typeof AppModelosRelatoriosMespANaturalRoute
@@ -774,6 +802,7 @@ export interface FileRoutesById {
   '/_app/relatorio/asf-dap': typeof AppRelatorioAsfDapRoute
   '/_app/relatorio/asf-tb': typeof AppRelatorioAsfTbRoute
   '/_app/relatorio/cisalhamento-direto': typeof AppRelatorioCisalhamentoDiretoRoute
+  '/_app/relatorio/compressao-diametral': typeof AppRelatorioCompressaoDiametralRoute
   '/_app/relatorio/compressao-simples': typeof AppRelatorioCompressaoSimplesRoute
   '/_app/relatorio/digitalizacao': typeof AppRelatorioDigitalizacaoRouteWithChildren
   '/_app/relatorio/emissoes': typeof AppRelatorioEmissoesRoute
@@ -795,6 +824,7 @@ export interface FileRoutesById {
   '/_app/relatorio/digitalizacao/asf-dap': typeof AppRelatorioDigitalizacaoAsfDapRoute
   '/_app/relatorio/digitalizacao/asf-tb': typeof AppRelatorioDigitalizacaoAsfTbRoute
   '/_app/relatorio/digitalizacao/capsulas': typeof AppRelatorioDigitalizacaoCapsulasRoute
+  '/_app/relatorio/digitalizacao/compressao-diametral': typeof AppRelatorioDigitalizacaoCompressaoDiametralRoute
   '/_app/relatorio/digitalizacao/compressao-simples': typeof AppRelatorioDigitalizacaoCompressaoSimplesRoute
   '/_app/relatorio/digitalizacao/fila': typeof AppRelatorioDigitalizacaoFilaRoute
   '/_app/relatorio/digitalizacao/load-test': typeof AppRelatorioDigitalizacaoLoadTestRoute
@@ -841,6 +871,7 @@ export interface FileRouteTypes {
     | '/modelos-relatorios/asf-dap'
     | '/modelos-relatorios/asf-tb'
     | '/modelos-relatorios/cisalhamento-direto'
+    | '/modelos-relatorios/compressao-diametral'
     | '/modelos-relatorios/compressao-simples'
     | '/modelos-relatorios/load-test'
     | '/modelos-relatorios/mesp-a-natural'
@@ -861,6 +892,7 @@ export interface FileRouteTypes {
     | '/relatorio/asf-dap'
     | '/relatorio/asf-tb'
     | '/relatorio/cisalhamento-direto'
+    | '/relatorio/compressao-diametral'
     | '/relatorio/compressao-simples'
     | '/relatorio/digitalizacao'
     | '/relatorio/emissoes'
@@ -882,6 +914,7 @@ export interface FileRouteTypes {
     | '/relatorio/digitalizacao/asf-dap'
     | '/relatorio/digitalizacao/asf-tb'
     | '/relatorio/digitalizacao/capsulas'
+    | '/relatorio/digitalizacao/compressao-diametral'
     | '/relatorio/digitalizacao/compressao-simples'
     | '/relatorio/digitalizacao/fila'
     | '/relatorio/digitalizacao/load-test'
@@ -926,6 +959,7 @@ export interface FileRouteTypes {
     | '/modelos-relatorios/asf-dap'
     | '/modelos-relatorios/asf-tb'
     | '/modelos-relatorios/cisalhamento-direto'
+    | '/modelos-relatorios/compressao-diametral'
     | '/modelos-relatorios/compressao-simples'
     | '/modelos-relatorios/load-test'
     | '/modelos-relatorios/mesp-a-natural'
@@ -946,6 +980,7 @@ export interface FileRouteTypes {
     | '/relatorio/asf-dap'
     | '/relatorio/asf-tb'
     | '/relatorio/cisalhamento-direto'
+    | '/relatorio/compressao-diametral'
     | '/relatorio/compressao-simples'
     | '/relatorio/emissoes'
     | '/relatorio/load-test'
@@ -966,6 +1001,7 @@ export interface FileRouteTypes {
     | '/relatorio/digitalizacao/asf-dap'
     | '/relatorio/digitalizacao/asf-tb'
     | '/relatorio/digitalizacao/capsulas'
+    | '/relatorio/digitalizacao/compressao-diametral'
     | '/relatorio/digitalizacao/compressao-simples'
     | '/relatorio/digitalizacao/fila'
     | '/relatorio/digitalizacao/load-test'
@@ -1011,6 +1047,7 @@ export interface FileRouteTypes {
     | '/_app/modelos-relatorios/asf-dap'
     | '/_app/modelos-relatorios/asf-tb'
     | '/_app/modelos-relatorios/cisalhamento-direto'
+    | '/_app/modelos-relatorios/compressao-diametral'
     | '/_app/modelos-relatorios/compressao-simples'
     | '/_app/modelos-relatorios/load-test'
     | '/_app/modelos-relatorios/mesp-a-natural'
@@ -1031,6 +1068,7 @@ export interface FileRouteTypes {
     | '/_app/relatorio/asf-dap'
     | '/_app/relatorio/asf-tb'
     | '/_app/relatorio/cisalhamento-direto'
+    | '/_app/relatorio/compressao-diametral'
     | '/_app/relatorio/compressao-simples'
     | '/_app/relatorio/digitalizacao'
     | '/_app/relatorio/emissoes'
@@ -1052,6 +1090,7 @@ export interface FileRouteTypes {
     | '/_app/relatorio/digitalizacao/asf-dap'
     | '/_app/relatorio/digitalizacao/asf-tb'
     | '/_app/relatorio/digitalizacao/capsulas'
+    | '/_app/relatorio/digitalizacao/compressao-diametral'
     | '/_app/relatorio/digitalizacao/compressao-simples'
     | '/_app/relatorio/digitalizacao/fila'
     | '/_app/relatorio/digitalizacao/load-test'
@@ -1305,6 +1344,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppModelosRelatoriosCisalhamentoDiretoRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/modelos-relatorios/compressao-diametral': {
+      id: '/_app/modelos-relatorios/compressao-diametral'
+      path: '/modelos-relatorios/compressao-diametral'
+      fullPath: '/modelos-relatorios/compressao-diametral'
+      preLoaderRoute: typeof AppModelosRelatoriosCompressaoDiametralRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/modelos-relatorios/compressao-simples': {
       id: '/_app/modelos-relatorios/compressao-simples'
       path: '/modelos-relatorios/compressao-simples'
@@ -1459,6 +1505,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRelatorioCisalhamentoDiretoRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/relatorio/compressao-diametral': {
+      id: '/_app/relatorio/compressao-diametral'
+      path: '/relatorio/compressao-diametral'
+      fullPath: '/relatorio/compressao-diametral'
+      preLoaderRoute: typeof AppRelatorioCompressaoDiametralRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/relatorio/compressao-simples': {
       id: '/_app/relatorio/compressao-simples'
       path: '/relatorio/compressao-simples'
@@ -1592,6 +1645,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRelatorioDigitalizacaoCapsulasRouteImport
       parentRoute: typeof AppRelatorioDigitalizacaoRoute
     }
+    '/_app/relatorio/digitalizacao/compressao-diametral': {
+      id: '/_app/relatorio/digitalizacao/compressao-diametral'
+      path: '/compressao-diametral'
+      fullPath: '/relatorio/digitalizacao/compressao-diametral'
+      preLoaderRoute: typeof AppRelatorioDigitalizacaoCompressaoDiametralRouteImport
+      parentRoute: typeof AppRelatorioDigitalizacaoRoute
+    }
     '/_app/relatorio/digitalizacao/compressao-simples': {
       id: '/_app/relatorio/digitalizacao/compressao-simples'
       path: '/compressao-simples'
@@ -1688,6 +1748,7 @@ interface AppRelatorioDigitalizacaoRouteChildren {
   AppRelatorioDigitalizacaoAsfDapRoute: typeof AppRelatorioDigitalizacaoAsfDapRoute
   AppRelatorioDigitalizacaoAsfTbRoute: typeof AppRelatorioDigitalizacaoAsfTbRoute
   AppRelatorioDigitalizacaoCapsulasRoute: typeof AppRelatorioDigitalizacaoCapsulasRoute
+  AppRelatorioDigitalizacaoCompressaoDiametralRoute: typeof AppRelatorioDigitalizacaoCompressaoDiametralRoute
   AppRelatorioDigitalizacaoCompressaoSimplesRoute: typeof AppRelatorioDigitalizacaoCompressaoSimplesRoute
   AppRelatorioDigitalizacaoFilaRoute: typeof AppRelatorioDigitalizacaoFilaRoute
   AppRelatorioDigitalizacaoLoadTestRoute: typeof AppRelatorioDigitalizacaoLoadTestRoute
@@ -1704,6 +1765,8 @@ const AppRelatorioDigitalizacaoRouteChildren: AppRelatorioDigitalizacaoRouteChil
     AppRelatorioDigitalizacaoAsfTbRoute: AppRelatorioDigitalizacaoAsfTbRoute,
     AppRelatorioDigitalizacaoCapsulasRoute:
       AppRelatorioDigitalizacaoCapsulasRoute,
+    AppRelatorioDigitalizacaoCompressaoDiametralRoute:
+      AppRelatorioDigitalizacaoCompressaoDiametralRoute,
     AppRelatorioDigitalizacaoCompressaoSimplesRoute:
       AppRelatorioDigitalizacaoCompressaoSimplesRoute,
     AppRelatorioDigitalizacaoFilaRoute: AppRelatorioDigitalizacaoFilaRoute,
@@ -1742,6 +1805,7 @@ interface AppRouteChildren {
   AppModelosRelatoriosAsfDapRoute: typeof AppModelosRelatoriosAsfDapRoute
   AppModelosRelatoriosAsfTbRoute: typeof AppModelosRelatoriosAsfTbRoute
   AppModelosRelatoriosCisalhamentoDiretoRoute: typeof AppModelosRelatoriosCisalhamentoDiretoRoute
+  AppModelosRelatoriosCompressaoDiametralRoute: typeof AppModelosRelatoriosCompressaoDiametralRoute
   AppModelosRelatoriosCompressaoSimplesRoute: typeof AppModelosRelatoriosCompressaoSimplesRoute
   AppModelosRelatoriosLoadTestRoute: typeof AppModelosRelatoriosLoadTestRoute
   AppModelosRelatoriosMespANaturalRoute: typeof AppModelosRelatoriosMespANaturalRoute
@@ -1762,6 +1826,7 @@ interface AppRouteChildren {
   AppRelatorioAsfDapRoute: typeof AppRelatorioAsfDapRoute
   AppRelatorioAsfTbRoute: typeof AppRelatorioAsfTbRoute
   AppRelatorioCisalhamentoDiretoRoute: typeof AppRelatorioCisalhamentoDiretoRoute
+  AppRelatorioCompressaoDiametralRoute: typeof AppRelatorioCompressaoDiametralRoute
   AppRelatorioCompressaoSimplesRoute: typeof AppRelatorioCompressaoSimplesRoute
   AppRelatorioDigitalizacaoRoute: typeof AppRelatorioDigitalizacaoRouteWithChildren
   AppRelatorioEmissoesRoute: typeof AppRelatorioEmissoesRoute
@@ -1809,6 +1874,8 @@ const AppRouteChildren: AppRouteChildren = {
   AppModelosRelatoriosAsfTbRoute: AppModelosRelatoriosAsfTbRoute,
   AppModelosRelatoriosCisalhamentoDiretoRoute:
     AppModelosRelatoriosCisalhamentoDiretoRoute,
+  AppModelosRelatoriosCompressaoDiametralRoute:
+    AppModelosRelatoriosCompressaoDiametralRoute,
   AppModelosRelatoriosCompressaoSimplesRoute:
     AppModelosRelatoriosCompressaoSimplesRoute,
   AppModelosRelatoriosLoadTestRoute: AppModelosRelatoriosLoadTestRoute,
@@ -1832,6 +1899,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppRelatorioAsfDapRoute: AppRelatorioAsfDapRoute,
   AppRelatorioAsfTbRoute: AppRelatorioAsfTbRoute,
   AppRelatorioCisalhamentoDiretoRoute: AppRelatorioCisalhamentoDiretoRoute,
+  AppRelatorioCompressaoDiametralRoute: AppRelatorioCompressaoDiametralRoute,
   AppRelatorioCompressaoSimplesRoute: AppRelatorioCompressaoSimplesRoute,
   AppRelatorioDigitalizacaoRoute: AppRelatorioDigitalizacaoRouteWithChildren,
   AppRelatorioEmissoesRoute: AppRelatorioEmissoesRoute,

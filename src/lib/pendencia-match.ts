@@ -29,6 +29,9 @@ export function normMethod(val: string | null | undefined): string {
   if (s.includes("asf.dap") || s.includes("asf-dap") || s.includes("asfdap") || s.includes("densidade aparente")) return "asf-dap";
   if (s.includes("perm.v") || s.includes("perm-v") || s.includes("permv") || s.includes("permeabilidade")) return "perm-v";
   if (s.includes("comp.a") || s.includes("comp.r") || s.includes("comp.s") || s.includes("compressao-simples") || s.includes("compressão simples") || s.includes("compressao simples")) return "compressao-simples";
+  // Compressão Diametral (ASF.CD/COMP.D) ANTES de qualquer teste genérico
+  // de "comp"/"asf" — senão cairia em compressao-simples ou asf-dap.
+  if (s.includes("asf.cd") || s.includes("asf-cd") || s.includes("asfcd") || s.includes("comp.d") || s.includes("comp-d") || s.includes("compd") || s.includes("compressao-diametral") || s.includes("compressão diametral") || s.includes("compressao diametral") || s.includes("tração por compressão diametral")) return "compressao-diametral";
   // Triaxial ANTES de cisalhamento, e só pelo prefixo da sigla: a sigla
   // "TRI4.CD" (triaxial consolidado drenado) contém "cd", e o teste antigo
   // `includes("cd")` a classificava como cisalhamento direto — o editor de

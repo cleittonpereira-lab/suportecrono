@@ -18,6 +18,7 @@ const SIGLA_POR_TIPO: Record<string, string> = {
   "mesp-a": "M.ESP.A",
   "umidade-natural": "UMID.NAT",
   "compressao-simples": "COMP.S",
+  "compressao-diametral": "COMP.D",
   "modulo-resiliencia": "MR",
   adensamento: "ADENS",
   "cisalhamento-direto": "CD",

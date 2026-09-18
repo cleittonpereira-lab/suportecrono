@@ -20,6 +20,7 @@ import { ASFPage as AsfDapPageInner } from "@/routes/_app.relatorio.asf-dap";
 import { AsfTbPage as AsfTbPageInner } from "@/routes/_app.relatorio.asf-tb";
 import { PermVPage as PermVPageInner } from "@/routes/_app.relatorio.perm-v";
 import { CompressaoSimplesPage as CompressaoSimplesPageInner } from "@/routes/_app.relatorio.compressao-simples";
+import { CompressaoDiametralPage as CompressaoDiametralPageInner } from "@/routes/_app.relatorio.compressao-diametral";
 import { PLTPage as LoadTestPageInner } from "@/routes/_app.relatorio.load-test";
 
 export const Route = createFileRoute(
@@ -304,6 +305,12 @@ function pickEditor(tipo: string): React.FC {
   // ASF.TB antes do teste genérico de "asf", que abriria o editor do ASF.DAP.
   if (norm === "asf-tb" || norm.includes("asf.tb")) {
     return AsfTbPageInner as unknown as React.FC;
+  }
+  // Compressão Diametral (ASF.CD / COMP.D) ANTES dos testes genéricos de
+  // "asf" e "compressao" abaixo, senão cairia em ASF.DAP ou Compressão
+  // Simples (ambos contêm essas substrings).
+  if (norm.includes("diametral") || norm === "asf-cd" || norm.includes("asf.cd") || norm.includes("comp.d") || norm.includes("compressao-diametral")) {
+    return CompressaoDiametralPageInner as unknown as React.FC;
   }
   if (norm.includes("asf") || norm.includes("dap")) {
     return AsfDapPageInner as unknown as React.FC;

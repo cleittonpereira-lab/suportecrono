@@ -97,7 +97,145 @@ function NumField({ label, value, onChange, className }: { label: string; value:
   );
 }
 
-/** Página única do laudo: identificação (via ReportHeader) + resultados por determinação + fotos. */
+const PLT_TITLE = "ÍNDICE DE RESISTÊNCIA À CARGA PONTUAL DE ROCHA — POINT LOAD STRENGTH INDEX";
+const PLT_NORMS = [{ text: "ASTM D5731-16 / ISRM - Suggested method for determining point load strength (2016)" }];
+
+/** Máximo de fotos por página (grid 4 colunas × 3 linhas cabe com folga na área útil A4). */
+const MAX_FOTOS_POR_PAGINA = 12;
+
+type FotoGrupo = { titulo: string; fotos: import("@/features/lab/types").Photo[] };
+
+/**
+ * Agrupa fotos por CP (via `specimenId`), na mesma ordem das determinações
+ * na tabela de resultado — pedido do usuário: "organizado e separado por CP
+ * e na ordem que está na parte de relatório". Fotos sem `specimenId`
+ * reconhecível (dado legado) caem num grupo "Outras fotos" no fim, em vez
+ * de somem da paginação.
+ */
+function agruparFotosPorCp(
+  determinacoes: PLTDeterminacao[],
+  photos: import("@/features/lab/types").Photo[],
+): FotoGrupo[] {
+  const grupos: FotoGrupo[] = [];
+  const idsComDet = new Set(determinacoes.map((d) => d.id));
+  for (const det of determinacoes) {
+    const fotos = photos.filter((p) => p.specimenId === det.id);
+    if (fotos.length > 0) grupos.push({ titulo: `CP ${det.numero}`, fotos });
+  }
+  const orfas = photos.filter((p) => !p.specimenId || !idsComDet.has(p.specimenId));
+  if (orfas.length > 0) grupos.push({ titulo: "Outras fotos", fotos: orfas });
+  return grupos;
+}
+
+/**
+ * Distribui os grupos de fotos em páginas de até `maxPorPagina` fotos, sem
+ * quebrar um grupo (CP) no meio — a não ser que o próprio grupo seja maior
+ * que a página inteira, caso em que é dividido em partes marcadas "(cont.)".
+ */
+function paginarFotos(grupos: FotoGrupo[], maxPorPagina: number): FotoGrupo[][] {
+  const paginas: FotoGrupo[][] = [];
+  let atual: FotoGrupo[] = [];
+  let usados = 0;
+  for (const g of grupos) {
+    if (g.fotos.length <= maxPorPagina) {
+      if (usados + g.fotos.length > maxPorPagina && atual.length > 0) {
+        paginas.push(atual);
+        atual = [];
+        usados = 0;
+      }
+      atual.push(g);
+      usados += g.fotos.length;
+      continue;
+    }
+    // Grupo maior que uma página inteira — divide em partes.
+    let restante = g.fotos;
+    let parteNum = 1;
+    while (restante.length > 0) {
+      const espaco = maxPorPagina - usados;
+      if (espaco <= 0) {
+        paginas.push(atual);
+        atual = [];
+        usados = 0;
+        continue;
+      }
+      const parte = restante.slice(0, espaco);
+      restante = restante.slice(espaco);
+      atual.push({ titulo: parteNum === 1 ? g.titulo : `${g.titulo} (cont.)`, fotos: parte });
+      usados += parte.length;
+      parteNum++;
+    }
+  }
+  if (atual.length > 0) paginas.push(atual);
+  return paginas;
+}
+
+function FotosPage({
+  sample, grupos, page, total,
+}: { sample: PLTSample; grupos: FotoGrupo[]; page: number; total: number }) {
+  return (
+    <ReportPage sample={sample as unknown as ReportSample} page={page} total={total} title={PLT_TITLE} norms={PLT_NORMS}>
+      <div className="border border-[#141414] text-[10px] text-[#141414]">
+        <div className="rounded-t border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-center text-[9.5px] font-bold uppercase text-[#141414]">
+          Registro Fotográfico
+        </div>
+        <div className="p-1.5 space-y-2">
+          {grupos.map((g, i) => (
+            <div key={i}>
+              <div className="mb-0.5 text-[8.5px] font-semibold uppercase text-[#141414]/80">{g.titulo}</div>
+              <div className="grid grid-cols-4 gap-1">
+                {g.fotos.map((p) => (
+                  <figure key={p.id} className="overflow-hidden rounded border border-[#141414]/40 bg-white">
+                    <div className="aspect-[3/4] flex items-center justify-center overflow-hidden">
+                      <img src={p.url || p.dataUrl} alt={`Registro fotográfico — ${g.titulo}`} crossOrigin="anonymous" className="h-full w-full object-cover" />
+                    </div>
+                    {p.caption && (
+                      <figcaption className="border-t border-[#141414]/30 px-1 py-0.5 text-center text-[7.5px] text-[#141414]/80">
+                        {p.caption}
+                      </figcaption>
+                    )}
+                  </figure>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </ReportPage>
+  );
+}
+
+function NotasPage({ sample, page, total }: { sample: PLTSample; page: number; total: number }) {
+  return (
+    <ReportPage sample={sample as unknown as ReportSample} page={page} total={total} title={PLT_TITLE} norms={PLT_NORMS}>
+      <div className="border border-[#141414] text-[10px] text-[#141414]">
+        <div className="rounded-t border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-center text-[9.5px] font-bold uppercase text-[#141414]">
+          Notas
+        </div>
+        <div className="space-y-0.5 p-2 text-[8px] leading-tight">
+          <div>¹ {sample.equipment ? `Ensaio realizado em ${sample.equipment}.` : "Ensaio realizado em equipamento elétrico."}</div>
+          <div>² Fator K = Bieniawski, Z.T. The Point-Load Test in Geotechnical Practice, Engineering Geology (9) 1-11.</div>
+          <div>³ Estimativa da Resistência à Compressão Simples (RCU).</div>
+          <div>d = diametral; a = axial; b = bloco; i = amostra irregular; ⟂ = perpendicular ao plano de fraqueza; // = paralelo ao plano de fraqueza.</div>
+          <div>Is = Índice de Resistência à Carga Pontual Não Corrigido. Fator F = Fator de Correção de Forma. Fator K = Fator de Conversão Genérico de Índice para Resistência.</div>
+          {sample.determinacoes.some((d) => d.excluidaDaMedia) && <div>* Amostra não considerada na média — ruptura sem validade.</div>}
+          <div className="pt-1 text-[#141414]/70">
+            K = 0,1808 × D[mm] + 13,824 — ajuste linear sobre a tabela de Bieniawski:{" "}
+            {TABELA_BIENIAWSKI_K.map((t) => `${t.coreSizeMm}mm→${t.k}`).join(" · ")}.
+          </div>
+        </div>
+      </div>
+    </ReportPage>
+  );
+}
+
+/**
+ * Laudo com paginação dinâmica: página 1 (identificação + resultado +
+ * médias) nunca leva fotos nem notas — antes, tudo espremido numa página só
+ * fazia o rodapé (assinatura) estourar pra fora da folha quando havia
+ * várias fotos, cortando inclusive a seção de Notas. Fotos ganham página(s)
+ * própria(s) (agrupadas por CP, na ordem do resultado) e Notas sempre fecha
+ * numa página dedicada — nunca é cortada.
+ */
 function PLTReportPage({
   sample,
   photos: photosRecebidas = [],
@@ -109,124 +247,96 @@ function PLTReportPage({
   const linhas = sample.determinacoes.map(calcularLinha);
   const medias = calcularMedias(sample.determinacoes);
 
+  const gruposFotos = agruparFotosPorCp(sample.determinacoes, photos);
+  const paginasFotos = paginarFotos(gruposFotos, MAX_FOTOS_POR_PAGINA);
+  const total = 1 /* resultado + médias */ + paginasFotos.length + 1 /* notas */;
+
   return (
-    <ReportPage
-      sample={sample as unknown as ReportSample}
-      page={1}
-      total={1}
-      title="ÍNDICE DE RESISTÊNCIA À CARGA PONTUAL DE ROCHA — POINT LOAD STRENGTH INDEX"
-      norms={[{ text: "ASTM D5731-16 / ISRM - Suggested method for determining point load strength (2016)" }]}
-    >
-      <div className="space-y-2 text-[10px] text-[#141414]">
-        {sample.description && (
-          <div className="border border-[#141414] px-2 py-1">
-            <span className="font-semibold uppercase">Geologia: </span>{sample.description}
-          </div>
-        )}
+    <>
+      <ReportPage
+        sample={sample as unknown as ReportSample}
+        page={1}
+        total={total}
+        title={PLT_TITLE}
+        norms={PLT_NORMS}
+      >
+        <div className="space-y-2 text-[10px] text-[#141414]">
+          {sample.description && (
+            <div className="border border-[#141414] px-2 py-1">
+              <span className="font-semibold uppercase">Geologia: </span>{sample.description}
+            </div>
+          )}
 
-        <div className="border border-[#141414]">
-          <div className="rounded-t border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-[9.5px] font-bold uppercase text-[#141414]">
-            Resultado do Ensaio
-          </div>
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="bg-[#141414]/5 text-[8px] font-semibold">
-                <td className="border border-[#141414] px-1 py-0.5 text-center">Nº CP</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">Tipo</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">Altura w<br />[mm]</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">Diâmetro D<br />[mm]</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">Carga P<br />[kN]</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">De<br />[mm]</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">Is<br />[MPa]</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">Fator F</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">Fator K</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">Is(50)<br />[MPa]</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">Res. Compressão<br />[MPa]</td>
-              </tr>
-            </thead>
-            <tbody>
-              {linhas.map((r) => (
-                <tr key={r.det.id} className={r.det.excluidaDaMedia ? "text-[#141414]/50" : ""}>
-                  <td className="border border-[#141414] px-1 py-0.5 text-center">{r.det.numero}{r.det.excluidaDaMedia ? "*" : ""}</td>
-                  <td className="border border-[#141414] px-1 py-0.5 text-center">{r.det.tipo}{ORIENTACAO_ABREV[r.det.orientacao] ? ` ${ORIENTACAO_ABREV[r.det.orientacao]}` : ""}</td>
-                  <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(r.det.alturaMm, 2)}</td>
-                  <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(r.det.diametroMm, 2)}</td>
-                  <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(r.det.cargaKn, 3)}</td>
-                  <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(r.de, 2)}</td>
-                  <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(r.is, 2)}</td>
-                  <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(r.fatorF, 3)}</td>
-                  <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(r.fatorK, 2)}</td>
-                  <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(r.is50, 2)}</td>
-                  <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(r.resistencia, 1)}</td>
+          <div className="border border-[#141414]">
+            <div className="rounded-t border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-[9.5px] font-bold uppercase text-[#141414]">
+              Resultado do Ensaio
+            </div>
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-[#141414]/5 text-[8px] font-semibold">
+                  <td className="border border-[#141414] px-1 py-0.5 text-center">Nº CP</td>
+                  <td className="border border-[#141414] px-1 py-0.5 text-center">Tipo</td>
+                  <td className="border border-[#141414] px-1 py-0.5 text-center">Altura w<br />[mm]</td>
+                  <td className="border border-[#141414] px-1 py-0.5 text-center">Diâmetro D<br />[mm]</td>
+                  <td className="border border-[#141414] px-1 py-0.5 text-center">Carga P<br />[kN]</td>
+                  <td className="border border-[#141414] px-1 py-0.5 text-center">De<br />[mm]</td>
+                  <td className="border border-[#141414] px-1 py-0.5 text-center">Is<br />[MPa]</td>
+                  <td className="border border-[#141414] px-1 py-0.5 text-center">Fator F</td>
+                  <td className="border border-[#141414] px-1 py-0.5 text-center">Fator K</td>
+                  <td className="border border-[#141414] px-1 py-0.5 text-center">Is(50)<br />[MPa]</td>
+                  <td className="border border-[#141414] px-1 py-0.5 text-center">Res. Compressão<br />[MPa]</td>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="border border-[#141414]">
-          <div className="rounded-t border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-center text-[9.5px] font-bold uppercase text-[#141414]">
-            Médias
+              </thead>
+              <tbody>
+                {linhas.map((r) => (
+                  <tr key={r.det.id} className={r.det.excluidaDaMedia ? "text-[#141414]/50" : ""}>
+                    <td className="border border-[#141414] px-1 py-0.5 text-center">{r.det.numero}{r.det.excluidaDaMedia ? "*" : ""}</td>
+                    <td className="border border-[#141414] px-1 py-0.5 text-center">{r.det.tipo}{ORIENTACAO_ABREV[r.det.orientacao] ? ` ${ORIENTACAO_ABREV[r.det.orientacao]}` : ""}</td>
+                    <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(r.det.alturaMm, 2)}</td>
+                    <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(r.det.diametroMm, 2)}</td>
+                    <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(r.det.cargaKn, 3)}</td>
+                    <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(r.de, 2)}</td>
+                    <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(r.is, 2)}</td>
+                    <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(r.fatorF, 3)}</td>
+                    <td className="border border-[#141414] px-1 py-0.5 text-center">{fmt(r.fatorK, 2)}</td>
+                    <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(r.is50, 2)}</td>
+                    <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(r.resistencia, 1)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="bg-[#141414]/5 text-[8.5px] font-semibold">
-                <td className="border border-[#141414] px-1 py-0.5 text-center">Is médio [MPa]</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">Is(50) médio [MPa]</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center">Res. Compressão Média [MPa]</td>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(medias.isMedio, 2)}</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(medias.is50Medio, 2)}</td>
-                <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(medias.resistenciaMedia, 1)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
 
-        {photos.length > 0 && (
           <div className="border border-[#141414]">
             <div className="rounded-t border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-center text-[9.5px] font-bold uppercase text-[#141414]">
-              Registro Fotográfico
+              Médias
             </div>
-            <div className="grid grid-cols-4 gap-1 p-1">
-              {photos.map((p) => (
-                <figure key={p.id} className="overflow-hidden rounded border border-[#141414]/40 bg-white">
-                  <div className="aspect-[3/4] flex items-center justify-center overflow-hidden">
-                    <img src={p.url || p.dataUrl} alt="Registro fotográfico" crossOrigin="anonymous" className="h-full w-full object-cover" />
-                  </div>
-                  {p.caption && (
-                    <figcaption className="border-t border-[#141414]/30 px-1 py-0.5 text-center text-[7.5px] text-[#141414]/80">
-                      {p.caption}
-                    </figcaption>
-                  )}
-                </figure>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div className="border border-[#141414]">
-          <div className="rounded-t border-b border-[#141414] bg-[#141414]/10 px-2 py-1 text-center text-[9.5px] font-bold uppercase text-[#141414]">
-            Notas
-          </div>
-          <div className="space-y-0.5 p-2 text-[8px] leading-tight">
-            <div>¹ {sample.equipment ? `Ensaio realizado em ${sample.equipment}.` : "Ensaio realizado em equipamento elétrico."}</div>
-            <div>² Fator K = Bieniawski, Z.T. The Point-Load Test in Geotechnical Practice, Engineering Geology (9) 1-11.</div>
-            <div>³ Estimativa da Resistência à Compressão Simples (RCU).</div>
-            <div>d = diametral; a = axial; b = bloco; i = amostra irregular; ⟂ = perpendicular ao plano de fraqueza; // = paralelo ao plano de fraqueza.</div>
-            <div>Is = Índice de Resistência à Carga Pontual Não Corrigido. Fator F = Fator de Correção de Forma. Fator K = Fator de Conversão Genérico de Índice para Resistência.</div>
-            {sample.determinacoes.some((d) => d.excluidaDaMedia) && <div>* Amostra não considerada na média — ruptura sem validade.</div>}
-            <div className="pt-1 text-[#141414]/70">
-              K = 0,1808 × D[mm] + 13,824 — ajuste linear sobre a tabela de Bieniawski:{" "}
-              {TABELA_BIENIAWSKI_K.map((t) => `${t.coreSizeMm}mm→${t.k}`).join(" · ")}.
-            </div>
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-[#141414]/5 text-[8.5px] font-semibold">
+                  <td className="border border-[#141414] px-1 py-0.5 text-center">Is médio [MPa]</td>
+                  <td className="border border-[#141414] px-1 py-0.5 text-center">Is(50) médio [MPa]</td>
+                  <td className="border border-[#141414] px-1 py-0.5 text-center">Res. Compressão Média [MPa]</td>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(medias.isMedio, 2)}</td>
+                  <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(medias.is50Medio, 2)}</td>
+                  <td className="border border-[#141414] px-1 py-0.5 text-center font-medium">{fmt(medias.resistenciaMedia, 1)}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
-      </div>
-    </ReportPage>
+      </ReportPage>
+
+      {paginasFotos.map((grupos, idx) => (
+        <FotosPage key={idx} sample={sample} grupos={grupos} page={2 + idx} total={total} />
+      ))}
+
+      <NotasPage sample={sample} page={total} total={total} />
+    </>
   );
 }
 
@@ -691,9 +801,7 @@ export function PLTPage() {
           </div>
           <div className="flex-1 min-h-0 overflow-auto bg-[#525659] p-8 flex justify-center">
             <div className="flex flex-col items-center gap-8 shrink-0 pb-12">
-              <div className="w-[210mm] h-[297mm] shadow-2xl bg-white shrink-0 overflow-hidden">
-                <PLTReportPage sample={sample} photos={ctx?.photos ?? []} />
-              </div>
+              <PLTReportPage sample={sample} photos={ctx?.photos ?? []} />
             </div>
           </div>
         </DialogContent>
