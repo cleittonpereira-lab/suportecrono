@@ -56,6 +56,7 @@ export function OsGanttMini({
   equipsProg,
   dataOriginal,
   historicoData,
+  datasEntregaProgramadas,
 }: {
   osNumero: string;
   progs: any[];
@@ -63,10 +64,12 @@ export function OsGanttMini({
   amostrasProg: any[];
   tiposProg: any[];
   equipsProg: any[];
-  /** Data originalmente acordada com o cliente (linha tracejada vermelha) */
+  /** Data originalmente acordada com o cliente (linha vermelha) */
   dataOriginal?: string | null;
-  /** Histórico de reprogramações (linhas tracejadas âmbar) */
+  /** Histórico de reprogramações da data acordada (linhas âmbar, uma por evento — nenhuma some) */
   historicoData?: Array<{ data: string; alteradoPor?: string; alteradoEm?: string }>;
+  /** Datas de entrega programadas no cronograma (linhas amarelas — podem ser várias, passadas ou futuras) */
+  datasEntregaProgramadas?: string[];
 }) {
   const [expandido, setExpandido] = useState(false);
 
@@ -108,6 +111,41 @@ export function OsGanttMini({
 
   const hoje = useMemo(() => startOfDay(new Date()), []);
 
+  // Todos os hooks antes do retorno antecipado abaixo. Este useMemo ficava
+  // depois dele: a primeira renderização (programações ainda carregando, 0
+  // linhas) chamava 6 hooks, a seguinte 7, e o React derrubava a página da OS
+  // inteira ("Rendered more hooks than during the previous render").
+  const reprogramacoesParsed = useMemo(() => {
+    // A 1ª entrada do histórico sempre repete a Data Original (é como ela
+    // nasce, veja atualizarDataAcordada em os-hub.functions.ts) — omitida
+    // aqui pra não desenhar duas linhas sobrepostas na mesma data; a
+    // vermelha (Orig) já representa esse valor.
+    return (historicoData || [])
+      .slice(1)
+      .map((h) => ({
+        date: parseDateSafe(h.data),
+        alteradoPor: h.alteradoPor,
+        alteradoEm: h.alteradoEm,
+      }))
+      .filter((h): h is typeof h & { date: Date } => h.date !== null)
+      .map((h, i) => ({ ...h, idx: i + 1 }));
+  }, [historicoData]);
+
+  const entregasProgramadasParsed = useMemo(() => {
+    const vistos = new Set<string>();
+    const out: Date[] = [];
+    for (const iso of datasEntregaProgramadas || []) {
+      if (vistos.has(iso)) continue;
+      const d = parseDateSafe(iso);
+      if (!d) continue;
+      vistos.add(iso);
+      out.push(d);
+    }
+    return out.sort((a, b) => a.getTime() - b.getTime());
+  }, [datasEntregaProgramadas]);
+
+  const dataOriginalParsed = parseDateSafe(dataOriginal);
+
   const { rangeStart, totalDays } = useMemo(() => {
     let min = hoje;
     let max = addDays(hoje, 14);
@@ -117,10 +155,15 @@ export function OsGanttMini({
       for (const d of starts) if (d < min) min = d;
       for (const d of ends) if (d > max) max = d;
     }
+    const outrasDatas = [dataOriginalParsed, ...reprogramacoesParsed.map((r) => r.date), ...entregasProgramadasParsed].filter(Boolean) as Date[];
+    for (const d of outrasDatas) {
+      if (d < min) min = d;
+      if (d > max) max = d;
+    }
     const start = addDays(min, -2);
     const end = addDays(max, 3);
     return { rangeStart: start, totalDays: Math.max(1, differenceInCalendarDays(end, start)) };
-  }, [rows, hoje]);
+  }, [rows, hoje, dataOriginalParsed, reprogramacoesParsed, entregasProgramadasParsed]);
 
   const diasMarcadores = useMemo(() => {
     const passo = expandido ? 1 : Math.max(1, Math.round(totalDays / 12));
@@ -131,21 +174,6 @@ export function OsGanttMini({
 
   const equipamentosUnicos = useMemo(() => Array.from(new Set(rows.map((r) => r.equipamento))), [rows]);
 
-  // Todos os hooks antes do retorno antecipado abaixo. Este useMemo ficava
-  // depois dele: a primeira renderização (programações ainda carregando, 0
-  // linhas) chamava 6 hooks, a seguinte 7, e o React derrubava a página da OS
-  // inteira ("Rendered more hooks than during the previous render").
-  const reprogramacoesParsed = useMemo(() => {
-    return (historicoData || [])
-      .map((h, idx) => ({
-        idx: idx + 1,
-        date: parseDateSafe(h.data),
-        alteradoPor: h.alteradoPor,
-        alteradoEm: h.alteradoEm,
-      }))
-      .filter((h): h is typeof h & { date: Date } => h.date !== null);
-  }, [historicoData]);
-
   if (rows.length === 0) {
     return <div className="text-sm text-muted-foreground py-2">Nenhum item de programação (bancada) encontrado pra essa OS.</div>;
   }
@@ -155,7 +183,6 @@ export function OsGanttMini({
   const unit = expandido ? "px" : "%";
   const hojeOffset = differenceInCalendarDays(hoje, rangeStart);
 
-  const dataOriginalParsed = parseDateSafe(dataOriginal);
   const dataOriginalOffset = dataOriginalParsed ? differenceInCalendarDays(dataOriginalParsed, rangeStart) : null;
 
   return (
@@ -203,6 +230,19 @@ export function OsGanttMini({
                   </div>
                 );
               })}
+
+              {/* Marcadores de Datas de Entrega Programadas no cabeçalho (Amarelo) */}
+              {entregasProgramadasParsed.map((d, i) => {
+                const off = differenceInCalendarDays(d, rangeStart);
+                if (off < 0 || off > totalDays) return null;
+                return (
+                  <div key={i} className="absolute top-0 border-l-2 border-yellow-500 h-full z-20" style={{ left: `${pct(off)}${unit}` }}>
+                    <span className="absolute -top-3.5 -translate-x-1/2 bg-yellow-500 text-yellow-950 text-[9px] px-1 rounded font-bold whitespace-nowrap shadow-sm">
+                      Entrega: {fmt(d)}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -239,6 +279,19 @@ export function OsGanttMini({
                         key={rep.idx}
                         className="absolute top-0 bottom-0 w-px bg-amber-500/70 z-10 pointer-events-none"
                         style={{ left: `${pct(repOffset)}${unit}` }}
+                      />
+                    );
+                  })}
+
+                  {/* Linhas verticais de Datas de Entrega Programadas (Amarelo) */}
+                  {entregasProgramadasParsed.map((d, i) => {
+                    const off = differenceInCalendarDays(d, rangeStart);
+                    if (off < 0 || off > totalDays) return null;
+                    return (
+                      <div
+                        key={i}
+                        className="absolute top-0 bottom-0 w-px bg-yellow-500/70 z-10 pointer-events-none"
+                        style={{ left: `${pct(off)}${unit}` }}
                       />
                     );
                   })}
@@ -292,8 +345,9 @@ export function OsGanttMini({
         <span className="flex items-center gap-1"><span className="inline-block w-3 h-2 rounded border-[1.5px] border-solid border-foreground/40 bg-muted" /> Real</span>
         <span className="flex items-center gap-1"><span className="inline-block w-3 h-2 rounded border-[1.5px] border-dashed border-foreground/40" /> Previsto</span>
         <span className="flex items-center gap-1"><span className="inline-block w-0.5 h-3 bg-primary" /> Hoje</span>
-        <span className="flex items-center gap-1"><span className="inline-block w-px h-3 bg-rose-500" /> <span className="text-rose-600">Data Original</span></span>
-        <span className="flex items-center gap-1"><span className="inline-block w-px h-3 bg-amber-500" /> <span className="text-amber-600">Reprogramações</span></span>
+        <span className="flex items-center gap-1"><span className="inline-block w-px h-3 bg-rose-500" /> <span className="text-rose-600">Data acordada original</span></span>
+        <span className="flex items-center gap-1"><span className="inline-block w-px h-3 bg-amber-500" /> <span className="text-amber-600">Reprogramações da data acordada</span></span>
+        <span className="flex items-center gap-1"><span className="inline-block w-px h-3 bg-yellow-500" /> <span className="text-yellow-700 dark:text-yellow-500">Entrega programada (cronograma)</span></span>
         <span className="text-rose-600">■ Atraso</span>
         <span className="text-emerald-600">■ Adiantado</span>
         {equipamentosUnicos.length > 0 && (

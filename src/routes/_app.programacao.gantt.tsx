@@ -36,6 +36,9 @@ import {
   isBusinessDayIso,
 } from "@/lib/business-days";
 import { criarPendenciaDigitacao } from "@/lib/lab-pendencias.functions";
+import { useSchedule } from "@/hooks/use-schedule";
+import { useEntregues } from "@/hooks/use-entregues";
+import { normOs, parseBrDate } from "@/lib/schedule-utils";
 import { formatDurReal, durRealDays } from "@/lib/duracao-real";
 import {
   SHEET_AMOSTRAS,
@@ -140,6 +143,27 @@ function GanttPage() {
     queryFn: async () =>
       (await listRows({ data: { sheet: SHEET_PROGS } })).map(parseProgramacaoRow),
   });
+
+  // Datas de entrega do cronograma (cronograma + OS entregues), pra marcar
+  // uma linha amarela na timeline de cada OS — pedido do usuário pra ver a
+  // entrega programada junto da execução, não só o prazo do ensaio (vermelho).
+  const { data: scheduleData } = useSchedule();
+  const { data: entreguesData } = useEntregues();
+  const entregaPorOsIso = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    const add = (osRaw: string, dataBr: string) => {
+      const os = normOs(osRaw || "");
+      if (!os) return;
+      const d = parseBrDate(dataBr);
+      if (!d) return;
+      const set = map.get(os) ?? new Set<string>();
+      set.add(toIso(d));
+      map.set(os, set);
+    };
+    for (const r of scheduleData?.rows ?? []) add(r.os, r.dataEntrega);
+    for (const r of entreguesData?.rows ?? []) add(r.os, r.dataProgramada);
+    return map;
+  }, [scheduleData, entreguesData]);
 
   const tipoById = useMemo(() => new Map(tipos.map((t) => [t.id, t])), [tipos]);
   const equipById = useMemo(() => new Map(equipamentos.map((e) => [e.id, e])), [equipamentos]);
@@ -1180,6 +1204,20 @@ function GanttPage() {
                       prazoLeft = idxDay * dayW + dayW / 2;
                     }
                   }
+                  // Marcadores de entrega programada no cronograma (linha(s) amarela(s)) —
+                  // uma barra simples por OS: cada linha do Gantt já é uma OS/ensaio só.
+                  const entregaLefts: { left: number; iso: string }[] = [];
+                  const osIsos = a?.os_numero ? entregaPorOsIso.get(normOs(a.os_numero)) : undefined;
+                  if (osIsos) {
+                    const first = days[0];
+                    const last = days[days.length - 1];
+                    for (const iso of osIsos) {
+                      const dDate = new Date(iso + "T00:00:00");
+                      if (isNaN(dDate.getTime()) || dDate < first || dDate > last) continue;
+                      const idxDay = Math.round((dDate.getTime() - first.getTime()) / 86400000);
+                      entregaLefts.push({ left: idxDay * dayW + dayW / 2, iso });
+                    }
+                  }
                   return (
                     <div
                       key={p.id}
@@ -1249,6 +1287,19 @@ function GanttPage() {
                             </span>
                           </div>
                         )}
+                        {entregaLefts.map(({ left, iso }) => (
+                          <div
+                            key={iso}
+                            className="absolute top-0 bottom-0 pointer-events-none"
+                            style={{ left }}
+                            title={`Entrega programada (cronograma): ${formatBr(iso)}`}
+                          >
+                            <div className="h-full w-px bg-yellow-500" />
+                            <span className="absolute -bottom-0.5 left-1 px-1 rounded-sm text-[9px] font-bold text-yellow-950 bg-yellow-500 whitespace-nowrap">
+                              Entrega
+                            </span>
+                          </div>
+                        ))}
                         <Bar
                           days={days}
                           dayW={dayW}

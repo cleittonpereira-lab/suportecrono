@@ -29,6 +29,7 @@ import {
   ClipboardCheck,
   PlayCircle,
   Hourglass,
+  ArrowRight,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -61,7 +62,7 @@ import { useCadastroByOs } from "@/hooks/use-cadastro-by-os";
 import { useOsGroups, abrirEnsaioNaCentral, type EnsaioItemOS } from "@/features/lab/hooks/use-os-groups";
 import { ETAPAS_COM_BANCADA, corEtapa, rotuloEtapa } from "@/lib/etapa-laudo";
 import { ENSAIO_LABEL } from "@/features/lab/types";
-import { normOs, splitSetores, splitEscopo } from "@/lib/schedule-utils";
+import { normOs, splitSetores, splitEscopo, parseBrDate } from "@/lib/schedule-utils";
 import { useSchedule } from "@/hooks/use-schedule";
 import { listEmissoes } from "@/lib/emissoes.functions";
 import { fetchSharedChegadaState } from "@/lib/chegada-amostras.functions";
@@ -168,6 +169,19 @@ function OsEspecialHubPage() {
 
   const { data: scheduleData } = useSchedule();
   const { passadas: entregasPassadas, futuras: entregasFuturas, isLoading: entregasLoading } = useOsEntregas({ os: osNumero });
+
+  // Datas de entrega do cronograma (dd/mm/yyyy → ISO), pra desenhar como
+  // linhas amarelas no Gantt da OS — distinto da "Data Acordada com Cliente"
+  // (vermelha/âmbar abaixo), que é um campo separado, tratado à mão.
+  const datasEntregaProgramadas = useMemo(() => {
+    const isos = new Set<string>();
+    for (const item of [...entregasPassadas, ...entregasFuturas]) {
+      if (item.farol === "indef") continue;
+      const d = parseBrDate(item.dataProgramada);
+      if (d) isos.add(format(d, "yyyy-MM-dd"));
+    }
+    return Array.from(isos);
+  }, [entregasPassadas, entregasFuturas]);
 
   const { setoresUnificados, escoposUnificados } = useMemo(() => {
     const setores = new Set<string>();
@@ -344,12 +358,19 @@ function OsEspecialHubPage() {
             <SectionCard icon={CalendarClock} title="Data Acordada com Cliente" right={<Button size="sm" variant="outline" onClick={() => setDateDialogOpen(true)}>Atualizar</Button>}>
               <div className="space-y-3">
                 <div>
-                  <div className="text-lg font-semibold">
-                    {hub?.dataAcordadaAtual ? format(parseLocalDate(hub.dataAcordadaAtual), "dd/MM/yyyy", { locale: ptBR }) : "Não definida"}
-                  </div>
-                  {hub?.dataAcordadaOriginal && hub.dataAcordadaOriginal !== hub.dataAcordadaAtual && (
-                    <div className="text-[11px] text-muted-foreground">
-                      Data original: {format(parseLocalDate(hub.dataAcordadaOriginal), "dd/MM/yyyy", { locale: ptBR })}
+                  {hub?.dataAcordadaOriginal && hub.dataAcordadaOriginal !== hub.dataAcordadaAtual ? (
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-sm text-muted-foreground line-through decoration-2">
+                        {format(parseLocalDate(hub.dataAcordadaOriginal), "dd/MM/yyyy", { locale: ptBR })}
+                      </span>
+                      <ArrowRight className="h-4 w-4 text-amber-600 shrink-0" />
+                      <span className="text-lg font-semibold">
+                        {hub?.dataAcordadaAtual ? format(parseLocalDate(hub.dataAcordadaAtual), "dd/MM/yyyy", { locale: ptBR }) : "Não definida"}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="text-lg font-semibold">
+                      {hub?.dataAcordadaAtual ? format(parseLocalDate(hub.dataAcordadaAtual), "dd/MM/yyyy", { locale: ptBR }) : "Não definida"}
                     </div>
                   )}
                 </div>
@@ -446,6 +467,7 @@ function OsEspecialHubPage() {
               equipsProg={equipsProg}
               dataOriginal={hub?.dataAcordadaOriginal}
               historicoData={hub?.historicoData}
+              datasEntregaProgramadas={datasEntregaProgramadas}
             />
           </SectionCard>
 

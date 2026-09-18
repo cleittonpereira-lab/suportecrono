@@ -684,7 +684,10 @@ function Situacao({ p }: { p: LinhaPrazo }) {
 /* ------------------------------ Fase 2 ------------------------------ */
 
 const DIA_DA_SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+const MES_ABREV = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 const rotuloDia = (iso: string) => `${DIA_DA_SEMANA[new Date(`${iso}T12:00:00`).getDay()]} ${iso.slice(8, 10)}`;
+const rotuloMesDoDia = (iso: string) => MES_ABREV[new Date(`${iso}T12:00:00`).getMonth()];
+const rotuloDiaComMes = (iso: string) => `${rotuloDia(iso)} ${rotuloMesDoDia(iso)}`;
 const COR_DO_DIA: Record<EstadoDia, string> = {
   livre: "bg-muted",
   ocupado: "bg-primary/40",
@@ -714,6 +717,16 @@ function GradeOcupacao({
               aria-label="Ocupação dos equipamentos por dia útil"
             >
               <span />
+              {bancada.dias.map((d, i) => {
+                const mostrarMes = i === 0 || rotuloMesDoDia(d) !== rotuloMesDoDia(bancada.dias[i - 1]);
+                return (
+                  <span key={d} className="text-center text-[9px] font-semibold uppercase text-foreground/60">
+                    {mostrarMes ? rotuloMesDoDia(d) : ""}
+                  </span>
+                );
+              })}
+              <span />
+              <span />
               {bancada.dias.map((d, i) => (
                 <span key={d} className={`text-center text-[10px] ${i === 0 ? "font-semibold text-primary" : "text-muted-foreground"}`}>
                   {rotuloDia(d)}
@@ -736,7 +749,7 @@ function GradeOcupacao({
                       type="button"
                       onClick={() => onEquipamento(q.id)}
                       className={`h-5 rounded-sm ${COR_DO_DIA[s]} hover:ring-2 hover:ring-primary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary`}
-                      title={`${rotuloDia(bancada.dias[i])}: ${s === "livre" ? "livre" : s === "ocupado" ? "ocupado" : "ensaio além do fim previsto"}`}
+                      title={`${rotuloDiaComMes(bancada.dias[i])}: ${s === "livre" ? "livre" : s === "ocupado" ? "ocupado" : "ensaio além do fim previsto"}`}
                     />
                   ))}
                   <button
@@ -802,10 +815,13 @@ function ListaLongos({ longos }: { longos: EnsaioLongo[] }) {
   );
 }
 
-function TabelaTecnicos({ tecnicos, onTecnico }: { tecnicos: CargaTecnico[]; onTecnico: (nome: string) => void }) {
+function TabelaTecnicos({
+  tecnicos, producao, onTecnico,
+}: { tecnicos: CargaTecnico[]; producao: Producao | null; onTecnico: (nome: string) => void }) {
   if (tecnicos.length === 0) {
     return <p className="px-6 pb-6 text-sm text-muted-foreground">Nenhum ensaio em execução ou programado para os próximos dias.</p>;
   }
+  const digitadoPorNome = new Map((producao?.digitadores ?? []).map((p) => [p.nome, p.total]));
   return (
     <div className="overflow-x-auto">
       <Table>
@@ -815,19 +831,26 @@ function TabelaTecnicos({ tecnicos, onTecnico }: { tecnicos: CargaTecnico[]; onT
             <TableHead className="text-right">Em execução</TableHead>
             <TableHead className="text-right">Programados</TableHead>
             <TableHead className="text-right">Além do previsto</TableHead>
+            <TableHead className="text-right">Laudos digitados ({producao?.dias ?? 7}d)</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {tecnicos.map((t) => (
-            <TableRow key={t.nome} className="cursor-pointer hover:bg-muted/50" onClick={() => onTecnico(t.nome)}>
-              <TableCell className={`text-xs ${t.nome === "Sem técnico" ? "italic text-muted-foreground" : "font-medium"}`}>{t.nome}</TableCell>
-              <TableCell className="text-right text-xs tabular-nums">{t.emExecucao}</TableCell>
-              <TableCell className="text-right text-xs tabular-nums">{t.programados}</TableCell>
-              <TableCell className={`text-right text-xs tabular-nums ${t.alemDoPrevisto ? "font-medium text-rose-600 dark:text-rose-400" : "text-muted-foreground"}`}>
-                {t.alemDoPrevisto}
-              </TableCell>
-            </TableRow>
-          ))}
+          {tecnicos.map((t) => {
+            const digitados = digitadoPorNome.get(t.nome) ?? 0;
+            return (
+              <TableRow key={t.nome} className="cursor-pointer hover:bg-muted/50" onClick={() => onTecnico(t.nome)}>
+                <TableCell className={`text-xs ${t.nome === "Sem técnico" ? "italic text-muted-foreground" : "font-medium"}`}>{t.nome}</TableCell>
+                <TableCell className="text-right text-xs tabular-nums">{t.emExecucao}</TableCell>
+                <TableCell className="text-right text-xs tabular-nums">{t.programados}</TableCell>
+                <TableCell className={`text-right text-xs tabular-nums ${t.alemDoPrevisto ? "font-medium text-rose-600 dark:text-rose-400" : "text-muted-foreground"}`}>
+                  {t.alemDoPrevisto}
+                </TableCell>
+                <TableCell className={`text-right text-xs tabular-nums ${digitados ? "font-medium text-foreground" : "text-muted-foreground"}`}>
+                  {digitados}
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
     </div>
@@ -1359,12 +1382,12 @@ export function PainelCoordenador() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm">Técnicos · carga de trabalho</CardTitle>
                 <p className="text-[11px] text-muted-foreground">
-                  Só o que está na Programação (Gantt) — quem foi <em>escalado</em>. Quem de fato executou/registrou
-                  em campo está em "Produção", abaixo.
+                  As 3 primeiras colunas são só a Programação (Gantt) — quem foi <em>escalado</em>. A última soma os
+                  laudos digitados (também pesa na carga horária); detalhe de quem executou em campo está em "Produção", abaixo.
                 </p>
               </CardHeader>
               <CardContent className="p-0">
-                <TabelaTecnicos tecnicos={bancadaJanela.tecnicos} onTecnico={(nome) => setDetalhe({ tipo: "tecnico", nome })} />
+                <TabelaTecnicos tecnicos={bancadaJanela.tecnicos} producao={producao} onTecnico={(nome) => setDetalhe({ tipo: "tecnico", nome })} />
               </CardContent>
             </Card>
             <Card>
