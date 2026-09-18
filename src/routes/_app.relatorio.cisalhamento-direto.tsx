@@ -172,7 +172,8 @@ import { labStore } from "@/features/lab/store";
 import { SampleEditDialog } from "@/components/SampleEditDialog";
 import { AneisManagerDialog } from "@/components/AneisManagerDialog";
 import { useAuth } from "@/hooks/use-auth";
-import { podeVerificar } from "@/lib/papeis";
+import { podeAjustarCurvas, podeVerificar } from "@/lib/papeis";
+import { AjusteCurvasDialog } from "@/features/cisalhamento-direto/components/AjusteCurvasDialog";
 import { parseGanttSampleData } from "@/lib/sample-parser";
 
 export function CDPage() {
@@ -1738,6 +1739,18 @@ export function CDPage() {
             {/* Aba 3: Cisalhamento */}
             <TabsContent value="cisalhamento" className="m-0 space-y-4">
               <CDCpSelector specimens={sortedSpecimens} selectedId={selectedCpId} onSelect={setSelectedCpId} />
+              {/* Ajuste/filtragem de curvas: só admin e gestor (lib/papeis.ts). */}
+              {podeAjustarCurvas({ role }) && (
+                <div className="flex justify-end">
+                  <AjusteCurvasDialog
+                    sample={sample}
+                    specimens={sortedSpecimens}
+                    selecionadoId={selectedCpId}
+                    autor={{ id: user?.id, nome: displayName }}
+                    onGravar={(cpId, patch) => updateSpecimen(cpId, patch)}
+                  />
+                </div>
+              )}
               <div className="grid gap-4 lg:grid-cols-2">
                 <Card>
                   <CardHeader className="py-3">

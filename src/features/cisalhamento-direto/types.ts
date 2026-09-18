@@ -1,3 +1,5 @@
+import type { RegistroDeAjuste, VariavelAjustavel } from "@/lib/ajuste-curvas";
+
 export interface MoistureCapsule {
   tipo?: string;
   numero?: string;
@@ -104,6 +106,13 @@ export interface CDSpecimen {
     consolidationCount: number;
     shearCount: number;
   };
+  /**
+   * Curvas filtradas/ajustadas neste CP, por variável (só admin e gestor).
+   * Guarda o dado medido antes do primeiro ajuste, o método e quem aplicou —
+   * ajustar muda o pico e, com ele, φ' e c, então tem de ser reversível e
+   * rastreável. Ver `lib/ajuste-curvas.ts`.
+   */
+  ajustesDeCurva?: Partial<Record<VariavelAjustavel, RegistroDeAjuste>>;
 }
 
 export interface CDSpecimenResults {

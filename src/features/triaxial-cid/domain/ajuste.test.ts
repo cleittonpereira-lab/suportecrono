@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ADAPTADOR_TENSAO, coeficientesDaTensao, forcaDeSigmaD } from "./ajuste";
+import { ADAPTADOR_POROPRESSAO, ADAPTADOR_TENSAO, ADAPTADOR_VARIACAO_VOLUMETRICA, coeficientesDaTensao, forcaDeSigmaD } from "./ajuste";
 import { processSpecimen } from "./calc";
 import type { ShearReading, TriaxialSample, TriaxialSpecimen } from "../types";
 
@@ -140,5 +140,100 @@ describe("a cascata chega na ruptura", () => {
     );
     expect(depois.failure!.q).toBeGreaterThan(antes.failure!.q);
     expect(depois.failure!.q / antes.failure!.q).toBeCloseTo(1.1, 3);
+  });
+});
+
+describe("adaptador de poropressão (CIU)", () => {
+  it("a série mostra a contra-pressão quando a linha não traz uPore", () => {
+    const cp = cpCom();
+    const serie = ADAPTADOR_POROPRESSAO.serie(cp, AMOSTRA);
+    serie.forEach((p) => expect(p.y).toBe(300)); // backPressure
+  });
+
+  it("aplicar grava uPore explícito, sem mudar o valor efetivo", () => {
+    const cp = cpCom();
+    const alvo = ADAPTADOR_POROPRESSAO.serie(cp, AMOSTRA).map((p) => p.y); // devolve a própria curva
+    const novas = ADAPTADOR_POROPRESSAO.aplicar(cp, AMOSTRA, alvo);
+    novas.forEach((r) => expect(r.uPore).toBe(300));
+  });
+
+  it("restaurar volta ao estado medido (implícito onde não havia uPore)", () => {
+    const cp = cpCom({ shear: LEITURAS.map((r, i) => (i === 2 ? { ...r, uPore: 15 } : r)) });
+    const originais = ADAPTADOR_POROPRESSAO.originais(cp);
+    expect(originais[2]).toBe(15);
+    expect(originais[0]).toBe(300);
+    const ajustadas = ADAPTADOR_POROPRESSAO.aplicar(cp, AMOSTRA, originais.map((v) => v * 2));
+    const voltou = ADAPTADOR_POROPRESSAO.restaurar({ ...cp, shear: ajustadas }, originais);
+    expect(voltou[2].uPore).toBe(15);
+    expect(voltou[0].uPore).toBe(300);
+  });
+
+  it("valor não numérico deixa a leitura intacta", () => {
+    const cp = cpCom();
+    const alvo = ADAPTADOR_POROPRESSAO.serie(cp, AMOSTRA).map((p) => p.y);
+    alvo[3] = NaN;
+    const novas = ADAPTADOR_POROPRESSAO.aplicar(cp, AMOSTRA, alvo);
+    expect(novas[3]).toEqual(LEITURAS[3]);
+  });
+});
+
+describe("adaptador de variação volumétrica (CID/UU)", () => {
+  it("a série é a própria dvPct", () => {
+    const cp = cpCom();
+    const serie = ADAPTADOR_VARIACAO_VOLUMETRICA.serie(cp, AMOSTRA);
+    serie.forEach((p, i) => expect(p.y).toBe(LEITURAS[i].dvPct));
+  });
+
+  it("aplicar sem dVcm3 só muda dvPct", () => {
+    const cp = cpCom();
+    const alvo = LEITURAS.map((r) => r.dvPct * 1.5);
+    const novas = ADAPTADOR_VARIACAO_VOLUMETRICA.aplicar(cp, AMOSTRA, alvo);
+    novas.forEach((r, i) => {
+      expect(r.dvPct).toBeCloseTo(alvo[i], 9);
+      expect(r.dVcm3).toBeUndefined();
+    });
+  });
+
+  // Vc = V0 − dVcons = π·(D0/20)²·(H0/10) − dVcons = π·2,5²·10 − 2,5 (mesma conta de `volumeConsolidado`).
+  const VC = (Math.PI * 2.5 ** 2) * 10 - 2.5;
+
+  it("linha que guarda dVcm3 mantém dVcm3 em par com dvPct", () => {
+    const cp = cpCom({ shear: LEITURAS.map((r) => ({ ...r, dVcm3: (r.dvPct / 100) * VC })) });
+    const alvo = LEITURAS.map((r) => r.dvPct * 1.2);
+    const novas = ADAPTADOR_VARIACAO_VOLUMETRICA.aplicar(cp, AMOSTRA, alvo);
+    novas.forEach((r, i) => {
+      expect(r.dvPct).toBeCloseTo(alvo[i], 9);
+      expect(r.dVcm3).toBeDefined();
+      expect((r.dVcm3! / VC) * 100).toBeCloseTo(alvo[i], 9);
+    });
+  });
+
+  it("restaurar devolve exatamente dvPct e dVcm3 medidos", () => {
+    const cp = cpCom({ shear: LEITURAS.map((r) => ({ ...r, dVcm3: (r.dvPct / 100) * VC })) });
+    const originais = ADAPTADOR_VARIACAO_VOLUMETRICA.originais(cp);
+    const ajustadas = ADAPTADOR_VARIACAO_VOLUMETRICA.aplicar(cp, AMOSTRA, LEITURAS.map((r) => r.dvPct * 2));
+    const voltou = ADAPTADOR_VARIACAO_VOLUMETRICA.restaurar({ ...cp, shear: ajustadas }, originais);
+    voltou.forEach((r, i) => {
+      expect(r.dvPct).toBeCloseTo(LEITURAS[i].dvPct, 9);
+      expect(r.dVcm3).toBeCloseTo(cp.shear[i].dVcm3!, 9);
+    });
+  });
+
+  it("mudar εv depois de ajustar a tensão desatualiza a σd da força já gravada", () => {
+    const cp = cpCom();
+    const sigmaAntes = ADAPTADOR_TENSAO.serie(cp, AMOSTRA).map((p) => p.y);
+    // 1) Ajusta a tensão desviadora primeiro (grava força para a própria curva).
+    const comTensaoAjustada = { ...cp, shear: ADAPTADOR_TENSAO.aplicar(cp, AMOSTRA, sigmaAntes) };
+    // 2) Ajusta εv por cima — muda a área corrigida usada pelo processShear.
+    const novoEv = LEITURAS.map((r) => r.dvPct + 0.3);
+    const comEvAjustado = {
+      ...comTensaoAjustada,
+      shear: ADAPTADOR_VARIACAO_VOLUMETRICA.aplicar(comTensaoAjustada, AMOSTRA, novoEv),
+    };
+    // A σd que a força gravada produz AGORA não é mais a curva original —
+    // exatamente o motivo do aviso "reaplique o ajuste de tensão desviadora".
+    const sigmaDepois = ADAPTADOR_TENSAO.serie(comEvAjustado, AMOSTRA).map((p) => p.y);
+    const divergiu = sigmaDepois.some((v, i) => Math.abs(v - sigmaAntes[i]) > 1e-6);
+    expect(divergiu).toBe(true);
   });
 });

@@ -17,7 +17,7 @@
  */
 import type { Ponto, VariavelAjustavel } from "@/lib/ajuste-curvas";
 import type { ShearReading, TriaxialSample, TriaxialSpecimen } from "../types";
-import { processGeometry, processShear } from "./calc";
+import { cylinderVolume, processGeometry, processShear } from "./calc";
 
 /** kgf → N (mesma constante de `processShear`). */
 const G = 9.80665;
@@ -107,7 +107,82 @@ export const ADAPTADOR_TENSAO: AdaptadorDeCurva = {
     }),
 };
 
+/**
+ * Poropressão (u) — usada no CIU. É lida direto de `uPore`; quando a linha
+ * não traz `uPore` (ensaio drenado, u = contra-pressão o tempo todo), o valor
+ * mostrado/ajustado é a contra-pressão — o mesmo que `processShear` usa como
+ * `uRow` nesse caso. Ao aplicar, `uPore` passa a existir em toda linha
+ * (mesmo onde só implicava a contra-pressão) — não muda nenhum cálculo
+ * (`uRow` dá o mesmo valor), só deixa de ser implícito.
+ */
+export const ADAPTADOR_POROPRESSAO: AdaptadorDeCurva = {
+  variavel: "poropressao",
+
+  serie: (cp) => cp.shear.map((r) => ({ x: r.eaPct, y: r.uPore ?? cp.backPressure })),
+
+  originais: (cp) => cp.shear.map((r) => r.uPore ?? cp.backPressure),
+
+  aplicar: (cp, _sample, yAjustado) =>
+    cp.shear.map((r, i) => {
+      const alvo = yAjustado[i];
+      return alvo == null || !Number.isFinite(alvo) ? r : { ...r, uPore: alvo };
+    }),
+
+  restaurar: (cp, originais) =>
+    cp.shear.map((r, i) => {
+      const v = originais[i];
+      return v == null || !Number.isFinite(v) ? r : { ...r, uPore: v };
+    }),
+};
+
+/** Volume consolidado [cm³] — só o que `dVcm3` precisa, sem os índices físicos de `processGeometry`. */
+function volumeConsolidado(cp: TriaxialSpecimen): number {
+  const V0 = cylinderVolume(cp.D0, cp.H0);
+  const dVcons = cp.consolidation.length ? cp.consolidation[cp.consolidation.length - 1].dv : 0;
+  return V0 - dVcons;
+}
+
+/** A linha guarda ΔV em cm³ ou já em % — respeitamos o que já existe (mesma ideia de `usaKgf`). */
+const usaDVcm3 = (r: ShearReading) => r.dVcm3 != null && Number.isFinite(r.dVcm3);
+
+/**
+ * Variação volumétrica (εv) — usada no CID/UU (drenado). `dvPct` é o campo que
+ * `processShear` de fato lê; `dVcm3` é só a leitura em cm³ que a tela mantém
+ * em par com `dvPct` (mesmo padrão de `loadKgf`/`F` na tensão). ATENÇÃO: εv
+ * entra na área corrigida de `processShear` (Bishop & Henkel), então ela
+ * afeta σd — ajustar esta curva DEPOIS de já ter ajustado a tensão desviadora
+ * desatualiza o ajuste de tensão (a força gravada não produz mais a σd
+ * pretendida, porque a área mudou). A tela avisa quando isso acontece.
+ */
+export const ADAPTADOR_VARIACAO_VOLUMETRICA: AdaptadorDeCurva = {
+  variavel: "variacao-volumetrica",
+
+  serie: (cp) => cp.shear.map((r) => ({ x: r.eaPct, y: r.dvPct })),
+
+  originais: (cp) => cp.shear.map((r) => (usaDVcm3(r) ? r.dVcm3! : r.dvPct)),
+
+  aplicar: (cp, _sample, yAjustado) => {
+    const Vc = volumeConsolidado(cp);
+    return cp.shear.map((r, i) => {
+      const alvo = yAjustado[i];
+      if (alvo == null || !Number.isFinite(alvo)) return r;
+      return usaDVcm3(r) ? { ...r, dvPct: alvo, dVcm3: (alvo / 100) * Vc } : { ...r, dvPct: alvo };
+    });
+  },
+
+  restaurar: (cp, originais) => {
+    const Vc = volumeConsolidado(cp);
+    return cp.shear.map((r, i) => {
+      const v = originais[i];
+      if (v == null || !Number.isFinite(v)) return r;
+      return usaDVcm3(r) ? { ...r, dVcm3: v, dvPct: Vc > 0 ? (v / Vc) * 100 : r.dvPct } : { ...r, dvPct: v };
+    });
+  },
+};
+
 /** Adaptadores disponíveis no editor triaxial. */
 export const ADAPTADORES: Partial<Record<VariavelAjustavel, AdaptadorDeCurva>> = {
   "tensao-desviadora": ADAPTADOR_TENSAO,
+  poropressao: ADAPTADOR_POROPRESSAO,
+  "variacao-volumetrica": ADAPTADOR_VARIACAO_VOLUMETRICA,
 };

@@ -1,18 +1,12 @@
 /**
- * Ajuste e filtragem de curvas do ensaio triaxial (CID/CIU/UU) — só admin e gestor.
+ * Ajuste e filtragem de curvas do ensaio de cisalhamento direto — só admin e gestor.
  *
- * O que este diálogo faz de verdade: substitui a LEITURA BRUTA do corpo de
- * prova pela curva filtrada. Não existe curva "ajustada" paralela — depois de
- * aplicar, a tela, o laudo, a envoltória e os círculos de Mohr vêm do mesmo
- * `processSpecimen` de sempre, porque o dado que os alimenta é que mudou.
- *
- * Duas regras que evitam erro de engenharia:
- *  1. O ajuste SEMPRE parte do dado medido. Se a curva já tinha sido ajustada,
- *     o original é restaurado antes de recalcular — senão dois ajustes seguidos
- *     se acumulariam e ninguém saberia de onde veio a curva final.
- *  2. Antes de confirmar, a aba "Impacto" mostra o que muda em c', φ' e na
- *     ruptura de cada CP. Filtrar curva altera resistência; quem aplica tem de
- *     ver o tamanho do efeito.
+ * Mesmo padrão do diálogo do triaxial (`features/triaxial-cid/components/AjusteCurvasDialog.tsx`):
+ * substitui a LEITURA BRUTA do corpo de prova pela curva filtrada, sem curva
+ * "ajustada" paralela — o laudo, a envoltória e o pico vêm do mesmo
+ * `processSpecimen` de sempre. O ajuste sempre parte do dado medido (restaura
+ * antes de recalcular) e a aba "Impacto" mostra o efeito em φ'/c' antes de
+ * confirmar.
  */
 import { useMemo, useState } from "react";
 import {
@@ -39,18 +33,16 @@ import {
 } from "@/lib/ajuste-curvas";
 import { ACCENT, BRAND, CP_COLORS, GRID, SUB } from "../constants";
 import { ADAPTADORES } from "../domain/ajuste";
-import { fitEnvelope, mohrCirclePoints, processSpecimen } from "../domain/calc";
-import type { TriaxialSample, TriaxialSpecimen } from "../types";
+import { fitEnvelope, processSpecimen } from "../domain/calc";
+import type { CDSample, CDSpecimen } from "../types";
 
 const n = (v: number | null | undefined, d = 2) =>
   v == null || !isFinite(v) ? "—" : v.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
 
-/** Envoltória a partir dos pontos de ruptura de cada CP. */
-function envoltoriaDe(cps: TriaxialSpecimen[], amostra: TriaxialSample) {
+/** Envoltória a partir do pico de cada CP. */
+function envoltoriaDe(cps: CDSpecimen[], amostra: CDSample) {
   const resultados = cps.map((cp) => processSpecimen(cp, amostra));
-  const pontos = resultados
-    .map((r, i) => (r.failure ? { pPrime: r.failure.pPrime, q: r.failure.q, cp: cps[i].id } : null))
-    .filter((p): p is { pPrime: number; q: number; cp: string } => p != null);
+  const pontos = resultados.map((r, i) => ({ sigma: r.sigmaN, tau: r.tauPeak, cp: cps[i].id }));
   return { resultados, envelope: fitEnvelope(pontos) };
 }
 
@@ -61,15 +53,15 @@ export function AjusteCurvasDialog({
   autor,
   onGravar,
 }: {
-  sample: TriaxialSample;
-  specimens: TriaxialSpecimen[];
+  sample: CDSample;
+  specimens: CDSpecimen[];
   selecionadoId: string;
   autor: { id?: string; nome?: string };
-  onGravar: (cpId: string, patch: Partial<TriaxialSpecimen>) => void;
+  onGravar: (cpId: string, patch: Partial<CDSpecimen>) => void;
 }) {
   const [aberto, setAberto] = useState(false);
   const [cpId, setCpId] = useState(selecionadoId);
-  const [variavel, setVariavel] = useState<VariavelAjustavel>("tensao-desviadora");
+  const [variavel, setVariavel] = useState<VariavelAjustavel>("tensao-cisalhante");
   const [confirmando, setConfirmando] = useState(false);
   const [sugestao, setSugestao] = useState<Sugestao | null>(null);
   const [pensando, setPensando] = useState(false);
@@ -93,12 +85,12 @@ export function AjusteCurvasDialog({
 
   /**
    * Base do ajuste: SEMPRE o dado medido. Se já houve ajuste nesta curva,
-   * desfazemos antes de recalcular (ver regra 1 no cabeçalho).
+   * desfazemos antes de recalcular.
    */
   const cpBase = useMemo(() => {
     if (!cpAtual) return null;
     if (!registroAtual) return cpAtual;
-    return { ...cpAtual, shear: adaptador.restaurar(cpAtual, registroAtual.original) };
+    return { ...cpAtual, shearData: adaptador.restaurar(cpAtual, registroAtual.original) };
   }, [cpAtual, registroAtual, adaptador]);
 
   const serie = useMemo(
@@ -112,7 +104,7 @@ export function AjusteCurvasDialog({
   const previsao = useMemo(() => {
     if (!cpBase) return null;
     const novasLeituras = adaptador.aplicar(cpBase, sample, resultado.pontos.map((p) => p.yAjustado));
-    const depois = specimens.map((c) => (c.id === cpBase.id ? { ...c, shear: novasLeituras } : c));
+    const depois = specimens.map((c) => (c.id === cpBase.id ? { ...c, shearData: novasLeituras } : c));
     const antes = specimens.map((c) => (c.id === cpBase.id ? cpBase : c));
     return {
       novasLeituras,
@@ -128,7 +120,6 @@ export function AjusteCurvasDialog({
 
   const rodarSugestao = () => {
     setPensando(true);
-    // setTimeout deixa o "pensando" pintar antes do grid de modelos travar a UI.
     setTimeout(() => {
       try {
         const s = sugerirMetodo(serie, perfil);
@@ -152,7 +143,6 @@ export function AjusteCurvasDialog({
     if (!cpBase || !previsao) return;
     const registro: RegistroDeAjuste = {
       variavel,
-      // O original é gravado uma vez só: restaurar sempre volta ao dado medido.
       original: registroAtual?.original ?? adaptador.originais(cpBase),
       metodo: resultado.metodo,
       params: resultado.params,
@@ -164,21 +154,11 @@ export function AjusteCurvasDialog({
       aplicadoEm: new Date().toISOString(),
     };
     onGravar(cpBase.id, {
-      shear: previsao.novasLeituras,
+      shearData: previsao.novasLeituras,
       ajustesDeCurva: { ...(cpAtual.ajustesDeCurva ?? {}), [variavel]: registro },
     });
     setConfirmando(false);
     toast.success(`Curva de ${perfil.rotulo.toLowerCase()} substituída no ${cpAtual.displayId ?? cpAtual.id}.`);
-    // εv entra na área corrigida que converte força ↔ tensão desviadora — se a
-    // tensão já tinha sido ajustada, a força gravada não produz mais a σd
-    // pretendida depois que a área mudou.
-    if (variavel === "variacao-volumetrica" && cpAtual.ajustesDeCurva?.["tensao-desviadora"]) {
-      toast.warning(
-        `A tensão desviadora do ${cpAtual.displayId ?? cpAtual.id} já estava ajustada — como a área corrigida ` +
-          "mudou com esta εv, confira e reaplique o ajuste de tensão desviadora.",
-        { duration: 10000 },
-      );
-    }
   };
 
   const restaurar = () => {
@@ -186,7 +166,7 @@ export function AjusteCurvasDialog({
     const resto = { ...(cpAtual.ajustesDeCurva ?? {}) };
     delete resto[variavel];
     onGravar(cpAtual.id, {
-      shear: adaptador.restaurar(cpAtual, registroAtual.original),
+      shearData: adaptador.restaurar(cpAtual, registroAtual.original),
       ajustesDeCurva: Object.keys(resto).length ? resto : undefined,
     });
     toast.success("Dados originais restaurados.");
@@ -227,7 +207,7 @@ export function AjusteCurvasDialog({
                 <SelectContent>
                   {specimens.map((c) => (
                     <SelectItem key={c.id} value={c.id} className="text-xs">
-                      {c.displayId ?? c.id} · σ₃={n(c.sigma3Target, 0)} kPa
+                      {c.displayId ?? c.id} · σn={n(c.normalStressTarget, 0)} kPa
                       {c.ajustesDeCurva?.[variavel] ? " · ajustada" : ""}
                     </SelectItem>
                   ))}
@@ -407,27 +387,27 @@ export function AjusteCurvasDialog({
 
             {/* ---------------- IMPACTO ---------------- */}
             <TabsContent value="impacto" className="mt-0 min-h-0 flex-1 overflow-auto px-5 pb-4">
-              <div className="grid gap-4 xl:grid-cols-3">
-                <GraficoImpacto titulo="Tensão desviadora × deformação axial" alturaClasse="h-[300px]">
+              <div className="grid gap-4 xl:grid-cols-2">
+                <GraficoImpacto titulo="Tensão cisalhante × deslocamento horizontal" alturaClasse="h-[320px]">
                   <ComposedChart margin={{ top: 8, right: 12, bottom: 28, left: 8 }}>
                     <CartesianGrid stroke={GRID} strokeDasharray="3 3" />
-                    <XAxis type="number" dataKey="eaPct" domain={[0, "auto"]} tick={{ fontSize: 10 }}>
-                      <RLabel value="εa [%]" position="insideBottom" offset={-18} fontSize={10} />
+                    <XAxis type="number" dataKey="horizDispMm" domain={[0, "auto"]} tick={{ fontSize: 10 }}>
+                      <RLabel value="δh [mm]" position="insideBottom" offset={-18} fontSize={10} />
                     </XAxis>
                     <YAxis type="number" domain={[0, "auto"]} tick={{ fontSize: 10 }}>
-                      <RLabel value="σd [kPa]" angle={-90} position="insideLeft" offset={10} fontSize={10} />
+                      <RLabel value="τ [kPa]" angle={-90} position="insideLeft" offset={10} fontSize={10} />
                     </YAxis>
                     <Tooltip formatter={(v: number) => n(v, 1)} />
                     <Legend wrapperStyle={{ fontSize: 10 }} verticalAlign="top" />
                     {previsao?.antes.resultados.map((r, i) => (
                       specimens[i].id === cpId ? (
-                        <Line key={`antes-${i}`} data={r.shearCurve} dataKey="sigmaD" name="Antes (medido)"
+                        <Line key={`antes-${i}`} data={r.curve} dataKey="shearStress" name="Antes (medido)"
                           stroke={SUB} strokeDasharray="5 3" strokeWidth={1.4} dot={false}
                           type="monotone" isAnimationActive={false} />
                       ) : null
                     ))}
                     {previsao?.depois.resultados.map((r, i) => (
-                      <Line key={`depois-${i}`} data={r.shearCurve} dataKey="sigmaD"
+                      <Line key={`depois-${i}`} data={r.curve} dataKey="shearStress"
                         name={`${specimens[i].displayId ?? specimens[i].id}${specimens[i].id === cpId ? " (ajustada)" : ""}`}
                         stroke={specimens[i].id === cpId ? ACCENT : corDoCp(i)}
                         strokeWidth={specimens[i].id === cpId ? 2.4 : 1.6}
@@ -436,60 +416,36 @@ export function AjusteCurvasDialog({
                   </ComposedChart>
                 </GraficoImpacto>
 
-                <GraficoImpacto titulo="Círculos de Mohr e envoltória" alturaClasse="h-[300px]">
+                <GraficoImpacto titulo="Envoltória de resistência (τ × σn)" alturaClasse="h-[320px]">
                   <ScatterChart margin={{ top: 8, right: 14, bottom: 28, left: 8 }}>
                     <CartesianGrid stroke={GRID} strokeDasharray="3 3" />
                     <XAxis type="number" dataKey="sigma" domain={[0, "auto"]} tick={{ fontSize: 10 }}>
-                      <RLabel value="σ' [kPa]" position="insideBottom" offset={-18} fontSize={10} />
+                      <RLabel value="σn [kPa]" position="insideBottom" offset={-18} fontSize={10} />
                     </XAxis>
                     <YAxis type="number" dataKey="tau" domain={[0, "auto"]} tick={{ fontSize: 10 }}>
                       <RLabel value="τ [kPa]" angle={-90} position="insideLeft" offset={10} fontSize={10} />
                     </YAxis>
                     <Tooltip formatter={(v: number) => n(v, 1)} />
                     <Legend wrapperStyle={{ fontSize: 10 }} verticalAlign="top" />
-                    {previsao?.depois.resultados.map((r, i) =>
-                      r.failure ? (
-                        <Scatter key={`c-${i}`}
-                          data={mohrCirclePoints(r.failure.sigma3Prime, r.failure.sigma1Prime)}
-                          name={specimens[i].displayId ?? specimens[i].id}
-                          line={{ stroke: specimens[i].id === cpId ? ACCENT : corDoCp(i), strokeWidth: 1.8 }}
-                          shape={() => <g />} fill={specimens[i].id === cpId ? ACCENT : corDoCp(i)} />
-                      ) : null,
-                    )}
+                    {previsao?.depois.resultados.map((r, i) => (
+                      <Scatter key={`p-${i}`}
+                        data={[{ sigma: r.sigmaN, tau: r.tauPeak }]}
+                        name={specimens[i].displayId ?? specimens[i].id}
+                        fill={specimens[i].id === cpId ? ACCENT : corDoCp(i)} />
+                    ))}
                     {envAntes && (
                       <Scatter data={retaDaEnvoltoria(envAntes, previsao!.depois.resultados)}
-                        name={`Antes: φ'=${n(envAntes.phiDeg, 1)}° c'=${n(envAntes.cPrime, 1)}`}
+                        name={`Antes: φ'=${n(envAntes.phiDeg, 1)}° c=${n(envAntes.c, 1)}`}
                         line={{ stroke: SUB, strokeWidth: 1.4, strokeDasharray: "5 3" }}
                         shape={() => <g />} fill={SUB} />
                     )}
                     {envDepois && (
                       <Scatter data={retaDaEnvoltoria(envDepois, previsao!.depois.resultados)}
-                        name={`Depois: φ'=${n(envDepois.phiDeg, 1)}° c'=${n(envDepois.cPrime, 1)}`}
+                        name={`Depois: φ'=${n(envDepois.phiDeg, 1)}° c=${n(envDepois.c, 1)}`}
                         line={{ stroke: BRAND, strokeWidth: 2 }}
                         shape={() => <g />} fill={BRAND} />
                     )}
                   </ScatterChart>
-                </GraficoImpacto>
-
-                <GraficoImpacto titulo="Trajetória de tensões (t–s')" alturaClasse="h-[300px]">
-                  <ComposedChart margin={{ top: 8, right: 12, bottom: 28, left: 8 }}>
-                    <CartesianGrid stroke={GRID} strokeDasharray="3 3" />
-                    <XAxis type="number" dataKey="pPrime" domain={[0, "auto"]} tick={{ fontSize: 10 }}>
-                      <RLabel value="s' [kPa]" position="insideBottom" offset={-18} fontSize={10} />
-                    </XAxis>
-                    <YAxis type="number" dataKey="q" domain={[0, "auto"]} tick={{ fontSize: 10 }}>
-                      <RLabel value="t [kPa]" angle={-90} position="insideLeft" offset={10} fontSize={10} />
-                    </YAxis>
-                    <Tooltip formatter={(v: number) => n(v, 1)} />
-                    <Legend wrapperStyle={{ fontSize: 10 }} verticalAlign="top" />
-                    {previsao?.depois.resultados.map((r, i) => (
-                      <Line key={`tp-${i}`} data={r.shearCurve} dataKey="q"
-                        name={specimens[i].displayId ?? specimens[i].id}
-                        stroke={specimens[i].id === cpId ? ACCENT : corDoCp(i)}
-                        strokeWidth={specimens[i].id === cpId ? 2.2 : 1.5}
-                        dot={false} type="monotone" isAnimationActive={false} />
-                    ))}
-                  </ComposedChart>
                 </GraficoImpacto>
               </div>
 
@@ -518,7 +474,7 @@ export function AjusteCurvasDialog({
                 {envAntes && envDepois && (
                   <p className="rounded bg-muted px-2 py-1.5 text-xs">
                     Efeito na envoltória: φ' {n(envAntes.phiDeg, 2)}° → <b>{n(envDepois.phiDeg, 2)}°</b> ·
-                    c' {n(envAntes.cPrime, 2)} → <b>{n(envDepois.cPrime, 2)} kPa</b>
+                    c {n(envAntes.c, 2)} → <b>{n(envDepois.c, 2)} kPa</b>
                   </p>
                 )}
                 <p className="text-xs text-muted-foreground">
@@ -538,18 +494,15 @@ export function AjusteCurvasDialog({
   );
 }
 
-/** Dois pontos que desenham a reta de Mohr-Coulomb até o maior σ' em tela. */
+/** Dois pontos que desenham a reta de Mohr-Coulomb até o maior σn em tela. */
 function retaDaEnvoltoria(
-  env: { phiDeg: number; cPrime: number },
+  env: { phiDeg: number; c: number },
   resultados: ReturnType<typeof processSpecimen>[],
 ) {
-  const sigmaMax = Math.max(
-    1,
-    ...resultados.map((r) => (r.failure ? r.failure.sigma1Prime : 0)),
-  ) * 1.1;
+  const sigmaMax = Math.max(1, ...resultados.map((r) => r.sigmaN)) * 1.1;
   return [
-    { sigma: 0, tau: env.cPrime },
-    { sigma: sigmaMax, tau: env.cPrime + Math.tan((env.phiDeg * Math.PI) / 180) * sigmaMax },
+    { sigma: 0, tau: env.c },
+    { sigma: sigmaMax, tau: env.c + Math.tan((env.phiDeg * Math.PI) / 180) * sigmaMax },
   ];
 }
 
@@ -569,7 +522,7 @@ function GraficoImpacto({
 function TabelaAntesDepois({
   specimens, antes, depois, cpId,
 }: {
-  specimens: TriaxialSpecimen[];
+  specimens: CDSpecimen[];
   antes?: ReturnType<typeof envoltoriaDe>;
   depois?: ReturnType<typeof envoltoriaDe>;
   cpId: string;
@@ -597,18 +550,18 @@ function TabelaAntesDepois({
         </thead>
         <tbody className="divide-y">
           {linha("Ângulo de atrito φ'", antes.envelope?.phiDeg, depois.envelope?.phiDeg, 2, "°")}
-          {linha("Intercepto coesivo c'", antes.envelope?.cPrime, depois.envelope?.cPrime, 2, " kPa")}
+          {linha("Intercepto c", antes.envelope?.c, depois.envelope?.c, 2, " kPa")}
           {linha("R² da envoltória", antes.envelope?.r2, depois.envelope?.r2, 3)}
           {specimens.map((cp, i) =>
             <tr key={cp.id} className={cp.id === cpId ? "bg-amber-500/5" : ""}>
               <td className="px-2 py-1">
-                Ruptura {cp.displayId ?? cp.id} — t<sub>f</sub>
+                Pico {cp.displayId ?? cp.id} — τ<sub>f</sub>
               </td>
               <td className="px-2 py-1 text-right text-muted-foreground">
-                {n(antes.resultados[i]?.failure?.q, 1)} kPa
+                {n(antes.resultados[i]?.tauPeak, 1)} kPa
               </td>
               <td className="px-2 py-1 text-right font-medium">
-                {n(depois.resultados[i]?.failure?.q, 1)} kPa
+                {n(depois.resultados[i]?.tauPeak, 1)} kPa
               </td>
             </tr>,
           )}
