@@ -255,6 +255,16 @@ function PLTReportPage({
 
   return (
     <>
+      {/*
+        `shrink-0` é necessário aqui: quando este Fragment é embutido dentro
+        do diálogo de pré-visualização (contêiner flex-row com
+        align-items:stretch padrão), cada página — sem isto — era
+        ESPREMIDA pela flexbox a ~95px de altura (só o cabeçalho, o resto
+        cortado por `overflow:hidden`), mesmo com `height:297mm` inline no
+        `ReportPage`. O offscreen usado pra gerar o PDF de verdade não tem
+        esse problema (pai não é flex-row), só a pré-visualização.
+      */}
+      <div className="shrink-0">
       <ReportPage
         sample={sample as unknown as ReportSample}
         page={1}
@@ -334,9 +344,12 @@ function PLTReportPage({
           <NotasBloco sample={sample} />
         </div>
       </ReportPage>
+      </div>
 
       {paginasFotos.map((grupos, idx) => (
-        <FotosPage key={idx} sample={sample} grupos={grupos} page={2 + idx} total={total} />
+        <div key={idx} className="shrink-0">
+          <FotosPage sample={sample} grupos={grupos} page={2 + idx} total={total} />
+        </div>
       ))}
     </>
   );
