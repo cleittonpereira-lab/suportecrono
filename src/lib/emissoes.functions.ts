@@ -8,6 +8,7 @@ import { z } from "zod";
 import { ensureFolderPath, lerJsonsDaPasta, type ArquivoListado } from "@/lib/driveStorage";
 import { FOLDER_ENSAIOS, type EnsaioFile } from "@/lib/lab-entities.functions";
 import { etapaDasAprovacoes } from "@/lib/etapa-laudo";
+import { revisaoAprovadaVigente, situacaoDaEntrega, type EntregaDoLaudo, type SituacaoDaEntrega } from "@/lib/entrega-laudo";
 
 /**
  * Índice id → conteúdo. Havendo cópias homônimas do mesmo registro, fica a
@@ -58,6 +59,8 @@ export interface EmissaoRow {
   os_numero: string | null;
   os_cliente: string | null;
   amostra_code: string | null;
+  /** Número do relatório da amostra (as pendências usam este antes do código). */
+  amostra_numero: string | null;
   ensaio_tipo: string | null;
   ensaio_nome: string | null;
   updated_at: string | null;
@@ -65,6 +68,8 @@ export interface EmissaoRow {
   pendencia_started_at: string | null;
   pendencia_finished_at: string | null;
   digitador_nome: string | null;
+  /** Entrega ao cliente (SOND + GDrive) da revisão aprovada vigente; null se o laudo não está aprovado. */
+  entrega: SituacaoDaEntrega | null;
 }
 
 const Input = z.object({
@@ -132,6 +137,7 @@ export const listEmissoes = createServerFn({ method: "POST" })
             os_numero: os?.numero ?? null,
             os_cliente: os?.client ?? null,
             amostra_code: amostra?.code ?? amostra?.reportNumber ?? null,
+            amostra_numero: amostra?.reportNumber ?? null,
             ensaio_tipo: en.tipo ?? null,
             ensaio_nome: en.nome ?? null,
             updated_at: en.updatedAt ?? null,
@@ -143,6 +149,12 @@ export const listEmissoes = createServerFn({ method: "POST" })
             pendencia_started_at: null,
             pendencia_finished_at: null,
             digitador_nome: latest?.requested_by_name ?? null,
+            entrega: (() => {
+              const rev = revisaoAprovadaVigente(en.reportApprovals);
+              return rev == null
+                ? null
+                : situacaoDaEntrega((en as EnsaioFile & { entregaLaudo?: EntregaDoLaudo }).entregaLaudo, rev);
+            })(),
           };
         },
       );

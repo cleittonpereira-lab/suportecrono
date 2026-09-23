@@ -86,6 +86,8 @@ import {
   Building,
   Eye,
   RefreshCw,
+  Inbox,
+  PackageCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { podeConcluirFora } from "@/lib/papeis";
@@ -103,6 +105,10 @@ import { ptBR } from "date-fns/locale";
 import { useCadastroByOs } from "@/hooks/use-cadastro-by-os";
 import { useAuth } from "@/hooks/use-auth";
 import { EmissoesInner } from "@/components/emissoes-inner";
+import { MesaDeLaudos } from "@/features/lab/components/MesaDeLaudos";
+import { EntregasView } from "@/features/lab/components/EntregasView";
+import { useLaudosNoFluxo } from "@/features/lab/hooks/use-laudos-no-fluxo";
+import { filaDoLaudo } from "@/lib/mesa-de-laudos";
 import { OsReportsView } from "@/features/lab/components/OsReportsView";
 import { evaluateSla, formatHours, type SlaStatus } from "@/lib/sla-calc";
 
@@ -163,10 +169,10 @@ const ETAPA_FILTRO: Record<Exclude<EtapaFiltro, "all">, { rotulo: string; status
   digitacao: { rotulo: "Em digitação", status: ["pendente", "em_digitacao"] },
   verificacao: { rotulo: "Aguardando verificação", status: ["digitado"] },
   aprovacao: { rotulo: "Aguardando aprovação", status: ["verificado"] },
-  concluidos: { rotulo: "Concluídos", status: ["aprovado", "concluido_externo"] },
+  concluidos: { rotulo: "Concluídos (falta entregar)", status: ["aprovado", "concluido_externo"] },
 };
 
-const ABAS = ["gantt-fila", "fluxo-relatorios", "emissoes-historico", "por-os"] as const;
+const ABAS = ["meus-laudos", "entregas", "gantt-fila", "fluxo-relatorios", "emissoes-historico", "por-os"] as const;
 type Aba = (typeof ABAS)[number];
 
 /** Prazos (SLA) de uma pendência, pelas datas gravadas no payload. */
@@ -193,7 +199,7 @@ function CentralRelatoriosPage() {
     ? (search.tab as Aba)
     : search.tab === "dashboard-sla"
       ? "fluxo-relatorios"
-      : "gantt-fila";
+      : "meus-laudos";
   const listFn = useServerFn(listPendenciasDigitacao);
   const updFn = useServerFn(atualizarPendenciaDigitacao);
   const conclExtFn = useServerFn(concluirPendenciaExterna);
@@ -434,10 +440,43 @@ function CentralRelatoriosPage() {
     return [...doProgs, ...doPendencias];
   }, [progs, amostrasProg, ensaiosProg, tiposProg, equipsProg, allPendencias]);
 
+  // Laudos no fluxo formal (uma leitura para o quadro, as entregas e os cartões).
+  const { data: laudos = [] } = useLaudosNoFluxo();
+  // Laudo aprovado e ENTREGUE (SOND + GDrive) sai da esteira — antes todo
+  // aprovado ficava empilhado em "Concluídos" para sempre.
+  const chavesEntregues = useMemo(() => {
+    const s = new Set<string>();
+    for (const l of laudos) {
+      if (!l.entrega?.entregue) continue;
+      for (const am of [l.amostra_numero, l.amostra_code]) {
+        if (am) s.add(`${normOs(l.os_numero)}::${normAmostra(am)}::${normMethod(l.ensaio_tipo || l.ensaio_nome)}`);
+      }
+    }
+    return s;
+  }, [laudos]);
+  const naoEntregue = (r: PendenciaDigitacao) =>
+    !chavesEntregues.has(`${normOs(r.os)}::${normAmostra(r.amostra || "")}::${normMethod(r.ensaio || r.tipo_ensaio)}`);
+  const resumoDoFluxo = useMemo(() => {
+    const dia = 86_400_000;
+    let verificar = 0, aprovar = 0, aEntregar = 0, entregues30 = 0;
+    for (const l of laudos) {
+      if (l.rev == null) continue;
+      const fila = filaDoLaudo(l.status);
+      if (fila === "verificar") verificar++;
+      else if (fila === "aprovar") aprovar++;
+      else if (fila === "aprovado" && l.entrega) {
+        if (!l.entrega.entregue) aEntregar++;
+        else if (Date.now() - Date.parse(l.entrega.entregueEm ?? "") < 30 * dia) entregues30++;
+      }
+    }
+    return { verificar, aprovar, aEntregar, entregues30 };
+  }, [laudos]);
+
   // Filtro de busca global + status/tipo/"só meus"
   const filteredRows = useMemo(() => {
     const q = busca.trim().toLowerCase();
     return allPendencias.filter((r) => {
+      if (!naoEntregue(r)) return false;
       if (soMeus && user?.id && r.digitador_user_id !== user.id && r.operador_user_id !== user.id) return false;
       if (etapaFiltro !== "all" && !ETAPA_FILTRO[etapaFiltro].status.includes(r.status)) return false;
       if (tipoFiltro !== "all" && detectMethodology(r.ensaio, r.tipo_ensaio) !== tipoFiltro) return false;
@@ -451,7 +490,7 @@ function CentralRelatoriosPage() {
         (r.digitador_nome ?? "").toLowerCase().includes(q)
       );
     });
-  }, [allPendencias, busca, soMeus, etapaFiltro, tipoFiltro, user]);
+  }, [allPendencias, busca, soMeus, etapaFiltro, tipoFiltro, user, chavesEntregues]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filteredGantt = useMemo(() => {
     const q = busca.trim().toLowerCase();
@@ -477,10 +516,10 @@ function CentralRelatoriosPage() {
       em_digitacao: allPendencias.filter((r) => r.status === "em_digitacao" || r.status === "pendente").length,
       verificacao: allPendencias.filter((r) => r.status === "digitado").length,
       aprovacao: allPendencias.filter((r) => r.status === "verificado").length,
-      concluidos: allPendencias.filter((r) => r.status === "aprovado" || r.status === "concluido_externo").length,
+      concluidos: allPendencias.filter((r) => (r.status === "aprovado" || r.status === "concluido_externo") && naoEntregue(r)).length,
     };
     return c;
-  }, [ganttQueue, allPendencias]);
+  }, [ganttQueue, allPendencias, chavesEntregues]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cartões do topo: cada um abre a aba e o filtro que mostram exatamente o que ele conta.
   const irPara = (tab: Aba) => navigate({ to: "/relatorio/pendentes", search: { tab } });
@@ -515,37 +554,47 @@ function CentralRelatoriosPage() {
     {
       chave: "verificacao",
       rotulo: ETAPA_FILTRO.verificacao.rotulo,
-      valor: counts.verificacao,
-      dica: "Conferência técnica",
+      valor: resumoDoFluxo.verificar,
+      dica: "Conferência técnica — abre Meus laudos",
       classe: "border-violet-500/20 bg-violet-50/30 dark:bg-violet-950/10",
       corTexto: "text-violet-700 dark:text-violet-400",
-      ativo: activeTab === "fluxo-relatorios" && etapaFiltro === "verificacao",
-      abrir: naEsteira("verificacao"),
+      ativo: false,
+      abrir: () => irPara("meus-laudos"),
     },
     {
       chave: "aprovacao",
       rotulo: ETAPA_FILTRO.aprovacao.rotulo,
-      valor: counts.aprovacao,
-      dica: "Assinatura do RT",
+      valor: resumoDoFluxo.aprovar,
+      dica: "Assinatura do RT — abre Meus laudos",
       classe: "border-indigo-500/20 bg-indigo-50/30 dark:bg-indigo-950/10",
       corTexto: "text-indigo-700 dark:text-indigo-400",
-      ativo: activeTab === "fluxo-relatorios" && etapaFiltro === "aprovacao",
-      abrir: naEsteira("aprovacao"),
+      ativo: false,
+      abrir: () => irPara("meus-laudos"),
     },
     {
-      chave: "concluidos",
-      rotulo: ETAPA_FILTRO.concluidos.rotulo,
-      valor: counts.concluidos,
-      dica: "Aprovados e legado Excel",
+      chave: "entregar",
+      rotulo: "A entregar",
+      valor: resumoDoFluxo.aEntregar,
+      dica: "Aprovados — falta SOND/GDrive",
+      classe: "border-orange-500/20 bg-orange-50/30 dark:bg-orange-950/10",
+      corTexto: "text-orange-700 dark:text-orange-400",
+      ativo: activeTab === "entregas",
+      abrir: () => irPara("entregas"),
+    },
+    {
+      chave: "entregues",
+      rotulo: "Entregues (30 dias)",
+      valor: resumoDoFluxo.entregues30,
+      dica: "SOND e GDrive marcados",
       classe: "border-emerald-500/20 bg-emerald-50/30 dark:bg-emerald-950/10",
       corTexto: "text-emerald-700 dark:text-emerald-400",
-      ativo: activeTab === "fluxo-relatorios" && etapaFiltro === "concluidos",
-      abrir: naEsteira("concluidos"),
+      ativo: false,
+      abrir: () => irPara("entregas"),
     },
   ];
 
   // Mutações. Verificar e aprovar NÃO têm atalho aqui: acontecem no laudo e na
-  // aba "Verificação e aprovação" (fluxo formal, com revisão e responsáveis).
+  // aba "Meus laudos" (fluxo formal, com revisão e responsáveis).
   // Os botões "Aprovar Verificação"/"Aprovar Final" do Kanban mudavam só o
   // status da pendência, e o fluxo formal o sobrepunha — pareciam não ter efeito.
   const concluirExternoMutation = useMutation({
@@ -763,7 +812,7 @@ function CentralRelatoriosPage() {
             Central de Relatórios
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Da bancada ao laudo emitido: digitação, verificação e aprovação.
+            Da bancada ao laudo entregue: digitação, verificação, aprovação e entrega (SOND e GDrive).
           </p>
         </div>
 
@@ -781,7 +830,7 @@ function CentralRelatoriosPage() {
       </div>
 
       {/* Etapas: cada cartão abre a aba e o filtro que mostram o que ele conta */}
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-5">
+      <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
         {cartoesDeEtapa.map((c) => (
           <Card
             key={c.chave}
@@ -884,6 +933,14 @@ function CentralRelatoriosPage() {
         className="space-y-4"
       >
         <TabsList className="flex flex-wrap h-auto justify-start gap-1 w-full bg-muted/40 p-1 border">
+          <TabsTrigger value="meus-laudos" className="gap-1.5 text-xs font-semibold">
+            <Inbox className="h-3.5 w-3.5 text-primary" />
+            Meus laudos
+          </TabsTrigger>
+          <TabsTrigger value="entregas" className="gap-1.5 text-xs">
+            <PackageCheck className="h-3.5 w-3.5 text-orange-600" />
+            Entregas ({resumoDoFluxo.aEntregar})
+          </TabsTrigger>
           <TabsTrigger value="gantt-fila" className="gap-1.5 text-xs">
             <FlaskConical className="h-3.5 w-3.5 text-amber-600" />
             Fila da bancada ({counts.ganttConcluidos})
@@ -894,7 +951,7 @@ function CentralRelatoriosPage() {
           </TabsTrigger>
           <TabsTrigger value="emissoes-historico" className="gap-1.5 text-xs">
             <ShieldCheck className="h-3.5 w-3.5 text-violet-600" />
-            Verificação e aprovação
+            Laudos emitidos
           </TabsTrigger>
           <TabsTrigger value="por-os" className="gap-1.5 text-xs">
             <Building className="h-3.5 w-3.5 text-orange-600" />
@@ -1213,7 +1270,7 @@ function CentralRelatoriosPage() {
         <TabsContent value="fluxo-relatorios" className="space-y-4">
           <div className="flex items-center justify-between">
             <div className="text-xs text-muted-foreground">
-              Acompanhe a esteira de cada laudo: <b>Digitação &rarr; Verificação &rarr; Aprovação &rarr; Concluído</b>.
+              Acompanhe a esteira de cada laudo: <b>Digitação &rarr; Verificação &rarr; Aprovação &rarr; Entrega</b>. Laudo entregue (SOND + GDrive) sai daqui — veja a aba Entregas.
             </div>
             <div className="flex items-center gap-1 bg-muted/40 p-1 rounded-md border">
               <Button
@@ -1321,7 +1378,7 @@ function CentralRelatoriosPage() {
               <div className="bg-muted/30 rounded-lg p-3 border space-y-3">
                 <div className="flex items-center justify-between border-b pb-2">
                   <div className="font-bold text-xs text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
-                    <CheckCircle2 className="h-3.5 w-3.5" /> 4. Concluídos / Emitidos
+                    <CheckCircle2 className="h-3.5 w-3.5" /> 4. Aprovados — falta entregar
                   </div>
                   <Badge variant="secondary" className="text-[10px]">
                     {counts.concluidos}
@@ -1410,10 +1467,25 @@ function CentralRelatoriosPage() {
         </TabsContent>
 
         {/* =========================================================================
-            ABA 3: VERIFICAÇÃO E APROVAÇÃO (fluxo formal, com revisão)
+            HISTÓRICO DE EMISSÕES — verificar/aprovar agora é pela aba "Meus laudos"
+            (e no próprio laudo, que refaz o PDF); aqui fica o que já saiu.
            ========================================================================= */}
         <TabsContent value="emissoes-historico">
-          <EmissoesInner />
+          <EmissoesInner singleTab="aprovados" />
+        </TabsContent>
+
+        {/* =========================================================================
+            MEUS LAUDOS — o que falta verificar, aprovar e corrigir, por pessoa
+           ========================================================================= */}
+        <TabsContent value="meus-laudos">
+          <MesaDeLaudos />
+        </TabsContent>
+
+        {/* =========================================================================
+            ENTREGAS — aprovados por OS, com os checks SOND e GDrive do cliente
+           ========================================================================= */}
+        <TabsContent value="entregas">
+          <EntregasView />
         </TabsContent>
 
         {/* =========================================================================

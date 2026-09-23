@@ -23,7 +23,6 @@ import {
   AlertTriangle,
   CalendarRange,
   ClipboardList,
-  Inbox,
   Wrench,
   FlaskConical,
   FileText,
@@ -114,7 +113,6 @@ const SECTIONS: readonly Section[] = [
     label: "Relatório",
     match: (p) => p.startsWith("/relatorio") && !p.startsWith("/relatorio/digitalizacao") && !p.startsWith("/relatorio/especiais"),
     tabs: [
-      { title: "Meus laudos", url: "/relatorio/meus-laudos", icon: Inbox },
       { title: "Central de Relatórios", url: "/relatorio/pendentes", icon: ClipboardList },
       { title: "Cisalhamento Direto", url: "/relatorio/cisalhamento-direto", icon: Beaker },
       { title: "Adensamento", url: "/relatorio/adensamento", icon: Beaker },
