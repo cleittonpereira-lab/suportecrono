@@ -40,6 +40,23 @@ if (!existsSync(gerada)) {
 }
 const dev = JSON.parse(readFileSync(join(raiz, "wrangler.dev.jsonc"), "utf8").replace(/^\s*\/\/.*$/gm, ""));
 const config = JSON.parse(readFileSync(gerada, "utf8"));
+// O build grava a data de HOJE como compatibility_date, e o runtime local do
+// wrangler (workerd) só aceita datas até a do seu lançamento: com o wrangler
+// alguns dias atrás, o teste falhava sem nenhuma mudança no código ("This
+// Worker requires compatibility date ..."). Só aqui, no teste local, a data é
+// limitada à que o workerd instalado informa. A produção não é afetada.
+const dataDoRuntime = (() => {
+  try {
+    const doWrangler = createRequire(require.resolve("wrangler/package.json"));
+    return createRequire(doWrangler.resolve("miniflare"))("workerd").compatibilityDate;
+  } catch {
+    return null;
+  }
+})();
+if (dataDoRuntime && config.compatibility_date && config.compatibility_date > dataDoRuntime) {
+  console.log(`compatibility_date ${config.compatibility_date} → ${dataDoRuntime} (limite do runtime local)`);
+  config.compatibility_date = dataDoRuntime;
+}
 const arqConfig = join(pastaServidor, "wrangler.e2e.json");
 writeFileSync(
   arqConfig,
