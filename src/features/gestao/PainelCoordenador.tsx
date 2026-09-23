@@ -25,6 +25,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PainelAnalises } from "@/features/gestao/PainelAnalises";
+import { PainelLaudos } from "@/features/gestao/PainelLaudos";
 import { useSchedule } from "@/hooks/use-schedule";
 import { listRows } from "@/lib/programacao.functions";
 import { SHEET_AMOSTRAS, SHEET_ENSAIOS, SHEET_EQUIPS, SHEET_PROGS, SHEET_TIPOS, parseProgramacaoRow } from "@/lib/programacao-model";
@@ -1050,7 +1051,7 @@ export function PainelCoordenador() {
   const [diasBancada, setDiasBancada] = useState<number>(7);
   const [diasProducao, setDiasProducao] = useState<number>(7);
   const [detalhe, setDetalhe] = useState<DetalheAberto | null>(null);
-  const [visao, setVisao] = useState<"operacao" | "analises">("operacao");
+  const [visao, setVisao] = useState<"operacao" | "analises" | "laudos">("operacao");
   const { data: schedule, isLoading: carregandoCronograma } = useSchedule();
 
   const datasFn = useServerFn(listarDatasAcordadas);
@@ -1181,6 +1182,7 @@ export function PainelCoordenador() {
           <TabsList>
             <TabsTrigger value="operacao">Operação</TabsTrigger>
             <TabsTrigger value="analises">Análises</TabsTrigger>
+            <TabsTrigger value="laudos">Laudos</TabsTrigger>
           </TabsList>
           <TabsContent value="operacao" className="mt-4 space-y-6">
           <div className="grid gap-3 grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
@@ -1438,6 +1440,10 @@ export function PainelCoordenador() {
               producao={producao}
               porTipo={modelo.detalhes.porTipo}
             />
+          </TabsContent>
+
+          <TabsContent value="laudos" className="mt-4">
+            {visao === "laudos" && <PainelLaudos />}
           </TabsContent>
         </Tabs>
 
