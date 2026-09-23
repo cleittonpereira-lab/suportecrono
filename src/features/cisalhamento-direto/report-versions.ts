@@ -2,6 +2,8 @@
  * Persistência simples de versões (revisões) do relatório de Cisalhamento Direto em PDF usando IndexedDB.
  */
 
+import { numeroDaProximaRevisao } from "@/lib/numero-da-revisao";
+
 const DB_NAME = "suporte-infra-report-versions-cd";
 const STORE = "versions";
 const DB_VERSION = 1;
@@ -64,9 +66,10 @@ export async function listVersions(scopeId: string): Promise<ReportVersion[]> {
   });
 }
 
+/** Próxima revisão pela regra do servidor (lib/numero-da-revisao.ts); o histórico local só vale sem servidor. */
 export async function nextRev(scopeId: string): Promise<number> {
   const items = await listVersions(scopeId);
-  return items.length === 0 ? 0 : items[0].rev + 1;
+  return numeroDaProximaRevisao(scopeId, items.length === 0 ? 0 : items[0].rev + 1);
 }
 
 export async function saveVersion(
@@ -78,6 +81,11 @@ export async function saveVersion(
     // Cópia trazida do Drive mantém a data da revisão, não a hora em que foi baixada.
     createdAt: v.createdAt ?? new Date().toISOString(),
   };
+  // Revisão reaproveitada (reenvio depois de devolução): a cópia nova substitui
+  // a antiga do mesmo número, em vez de aparecer duas vezes na lista.
+  for (const antiga of (await listVersions(v.scopeId)).filter((x) => x.rev === v.rev)) {
+    await deleteVersion(antiga.id);
+  }
   await tx("readwrite", (store) => reqAsPromise(store.add(full)));
   return full;
 }

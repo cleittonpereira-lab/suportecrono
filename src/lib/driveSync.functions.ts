@@ -591,12 +591,12 @@ export type RevisaoNoDrive = { rev: number; filename: string; size: number; upda
 export const listDriveRevisions = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => z.object({ scopeId: z.string().min(1) }).parse(input))
-  .handler(async ({ data }): Promise<{ revisions: RevisaoNoDrive[] }> => {
-    if (!isGoogleAuthConfigured()) return { revisions: [] };
+  .handler(async ({ data }): Promise<{ revisions: RevisaoNoDrive[]; pastaExiste: boolean }> => {
+    if (!isGoogleAuthConfigured()) return { revisions: [], pastaExiste: false };
     const parts = await partesDaPastaDoEnsaio(data.scopeId);
-    if (!parts) return { revisions: [] };
+    if (!parts) return { revisions: [], pastaExiste: false };
     const rel = await resolveFolderPath([...parts, "relatorios"]);
-    if (!rel) return { revisions: [] };
+    if (!rel) return { revisions: [], pastaExiste: false };
     const q = `'${rel}' in parents and trashed = false and mimeType != '${FOLDER_MIME}'`;
     const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name,size,modifiedTime,createdTime)")}&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=drive&driveId=${DRIVE_ROOT_FOLDER_ID}`;
     const resp = (await driveJson(url, { method: "GET", headers: await driveHeaders() })) as {
@@ -616,7 +616,7 @@ export const listDriveRevisions = createServerFn({ method: "GET" })
       })
       .filter((r): r is RevisaoNoDrive => r !== null)
       .sort((a, b) => b.rev - a.rev);
-    return { revisions };
+    return { revisions, pastaExiste: true };
   });
 
 /**

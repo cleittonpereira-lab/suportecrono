@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useSchedule } from "@/hooks/use-schedule";
+import { useEntregues } from "@/hooks/use-entregues";
 import { classifyEspeciaisOs, normOs, splitSetores, splitEscopo } from "@/lib/schedule-utils";
 import { useOsGroups } from "@/features/lab/hooks/use-os-groups";
 import { getOsHub } from "@/lib/os-hub.functions";
@@ -41,13 +42,29 @@ function prazoInfo(dataAcordadaAtual: string | null): PrazoInfo {
 
 export function useEnsaiosEspeciaisRows() {
   const { data: scheduleData } = useSchedule();
+  const { data: entreguesData } = useEntregues();
   const { osGroups } = useOsGroups();
   const getOsHubFn = useServerFn(getOsHub);
 
-  const especiaisOsNumeros = useMemo(
-    () => Array.from(classifyEspeciaisOs(scheduleData?.rows ?? [])).sort(),
+  // OS com entrega ainda programada na planilha.
+  const comEntregaPendente = useMemo(
+    () => new Set(Array.from(classifyEspeciaisOs(scheduleData?.rows ?? [])).map(normOs)),
     [scheduleData],
   );
+
+  // A OS saía da lista quando a última entrega era feita — a linha sai da
+  // programação e vai para "entregues". Agora ela fica até ser ARQUIVADA
+  // (botão "Arquivar OS" na página da OS). Das entregues, só entram as OS
+  // cadastradas no laboratório: as antigas, de antes do sistema, não voltam.
+  const especiaisOsNumeros = useMemo(() => {
+    const doLab = new Set(osGroups.map((g) => normOs(g.osNumero)));
+    const todas = new Map<string, string>();
+    for (const os of classifyEspeciaisOs(scheduleData?.rows ?? [])) todas.set(normOs(os), os);
+    for (const os of classifyEspeciaisOs(entreguesData?.rows ?? [])) {
+      if (doLab.has(normOs(os)) && !todas.has(normOs(os))) todas.set(normOs(os), os);
+    }
+    return Array.from(todas.values()).sort();
+  }, [scheduleData, entreguesData, osGroups]);
 
   const hubQueries = useQueries({
     queries: especiaisOsNumeros.map((osNumero) => ({
@@ -84,12 +101,14 @@ export function useEnsaiosEspeciaisRows() {
         totalEnsaios,
         concluidos,
         arquivada: hub?.arquivada ?? false,
+        /** Todas as entregas feitas e a OS ainda não arquivada: pede o arquivamento. */
+        entregue: !comEntregaPendente.has(normOs(osNumero)),
         dataAcordadaAtual: hub?.dataAcordadaAtual ?? null,
         setoresUnificados: Array.from(setores),
         escoposUnificados: [...Array.from(escopoTags), ...Array.from(escopoExtras)],
       };
     });
-  }, [especiaisOsNumeros, osGroups, hubQueries, scheduleData]);
+  }, [especiaisOsNumeros, osGroups, hubQueries, scheduleData, comEntregaPendente]);
 }
 
 export function EnsaiosEspeciaisView() {
@@ -125,6 +144,10 @@ export function EnsaiosEspeciaisView() {
           Mostrar arquivadas
         </label>
       </div>
+      <p className="text-[11px] text-muted-foreground -mt-2">
+        A OS continua aqui mesmo depois da última entrega. Ela só sai da lista quando for arquivada — abra a OS e use
+        "Arquivar OS" no topo.
+      </p>
 
       {filtered.length === 0 ? (
         <Card>
@@ -177,7 +200,17 @@ export function EnsaiosEspeciaisView() {
                   <span className="font-semibold text-foreground tabular-nums">{r.concluidos}/{r.totalEnsaios}</span> concluídos
                 </div>
 
-                <Badge variant="outline" className={`${prazo.badgeClass} shrink-0 justify-center w-32`}>{prazo.label}</Badge>
+                {r.entregue && !r.arquivada ? (
+                  <Badge
+                    variant="outline"
+                    className="shrink-0 justify-center w-32 border-emerald-500/50 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                    title="Todas as entregas foram feitas. Abra a OS e use &quot;Arquivar OS&quot; quando ela estiver encerrada."
+                  >
+                    Entregue · arquivar
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className={`${prazo.badgeClass} shrink-0 justify-center w-32`}>{prazo.label}</Badge>
+                )}
 
                 <div className="flex items-center gap-1 shrink-0 text-xs font-semibold text-primary">
                   Abrir <ArrowRight className="h-3.5 w-3.5" />

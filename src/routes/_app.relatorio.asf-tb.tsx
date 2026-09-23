@@ -4,6 +4,9 @@
  * verificação/aprovação. Mesmo esqueleto do ASF.DAP (_app.relatorio.asf-dap.tsx).
  */
 import { useDraftActivity } from "@/hooks/use-draft-activity";
+import { DadosTravados } from "@/components/report/DadosTravados";
+import { BotaoNovaRevisao } from "@/components/report/BotaoNovaRevisao";
+import { statusDoEditor } from "@/lib/status-do-editor";
 import { EditingPresenceBanner } from "@/components/DraftActivityInfo";
 import { buildScopeId } from "@/lib/scope";
 import { createFileRoute } from "@tanstack/react-router";
@@ -36,6 +39,7 @@ import {
   type ReportVersion,
 } from "@/features/asf-tb/report-versions";
 import { sincronizarVersoesComDrive, useVersoesAoVivo } from "@/lib/revisoes-do-drive";
+import { excluirRevisaoDoLaudo } from "@/lib/excluir-revisao";
 import { syncRevision, fetchDriveStatus } from "@/features/asf-tb/driveSync";
 import { ReportVersionsPanel } from "@/components/report/ReportVersionsPanel";
 import {
@@ -44,6 +48,7 @@ import {
   verifyApproval,
   decideApproval,
   type ApprovalRow,
+  useRegerarPdfNoFluxo,
 } from "@/lib/approvals-com-pdf";
 import { getWorkflowStatuses } from "@/lib/driveSync.functions";
 import {
@@ -565,13 +570,19 @@ export function AsfTbPage() {
   };
 
   const handleDeleteVersion = async (id: string) => {
-    if (!confirm("Excluir esta revisão? Esta ação não pode ser desfeita.")) return;
-    try {
-      await deleteVersion(id);
+    const v = versions.find((x) => x.id === id);
+    if (!v) return;
+    const ok = await excluirRevisaoDoLaudo({
+      scopeId,
+      rev: v.rev,
+      aprovada: approvals.some((a) => a.rev === v.rev && a.status === "aprovado"),
+      apagarLocal: async () => {
+        for (const x of versions.filter((y) => y.rev === v.rev)) await deleteVersion(x.id);
+      },
+    });
+    if (ok) {
       await refreshVersions();
-      toast.success("Revisão excluída");
-    } catch (err) {
-      toast.error("Falha ao excluir: " + (err instanceof Error ? err.message : String(err)));
+      await refreshApprovals();
     }
   };
 
@@ -713,6 +724,7 @@ export function AsfTbPage() {
     }
     return blob;
   };
+  useRegerarPdfNoFluxo(scopeId, buildReportPdfBlob);
 
   const nomeBase = () => (sample.workNumber || sample.os || "relatorio").toString().replace(/[^\w-]+/g, "_");
 
@@ -872,11 +884,12 @@ export function AsfTbPage() {
     }
   };
 
-  const rawSt = wfStatus || approvals[0]?.status || (ctx?.ensaio as any)?.status || "digitacao";
-  const isAguardandoVerif = rawSt === "aguardando_verificacao" || rawSt === "pendente_verificacao" || rawSt === "digitado" || rawSt === "verificacao";
-  const isAguardandoAprov = rawSt === "aguardando_aprovacao" || rawSt === "pendente_aprovacao" || rawSt === "verificado";
-  const isAprovado = rawSt === "aprovado" || rawSt === "concluido";
-  const rev = approvals[0]?.rev ?? 0;
+  const fluxoDoLaudo = statusDoEditor(approvals, wfStatus, (ctx?.ensaio as any)?.status);
+  const rawSt = fluxoDoLaudo.rawSt;
+  const isAguardandoVerif = fluxoDoLaudo.isAguardandoVerif;
+  const isAguardandoAprov = fluxoDoLaudo.isAguardandoAprov;
+  const isAprovado = fluxoDoLaudo.isAprovado;
+  const rev = fluxoDoLaudo.rev;
 
   return (
     <>
@@ -1037,9 +1050,7 @@ export function AsfTbPage() {
             {isAprovado && (
               <div className="flex items-center gap-2">
                 <Badge className="bg-emerald-600 text-white font-semibold px-3 py-1.5 text-xs">✓ Laudo Oficial Aprovado</Badge>
-                <Button variant="outline" size="sm" onClick={() => handleSaveVersion({ skipVerification: true })} disabled={saveBusy} className="text-xs gap-1.5">
-                  <Send className="h-3.5 w-3.5" /> Gerar Nova Revisão
-                </Button>
+                <BotaoNovaRevisao scopeId={scopeId} disabled={saveBusy} aoAbrir={refreshApprovals} />
               </div>
             )}
 
@@ -1129,6 +1140,7 @@ export function AsfTbPage() {
           </div>
 
           <div className="flex-1 overflow-auto mt-4 pr-1">
+            <DadosTravados fluxo={statusDoEditor(approvals, wfStatus, (ctx?.ensaio as any)?.status)} approvals={approvals}>
             <TabsContent value="ensaio" className="m-0 space-y-4">
               {/* Teor de betume */}
               <Card>
@@ -1304,6 +1316,7 @@ export function AsfTbPage() {
               )}
             </TabsContent>
 
+            </DadosTravados>
             <TabsContent value="versoes" className="m-0 space-y-4">
               <ReportVersionsPanel
                 scopeId={scopeId}

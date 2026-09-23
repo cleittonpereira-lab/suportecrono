@@ -46,7 +46,21 @@ export function farolInfo(status: string | null | undefined): FarolInfo {
       className: "bg-amber-500/10 text-amber-800 border-amber-500/40 dark:text-amber-300",
     };
   }
-  if (s === "rejeitado" || s === "rejeitado_verificacao") {
+  if (s === "rejeitado_verificacao") {
+    return {
+      label: "Devolvido para correção",
+      dot: "bg-rose-500",
+      className: "bg-rose-500/10 text-rose-700 border-rose-500/40 dark:text-rose-300",
+    };
+  }
+  if (s === "em_revisao") {
+    return {
+      label: "Em correção (nova revisão)",
+      dot: "bg-blue-500",
+      className: "bg-blue-500/10 text-blue-700 border-blue-500/40 dark:text-blue-300",
+    };
+  }
+  if (s === "rejeitado") {
     return {
       label: "Rejeitado",
       dot: "bg-rose-500",

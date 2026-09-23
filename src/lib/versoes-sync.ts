@@ -22,10 +22,29 @@ export type AcaoDeSincronizacao<L extends VersaoLocalMin = VersaoLocalMin> =
   /** Mesmo PDF, só o nome local mudou para o nome oficial do Drive. */
   | { tipo: "renomear"; remota: RevisaoRemota; local: L }
   /** Duplicata da mesma revisão (duas chamadas concorrentes já tratou a rev): só apaga. */
-  | { tipo: "remover_duplicata"; local: L };
+  | { tipo: "remover_duplicata"; local: L }
+  /** Cópia trazida do Drive cuja revisão foi excluída lá (lixeira): sai daqui também. */
+  | { tipo: "remover_excluida"; local: L };
 
-export function planoDeSincronizacao<L extends VersaoLocalMin>(locais: L[], remotas: RevisaoRemota[]): AcaoDeSincronizacao<L>[] {
+/**
+ * `pastaExiste`: a pasta `relatorios` do ensaio foi encontrada no Drive. Só
+ * então uma revisão ausente lá conta como excluída — sem a pasta (Drive fora
+ * do ar, ensaio renomeado), a lista vazia não apaga nada daqui.
+ */
+export function planoDeSincronizacao<L extends VersaoLocalMin>(
+  locais: L[],
+  remotas: RevisaoRemota[],
+  pastaExiste = false,
+): AcaoDeSincronizacao<L>[] {
   const acoes: AcaoDeSincronizacao<L>[] = [];
+  if (pastaExiste) {
+    const noDrive = new Set(remotas.map((r) => r.rev));
+    for (const local of locais) {
+      if (local.note?.startsWith(MARCA_DO_DRIVE) && !noDrive.has(local.rev)) {
+        acoes.push({ tipo: "remover_excluida", local });
+      }
+    }
+  }
   for (const remota of remotas) {
     // Duas chamadas concorrentes a sincronizarVersoesComDrive (ex.: o aviso em
     // tempo real disparando enquanto o mount ainda está sincronizando) podiam

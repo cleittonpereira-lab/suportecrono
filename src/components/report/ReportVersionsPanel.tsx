@@ -240,7 +240,13 @@ export function ReportVersionsPanel({
                           <Button size="sm" variant="secondary" className="gap-1" disabled={abrindo === v.id} onClick={() => void baixarVersao(v)}>
                             <Download className="h-3 w-3" /> Baixar
                           </Button>
-                          <Button size="sm" variant="ghost" className="text-destructive" onClick={() => void onDeleteVersion(v.id)}>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-destructive"
+                            title="Excluir esta revisão (o PDF vai para a lixeira do Drive)"
+                            onClick={() => void onDeleteVersion(v.id)}
+                          >
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
@@ -293,7 +299,8 @@ function ApprovalStatusBadge({ approval }: { approval: ApprovalRow | null }) {
     pendente_verificacao: { label: "Aguardando verificação", cls: "bg-amber-500/15   text-amber-700   dark:text-amber-400", Icon: Clock },
     pendente_aprovacao: { label: "Aguardando aprovação", cls: "bg-sky-500/15     text-sky-700     dark:text-sky-400", Icon: Clock },
     verificado: { label: "Verificado", cls: "bg-sky-500/15     text-sky-700     dark:text-sky-400", Icon: ShieldCheck },
-    rejeitado_verificacao: { label: "Rejeitado na verificação", cls: "bg-destructive/15 text-destructive", Icon: XCircle },
+    rejeitado_verificacao: { label: "Devolvida para correção", cls: "bg-destructive/15 text-destructive", Icon: XCircle },
+    em_revisao: { label: "Em correção", cls: "bg-blue-500/15 text-blue-700 dark:text-blue-400", Icon: Clock },
     aprovado: { label: "Aprovado", cls: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400", Icon: CheckCircle2 },
     rejeitado: { label: "Rejeitado", cls: "bg-destructive/15 text-destructive", Icon: XCircle },
   };

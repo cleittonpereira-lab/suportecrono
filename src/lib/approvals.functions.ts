@@ -192,6 +192,11 @@ function workflowDaEtapa(approvals: ApprovalRow[]): "digitacao" | "aguardando_ve
   return etapa === "aprovado" || etapa === "aguardando_aprovacao" || etapa === "aguardando_verificacao" ? etapa : "digitacao";
 }
 
+/** `workflowStatus` usa "digitacao"; o `status` do ensaio (EnsaioStatus) usa "em_digitacao". */
+function statusDoEnsaio(workflow: string): string {
+  return workflow === "digitacao" ? "em_digitacao" : workflow;
+}
+
 const PENDENCIA_DO_WORKFLOW: Record<ReturnType<typeof workflowDaEtapa>, PendenciaDigitacao["status"]> = {
   digitacao: "em_digitacao",
   aguardando_verificacao: "digitado",
@@ -400,7 +405,7 @@ export const verifyApproval = createServerFn({ method: "POST" })
         // lê) — sem gravar os dois juntos aqui, verificar/aprovar nunca
         // avançava o status que essas outras telas mostram, deixando ensaios
         // já aprovados aparecendo pra sempre como "Em Digitação" nelas.
-        status: nextWorkflow,
+        status: statusDoEnsaio(nextWorkflow),
         reportApprovals: nextApprovals,
         approvalComments: [commentRow, ...comments].slice(0, 200),
       };
@@ -595,7 +600,7 @@ export const abrirNovaRevisao = createServerFn({ method: "POST" })
         updatedAt: nowIso,
         rev: (existing.rev ?? 0) + 1,
         workflowStatus: "digitacao",
-        status: "digitacao",
+        status: statusDoEnsaio("digitacao"),
         reportApprovals: [row, ...approvals],
         approvalComments: [commentRow, ...comments].slice(0, 200),
       };
@@ -664,7 +669,7 @@ export const excluirRevisao = createServerFn({ method: "POST" })
             updatedAt: nowIso,
             rev: (existing.rev ?? 0) + 1,
             workflowStatus: workflow,
-            status: workflow,
+            status: statusDoEnsaio(workflow),
             reportApprovals: restantes,
             approvalComments: [commentRow, ...comments].slice(0, 200),
           };

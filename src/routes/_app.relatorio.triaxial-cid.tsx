@@ -1,5 +1,8 @@
 import { SyncStatusBadge } from "@/components/SyncStatusBadge";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { DadosTravados } from "@/components/report/DadosTravados";
+import { BotaoNovaRevisao } from "@/components/report/BotaoNovaRevisao";
+import { statusDoEditor } from "@/lib/status-do-editor";
 import { useMemo, useRef, useState } from "react";
 import { useCadastroByOs } from "@/hooks/use-cadastro-by-os";
 import {
@@ -51,6 +54,7 @@ import {
   type ReportVersion,
 } from "@/features/triaxial-cid/report-versions";
 import { sincronizarVersoesComDrive, useVersoesAoVivo } from "@/lib/revisoes-do-drive";
+import { excluirRevisaoDoLaudo } from "@/lib/excluir-revisao";
 import { useEffect } from "react";
 import { History, Trash2, Eye } from "lucide-react";
 import { Cloud, CloudCheck, CloudAlert, ExternalLink, RefreshCw } from "lucide-react";
@@ -67,6 +71,7 @@ import {
   verifyApproval,
   decideApproval,
   type ApprovalRow,
+  useRegerarPdfNoFluxo,
 } from "@/lib/approvals-com-pdf";
 import { CheckCircle2,
   MessageSquareQuote, XCircle, Clock, Send } from "lucide-react";
@@ -772,6 +777,7 @@ export function TriaxialCidPage() {
     }
     return blob;
   };
+  useRegerarPdfNoFluxo(scopeId, buildReportPdfBlob);
 
   const handleSaveVersion = async (opts?: { skipVerification?: boolean }) => {
     const skipVerification = opts?.skipVerification === true;
@@ -938,14 +944,19 @@ export function TriaxialCidPage() {
   };
 
   const handleDeleteVersion = async (id: string) => {
-    if (!confirm("Excluir esta revisão? Esta ação não pode ser desfeita.")) return;
-    try {
-      await deleteVersion(id);
+    const v = versions.find((x) => x.id === id);
+    if (!v) return;
+    const ok = await excluirRevisaoDoLaudo({
+      scopeId,
+      rev: v.rev,
+      aprovada: approvals.some((a) => a.rev === v.rev && a.status === "aprovado"),
+      apagarLocal: async () => {
+        for (const x of versions.filter((y) => y.rev === v.rev)) await deleteVersion(x.id);
+      },
+    });
+    if (ok) {
       await refreshVersions();
-      toast.success("Revisão excluída");
-    } catch (err) {
-      console.error(err);
-      toast.error("Falha ao excluir revisão");
+      await refreshApprovals();
     }
   };
 
@@ -1150,7 +1161,8 @@ export function TriaxialCidPage() {
               <Badge variant="outline">ISO 17892-9</Badge>
               <WorkflowFarol status={
                 (() => {
-                  const rawSt = wfStatus || approvals[0]?.status || (ctx?.ensaio as any)?.status || "digitacao";
+                  const fluxoDoLaudo = statusDoEditor(approvals, wfStatus, (ctx?.ensaio as any)?.status);
+                  const rawSt = fluxoDoLaudo.rawSt;
                   if (rawSt === "aguardando_verificacao" || rawSt === "pendente_verificacao" || rawSt === "digitado" || rawSt === "verificacao") return "aguardando_verificacao";
                   if (rawSt === "aguardando_aprovacao" || rawSt === "pendente_aprovacao" || rawSt === "verificado") return "aguardando_aprovacao";
                   if (rawSt === "aprovado" || rawSt === "concluido") return "aprovado";
@@ -1179,11 +1191,12 @@ export function TriaxialCidPage() {
           <div className="flex flex-wrap items-center gap-2 justify-end">
             {/* Ação contextual do fluxo — visível no topo, sem precisar abrir o relatório */}
             {(() => {
-              const rawSt = wfStatus || approvals[0]?.status || (ctx?.ensaio as any)?.status || "digitacao";
-              const isAguardandoVerif = rawSt === "aguardando_verificacao" || rawSt === "pendente_verificacao" || rawSt === "digitado" || rawSt === "verificacao";
-              const isAguardandoAprov = rawSt === "aguardando_aprovacao" || rawSt === "pendente_aprovacao" || rawSt === "verificado";
-              const isAprovado = rawSt === "aprovado" || rawSt === "concluido";
-              const rev = approvals[0]?.rev ?? 0;
+              const fluxoDoLaudo = statusDoEditor(approvals, wfStatus, (ctx?.ensaio as any)?.status);
+              const rawSt = fluxoDoLaudo.rawSt;
+              const isAguardandoVerif = fluxoDoLaudo.isAguardandoVerif;
+              const isAguardandoAprov = fluxoDoLaudo.isAguardandoAprov;
+              const isAprovado = fluxoDoLaudo.isAprovado;
+              const rev = fluxoDoLaudo.rev;
 
               if (isAguardandoVerif) {
                 if (isVerificador || isAdmin) {
@@ -1274,15 +1287,7 @@ export function TriaxialCidPage() {
                     <Badge className="bg-emerald-600 text-white font-semibold px-3 py-1.5 text-xs">
                       ✓ Laudo Oficial Aprovado
                     </Badge>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleSaveVersion({ skipVerification: true })}
-                      disabled={saveBusy}
-                      className="text-xs gap-1.5"
-                    >
-                      <Send className="h-3.5 w-3.5" /> Gerar Nova Revisão
-                    </Button>
+                    <BotaoNovaRevisao scopeId={scopeId} disabled={saveBusy} aoAbrir={refreshApprovals} />
                   </div>
                 );
               }
@@ -1560,6 +1565,7 @@ export function TriaxialCidPage() {
           </div>
 
           {/* AMOSTRA */}
+          <DadosTravados fluxo={statusDoEditor(approvals, wfStatus, (ctx?.ensaio as any)?.status)} approvals={approvals}>
           <TabsContent value="amostra" className="mt-4 space-y-4">
             <Card>
               <CardHeader><CardTitle className="text-sm">Propriedades e correções</CardTitle></CardHeader>
@@ -2196,6 +2202,7 @@ export function TriaxialCidPage() {
           </TabsContent>
 
           {/* VERSÕES — histórico de revisões do relatório em PDF */}
+          </DadosTravados>
           <TabsContent value="versoes" className="mt-4">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">

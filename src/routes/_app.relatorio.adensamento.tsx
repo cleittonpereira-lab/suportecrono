@@ -1,5 +1,8 @@
 import { SyncStatusBadge } from "@/components/SyncStatusBadge";
 import { saveSharedDraft, loadSharedDraft } from "@/lib/draft.functions";
+import { DadosTravados } from "@/components/report/DadosTravados";
+import { BotaoNovaRevisao } from "@/components/report/BotaoNovaRevisao";
+import { statusDoEditor } from "@/lib/status-do-editor";
 import React, { useMemo, useRef, useState, useEffect } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { flushSync } from "react-dom";
@@ -136,7 +139,7 @@ import { syncOedometerRevisionToDrive } from "@/features/oedometer/driveSync";
 import { saveOedReportVersion, listOedReportVersions, deleteOedReportVersion } from "@/features/oedometer/report-versions";
 import { sincronizarVersoesComDrive, useVersoesAoVivo } from "@/lib/revisoes-do-drive";
 import { rasterizarRelatorioParaPdf, waitForOffscreenEl } from "@/lib/report-pdf";
-import { getProximaRevisao } from "@/lib/driveSync.functions";
+import { numeroDaProximaRevisao } from "@/lib/numero-da-revisao";
 import { saveOedDraft, loadOedDraft, fetchRemoteOedDraft, flushOedDraft } from "@/features/oedometer/draftStore";
 import { SaveNowButton } from "@/components/report/SaveNowButton";
 import { beginSave, endSave } from "@/lib/save-in-flight";
@@ -144,7 +147,7 @@ import { useDraftActivity } from "@/hooks/use-draft-activity";
 import { EditingPresenceBanner, DraftHistoryButton } from "@/components/DraftActivityInfo";
 import { listPendenciasDigitacao, atualizarPendenciaDigitacao } from "@/lib/lab-pendencias.functions";
 import { findMatchingPendencia } from "@/lib/pendencia-match";
-import { requestApproval, verifyApproval, decideApproval, listApprovals, getWorkflowStatuses } from "@/lib/approvals-com-pdf";
+import { requestApproval, verifyApproval, decideApproval, listApprovals, getWorkflowStatuses, useRegerarPdfNoFluxo } from "@/lib/approvals-com-pdf";
 import { buildScopeId } from "@/lib/scope";
 import { WorkflowFarol } from "@/features/lab/components/WorkflowFarol";
 import { PickerWithCreate } from "@/features/cisalhamento-direto/PickerWithCreate";
@@ -715,17 +718,8 @@ export function AdensamentoPage() {
    * o maior entre o histórico local e o que o servidor já registrou
    * (aprovações e PDFs no Drive).
    */
-  const proximaRevisao = async (): Promise<number> => {
-    const local = versions.length > 0 ? Math.max(...versions.map((v) => v.rev)) + 1 : 0;
-    try {
-      const { proxima } = await getProximaRevisao({ data: { scopeId } });
-      if (proxima != null) return Math.max(local, proxima);
-    } catch (err) {
-      console.warn("[adensamento] Falha ao consultar a próxima revisão no servidor:", err);
-    }
-    toast.warning("Não foi possível confirmar no servidor as revisões já emitidas; a numeração usa só o histórico deste computador.");
-    return local;
-  };
+  const proximaRevisao = (): Promise<number> =>
+    numeroDaProximaRevisao(scopeId, versions.length > 0 ? Math.max(...versions.map((v) => v.rev)) + 1 : 0);
 
   /** Falha de envio ao Drive fica na tela até alguém agir — antes era um aviso de poucos segundos. */
   const avisarQueNaoChegouAoDrive = (
@@ -1188,6 +1182,7 @@ export function AdensamentoPage() {
       if (wasDark) htmlEl.classList.add("dark");
     }
   };
+  useRegerarPdfNoFluxo(scopeId, () => gerarPdfDoAdensamento({ oficial: true, pixelRatio: 2 }));
 
   const handleExportPDF = async () => {
     if (import.meta.env.SSR) return;
@@ -1258,11 +1253,12 @@ export function AdensamentoPage() {
         <div className="flex flex-wrap items-center gap-2 justify-end">
           {/* Botão Contextual de Fluxo Dinâmico */}
           {(() => {
-            const rawSt = wfStatus || approvals[0]?.status || (ctx?.ensaio as any)?.status || "em_digitacao";
-            const rev = approvals[0]?.rev ?? 0;
-            const isAguardandoVerif = rawSt === "aguardando_verificacao" || rawSt === "pendente_verificacao" || rawSt === "digitado" || rawSt === "verificacao";
-            const isAguardandoAprov = rawSt === "aguardando_aprovacao" || rawSt === "pendente_aprovacao" || rawSt === "verificado";
-            const isAprovado = rawSt === "aprovado";
+            const fluxoDoLaudo = statusDoEditor(approvals, wfStatus, (ctx?.ensaio as any)?.status);
+            const rawSt = fluxoDoLaudo.rawSt;
+            const rev = fluxoDoLaudo.rev;
+            const isAguardandoVerif = fluxoDoLaudo.isAguardandoVerif;
+            const isAguardandoAprov = fluxoDoLaudo.isAguardandoAprov;
+            const isAprovado = fluxoDoLaudo.isAprovado;
 
             if (isAguardandoVerif) {
               if (isVerificador || isAdmin) {
@@ -1387,15 +1383,7 @@ export function AdensamentoPage() {
                   <Badge className="bg-emerald-600 text-white font-semibold px-3 py-1.5 text-xs">
                     ✓ Laudo Oficial Aprovado
                   </Badge>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleSaveVersion()}
-                    disabled={savingVersion}
-                    className="text-xs gap-1.5"
-                  >
-                    <Send className="h-3.5 w-3.5" /> Gerar Nova Revisão
-                  </Button>
+                  <BotaoNovaRevisao scopeId={scopeId} disabled={savingVersion} aoAbrir={refreshApprovals} />
                 </div>
               );
             }
@@ -1616,6 +1604,7 @@ export function AdensamentoPage() {
           </TabsList>
 
           {/* TAB 1: FICHA DE PREPARO */}
+          <DadosTravados fluxo={statusDoEditor(approvals, wfStatus, (ctx?.ensaio as any)?.status)} approvals={approvals}>
           <TabsContent value="ficha" className="mt-4 space-y-4">
             <div className="grid gap-4 lg:grid-cols-3">
               {/* Equipamento e Descrição */}
@@ -2558,6 +2547,7 @@ export function AdensamentoPage() {
             </Card>
           </TabsContent>
                   {/* TAB 5: VERSÕES & REVISÕES */}
+          </DadosTravados>
           <TabsContent value="versoes" className="mt-4 space-y-4">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 py-3">

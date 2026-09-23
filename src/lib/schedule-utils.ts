@@ -241,7 +241,7 @@ export function joinEscopo(tags: EscopoTag[], extras: string[] = []): string {
 // Triaxiais Mec. Solos / Adensamento) OU pela tag de setor "Especiais".
 const ESCOPOS_ESPECIAIS = new Set<EscopoTag>(["Cisalhamento", "Triaxiais Mec. Solos", "Adensamento"]);
 
-export function classifyEspeciaisOs(rows: ScheduleRow[]): Set<string> {
+export function classifyEspeciaisOs(rows: readonly Pick<ScheduleRow, "os" | "escopo" | "setor">[]): Set<string> {
   const s = new Set<string>();
   for (const r of rows) {
     if (!r.os) continue;

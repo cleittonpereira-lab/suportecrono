@@ -9,6 +9,7 @@
  * completado da próxima vez que alguém abrir a revisão (painel de versões ou
  * prévia da Central de Emissões).
  */
+import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { verifyApproval as verificarNoServidor, decideApproval as decidirNoServidor } from "./approvals.functions";
 import { getRevisionPdfBase64, substituirPdfDaRevisao } from "./driveSync.functions";
@@ -102,16 +103,62 @@ function completarEmSegundoPlano(scopeId: string, rev: number, aprovacao: Aprova
     });
 }
 
+/* ─────────── PDF refeito com os dados atuais ao verificar/aprovar ─────────── */
+
+/**
+ * O editor aberto registra aqui como gerar o PDF do laudo. Ao verificar ou
+ * aprovar, o PDF da revisão é refeito com os dados da tela ANTES de a decisão
+ * ser gravada — sem precisar clicar em "Atualizar PDF". Uma correção feita
+ * durante a verificação entra no PDF que vai para o Drive. Depois vem o
+ * carimbo das assinaturas, sobre o PDF novo (em sequência, sem corrida).
+ * Fora do editor (Central de Emissões), não há o que refazer: só o carimbo.
+ */
+const regeradores = new Map<string, () => Promise<Blob>>();
+
+export function useRegerarPdfNoFluxo(scopeId: string, gerarPdf: () => Promise<Blob>): void {
+  const atual = useRef(gerarPdf);
+  useEffect(() => {
+    atual.current = gerarPdf;
+  });
+  useEffect(() => {
+    if (!scopeId) return;
+    const fn = () => atual.current();
+    regeradores.set(scopeId, fn);
+    return () => {
+      if (regeradores.get(scopeId) === fn) regeradores.delete(scopeId);
+    };
+  }, [scopeId]);
+}
+
+async function regerarAntesDaDecisao(scopeId: string, rev: number): Promise<void> {
+  const gerar = regeradores.get(scopeId);
+  if (!gerar) return;
+  const rotulo = `Rev-${String(rev).padStart(2, "0")}`;
+  const id = toast.loading(`Refazendo o PDF da ${rotulo} com os dados atuais…`);
+  try {
+    const blob = await gerar();
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    await substituirPdfDaRevisao({ data: { scopeId, rev, base64: bytesParaBase64(bytes) } });
+    toast.success(`PDF da ${rotulo} refeito com os dados atuais.`, { id });
+  } catch (err) {
+    toast.dismiss(id);
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`O PDF da ${rotulo} não pôde ser refeito com os dados atuais, e a decisão NÃO foi registrada: ${msg}`);
+  }
+}
+
 // Tipos soltos de propósito: quem valida a entrada é o servidor (zod), como antes.
 type EntradaDecisao = { scopeId: string; rev: number; decision: string; comment?: string };
 
 export async function verifyApproval(opts: { data: EntradaDecisao }) {
+  if (opts.data.decision === "verificado") await regerarAntesDaDecisao(opts.data.scopeId, opts.data.rev);
   const linha = await verificarNoServidor({ data: opts.data });
   completarEmSegundoPlano(opts.data.scopeId, opts.data.rev, linha, opts.data.decision !== "verificado");
   return linha;
 }
 
 export async function decideApproval(opts: { data: EntradaDecisao }) {
+  if (opts.data.decision === "aprovado") await regerarAntesDaDecisao(opts.data.scopeId, opts.data.rev);
   const linha = await decidirNoServidor({ data: opts.data });
   completarEmSegundoPlano(opts.data.scopeId, opts.data.rev, linha, opts.data.decision !== "aprovado");
   return linha;

@@ -21,6 +21,7 @@ import {
   Droplets,
   Gauge,
   type LucideIcon,
+  Inbox,
 } from "lucide-react";
 import {
   Sidebar,
@@ -91,6 +92,7 @@ const sections: readonly NavSection[] = [
   {
     label: "RELATÓRIO",
     items: [
+      { title: "Meus laudos", url: "/relatorio/meus-laudos", icon: Inbox },
       { title: "Central de Relatórios", url: "/relatorio/pendentes", icon: ClipboardList },
       { title: "Cisalhamento Direto", url: "/relatorio/cisalhamento-direto", icon: Beaker },
       { title: "Adensamento", url: "/relatorio/adensamento", icon: Beaker },

@@ -59,4 +59,16 @@ describe("versões: o que trazer do Drive", () => {
     const acoes = planoDeSincronizacao([a, b], [remota(0, "2026-09-14T17:12:45Z")]);
     expect(acoes).toEqual([{ tipo: "remover_duplicata", local: a }]);
   });
+
+  it("revisão excluída no Drive (lixeira) sai também daqui — só a cópia que veio do Drive", () => {
+    const doDrive = local(1, "2026-09-14T17:12:34Z", { id: "d1", note: MARCA_DO_DRIVE + "2026-09-14T17:12:45Z" });
+    const soLocal = local(2, "2026-09-14T17:12:34Z", { id: "l2" });
+    const acoes = planoDeSincronizacao([doDrive, soLocal], [], true);
+    expect(acoes).toEqual([{ tipo: "remover_excluida", local: doDrive }]);
+  });
+
+  it("sem a pasta no Drive (fora do ar, ensaio renomeado), nada é apagado", () => {
+    const doDrive = local(1, "2026-09-14T17:12:34Z", { id: "d1", note: MARCA_DO_DRIVE + "2026-09-14T17:12:45Z" });
+    expect(planoDeSincronizacao([doDrive], [], false)).toEqual([]);
+  });
 });

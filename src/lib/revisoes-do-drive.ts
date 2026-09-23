@@ -64,16 +64,19 @@ async function sincronizarAgora(
 ): Promise<boolean> {
   if (!registroDoEnsaio(scopeId)) return false;
   let remotas;
+  let pastaExiste = false;
   try {
-    remotas = (await listDriveRevisions({ data: { scopeId } })).revisions;
+    const resp = await listDriveRevisions({ data: { scopeId } });
+    remotas = resp.revisions;
+    pastaExiste = resp.pastaExiste === true;
   } catch (err) {
     console.warn("[versões] Não foi possível consultar as revisões no Drive:", err);
     return false;
   }
   let mudou = false;
-  for (const acao of planoDeSincronizacao(locais, remotas)) {
+  for (const acao of planoDeSincronizacao(locais, remotas, pastaExiste)) {
     try {
-      if (acao.tipo === "remover_duplicata") {
+      if (acao.tipo === "remover_duplicata" || acao.tipo === "remover_excluida") {
         await modulo.deleteVersion(acao.local.id);
         mudou = true;
         continue;
@@ -96,7 +99,7 @@ async function sincronizarAgora(
       if (anterior) await modulo.deleteVersion(anterior.id);
       mudou = true;
     } catch (err) {
-      const rev = acao.tipo === "remover_duplicata" ? acao.local.rev : acao.remota.rev;
+      const rev = acao.tipo === "remover_duplicata" || acao.tipo === "remover_excluida" ? acao.local.rev : acao.remota.rev;
       console.warn(`[versões] Falha ao trazer a Rev-${String(rev).padStart(2, "0")} do Drive:`, err);
     }
   }

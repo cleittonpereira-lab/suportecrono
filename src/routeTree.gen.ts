@@ -71,6 +71,7 @@ import { Route as AppRelatorioEmissoesRouteImport } from './routes/_app.relatori
 import { Route as AppRelatorioLoadTestRouteImport } from './routes/_app.relatorio.load-test'
 import { Route as AppRelatorioMespARouteImport } from './routes/_app.relatorio.mesp-a'
 import { Route as AppRelatorioMespANaturalRouteImport } from './routes/_app.relatorio.mesp-a-natural'
+import { Route as AppRelatorioMeusLaudosRouteImport } from './routes/_app.relatorio.meus-laudos'
 import { Route as AppRelatorioModuloResilienciaRouteImport } from './routes/_app.relatorio.modulo-resiliencia'
 import { Route as AppRelatorioPendentesRouteImport } from './routes/_app.relatorio.pendentes'
 import { Route as AppRelatorioPermVRouteImport } from './routes/_app.relatorio.perm-v'
@@ -430,6 +431,11 @@ const AppRelatorioMespANaturalRoute =
     path: '/relatorio/mesp-a-natural',
     getParentRoute: () => AppRoute,
   } as any)
+const AppRelatorioMeusLaudosRoute = AppRelatorioMeusLaudosRouteImport.update({
+  id: '/relatorio/meus-laudos',
+  path: '/relatorio/meus-laudos',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppRelatorioModuloResilienciaRoute =
   AppRelatorioModuloResilienciaRouteImport.update({
     id: '/relatorio/modulo-resiliencia',
@@ -632,6 +638,7 @@ export interface FileRoutesByFullPath {
   '/relatorio/load-test': typeof AppRelatorioLoadTestRoute
   '/relatorio/mesp-a': typeof AppRelatorioMespARoute
   '/relatorio/mesp-a-natural': typeof AppRelatorioMespANaturalRoute
+  '/relatorio/meus-laudos': typeof AppRelatorioMeusLaudosRoute
   '/relatorio/modulo-resiliencia': typeof AppRelatorioModuloResilienciaRoute
   '/relatorio/pendentes': typeof AppRelatorioPendentesRoute
   '/relatorio/perm-v': typeof AppRelatorioPermVRoute
@@ -719,6 +726,7 @@ export interface FileRoutesByTo {
   '/relatorio/load-test': typeof AppRelatorioLoadTestRoute
   '/relatorio/mesp-a': typeof AppRelatorioMespARoute
   '/relatorio/mesp-a-natural': typeof AppRelatorioMespANaturalRoute
+  '/relatorio/meus-laudos': typeof AppRelatorioMeusLaudosRoute
   '/relatorio/modulo-resiliencia': typeof AppRelatorioModuloResilienciaRoute
   '/relatorio/pendentes': typeof AppRelatorioPendentesRoute
   '/relatorio/perm-v': typeof AppRelatorioPermVRoute
@@ -809,6 +817,7 @@ export interface FileRoutesById {
   '/_app/relatorio/load-test': typeof AppRelatorioLoadTestRoute
   '/_app/relatorio/mesp-a': typeof AppRelatorioMespARoute
   '/_app/relatorio/mesp-a-natural': typeof AppRelatorioMespANaturalRoute
+  '/_app/relatorio/meus-laudos': typeof AppRelatorioMeusLaudosRoute
   '/_app/relatorio/modulo-resiliencia': typeof AppRelatorioModuloResilienciaRoute
   '/_app/relatorio/pendentes': typeof AppRelatorioPendentesRoute
   '/_app/relatorio/perm-v': typeof AppRelatorioPermVRoute
@@ -899,6 +908,7 @@ export interface FileRouteTypes {
     | '/relatorio/load-test'
     | '/relatorio/mesp-a'
     | '/relatorio/mesp-a-natural'
+    | '/relatorio/meus-laudos'
     | '/relatorio/modulo-resiliencia'
     | '/relatorio/pendentes'
     | '/relatorio/perm-v'
@@ -986,6 +996,7 @@ export interface FileRouteTypes {
     | '/relatorio/load-test'
     | '/relatorio/mesp-a'
     | '/relatorio/mesp-a-natural'
+    | '/relatorio/meus-laudos'
     | '/relatorio/modulo-resiliencia'
     | '/relatorio/pendentes'
     | '/relatorio/perm-v'
@@ -1075,6 +1086,7 @@ export interface FileRouteTypes {
     | '/_app/relatorio/load-test'
     | '/_app/relatorio/mesp-a'
     | '/_app/relatorio/mesp-a-natural'
+    | '/_app/relatorio/meus-laudos'
     | '/_app/relatorio/modulo-resiliencia'
     | '/_app/relatorio/pendentes'
     | '/_app/relatorio/perm-v'
@@ -1554,6 +1566,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRelatorioMespANaturalRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/relatorio/meus-laudos': {
+      id: '/_app/relatorio/meus-laudos'
+      path: '/relatorio/meus-laudos'
+      fullPath: '/relatorio/meus-laudos'
+      preLoaderRoute: typeof AppRelatorioMeusLaudosRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/relatorio/modulo-resiliencia': {
       id: '/_app/relatorio/modulo-resiliencia'
       path: '/relatorio/modulo-resiliencia'
@@ -1833,6 +1852,7 @@ interface AppRouteChildren {
   AppRelatorioLoadTestRoute: typeof AppRelatorioLoadTestRoute
   AppRelatorioMespARoute: typeof AppRelatorioMespARoute
   AppRelatorioMespANaturalRoute: typeof AppRelatorioMespANaturalRoute
+  AppRelatorioMeusLaudosRoute: typeof AppRelatorioMeusLaudosRoute
   AppRelatorioModuloResilienciaRoute: typeof AppRelatorioModuloResilienciaRoute
   AppRelatorioPendentesRoute: typeof AppRelatorioPendentesRoute
   AppRelatorioPermVRoute: typeof AppRelatorioPermVRoute
@@ -1906,6 +1926,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppRelatorioLoadTestRoute: AppRelatorioLoadTestRoute,
   AppRelatorioMespARoute: AppRelatorioMespARoute,
   AppRelatorioMespANaturalRoute: AppRelatorioMespANaturalRoute,
+  AppRelatorioMeusLaudosRoute: AppRelatorioMeusLaudosRoute,
   AppRelatorioModuloResilienciaRoute: AppRelatorioModuloResilienciaRoute,
   AppRelatorioPendentesRoute: AppRelatorioPendentesRoute,
   AppRelatorioPermVRoute: AppRelatorioPermVRoute,

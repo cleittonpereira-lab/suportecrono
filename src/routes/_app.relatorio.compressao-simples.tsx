@@ -1,5 +1,8 @@
 import { useDraftActivity } from "@/hooks/use-draft-activity";
 import { EditingPresenceBanner } from "@/components/DraftActivityInfo";
+import { DadosTravados } from "@/components/report/DadosTravados";
+import { BotaoNovaRevisao } from "@/components/report/BotaoNovaRevisao";
+import { statusDoEditor } from "@/lib/status-do-editor";
 import { buildScopeId } from "@/lib/scope";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useRef, useState, useEffect } from "react";
@@ -28,10 +31,12 @@ import {
   listVersions, saveVersion, nextRev, deleteVersion, downloadVersion, replaceVersionPdf, type ReportVersion,
 } from "@/features/compressao-simples/report-versions";
 import { sincronizarVersoesComDrive, useVersoesAoVivo } from "@/lib/revisoes-do-drive";
+import { excluirRevisaoDoLaudo } from "@/lib/excluir-revisao";
 import { syncRevision, fetchDriveStatus } from "@/features/compressao-simples/driveSync";
 import { ReportVersionsPanel } from "@/components/report/ReportVersionsPanel";
 import {
   listApprovals, requestApproval, verifyApproval, decideApproval, type ApprovalRow,
+  useRegerarPdfNoFluxo,
 } from "@/lib/approvals-com-pdf";
 import { getWorkflowStatuses, listDriveRevisions, getRevisionPdfBase64 } from "@/lib/driveSync.functions";
 import {
@@ -506,9 +511,20 @@ export function CompressaoSimplesPage() {
   };
 
   const handleDeleteVersion = async (id: string) => {
-    if (!confirm("Excluir esta revisão? Esta ação não pode ser desfeita.")) return;
-    try { await deleteVersion(id); await refreshVersions(); toast.success("Revisão excluída"); }
-    catch (err) { toast.error("Falha ao excluir: " + (err instanceof Error ? err.message : String(err))); }
+    const v = versions.find((x) => x.id === id);
+    if (!v) return;
+    const ok = await excluirRevisaoDoLaudo({
+      scopeId,
+      rev: v.rev,
+      aprovada: approvals.some((a) => a.rev === v.rev && a.status === "aprovado"),
+      apagarLocal: async () => {
+        for (const x of versions.filter((y) => y.rev === v.rev)) await deleteVersion(x.id);
+      },
+    });
+    if (ok) {
+      await refreshVersions();
+      await refreshApprovals();
+    }
   };
 
   useEffect(() => {
@@ -679,6 +695,7 @@ export function CompressaoSimplesPage() {
     }
     return blob;
   };
+  useRegerarPdfNoFluxo(scopeId, buildReportPdfBlob);
 
   const handleGeneratePdf = async () => {
     const toastId = toast.loading("Gerando PDF do relatório…");
@@ -872,48 +889,20 @@ export function CompressaoSimplesPage() {
       const nextEnsaioStatus =
         info.decision === "verificado" ? "aguardando_aprovacao"
         : info.decision === "aprovado" ? "aprovado"
+        : info.decision === "rejeitado_verificacao" ? "em_digitacao"
         : "aguardando_verificacao";
       labStore.patchEnsaio(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, { status: nextEnsaioStatus });
     }
-    if (info.decision !== "aprovado") return;
-    // Dá tempo do React re-renderizar o relatório oculto com os overrides
-    // (verificado/aprovado por, revisão) atualizados antes do "print".
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
-    try {
-      const blob = await buildReportPdfBlob();
-      const versao = versions.find((v) => v.rev === info.rev);
-      if (versao) {
-        await replaceVersionPdf(versao.id, blob, blob.size);
-        await refreshVersions();
-        try {
-          await withTimeout(
-            syncRevision({
-              scopeId, rev: info.rev, pdfBlob: blob, pdfFilename: versao.filename, sample,
-              photos: ctx?.photos || [], ctxOs: ctx?.os, ctxAmostra: ctx?.amostra,
-              ctxEnsaio: { tipo: "compressao-simples", nome: sample.reportNumber }, fotos: fotosParaDrive(),
-            }),
-            25000,
-            "Sincronização com o Drive",
-          );
-        } catch (err) {
-          const detail = err instanceof Error ? err.message : String(err);
-          console.warn("Drive sync (regeração pós-aprovação) standby:", err);
-          toast.error(
-            `Laudo aprovado, mas o PDF com a assinatura ainda não foi confirmado no servidor — use "Sincronizar com Drive" pra tentar de novo, senão ele fica só neste navegador. (${detail})`,
-            { duration: 15000 },
-          );
-        }
-      }
-    } catch (err) {
-      console.warn("[Compressão Simples] Falha ao regenerar PDF pós-aprovação:", err);
-    }
+    // O PDF é refeito com os dados atuais ANTES da decisão (useRegerarPdfNoFluxo)
+    // e recebe as assinaturas logo depois — não há mais nada a fazer aqui.
   };
 
-  const rawSt = wfStatus || approvals[0]?.status || (ctx?.ensaio as any)?.status || "digitacao";
-  const isAguardandoVerif = rawSt === "aguardando_verificacao" || rawSt === "pendente_verificacao" || rawSt === "digitado" || rawSt === "verificacao";
-  const isAguardandoAprov = rawSt === "aguardando_aprovacao" || rawSt === "pendente_aprovacao" || rawSt === "verificado";
-  const isAprovado = rawSt === "aprovado" || rawSt === "concluido";
-  const rev = approvals[0]?.rev ?? 0;
+  const fluxoDoLaudo = statusDoEditor(approvals, wfStatus, (ctx?.ensaio as any)?.status);
+  const rawSt = fluxoDoLaudo.rawSt;
+  const isAguardandoVerif = fluxoDoLaudo.isAguardandoVerif;
+  const isAguardandoAprov = fluxoDoLaudo.isAguardandoAprov;
+  const isAprovado = fluxoDoLaudo.isAprovado;
+  const rev = fluxoDoLaudo.rev;
 
   return (
     <>
@@ -1067,9 +1056,7 @@ export function CompressaoSimplesPage() {
             {isAprovado && (
               <div className="flex items-center gap-2">
                 <Badge className="bg-emerald-600 text-white font-semibold px-3 py-1.5 text-xs">✓ Laudo Oficial Aprovado</Badge>
-                <Button variant="outline" size="sm" onClick={() => handleSaveVersion({ skipVerification: true })} disabled={saveBusy} className="text-xs gap-1.5">
-                  <Send className="h-3.5 w-3.5" /> Gerar Nova Revisão
-                </Button>
+                <BotaoNovaRevisao scopeId={scopeId} disabled={saveBusy} aoAbrir={refreshApprovals} />
               </div>
             )}
 
@@ -1185,6 +1172,7 @@ export function CompressaoSimplesPage() {
           </div>
 
           <div className="flex-1 overflow-auto mt-4 pr-1">
+            <DadosTravados fluxo={statusDoEditor(approvals, wfStatus, (ctx?.ensaio as any)?.status)} approvals={approvals}>
             <TabsContent value="amostra" className="m-0 space-y-4">
               <Card className="mb-4">
                 <CardHeader className="pb-2"><CardTitle className="text-sm">Tipo de ensaio</CardTitle></CardHeader>
@@ -1383,6 +1371,7 @@ export function CompressaoSimplesPage() {
               )}
             </TabsContent>
 
+            </DadosTravados>
             <TabsContent value="versoes" className="m-0 space-y-4">
               <div className="mb-4">
                 <ReportVersionsPanel
