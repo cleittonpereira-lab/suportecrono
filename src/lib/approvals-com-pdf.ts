@@ -138,7 +138,7 @@ async function regerarAntesDaDecisao(scopeId: string, rev: number): Promise<void
   try {
     const blob = await gerar();
     const bytes = new Uint8Array(await blob.arrayBuffer());
-    await substituirPdfDaRevisao({ data: { scopeId, rev, base64: bytesParaBase64(bytes) } });
+    await substituirPdfDaRevisao({ data: { scopeId, rev, base64: bytesParaBase64(bytes), criarSeFaltar: true } });
     toast.success(`PDF da ${rotulo} refeito com os dados atuais.`, { id });
   } catch (err) {
     toast.dismiss(id);

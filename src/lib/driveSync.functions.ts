@@ -771,6 +771,12 @@ const SubstituirPdfInput = z.object({
   scopeId: z.string().min(1),
   rev: z.number().int().nonnegative(),
   base64: z.string().min(1),
+  /**
+   * PDF refeito na hora de verificar/aprovar: se a revisão está no fluxo mas o
+   * PDF dela não existe no Drive (apagado, ou o envio original falhou), cria o
+   * arquivo em vez de recusar a decisão.
+   */
+  criarSeFaltar: z.boolean().optional(),
 });
 
 /**
@@ -801,12 +807,29 @@ export const substituirPdfDaRevisao = createServerFn({ method: "POST" })
     if (!(en?.reportApprovals ?? []).some((a) => a.rev === data.rev)) {
       throw new Error(`A ${rotulo} não está no fluxo de aprovação; o PDF não foi alterado.`);
     }
-    const alvo = await acharPdfDaRevisao(data.scopeId, data.rev);
-    await uploadBytesOverwrite({ mimeType: "application/pdf", bytes }, alvo.id);
+    let fileId: string;
+    try {
+      const alvo = await acharPdfDaRevisao(data.scopeId, data.rev);
+      await uploadBytesOverwrite({ mimeType: "application/pdf", bytes }, alvo.id);
+      fileId = alvo.id;
+    } catch (err) {
+      if (!data.criarSeFaltar) throw err;
+      const lab = await lerArquivosDoEnsaio(data.scopeId);
+      if (!lab) throw err;
+      const relFolderId = await ensureFolderPath([...pastaDoEnsaio(lab), "relatorios"]);
+      fileId = await withKeyLock(`${relFolderId}:${rotulo}`, async () => {
+        const existente = (await listFilesInFolder(relFolderId)).find((f) => revDoArquivo(f.name) === data.rev);
+        if (existente) {
+          await uploadBytesOverwrite({ mimeType: "application/pdf", bytes }, existente.id);
+          return existente.id;
+        }
+        return uploadBytesNew({ parentId: relFolderId, name: nomeOficial(lab, data.rev, "pdf"), mimeType: "application/pdf", bytes });
+      });
+    }
     // O PDF mora no Drive, fora do banco: avisa as outras telas que este laudo
     // mudou, para a lista de versões delas trazer a cópia assinada.
     registrarMudanca("lab-ensaios", `${ids.amostraId}__${ids.ensaioId}.json`);
-    return { ok: true, fileId: alvo.id };
+    return { ok: true, fileId };
   });
 
 /**
