@@ -19,6 +19,7 @@ import { podeConcluirFora } from "@/lib/papeis";
 import { useLaudosNoFluxo } from "@/features/lab/hooks/use-laudos-no-fluxo";
 import { ChecksDeEntrega, useConfirmarEntrega } from "@/features/lab/components/ChecksDeEntrega";
 import { cn } from "@/lib/utils";
+import { familiaDoEnsaio, type Familia } from "@/lib/familia-ensaio";
 
 type Filtro = "a-entregar" | "entregues" | "todos";
 type Periodo = "60" | "todos";
@@ -46,7 +47,7 @@ function rota(scopeId: string) {
   return { osId: p[i("os") + 1], amostraId: p[i("amostra") + 1], ensaioId: p[i("ensaio") + 1] };
 }
 
-export function EntregasView() {
+export function EntregasView({ familia = "all" }: { familia?: Familia | "all" }) {
   const { data: rows, isLoading } = useLaudosNoFluxo();
   const { role, profile } = useAuth();
   const podeMarcar = podeConcluirFora({ role, labRole: profile?.labRole });
@@ -55,7 +56,15 @@ export function EntregasView() {
   const [periodo, setPeriodo] = useState<Periodo>("60");
   const [busca, setBusca] = useState("");
 
-  const aprovados = useMemo(() => (rows ?? []).filter((r) => r.entrega != null), [rows]);
+  const aprovados = useMemo(
+    () =>
+      (rows ?? []).filter(
+        (r) =>
+          r.entrega != null &&
+          (familia === "all" || familiaDoEnsaio(r.ensaio_tipo, r.ensaio_nome) === familia),
+      ),
+    [rows, familia],
+  );
   const grupos = useMemo(() => {
     const termo = busca.trim().toLowerCase();
     const agora = Date.now();

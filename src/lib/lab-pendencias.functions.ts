@@ -217,19 +217,68 @@ export async function sincronizarPendenciaDoEnsaio(alvo: {
 const ConcluirExternoInput = z.object({
   id: z.string().min(1),
   observacao: z.string().optional(),
+  /**
+   * Identificação do ensaio, para quando ainda não há pendência de digitação
+   * (linha da Fila da bancada "não iniciada", ou ensaio vindo só do laudo). O
+   * botão mandava o id da programação/ensaio e o servidor respondia
+   * "Pendência não encontrada".
+   */
+  os: z.string().optional(),
+  amostra: z.string().nullable().optional(),
+  ensaio: z.string().optional(),
+  tipo_ensaio: z.string().nullable().optional(),
+  equipamento: z.string().nullable().optional(),
 });
 
 export const concluirPendenciaExterna = createServerFn({ method: "POST" })
   .middleware([exigirLogin])
   .inputValidator((i: unknown) => ConcluirExternoInput.parse(i))
-  .handler(async ({ data }) => {
-    return atualizarStatusPendencia({
-      data: {
-        id: data.id,
+  .handler(async ({ context, data }) => {
+    exigirPermissaoNoFluxo(context as PapelDoUsuario, "concluir_fora");
+    const now = new Date().toISOString();
+    const observacao = data.observacao || "Relatório Concluído fora da Central (Planilha Excel)";
+    const ator = {
+      userId: context.userId,
+      nome: displayName((context as { claims?: { email?: string; user_metadata?: { full_name?: string; name?: string } } }).claims),
+    };
+    const folderId = await ensureFolderPath(FOLDER_PENDENCIAS);
+
+    // 1) Pendência já existente pelo id.
+    const pelaId = await readDriveJson<PendenciaDigitacao>(`${data.id}.json`, folderId);
+    if (pelaId) {
+      await atualizarDriveJson<PendenciaDigitacao>(`${data.id}.json`, folderId, (existing) =>
+        existing ? aplicarStatusPendencia(existing, "concluido_externo", ator, now, { observacao }) : null,
+      );
+      return { ok: true, id: data.id, criada: false };
+    }
+    // 2) Sem pendência: localiza (ou cria) pela OS + amostra + ensaio.
+    if (!data.os?.trim() || !data.ensaio?.trim()) throw new Error("Pendência não encontrada.");
+    const amostra = data.amostra?.trim() || null;
+    const key = pendenciaKey(data.os.trim(), amostra, data.ensaio.trim());
+    let criada = false;
+    await atualizarDriveJson<PendenciaDigitacao>(`${key}.json`, folderId, (existing) => {
+      if (existing) return aplicarStatusPendencia(existing, "concluido_externo", ator, now, { observacao });
+      criada = true;
+      return {
+        id: key,
+        os: data.os!.trim(),
+        amostra,
+        ensaio: data.ensaio!.trim(),
+        tipo_ensaio: data.tipo_ensaio?.trim() || null,
+        equipamento: data.equipamento?.trim() || null,
         status: "concluido_externo",
-        observacao: data.observacao || "Relatório Concluído fora da Central (Planilha Excel)",
-      },
+        origem: "gantt",
+        digitador_user_id: context.userId,
+        operador_user_id: null,
+        observacao,
+        payload: { concluido_externo_em: now, concluido_externo_por: ator.nome } as JsonValue,
+        data_conclusao: now,
+        created_at: now,
+        updated_at: now,
+        rev: 1,
+      };
     });
+    return { ok: true, id: key, criada };
   });
 
 const CriarAvulsoInput = z.object({

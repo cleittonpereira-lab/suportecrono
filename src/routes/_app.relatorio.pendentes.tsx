@@ -90,7 +90,9 @@ import {
   PackageCheck,
 } from "lucide-react";
 import { toast } from "sonner";
-import { podeConcluirFora } from "@/lib/papeis";
+import { podeConcluirFora, podeVerificar } from "@/lib/papeis";
+import { FAMILIAS, familiaDoEnsaio, type Familia } from "@/lib/familia-ensaio";
+import { EmitidosView } from "@/features/lab/components/EmitidosView";
 import {
   ETAPAS_DO_LAUDO,
   combinarEtapas,
@@ -194,12 +196,17 @@ function CentralRelatoriosPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const search = Route.useSearch();
+  // Quem só digita abre em "Para digitar"; quem verifica/aprova, em "Meus laudos".
+  const authDaAba = useAuth();
+  const abaPadrao: Aba = podeVerificar({ role: authDaAba.role, labRole: authDaAba.profile?.labRole })
+    ? "meus-laudos"
+    : "gantt-fila";
   // A aba "dashboard-sla" (números fixos, removida) cai na esteira, onde está o prazo de cada laudo.
   const activeTab: Aba = (ABAS as readonly string[]).includes(search.tab ?? "")
     ? (search.tab as Aba)
     : search.tab === "dashboard-sla"
       ? "fluxo-relatorios"
-      : "meus-laudos";
+      : abaPadrao;
   const listFn = useServerFn(listPendenciasDigitacao);
   const updFn = useServerFn(atualizarPendenciaDigitacao);
   const conclExtFn = useServerFn(concluirPendenciaExterna);
@@ -209,10 +216,12 @@ function CentralRelatoriosPage() {
 
   const [busca, setBusca] = useState("");
   const [viewMode, setViewMode] = useState<"kanban" | "table">("kanban");
-  const [ganttFilter, setGanttFilter] = useState<"all" | "concluido" | "execucao" | "planejado">("concluido");
+  // "digitar" = bancada finalizada e laudo não iniciado/em digitação: o que falta a quem digita.
+  const [ganttFilter, setGanttFilter] = useState<"digitar" | "all" | "concluido" | "execucao" | "planejado">("digitar");
+  // Filtro por tipo de ensaio, o mesmo em todas as abas (substitui os itens por tipo do menu).
+  const [familia, setFamilia] = useState<Familia | "all">("all");
   const [soMeus, setSoMeus] = useState(false);
   const [etapaFiltro, setEtapaFiltro] = useState<EtapaFiltro>("all");
-  const [tipoFiltro, setTipoFiltro] = useState<"all" | SupportedMethodology>("all");
 
   const { user, role, profile } = useAuth();
   // "Legado Excel" (concluído fora da Central): só quem verifica — o servidor também confere.
@@ -456,11 +465,28 @@ function CentralRelatoriosPage() {
   }, [laudos]);
   const naoEntregue = (r: PendenciaDigitacao) =>
     !chavesEntregues.has(`${normOs(r.os)}::${normAmostra(r.amostra || "")}::${normMethod(r.ensaio || r.tipo_ensaio)}`);
+  // Tipos que aparecem na bancada ou nos laudos (só esses viram botão no filtro).
+  const familiasPresentes = useMemo(() => {
+    const s = new Set<Familia>();
+    for (const g of ganttQueue) s.add(familiaDoEnsaio(g.tipoEnsaioNome, g.ensaio));
+    for (const l of laudos) s.add(familiaDoEnsaio(l.ensaio_tipo, l.ensaio_nome));
+    return FAMILIAS.filter((f) => s.has(f.id));
+  }, [ganttQueue, laudos]);
+  // Devolvidos pelo verificador e revisões reabertas: voltam para quem digita.
+  const devolvidos = useMemo(
+    () =>
+      laudos
+        .filter((l) => l.status === "rejeitado_verificacao" || l.status === "em_revisao")
+        .filter((l) => familia === "all" || familiaDoEnsaio(l.ensaio_tipo, l.ensaio_nome) === familia),
+    [laudos, familia],
+  );
+
   const resumoDoFluxo = useMemo(() => {
     const dia = 86_400_000;
     let verificar = 0, aprovar = 0, aEntregar = 0, entregues30 = 0;
     for (const l of laudos) {
       if (l.rev == null) continue;
+      if (familia !== "all" && familiaDoEnsaio(l.ensaio_tipo, l.ensaio_nome) !== familia) continue;
       const fila = filaDoLaudo(l.status);
       if (fila === "verificar") verificar++;
       else if (fila === "aprovar") aprovar++;
@@ -470,7 +496,7 @@ function CentralRelatoriosPage() {
       }
     }
     return { verificar, aprovar, aEntregar, entregues30 };
-  }, [laudos]);
+  }, [laudos, familia]);
 
   // Filtro de busca global + status/tipo/"só meus"
   const filteredRows = useMemo(() => {
@@ -479,7 +505,7 @@ function CentralRelatoriosPage() {
       if (!naoEntregue(r)) return false;
       if (soMeus && user?.id && r.digitador_user_id !== user.id && r.operador_user_id !== user.id) return false;
       if (etapaFiltro !== "all" && !ETAPA_FILTRO[etapaFiltro].status.includes(r.status)) return false;
-      if (tipoFiltro !== "all" && detectMethodology(r.ensaio, r.tipo_ensaio) !== tipoFiltro) return false;
+      if (familia !== "all" && familiaDoEnsaio(r.tipo_ensaio, r.ensaio) !== familia) return false;
       if (!q) return true;
       return (
         r.os.toLowerCase().includes(q) ||
@@ -490,12 +516,48 @@ function CentralRelatoriosPage() {
         (r.digitador_nome ?? "").toLowerCase().includes(q)
       );
     });
-  }, [allPendencias, busca, soMeus, etapaFiltro, tipoFiltro, user, chavesEntregues]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [allPendencias, busca, soMeus, etapaFiltro, familia, user, chavesEntregues]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Pendência de digitação da linha da bancada (mesma OS, amostra/furo e tipo). */
+  const acharPendencia = (item: { os: string; amostra: string; furo: string; ensaio: string; tipoEnsaioNome: string }) => {
+    const itemOsNorm = normOs(item.os);
+    const itemAmNorm = normAmostra(item.amostra);
+    const itemFuroNorm = normAmostra(item.furo);
+    const itemMethNorm = normMethod(item.ensaio || item.tipoEnsaioNome);
+    return (
+      allPendencias.find(
+        (r) =>
+          normOs(r.os) === itemOsNorm &&
+          (normAmostra(r.amostra) === itemAmNorm || normAmostra(r.amostra) === itemFuroNorm) &&
+          (normMethod(r.ensaio) === itemMethNorm || normMethod(r.tipo_ensaio) === itemMethNorm),
+      ) ||
+      allPendencias.find(
+        (r) =>
+          normOs(r.os) === itemOsNorm &&
+          (normAmostra(r.amostra) === itemAmNorm || normAmostra(r.amostra) === itemFuroNorm),
+      )
+    );
+  };
+  /** Para digitar: bancada finalizada e laudo ainda não enviado para verificação. */
+  const faltaDigitar = (item: (typeof ganttQueue)[number]) => {
+    if (item.stage !== "concluido") return false;
+    const p = acharPendencia(item);
+    return !p || p.status === "pendente" || p.status === "em_digitacao";
+  };
+  const ganttDaFamilia = useMemo(
+    () =>
+      familia === "all"
+        ? ganttQueue
+        : ganttQueue.filter((g) => familiaDoEnsaio(g.tipoEnsaioNome, g.ensaio) === familia),
+    [ganttQueue, familia],
+  );
 
   const filteredGantt = useMemo(() => {
     const q = busca.trim().toLowerCase();
-    return ganttQueue.filter((item) => {
-      if (ganttFilter !== "all" && item.stage !== ganttFilter) return false;
+    return ganttDaFamilia.filter((item) => {
+      if (ganttFilter === "digitar") {
+        if (!faltaDigitar(item)) return false;
+      } else if (ganttFilter !== "all" && item.stage !== ganttFilter) return false;
       if (!q) return true;
       return (
         item.os.toLowerCase().includes(q) ||
@@ -505,21 +567,25 @@ function CentralRelatoriosPage() {
         (item.tecnico ?? "").toLowerCase().includes(q)
       );
     });
-  }, [ganttQueue, ganttFilter, busca]);
+  }, [ganttDaFamilia, ganttFilter, busca, allPendencias]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const pendDaFamilia =
+    familia === "all" ? allPendencias : allPendencias.filter((r) => familiaDoEnsaio(r.tipo_ensaio, r.ensaio) === familia);
 
   // Contadores
   const counts = useMemo(() => {
     const c = {
-      ganttConcluidos: ganttQueue.filter((g) => g.stage === "concluido").length,
-      ganttExecucao: ganttQueue.filter((g) => g.stage === "execucao").length,
-      ganttPlanejado: ganttQueue.filter((g) => g.stage === "planejado").length,
-      em_digitacao: allPendencias.filter((r) => r.status === "em_digitacao" || r.status === "pendente").length,
-      verificacao: allPendencias.filter((r) => r.status === "digitado").length,
-      aprovacao: allPendencias.filter((r) => r.status === "verificado").length,
-      concluidos: allPendencias.filter((r) => (r.status === "aprovado" || r.status === "concluido_externo") && naoEntregue(r)).length,
+      ganttDigitar: ganttDaFamilia.filter(faltaDigitar).length,
+      ganttConcluidos: ganttDaFamilia.filter((g) => g.stage === "concluido").length,
+      ganttExecucao: ganttDaFamilia.filter((g) => g.stage === "execucao").length,
+      ganttPlanejado: ganttDaFamilia.filter((g) => g.stage === "planejado").length,
+      em_digitacao: pendDaFamilia.filter((r) => r.status === "em_digitacao" || r.status === "pendente").length,
+      verificacao: pendDaFamilia.filter((r) => r.status === "digitado").length,
+      aprovacao: pendDaFamilia.filter((r) => r.status === "verificado").length,
+      concluidos: pendDaFamilia.filter((r) => (r.status === "aprovado" || r.status === "concluido_externo") && naoEntregue(r)).length,
     };
     return c;
-  }, [ganttQueue, allPendencias, chavesEntregues]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ganttDaFamilia, allPendencias, chavesEntregues, familia]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cartões do topo: cada um abre a aba e o filtro que mostram exatamente o que ele conta.
   const irPara = (tab: Aba) => navigate({ to: "/relatorio/pendentes", search: { tab } });
@@ -530,15 +596,15 @@ function CentralRelatoriosPage() {
   const cartoesDeEtapa = [
     {
       chave: "bancada",
-      rotulo: "Prontos na bancada",
-      valor: counts.ganttConcluidos,
-      dica: "Ensaio feito, laudo não iniciado",
+      rotulo: "Para digitar",
+      valor: counts.ganttDigitar,
+      dica: "Bancada finalizada, laudo por fazer",
       classe: "border-amber-500/20 bg-amber-50/30 dark:bg-amber-950/10",
       corTexto: "text-amber-700 dark:text-amber-400",
-      ativo: activeTab === "gantt-fila" && ganttFilter === "concluido",
+      ativo: activeTab === "gantt-fila" && ganttFilter === "digitar",
       abrir: () => {
         irPara("gantt-fila");
-        setGanttFilter("concluido");
+        setGanttFilter("digitar");
       },
     },
     {
@@ -598,7 +664,7 @@ function CentralRelatoriosPage() {
   // Os botões "Aprovar Verificação"/"Aprovar Final" do Kanban mudavam só o
   // status da pendência, e o fluxo formal o sobrepunha — pareciam não ter efeito.
   const concluirExternoMutation = useMutation({
-    mutationFn: (v: { id: string; observacao?: string }) => conclExtFn({ data: v }),
+    mutationFn: (v: { id: string; observacao?: string; os?: string; amostra?: string | null; ensaio?: string; tipo_ensaio?: string | null; equipamento?: string | null }) => conclExtFn({ data: v }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["lab-pendencias"] });
       setExternoModal(null);
@@ -854,6 +920,24 @@ function CentralRelatoriosPage() {
         ))}
       </div>
 
+      {/* Tipo de ensaio — vale para todas as abas */}
+      {familiasPresentes.length > 1 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-xs font-semibold text-muted-foreground">Tipo de ensaio:</span>
+          {[{ id: "all" as const, rotulo: "Todos" }, ...familiasPresentes].map((f) => (
+            <Button
+              key={f.id}
+              size="sm"
+              variant={familia === f.id ? "default" : "outline"}
+              className="h-7 rounded-full px-3 text-xs"
+              onClick={() => setFamilia(f.id)}
+            >
+              {f.rotulo}
+            </Button>
+          ))}
+        </div>
+      )}
+
       {/* Busca e filtros — só nas abas em que valem (as outras duas têm os seus) */}
       {(activeTab === "gantt-fila" || activeTab === "fluxo-relatorios") && (
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -887,33 +971,18 @@ function CentralRelatoriosPage() {
                 </SelectContent>
               </Select>
 
-              <Select value={tipoFiltro} onValueChange={(v) => setTipoFiltro(v as typeof tipoFiltro)}>
-                <SelectTrigger className="h-8 w-[190px] text-xs">
-                  <SelectValue placeholder="Tipo de ensaio" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos os ensaios</SelectItem>
-                  {METODOLOGIAS.map((t) => (
-                    <SelectItem key={t} value={t}>
-                      {ENSAIO_LABEL[t] ?? t}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
               <label className="flex items-center gap-1.5 text-xs text-muted-foreground pl-1 cursor-pointer select-none">
                 <Switch checked={soMeus} onCheckedChange={setSoMeus} />
                 Só meus
               </label>
 
-              {(etapaFiltro !== "all" || tipoFiltro !== "all" || soMeus || busca) && (
+              {(etapaFiltro !== "all" || soMeus || busca) && (
                 <Button
                   size="sm"
                   variant="ghost"
                   className="h-8 text-xs"
                   onClick={() => {
                     setEtapaFiltro("all");
-                    setTipoFiltro("all");
                     setSoMeus(false);
                     setBusca("");
                   }}
@@ -943,7 +1012,7 @@ function CentralRelatoriosPage() {
           </TabsTrigger>
           <TabsTrigger value="gantt-fila" className="gap-1.5 text-xs">
             <FlaskConical className="h-3.5 w-3.5 text-amber-600" />
-            Fila da bancada ({counts.ganttConcluidos})
+            Para digitar ({counts.ganttDigitar})
           </TabsTrigger>
           <TabsTrigger value="fluxo-relatorios" className="gap-1.5 text-xs">
             <Layers className="h-3.5 w-3.5 text-sky-600" />
@@ -951,7 +1020,7 @@ function CentralRelatoriosPage() {
           </TabsTrigger>
           <TabsTrigger value="emissoes-historico" className="gap-1.5 text-xs">
             <ShieldCheck className="h-3.5 w-3.5 text-violet-600" />
-            Laudos emitidos
+            Todos os laudos emitidos
           </TabsTrigger>
           <TabsTrigger value="por-os" className="gap-1.5 text-xs">
             <Building className="h-3.5 w-3.5 text-orange-600" />
@@ -963,17 +1032,59 @@ function CentralRelatoriosPage() {
             ABA 1: FILA DO GANTT & EXECUÇÃO (QUAIS ENSAIOS DEVO PROCESSAR)
            ========================================================================= */}
         <TabsContent value="gantt-fila" className="space-y-4">
+          {devolvidos.length > 0 && (
+            <div className="rounded-lg border border-rose-500/40 bg-rose-500/5 p-3">
+              <div className="mb-2 text-xs font-semibold text-rose-800 dark:text-rose-300">
+                Devolvidos para correção ({devolvidos.length}) — corrija e envie para verificação de novo
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                {devolvidos.map((l) => {
+                  const p = l.scope_id.split("/");
+                  const ids = { osId: p[p.indexOf("os") + 1], amostraId: p[p.indexOf("amostra") + 1], ensaioId: p[p.indexOf("ensaio") + 1] };
+                  return (
+                    <div key={l.scope_id} className="flex items-start justify-between gap-2 rounded-md border bg-card p-2 text-xs">
+                      <div className="min-w-0">
+                        <div className="font-semibold">
+                          OS {l.os_numero} · {l.amostra_numero || l.amostra_code} · {ENSAIO_LABEL[l.ensaio_tipo as keyof typeof ENSAIO_LABEL] ?? l.ensaio_nome}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">
+                          {l.status === "em_revisao"
+                            ? `Rev-${String(l.rev ?? 0).padStart(2, "0")} reaberta para correção`
+                            : `“${l.verification_comment ?? "sem comentário"}” — ${l.verified_by_name ?? "verificador"}`}
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        className="h-7 shrink-0 text-xs"
+                        onClick={() => navigate({ to: "/relatorio/os/$osId/amostra/$amostraId/ensaio/$ensaioId", params: ids })}
+                      >
+                        Corrigir
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           <div className="flex flex-wrap items-center justify-between gap-3 bg-muted/20 p-3 rounded-lg border">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-foreground">Exibir da Bancada:</span>
+              <span className="text-xs font-semibold text-foreground">Exibir:</span>
               <div className="flex items-center gap-1 bg-background p-0.5 rounded-md border text-xs">
+                <Button
+                  size="sm"
+                  variant={ganttFilter === "digitar" ? "secondary" : "ghost"}
+                  className="h-7 text-xs font-medium"
+                  onClick={() => setGanttFilter("digitar")}
+                >
+                  Para digitar ({counts.ganttDigitar})
+                </Button>
                 <Button
                   size="sm"
                   variant={ganttFilter === "concluido" ? "secondary" : "ghost"}
                   className="h-7 text-xs font-medium"
                   onClick={() => setGanttFilter("concluido")}
                 >
-                  Concluídos na Bancada ({counts.ganttConcluidos})
+                  Bancada finalizada — todos ({counts.ganttConcluidos})
                 </Button>
                 <Button
                   size="sm"
@@ -997,7 +1108,7 @@ function CentralRelatoriosPage() {
                   className="h-7 text-xs font-medium"
                   onClick={() => setGanttFilter("all")}
                 >
-                  Todos ({ganttQueue.length})
+                  Todos ({ganttDaFamilia.length})
                 </Button>
               </div>
             </div>
@@ -1032,23 +1143,7 @@ function CentralRelatoriosPage() {
                   filteredGantt.map((item) => {
                     const cad = cadastro.lookup(item.os);
                     const tomadorObra = [cad?.tomador, cad?.obra].filter(Boolean).join(" · ");
-                    const itemOsNorm = normOs(item.os);
-                    const itemAmNorm = normAmostra(item.amostra);
-                    const itemFuroNorm = normAmostra(item.furo);
-                    const itemMethNorm = normMethod(item.ensaio || item.tipoEnsaioNome);
-
-                    const pendExistente =
-                      allPendencias.find(
-                        (r) =>
-                          normOs(r.os) === itemOsNorm &&
-                          (normAmostra(r.amostra) === itemAmNorm || normAmostra(r.amostra) === itemFuroNorm) &&
-                          (normMethod(r.ensaio) === itemMethNorm || normMethod(r.tipo_ensaio) === itemMethNorm),
-                      ) ||
-                      allPendencias.find(
-                        (r) =>
-                          normOs(r.os) === itemOsNorm &&
-                          (normAmostra(r.amostra) === itemAmNorm || normAmostra(r.amostra) === itemFuroNorm),
-                      );
+                    const pendExistente = acharPendencia(item);
 
                     return (
                       <TableRow key={item.id} className="hover:bg-muted/30">
@@ -1471,21 +1566,21 @@ function CentralRelatoriosPage() {
             (e no próprio laudo, que refaz o PDF); aqui fica o que já saiu.
            ========================================================================= */}
         <TabsContent value="emissoes-historico">
-          <EmissoesInner singleTab="aprovados" />
+          <EmitidosView familia={familia} />
         </TabsContent>
 
         {/* =========================================================================
             MEUS LAUDOS — o que falta verificar, aprovar e corrigir, por pessoa
            ========================================================================= */}
         <TabsContent value="meus-laudos">
-          <MesaDeLaudos />
+          <MesaDeLaudos familia={familia} />
         </TabsContent>
 
         {/* =========================================================================
             ENTREGAS — aprovados por OS, com os checks SOND e GDrive do cliente
            ========================================================================= */}
         <TabsContent value="entregas">
-          <EntregasView />
+          <EntregasView familia={familia} />
         </TabsContent>
 
         {/* =========================================================================
@@ -1666,7 +1761,15 @@ function CentralRelatoriosPage() {
               disabled={concluirExternoMutation.isPending}
               onClick={() => {
                 if (externoModal) {
-                  concluirExternoMutation.mutate({ id: externoModal.id, observacao: externoObs });
+                  concluirExternoMutation.mutate({
+                    id: externoModal.id,
+                    observacao: externoObs,
+                    os: externoModal.os,
+                    amostra: externoModal.amostra,
+                    ensaio: externoModal.ensaio,
+                    tipo_ensaio: externoModal.tipo_ensaio,
+                    equipamento: externoModal.equipamento,
+                  });
                 }
               }}
             >

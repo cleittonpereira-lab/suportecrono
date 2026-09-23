@@ -44,6 +44,7 @@ import { desdeQuando, FILAS, montarMesa, pedeMinhaAcao, type Fila } from "@/lib/
 import { EnsaioTag } from "@/features/lab/components/EnsaioTag";
 import { ENSAIO_LABEL, type EnsaioTipo } from "@/features/lab/types";
 import { cn } from "@/lib/utils";
+import { familiaDoEnsaio, type Familia } from "@/lib/familia-ensaio";
 
 const INFO: Record<
   Fila,
@@ -143,7 +144,7 @@ function nomeDoEnsaio(r: EmissaoRow) {
   );
 }
 
-export function MesaDeLaudos() {
+export function MesaDeLaudos({ familia = "all" }: { familia?: Familia | "all" }) {
   const { role, profile, user } = useAuth();
   const papel = useMemo(
     () => ({
@@ -170,11 +171,15 @@ export function MesaDeLaudos() {
   const mesaCompleta = useMemo(
     () =>
       montarMesa(
-        (rows ?? []).filter((r) => !(r.status === "aprovado" && r.entrega?.entregue)),
+        (rows ?? []).filter(
+          (r) =>
+            !(r.status === "aprovado" && r.entrega?.entregue) &&
+            (familia === "all" || familiaDoEnsaio(r.ensaio_tipo, r.ensaio_nome) === familia),
+        ),
         agora,
         60,
       ),
-    [rows], // eslint-disable-line react-hooks/exhaustive-deps
+    [rows, familia], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const comigo = useMemo(() => {
