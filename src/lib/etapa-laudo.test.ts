@@ -23,6 +23,16 @@ describe("etapaDasAprovacoes", () => {
     expect(etapaDasAprovacoes([{ rev: 2, status: "verificado" }])).toBe("aguardando_aprovacao");
   });
 
+  it("devolvida pelo verificador ou reaberta volta para a digitação (mesma coluna da pendência)", () => {
+    expect(etapaDasAprovacoes([{ rev: 1, status: "rejeitado_verificacao" }])).toBe("em_digitacao");
+    expect(
+      etapaDasAprovacoes([
+        { rev: 0, status: "aprovado" },
+        { rev: 1, status: "em_revisao" },
+      ]),
+    ).toBe("em_digitacao");
+  });
+
   it("sem revisão enviada devolve null para quem chama usar o status gravado", () => {
     expect(etapaDasAprovacoes([])).toBeNull();
     expect(etapaDasAprovacoes(undefined)).toBeNull();
@@ -38,6 +48,8 @@ describe("normalizarEtapa", () => {
     expect(normalizarEtapa("concluido")).toBe("aprovado");
     expect(normalizarEtapa("rascunho")).toBe("em_digitacao");
     expect(normalizarEtapa("digitacao")).toBe("em_digitacao");
+    expect(normalizarEtapa("rejeitado_verificacao")).toBe("em_digitacao");
+    expect(normalizarEtapa("em_revisao")).toBe("em_digitacao");
     expect(normalizarEtapa("qualquer-coisa")).toBeNull();
   });
 });

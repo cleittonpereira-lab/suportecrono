@@ -20,6 +20,7 @@ import { getGoogleAccessToken, isGoogleAuthConfigured } from "./google-auth.serv
 import { findFileInFolder, findFolder, withKeyLock } from "./driveStorage";
 import { nomeDoArquivoDoLaudo, siglaDoEnsaio } from "./nome-laudo";
 import { registrarMudanca } from "./avisos-mudanca";
+import { podeRegravar, proximaRevisao, type LinhaDeRevisao } from "./revisoes-regra";
 
 const DRIVE_V3 = "https://www.googleapis.com/drive/v3";
 const DRIVE_UPLOAD = "https://www.googleapis.com/upload/drive/v3/files";
@@ -145,7 +146,7 @@ type ArquivoLab = {
   label?: string;
   nome?: string;
   sigla?: string;
-  reportApprovals?: { rev?: unknown }[];
+  reportApprovals?: { rev?: unknown; status?: unknown }[];
 };
 
 /** Nomes das pastas `{OS}/{amostra}/{ensaio}` no Drive. */
@@ -231,6 +232,53 @@ function parseScope(scopeId: string): { osId: string; amostraId: string; ensaioI
   const ensaioId = parts[iEn + 1];
   if (!osId || !amostraId || !ensaioId) return null;
   return { osId, amostraId, ensaioId };
+}
+
+/** Revisões registradas no fluxo de aprovação do arquivo do ensaio. */
+function linhasDoFluxo(en: ArquivoLab | null | undefined): LinhaDeRevisao[] {
+  return (en?.reportApprovals ?? [])
+    .filter((a): a is { rev: number; status?: unknown } => typeof a.rev === "number")
+    .map((a) => ({ rev: a.rev, status: typeof a.status === "string" ? a.status : null }));
+}
+
+/** Números de revisão com PDF na pasta `relatorios` do ensaio no Drive. */
+export async function revisoesComPdfNoDrive(scopeId: string): Promise<number[]> {
+  if (!isGoogleAuthConfigured()) return [];
+  const parts = await partesDaPastaDoEnsaio(scopeId);
+  if (!parts) return [];
+  const rel = await resolveFolderPath([...parts, "relatorios"]);
+  if (!rel) return [];
+  return (await listFilesInFolder(rel)).map((f) => revDoArquivo(f.name)).filter((r): r is number => r !== null);
+}
+
+/**
+ * Manda para a lixeira do Drive o PDF e a planilha de uma revisão. Lixeira, não
+ * exclusão definitiva: dá para recuperar pelo Drive por 30 dias. Antes, excluir
+ * a revisão na tela só apagava a cópia do navegador — o PDF ficava no Drive e a
+ * próxima revisão "pulava" o número dele.
+ */
+export async function revisaoParaLixeiraDoDrive(scopeId: string, rev: number): Promise<string[]> {
+  if (!isGoogleAuthConfigured()) return [];
+  const parts = await partesDaPastaDoEnsaio(scopeId);
+  if (!parts) return [];
+  const rel = await resolveFolderPath([...parts, "relatorios"]);
+  if (!rel) return [];
+  const alvos = (await listFilesInFolder(rel)).filter((f) => {
+    const m = /Rev-?(\d+)\.(pdf|xlsx)$/i.exec(f.name);
+    return m !== null && Number(m[1]) === rev;
+  });
+  for (const f of alvos) {
+    await driveJson(`${DRIVE_V3}/files/${f.id}?supportsAllDrives=true`, {
+      method: "PATCH",
+      headers: await driveHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ trashed: true }),
+    });
+  }
+  if (alvos.length > 0) {
+    const ids = parseScope(scopeId);
+    if (ids) registrarMudanca("lab-ensaios", `${ids.amostraId}__${ids.ensaioId}.json`);
+  }
+  return alvos.map((f) => f.name);
 }
 
 async function uploadBytes(opts: {
@@ -409,7 +457,11 @@ async function enviarRevisaoAoDrive(data: z.infer<typeof SyncRevisionInput>, pdf
   // criam dois arquivos.
   const { pdfId, pdfFilename } = await withKeyLock(`${relFolderId}:${rotulo}`, async () => {
     const existente = (await listFilesInFolder(relFolderId)).find((f) => revDoArquivo(f.name) === data.rev);
-    if (existente && !data.reemissao) {
+    // Revisão que está no fluxo e ainda não foi aprovada (devolvida, reprovada,
+    // aguardando) é reaproveitada: o reenvio regrava o PDF dela em vez de abrir
+    // outra — era isso que criava versões desnecessárias.
+    const noFluxo = podeRegravar(linhasDoFluxo(lab?.en), data.rev);
+    if (existente && !data.reemissao && !noFluxo) {
       throw new Error(
         `A ${rotulo} já existe no Drive (${existente.name}). Uma revisão emitida não é sobrescrita — gere uma nova revisão.`,
       );
@@ -616,13 +668,18 @@ export const getDriveSyncStatus = createServerFn({ method: "GET" })
  * Fontes: as revisões registradas no fluxo de aprovação (dentro do arquivo do
  * ensaio, disponível sempre que o ensaio existe), os PDFs na pasta
  * `relatorios` do Drive. `proxima: null` quando nenhuma
- * fonte respondeu — a tela avisa e usa só o histórico local.
+ * fonte respondeu — a tela avisa e usa só o histórico local. Enquanto a
+ * última revisão não for aprovada, devolve o número DELA (reenvio não cria
+ * outra revisão).
  */
 export const getProximaRevisao = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => z.object({ scopeId: z.string().min(1) }).parse(input))
   .handler(async ({ data }): Promise<{ proxima: number | null; fontes: string[] }> => {
+    // `revs` = PDFs no Drive; `linhas` = revisões no fluxo (com status). A regra
+    // (lib/revisoes-regra.ts) reaproveita a última se ainda não foi aprovada.
     const revs: number[] = [];
+    let linhas: LinhaDeRevisao[] = [];
     const fontes: string[] = [];
 
     const ids = parseScope(data.scopeId);
@@ -634,9 +691,7 @@ export const getProximaRevisao = createServerFn({ method: "POST" })
           await ensureFolderPathShared(["lab-ensaios"]),
         );
         fontes.push("aprovacoes");
-        for (const a of (en?.reportApprovals ?? []) as { rev?: unknown }[]) {
-          if (typeof a.rev === "number") revs.push(a.rev);
-        }
+        linhas = linhasDoFluxo(en);
       } catch (err) {
         console.warn("[getProximaRevisao] Falha ao ler as aprovações:", err);
       }
@@ -661,7 +716,7 @@ export const getProximaRevisao = createServerFn({ method: "POST" })
     }
 
     if (fontes.length === 0) return { proxima: null, fontes };
-    return { proxima: revs.length > 0 ? Math.max(...revs) + 1 : 0, fontes };
+    return { proxima: proximaRevisao(linhas, revs), fontes };
   });
 
 /**

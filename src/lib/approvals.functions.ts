@@ -33,6 +33,7 @@ import {
 } from "@/lib/lab-entities.functions";
 import { sincronizarPendenciaDoEnsaio, type PendenciaDigitacao } from "@/lib/lab-pendencias.functions";
 import { etapaDasAprovacoes } from "@/lib/etapa-laudo";
+import { proximaRevisao, revisaoAprovada, STATUS_EM_REVISAO } from "@/lib/revisoes-regra";
 import { exigirPermissaoNoFluxo, type PapelDoUsuario } from "@/lib/papeis";
 
 /**
@@ -144,7 +145,9 @@ export type ApprovalStatus =
   | "rejeitado_verificacao"
   | "pendente_aprovacao"
   | "aprovado"
-  | "rejeitado";
+  | "rejeitado"
+  /** Revisão reaberta para correção depois de aprovada — ainda sem PDF. */
+  | "em_revisao";
 
 export type ApprovalRow = ReportApprovalRow & { status: ApprovalStatus; created_at?: string };
 export type ApprovalCommentRow = ReportApprovalCommentRow;
@@ -160,6 +163,41 @@ function displayName(claims: { email?: string; user_metadata?: { full_name?: str
 function rid(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
 }
+
+const ROTULO_STATUS: Partial<Record<ApprovalStatus, string>> = {
+  pendente_verificacao: "aguardando verificação",
+  pendente_aprovacao: "aguardando aprovação",
+  verificado: "aguardando aprovação",
+  aprovado: "aprovada",
+  rejeitado_verificacao: "devolvida para correção",
+  em_revisao: "em correção (ainda não enviada)",
+};
+
+/**
+ * Verificar/aprovar só na etapa certa. Uma tela desatualizada (outro usuário
+ * já decidiu) mandava "verificar" numa revisão já aprovada e a devolvia para
+ * "aguardando aprovação".
+ */
+function exigirEtapa(linha: ApprovalRow, aceitos: ApprovalStatus[], acao: string) {
+  if (aceitos.includes(linha.status)) return;
+  const agora = ROTULO_STATUS[linha.status] ?? linha.status;
+  throw new Error(
+    `A Rev-${String(linha.rev).padStart(2, "0")} não pode ser ${acao} agora: ela está ${agora}. Recarregue a tela.`,
+  );
+}
+
+/** Etapa do fluxo → valor gravado em `workflowStatus`/`status` do ensaio. */
+function workflowDaEtapa(approvals: ApprovalRow[]): "digitacao" | "aguardando_verificacao" | "aguardando_aprovacao" | "aprovado" {
+  const etapa = etapaDasAprovacoes(approvals);
+  return etapa === "aprovado" || etapa === "aguardando_aprovacao" || etapa === "aguardando_verificacao" ? etapa : "digitacao";
+}
+
+const PENDENCIA_DO_WORKFLOW: Record<ReturnType<typeof workflowDaEtapa>, PendenciaDigitacao["status"]> = {
+  digitacao: "em_digitacao",
+  aguardando_verificacao: "digitado",
+  aguardando_aprovacao: "verificado",
+  aprovado: "aprovado",
+};
 
 /* ─────────────────────────────── SOLICITAÇÃO ─────────────────────────────── */
 
@@ -236,6 +274,14 @@ export const requestApproval = createServerFn({ method: "POST" })
       }
       const approvals = (existing.reportApprovals as ApprovalRow[] | undefined) ?? [];
       const comments = (existing.approvalComments as ApprovalCommentRow[] | undefined) ?? [];
+      // Uma revisão aprovada nunca é substituída por uma solicitação nova com o
+      // mesmo número — era assim que um laudo aprovado "voltava" com título de
+      // aguardando e status de aprovado ao mesmo tempo (numeração do navegador).
+      if (revisaoAprovada(approvals, data.rev)) {
+        throw new Error(
+          `A Rev-${String(data.rev).padStart(2, "0")} já foi aprovada e não pode ser substituída. Recarregue a tela e gere uma nova revisão.`,
+        );
+      }
       return {
         ...existing,
         id: ids.ensaioId,
@@ -306,7 +352,10 @@ export const verifyApproval = createServerFn({ method: "POST" })
     const name = displayName(claims);
     const nowIso = new Date().toISOString();
     const nextStatus: ApprovalStatus = data.decision === "verificado" ? "pendente_aprovacao" : "rejeitado_verificacao";
-    const nextWorkflow = data.decision === "verificado" ? "aguardando_aprovacao" : "aguardando_verificacao";
+    // Devolvido pelo verificador volta para quem digita — a pendência já ia para
+    // "em digitação"; o ensaio ficava em "aguardando verificação" e cada Kanban
+    // mostrava o laudo numa coluna.
+    const nextWorkflow = data.decision === "verificado" ? "aguardando_aprovacao" : "digitacao";
 
     const commentRow: ApprovalCommentRow = {
       id: rid("cmt"),
@@ -326,6 +375,7 @@ export const verifyApproval = createServerFn({ method: "POST" })
       const approvals = (existing.reportApprovals as ApprovalRow[] | undefined) ?? [];
       const idx = approvals.findIndex((a) => a.rev === data.rev);
       if (idx === -1) throw new Error("Solicitação de aprovação para esta revisão não encontrada.");
+      exigirEtapa(approvals[idx], ["pendente_verificacao", "rejeitado"], "verificada");
 
       updatedRow = {
         ...approvals[idx],
@@ -434,6 +484,7 @@ export const decideApproval = createServerFn({ method: "POST" })
       const approvals = (existing.reportApprovals as ApprovalRow[] | undefined) ?? [];
       const idx = approvals.findIndex((a) => a.rev === data.rev);
       if (idx === -1) throw new Error("Solicitação de aprovação para esta revisão não encontrada.");
+      exigirEtapa(approvals[idx], ["pendente_aprovacao", "verificado"], "aprovada");
 
       updatedRow = { ...approvals[idx], ...patch };
       const nextApprovals = [...approvals];
@@ -470,6 +521,159 @@ export const decideApproval = createServerFn({ method: "POST" })
       });
     }
     return { ...updatedRow, pendencia };
+  });
+
+/* ─────────────────────────────── NOVA REVISÃO ─────────────────────────────── */
+
+const ScopeInput = z.object({ scopeId: z.string().min(1) });
+
+/**
+ * Reabre um laudo aprovado para correção: registra a próxima revisão como
+ * "em revisão" e devolve o ensaio para a digitação. Quando a pessoa termina,
+ * envia para verificação como qualquer revisão — o fluxo não é pulado.
+ *
+ * Antes, "Gerar nova revisão" gerava e enviava o PDF direto para aprovação,
+ * com a numeração do navegador; a revisão nova às vezes caía em cima da
+ * aprovada e o laudo aparecia "aguardando aprovação" no título e "aprovado" no
+ * status. Se a última revisão ainda não foi aprovada, não abre outra: devolve
+ * a mesma (não cria versão desnecessária).
+ */
+export const abrirNovaRevisao = createServerFn({ method: "POST" })
+  .middleware([exigirLogin])
+  .validator((v: unknown) => ScopeInput.parse(v))
+  .handler(async ({ data, context }) => {
+    const { userId, claims } = context as {
+      userId: string;
+      claims: { email?: string; user_metadata?: { full_name?: string; name?: string } };
+    };
+    const name = displayName(claims);
+    const nowIso = new Date().toISOString();
+    const { revisoesComPdfNoDrive } = await import("./driveSync.functions");
+    const noDrive = await revisoesComPdfNoDrive(data.scopeId).catch(() => [] as number[]);
+
+    let rev = 0;
+    let reaproveitada = false;
+    const { ids, file } = await alterarEnsaio(data.scopeId, (_ids, existing) => {
+      if (!existing) throw new Error("Ensaio não encontrado.");
+      const approvals = (existing.reportApprovals as ApprovalRow[] | undefined) ?? [];
+      rev = proximaRevisao(approvals, noDrive);
+      reaproveitada = approvals.some((a) => a.rev === rev);
+      if (reaproveitada) return existing;
+      const row: ApprovalRow = {
+        id: rid("app"),
+        scope_id: data.scopeId,
+        rev,
+        status: STATUS_EM_REVISAO as ApprovalStatus,
+        requested_by: userId,
+        requested_by_name: name,
+        requested_at: nowIso,
+        verified_by: null,
+        verified_by_name: null,
+        verified_at: null,
+        verification_comment: null,
+        decided_by: null,
+        decided_by_name: null,
+        decided_at: null,
+        comment: null,
+        filename: null,
+        updated_at: nowIso,
+      };
+      const comments = (existing.approvalComments as ApprovalCommentRow[] | undefined) ?? [];
+      const commentRow: ApprovalCommentRow = {
+        id: rid("cmt"),
+        scope_id: data.scopeId,
+        rev,
+        action: "comment",
+        comment: `Rev-${String(rev).padStart(2, "0")} aberta para correção.`,
+        author_id: userId,
+        author_name: name,
+        author_role: "operador",
+        created_at: nowIso,
+      };
+      return {
+        ...existing,
+        updatedAt: nowIso,
+        rev: (existing.rev ?? 0) + 1,
+        workflowStatus: "digitacao",
+        status: "digitacao",
+        reportApprovals: [row, ...approvals],
+        approvalComments: [commentRow, ...comments].slice(0, 200),
+      };
+    });
+    const pendencia = reaproveitada
+      ? null
+      : await propagarParaPendencia(ids, file, "em_digitacao", { userId, nome: name });
+    return { rev, reaproveitada, pendencia };
+  });
+
+/* ─────────────────────────────── EXCLUSÃO ─────────────────────────────── */
+
+const ExcluirInput = z.object({ scopeId: z.string().min(1), rev: z.number().int().nonnegative() });
+
+/**
+ * Exclui uma revisão de verdade: o PDF e a planilha vão para a lixeira do
+ * Drive (recuperáveis por 30 dias) e a revisão sai do fluxo de aprovação.
+ * Antes só a cópia do navegador era apagada — o PDF ficava no Drive e a
+ * revisão seguinte "pulava" o número ou voltava como revisão.
+ *
+ * Quem verifica exclui; revisão aprovada, só quem aprova.
+ */
+export const excluirRevisao = createServerFn({ method: "POST" })
+  .middleware([exigirLogin])
+  .validator((v: unknown) => ExcluirInput.parse(v))
+  .handler(async ({ data, context }) => {
+    const { userId, claims } = context as {
+      userId: string;
+      claims: { email?: string; user_metadata?: { full_name?: string; name?: string } };
+    };
+    exigirPermissaoNoFluxo(context as PapelDoUsuario, "verificar");
+    const found = await readEnsaio(data.scopeId);
+    const antes = (found?.file?.reportApprovals as ApprovalRow[] | undefined) ?? [];
+    if (revisaoAprovada(antes, data.rev)) exigirPermissaoNoFluxo(context as PapelDoUsuario, "aprovar");
+
+    const name = displayName(claims);
+    const nowIso = new Date().toISOString();
+    // Primeiro o Drive: se falhar, nada muda e a tela avisa.
+    const { revisaoParaLixeiraDoDrive } = await import("./driveSync.functions");
+    const arquivos = await revisaoParaLixeiraDoDrive(data.scopeId, data.rev);
+
+    let mudouFluxo = false;
+    let workflow: ReturnType<typeof workflowDaEtapa> = "digitacao";
+    const resultado = found?.file
+      ? await alterarEnsaio(data.scopeId, (_ids, existing) => {
+          if (!existing) throw new Error("Ensaio não encontrado.");
+          const approvals = (existing.reportApprovals as ApprovalRow[] | undefined) ?? [];
+          const restantes = approvals.filter((a) => a.rev !== data.rev);
+          mudouFluxo = restantes.length !== approvals.length;
+          if (!mudouFluxo) return existing;
+          workflow = workflowDaEtapa(restantes);
+          const comments = (existing.approvalComments as ApprovalCommentRow[] | undefined) ?? [];
+          const commentRow: ApprovalCommentRow = {
+            id: rid("cmt"),
+            scope_id: data.scopeId,
+            rev: data.rev,
+            action: "comment",
+            comment: `Rev-${String(data.rev).padStart(2, "0")} excluída${arquivos.length ? ` (${arquivos.join(", ")} na lixeira do Drive)` : ""}.`,
+            author_id: userId,
+            author_name: name,
+            author_role: "operador",
+            created_at: nowIso,
+          };
+          return {
+            ...existing,
+            updatedAt: nowIso,
+            rev: (existing.rev ?? 0) + 1,
+            workflowStatus: workflow,
+            status: workflow,
+            reportApprovals: restantes,
+            approvalComments: [commentRow, ...comments].slice(0, 200),
+          };
+        })
+      : null;
+    if (resultado && mudouFluxo) {
+      await propagarParaPendencia(resultado.ids, resultado.file, PENDENCIA_DO_WORKFLOW[workflow], { userId, nome: name });
+    }
+    return { arquivos, workflowStatus: mudouFluxo ? workflow : null };
   });
 
 /* ─────────────────────────────── LISTAGEM ─────────────────────────────── */

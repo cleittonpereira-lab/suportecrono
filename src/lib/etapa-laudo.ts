@@ -96,7 +96,7 @@ type LinhaDeAprovacao = { rev: number; status?: string | null };
  */
 export function etapaDasAprovacoes(
   aprovacoes: readonly LinhaDeAprovacao[] | null | undefined,
-): "aprovado" | "aguardando_aprovacao" | "aguardando_verificacao" | null {
+): "aprovado" | "aguardando_aprovacao" | "aguardando_verificacao" | "em_digitacao" | null {
   if (!aprovacoes || aprovacoes.length === 0) return null;
   const ultima = aprovacoes.reduce((a, b) => (b.rev > a.rev ? b : a));
   switch (ultima.status) {
@@ -106,12 +106,30 @@ export function etapaDasAprovacoes(
     case "verificado":
       return "aguardando_aprovacao";
     case "pendente_verificacao":
-    case "rejeitado_verificacao":
     case "rejeitado":
       return "aguardando_verificacao";
+    // Devolvido pelo verificador e revisão reaberta voltam para quem digita —
+    // a pendência já ia para "em digitação" e o laudo ficava em "aguardando
+    // verificação", cada Kanban numa coluna.
+    case "rejeitado_verificacao":
+    case "em_revisao":
+      return "em_digitacao";
     default:
       return null;
   }
+}
+
+/** Situação da revisão mais recente, para a tela explicar o porquê da etapa. */
+export function situacaoDaUltimaRevisao(
+  aprovacoes: readonly LinhaDeAprovacao[] | null | undefined,
+): { rev: number; devolvida: boolean; reaberta: boolean } | null {
+  if (!aprovacoes || aprovacoes.length === 0) return null;
+  const ultima = aprovacoes.reduce((a, b) => (b.rev > a.rev ? b : a));
+  return {
+    rev: ultima.rev,
+    devolvida: ultima.status === "rejeitado_verificacao",
+    reaberta: ultima.status === "em_revisao",
+  };
 }
 
 /** Traduz qualquer status gravado (ensaio, fluxo, aprovação ou pendência) para a etapa. */
@@ -123,12 +141,14 @@ export function normalizarEtapa(status: string | null | undefined): EtapaLaudo |
     case "digitacao":
     case "rascunho":
     case "processando":
+    case "em_revisao":
+    // Devolvido pelo verificador: volta para quem digita (mesma regra de etapaDasAprovacoes).
+    case "rejeitado_verificacao":
       return "em_digitacao";
     case "digitado":
     case "verificacao":
     case "aguardando_verificacao":
     case "pendente_verificacao":
-    case "rejeitado_verificacao":
     case "rejeitado":
       return "aguardando_verificacao";
     case "verificado":
