@@ -69,6 +69,23 @@ function preservarFotos(recebidas: Photo[] | undefined, existentes: Photo[] | un
   });
 }
 
+/**
+ * Status do fluxo formal: quem manda é o servidor (deriva das aprovações e
+ * ignora estes valores vindos do navegador). Antes, uma edição local mais
+ * recente (autosave do rascunho) mantinha o ensaio local INTEIRO — inclusive
+ * um status otimista antigo, como "aguardando verificação" — e a Central
+ * mostrava na coluna errada um laudo já aprovado.
+ */
+const STATUS_DO_FLUXO = new Set(["aguardando_verificacao", "aguardando_aprovacao", "aprovado", "concluido"]);
+
+function comStatusDoServidor<T extends { status?: string | null }>(local: T, remoto: T): T {
+  if (local.status === remoto.status) return local;
+  if (STATUS_DO_FLUXO.has(local.status ?? "") || STATUS_DO_FLUXO.has(remoto.status ?? "")) {
+    return { ...local, status: remoto.status };
+  }
+  return local;
+}
+
 /** Entidade que só existe localmente deve ser mantida? */
 function manterSoLocal(e: ComDatas, dirtyIds: ReadonlySet<string>, agora: number): boolean {
   if (dirtyIds.has(e.id)) return true;
@@ -108,7 +125,9 @@ export function mergeRemote(
 
       const mergedEnsaios = remoteA.ensaios.map((remoteE) => {
         const localE = localEnMap.get(remoteE.id);
-        if ((dirtyIds.has(remoteE.id) || isLocalNewer(localE, remoteE)) && localE) return localE;
+        if ((dirtyIds.has(remoteE.id) || isLocalNewer(localE, remoteE)) && localE) {
+          return comStatusDoServidor(localE, remoteE);
+        }
         const remoteEComFotos =
           remoteE.photos && localE?.photos
             ? { ...remoteE, photos: preservarFotos(remoteE.photos, localE.photos) }

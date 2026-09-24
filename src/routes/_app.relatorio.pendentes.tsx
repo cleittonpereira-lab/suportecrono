@@ -302,15 +302,15 @@ function CentralRelatoriosPage() {
                 ensaio: e.sigla || e.nome || ENSAIO_LABEL[e.tipo] || e.tipo,
                 tipo_ensaio: e.tipo,
                 equipamento: null,
-                data_conclusao: new Date().toISOString(),
+                data_conclusao: e.createdAt || new Date().toISOString(),
                 status: etapaParaPendencia(combinarEtapas(etapaEnsaio, null)),
                 origem: "avulso",
                 operador_user_id: null,
                 operador_nome: e.operator || o.operator || null,
                 observacao: null,
                 payload: e.payload as any,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
+                created_at: e.createdAt || new Date().toISOString(),
+                updated_at: e.updatedAt || e.createdAt || new Date().toISOString(),
               };
               map.set(key, item);
               map.set(e.id, item);
@@ -463,6 +463,32 @@ function CentralRelatoriosPage() {
     }
     return s;
   }, [laudos]);
+  // O fluxo formal do laudo manda na etapa: uma pendência (ou cópia local do
+  // ensaio) com status antigo punha em "Aguardando verificação" um laudo já
+  // aprovado — cada tela mostrava uma coisa.
+  const pendencias = useMemo(() => {
+    const porEnsaio = new Map<string, (typeof laudos)[number]>();
+    const porChave = new Map<string, (typeof laudos)[number]>();
+    for (const l of laudos) {
+      if (l.rev == null) continue;
+      const partes = l.scope_id.split("/");
+      const ensaioId = partes[partes.indexOf("ensaio") + 1];
+      if (ensaioId) porEnsaio.set(ensaioId, l);
+      for (const am of [l.amostra_numero, l.amostra_code]) {
+        if (am) porChave.set(`${normOs(l.os_numero)}::${normAmostra(am)}::${normMethod(l.ensaio_tipo || l.ensaio_nome)}`, l);
+      }
+    }
+    return allPendencias.map((p) => {
+      const l =
+        porEnsaio.get(p.id) ??
+        porChave.get(`${normOs(p.os)}::${normAmostra(p.amostra || "")}::${normMethod(p.ensaio || p.tipo_ensaio)}`);
+      const etapa = l ? normalizarEtapa(l.workflow_status) : null;
+      if (!etapa) return p;
+      const status = etapaParaPendencia(etapa);
+      return status === p.status ? p : { ...p, status };
+    });
+  }, [allPendencias, laudos]);
+
   const naoEntregue = (r: PendenciaDigitacao) =>
     !chavesEntregues.has(`${normOs(r.os)}::${normAmostra(r.amostra || "")}::${normMethod(r.ensaio || r.tipo_ensaio)}`);
   // Tipos que aparecem na bancada ou nos laudos (só esses viram botão no filtro).
@@ -501,7 +527,7 @@ function CentralRelatoriosPage() {
   // Filtro de busca global + status/tipo/"só meus"
   const filteredRows = useMemo(() => {
     const q = busca.trim().toLowerCase();
-    return allPendencias.filter((r) => {
+    return pendencias.filter((r) => {
       if (!naoEntregue(r)) return false;
       if (soMeus && user?.id && r.digitador_user_id !== user.id && r.operador_user_id !== user.id) return false;
       if (etapaFiltro !== "all" && !ETAPA_FILTRO[etapaFiltro].status.includes(r.status)) return false;
@@ -525,13 +551,13 @@ function CentralRelatoriosPage() {
     const itemFuroNorm = normAmostra(item.furo);
     const itemMethNorm = normMethod(item.ensaio || item.tipoEnsaioNome);
     return (
-      allPendencias.find(
+      pendencias.find(
         (r) =>
           normOs(r.os) === itemOsNorm &&
           (normAmostra(r.amostra) === itemAmNorm || normAmostra(r.amostra) === itemFuroNorm) &&
           (normMethod(r.ensaio) === itemMethNorm || normMethod(r.tipo_ensaio) === itemMethNorm),
       ) ||
-      allPendencias.find(
+      pendencias.find(
         (r) =>
           normOs(r.os) === itemOsNorm &&
           (normAmostra(r.amostra) === itemAmNorm || normAmostra(r.amostra) === itemFuroNorm),
@@ -570,7 +596,7 @@ function CentralRelatoriosPage() {
   }, [ganttDaFamilia, ganttFilter, busca, allPendencias]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pendDaFamilia =
-    familia === "all" ? allPendencias : allPendencias.filter((r) => familiaDoEnsaio(r.tipo_ensaio, r.ensaio) === familia);
+    familia === "all" ? pendencias : pendencias.filter((r) => familiaDoEnsaio(r.tipo_ensaio, r.ensaio) === familia);
 
   // Contadores
   const counts = useMemo(() => {

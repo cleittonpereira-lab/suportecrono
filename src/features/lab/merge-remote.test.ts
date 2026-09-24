@@ -79,6 +79,25 @@ describe("mergeRemote — conteúdo", () => {
     expect((r.os[0].amostras[0].ensaios[0] as { status?: string }).status).toBe("aprovado");
   });
 
+  it("edição local mais recente mantém os dados, mas o status do fluxo vem do servidor", () => {
+    const local = estado(
+      os("os1", [amostra("am1", [ensaio("en1", { status: "aguardando_verificacao", operator: "novo", updatedAt: ha(1000) })])]),
+    );
+    const remoto = estado(os("os1", [amostra("am1", [ensaio("en1", { status: "aprovado", operator: "velho", updatedAt: ha(60_000) })])]));
+
+    const r = mergeRemote(local, remoto, new Set(["en1"]), AGORA);
+    const en = r.os[0].amostras[0].ensaios[0] as { status?: string; operator?: string };
+    expect(en.status).toBe("aprovado");
+    expect(en.operator).toBe("novo");
+  });
+
+  it("status fora do fluxo (ex.: concluído fora) marcado aqui continua valendo enquanto salva", () => {
+    const local = estado(os("os1", [amostra("am1", [ensaio("en1", { status: "concluido_externo", updatedAt: ha(1000) })])]));
+    const remoto = estado(os("os1", [amostra("am1", [ensaio("en1", { status: "em_digitacao", updatedAt: ha(60_000) })])]));
+    const r = mergeRemote(local, remoto, new Set(["en1"]), AGORA);
+    expect((r.os[0].amostras[0].ensaios[0] as { status?: string }).status).toBe("concluido_externo");
+  });
+
   it("edição local mais recente não é sobrescrita por leitura atrasada do servidor", () => {
     const local = estado(os("os1", [amostra("am1", [ensaio("en1", { operator: "novo", updatedAt: ha(1000) })])]));
     const remoto = estado(os("os1", [amostra("am1", [ensaio("en1", { operator: "velho", updatedAt: ha(60_000) })])]));
