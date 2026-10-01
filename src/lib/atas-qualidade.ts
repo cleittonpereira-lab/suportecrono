@@ -154,12 +154,46 @@ export function resumirReuniao(r: Pick<Reuniao, "itens">, hoje: string): ResumoR
 // Encadeamento das reuniões de um grupo
 // ---------------------------------------------------------------------------
 
-/** Mais antiga primeiro: por data, depois hora, depois número. */
+/** Mais antiga primeiro: por data, depois hora, depois quem foi criada antes. */
 export function ordenarReunioes(rs: readonly Reuniao[]): Reuniao[] {
   return [...rs].sort(
     (a, b) =>
-      a.data.localeCompare(b.data) || a.horaInicio.localeCompare(b.horaInicio) || a.numero - b.numero,
+      a.data.localeCompare(b.data) ||
+      a.horaInicio.localeCompare(b.horaInicio) ||
+      a.criadaEm.localeCompare(b.criadaEm) ||
+      a.numero - b.numero,
   );
+}
+
+/**
+ * O número da reunião é a sua POSIÇÃO no grupo pela data (e hora): a mais
+ * antiga é a nº 1. Não é o número gravado na criação — quem registra uma
+ * reunião passada depois de outras mais novas não fica com a numeração fora
+ * de ordem, e mudar a data de uma reunião renumera as demais. Também acerta
+ * as referências entre reuniões gravadas nos itens ("vem da nº X").
+ */
+export function renumerarPorData(rs: readonly Reuniao[]): Reuniao[] {
+  const porGrupo = new Map<string, Reuniao[]>();
+  for (const r of rs) porGrupo.set(r.grupo, [...(porGrupo.get(r.grupo) ?? []), r]);
+  const pos = new Map<string, { numero: number; data: string }>();
+  for (const lista of porGrupo.values()) {
+    ordenarReunioes(lista).forEach((r, i) => pos.set(r.id, { numero: i + 1, data: r.data }));
+  }
+  return rs.map((r) => ({
+    ...r,
+    numero: pos.get(r.id)?.numero ?? r.numero,
+    itens: r.itens.map((i) => {
+      const o = i.origem ? pos.get(i.origem.reuniaoId) : undefined;
+      const t = i.transferidaPara ? pos.get(i.transferidaPara.reuniaoId) : undefined;
+      if (!o && !t) return i;
+      return {
+        ...i,
+        origem: i.origem && o ? { ...i.origem, reuniaoNumero: o.numero, reuniaoData: o.data } : i.origem,
+        transferidaPara:
+          i.transferidaPara && t ? { ...i.transferidaPara, reuniaoNumero: t.numero, reuniaoData: t.data } : i.transferidaPara,
+      };
+    }),
+  }));
 }
 
 export function reunioesDoGrupo(rs: readonly Reuniao[], grupo: string): Reuniao[] {
@@ -325,7 +359,7 @@ export function aplicarOperacao(r: Reuniao, o: OperacaoAta, quem: string, agora:
       return {
         ...base,
         ...(c.grupo !== undefined ? { grupo: c.grupo.trim() || r.grupo } : null),
-        ...(c.titulo !== undefined ? { titulo: c.titulo.trim() || r.titulo } : null),
+        ...(c.titulo !== undefined ? { titulo: c.titulo.trim() } : null),
         ...(c.data !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(c.data) ? { data: c.data } : null),
         ...(c.horaInicio !== undefined ? { horaInicio: c.horaInicio } : null),
         ...(c.horaFim !== undefined ? { horaFim: c.horaFim } : null),
@@ -419,4 +453,22 @@ export function iniciais(nome: string): string {
   if (partes.length === 0) return "?";
   if (partes.length === 1) return partes[0].slice(0, 2).toLocaleUpperCase("pt-BR");
   return (partes[0][0] + partes[partes.length - 1][0]).toLocaleUpperCase("pt-BR");
+}
+
+/**
+ * Título para mostrar: o que a pessoa escreveu, ou "Reunião nº X" com o número
+ * pela data. Títulos antigos gravados como "Reunião nº N" (padrão de antes)
+ * também seguem o número atual.
+ */
+export function tituloDaReuniao(r: Pick<Reuniao, "titulo" | "numero">): string {
+  const t = r.titulo.trim();
+  return !t || TITULO_PADRAO.test(t) ? `Reunião nº ${r.numero}` : t;
+}
+
+const TITULO_PADRAO = /^Reuni[aã]o n[º°o.]?\s*\d+$/i;
+
+/** Título que a própria pessoa deu (vazio quando é só o padrão "Reunião nº X"). */
+export function tituloProprio(r: Pick<Reuniao, "titulo">): string {
+  const t = r.titulo.trim();
+  return TITULO_PADRAO.test(t) ? "" : t;
 }

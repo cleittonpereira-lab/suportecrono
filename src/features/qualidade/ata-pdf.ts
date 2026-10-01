@@ -13,6 +13,7 @@ import {
   STATUS_ITEM_LABEL,
   STATUS_REUNIAO_LABEL,
   TIPO_LABEL,
+  tituloDaReuniao,
   type ItemAta,
   type PendenciaAberta,
   type Reuniao,
@@ -107,7 +108,7 @@ function desenharCabecalho(doc: Doc, logo: Awaited<ReturnType<typeof logoComoDat
   const tw = doc.getTextWidth(t1);
   doc.setLineWidth(0.25).line(cx - tw / 2, y + 8.3, cx + tw / 2, y + 8.3);
   doc.setFontSize(10);
-  const titulo = doc.splitTextToSize(paraLatin1(r.titulo || `Reunião nº ${r.numero}`), w - wLogo - 8) as string[];
+  const titulo = doc.splitTextToSize(paraLatin1(tituloDaReuniao(r)), w - wLogo - 8) as string[];
   doc.text(titulo[0], cx, y + 13, { align: "center" });
   doc.setFont("helvetica", "normal").setFontSize(8.5);
   doc.text(paraLatin1(r.grupo), cx, y + 17.5, { align: "center" });

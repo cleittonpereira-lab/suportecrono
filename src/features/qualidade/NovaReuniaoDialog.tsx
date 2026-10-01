@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { criarReuniao } from "@/lib/atas-qualidade.functions";
-import { gruposExistentes, proximoNumero, reunioesDoGrupo, type Participante, type Reuniao } from "@/lib/atas-qualidade";
+import { gruposExistentes, reunioesDoGrupo, type Participante, type Reuniao } from "@/lib/atas-qualidade";
 import { isoHoje } from "@/features/lab/hooks/use-acoes-da-programacao";
 import { CHAVE_ATAS, usePessoas } from "./atas-hooks";
 import { PessoasPicker } from "./PessoasPicker";
@@ -46,7 +46,9 @@ export function NovaReuniaoDialog({
   const ultima = doGrupo[doGrupo.length - 1] ?? null;
   const participantes: string[] = escolhidos ?? ultima?.participantes.map((p) => p.nome) ?? [];
   const externos = new Set((ultima?.participantes ?? []).filter((p) => p.externo).map((p) => p.nome.toLowerCase()));
-  const numero = proximoNumero(reunioes, grupo.trim() || grupoInicial);
+  // O número segue a data: é a posição desta reunião entre as do grupo.
+  const numero = doGrupo.filter((r) => r.data < data || (r.data === data && r.horaInicio <= horaInicio)).length + 1;
+  const renumera = numero <= doGrupo.length;
 
   const criar = useMutation({
     mutationFn: () => {
@@ -73,7 +75,7 @@ export function NovaReuniaoDialog({
         <DialogHeader>
           <DialogTitle>Nova reunião</DialogTitle>
           <DialogDescription>
-            Será a reunião nº {numero} deste grupo. Os participantes da última reunião já vêm marcados.
+            Pela data, será a reunião nº {numero} deste grupo{renumera ? " — as seguintes serão renumeradas" : ""}. Os participantes da última reunião já vêm marcados.
           </DialogDescription>
         </DialogHeader>
 

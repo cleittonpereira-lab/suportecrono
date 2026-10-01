@@ -22,7 +22,7 @@ import {
   copiaParaReuniaoNova,
   GRUPO_PADRAO,
   itemEmAberto,
-  proximoNumero,
+  renumerarPorData,
   type OperacaoAta,
   type Participante,
   type Reuniao,
@@ -50,7 +50,7 @@ async function lerTodas(): Promise<Reuniao[]> {
     const antes = porId.get(data.id);
     if (!antes || antes.atualizadaEm < data.atualizadaEm) porId.set(data.id, data);
   }
-  return [...porId.values()];
+  return renumerarPorData([...porId.values()]);
 }
 
 export const listarReunioes = createServerFn({ method: "GET" })
@@ -95,13 +95,12 @@ export const criarReuniao = createServerFn({ method: "POST" })
     const quem = nomeDe(context.claims);
     const agora = new Date().toISOString();
     const todas = await lerTodas();
-    const numero = proximoNumero(todas, data.grupo);
     const id = crypto.randomUUID();
     const reuniao: Reuniao = {
       id,
       grupo: data.grupo,
-      numero,
-      titulo: data.titulo || `Reunião nº ${numero}`,
+      numero: 0,
+      titulo: data.titulo,
       data: data.data,
       horaInicio: data.horaInicio,
       horaFim: data.horaFim,
@@ -119,8 +118,9 @@ export const criarReuniao = createServerFn({ method: "POST" })
       encerradaPor: null,
     };
     const folderId = await ensureFolderPath(PASTA);
-    const gravada = await atualizarDriveJson<Reuniao>(nomeDoArquivo(id), folderId, () => reuniao);
-    return gravada as Reuniao;
+    await atualizarDriveJson<Reuniao>(nomeDoArquivo(id), folderId, () => reuniao);
+    // O número é a posição pela data — calculado junto com as demais.
+    return renumerarPorData([...todas, reuniao]).find((r) => r.id === id) as Reuniao;
   });
 
 const ItemBase = z.object({

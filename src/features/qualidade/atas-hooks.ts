@@ -16,7 +16,7 @@ import {
   operarReuniao,
   trazerPendencias,
 } from "@/lib/atas-qualidade.functions";
-import { aplicarOperacao, type OperacaoAta, type Reuniao } from "@/lib/atas-qualidade";
+import { aplicarOperacao, renumerarPorData, type OperacaoAta, type Reuniao } from "@/lib/atas-qualidade";
 import { useAuth } from "@/hooks/use-auth";
 
 export const CHAVE_ATAS = ["qualidade-atas"] as const;
@@ -24,7 +24,9 @@ const CHAVE_OPERACAO = ["qualidade-atas-operar"] as const;
 
 export function useReunioes() {
   const fn = useServerFn(listarReunioes);
-  return useQuery({ queryKey: CHAVE_ATAS, queryFn: () => fn() as Promise<Reuniao[]>, staleTime: 15_000 });
+  // O número de cada reunião é recalculado pela data sempre que a lista muda
+  // (inclusive na edição otimista de uma data, antes do servidor responder).
+  return useQuery({ queryKey: CHAVE_ATAS, queryFn: () => fn() as Promise<Reuniao[]>, staleTime: 15_000, select: renumerarPorData });
 }
 
 export function usePessoas() {

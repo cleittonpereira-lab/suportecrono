@@ -12,6 +12,8 @@ import {
   proximoNumero,
   resumirReuniao,
   reuniaoAnterior,
+  renumerarPorData,
+  tituloDaReuniao,
   type ItemAta,
   type Reuniao,
 } from "./atas-qualidade";
@@ -189,5 +191,40 @@ describe("nome do arquivo", () => {
     expect(nomeDoArquivoDaAta({ grupo: "Grupo de trabalho ISO 17025", numero: 3, data: "2026-10-01" })).toBe(
       "Ata_Grupo_de_trabalho_ISO_17025_03_2026-10-01.pdf",
     );
+  });
+});
+
+describe("numeração pela data", () => {
+  it("a mais antiga é a nº 1, mesmo criada depois; e acerta as referências dos itens", () => {
+    const nova = reuniao({ id: "b", numero: 1, data: "2026-10-10", criadaEm: "2026-09-01T00:00:00.000Z" });
+    const velha = reuniao({
+      id: "a", numero: 2, data: "2026-09-24", criadaEm: "2026-09-30T00:00:00.000Z",
+      itens: [{ ...item({ id: "x", status: "transferida" }), transferidaPara: { reuniaoId: "b", reuniaoNumero: 1, reuniaoData: "2026-10-10" } }],
+    });
+    const nova2 = { ...nova, itens: [item({ id: "y", origem: { reuniaoId: "a", itemId: "x", reuniaoNumero: 2, reuniaoData: "2026-09-24" } })] };
+    const outra = reuniao({ id: "c", numero: 7, data: "2026-01-01", grupo: "Outro" });
+    const r = renumerarPorData([nova2, velha, outra]);
+    const por = Object.fromEntries(r.map((x) => [x.id, x]));
+    expect(por.a.numero).toBe(1);
+    expect(por.b.numero).toBe(2);
+    expect(por.c.numero).toBe(1);
+    expect(por.b.itens[0].origem?.reuniaoNumero).toBe(1);
+    expect(por.a.itens[0].transferidaPara?.reuniaoNumero).toBe(2);
+  });
+
+  it("no mesmo dia, a de horário mais cedo vem antes", () => {
+    const r = renumerarPorData([
+      reuniao({ id: "t", numero: 1, data: "2026-10-01", horaInicio: "14:00" }),
+      reuniao({ id: "m", numero: 2, data: "2026-10-01", horaInicio: "08:30" }),
+    ]);
+    expect(r.find((x) => x.id === "m")?.numero).toBe(1);
+  });
+});
+
+describe("título", () => {
+  it("o padrão antigo segue o número pela data; título próprio fica", () => {
+    expect(tituloDaReuniao({ titulo: "Reunião nº 2", numero: 1 })).toBe("Reunião nº 1");
+    expect(tituloDaReuniao({ titulo: "", numero: 3 })).toBe("Reunião nº 3");
+    expect(tituloDaReuniao({ titulo: "Análise crítica", numero: 3 })).toBe("Análise crítica");
   });
 });
