@@ -30,6 +30,7 @@ import {
   ScanLine,
   Droplets,
   Gauge,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 
@@ -122,6 +123,14 @@ const SECTIONS: readonly Section[] = [
     match: (p) => p.startsWith("/relatorio/especiais"),
     tabs: [
       { title: "Ensaios Especiais", url: "/relatorio/especiais", icon: Sparkles },
+    ],
+  },
+  {
+    key: "qualidade-lab",
+    label: "Qualidade - LAB",
+    match: (p) => p.startsWith("/qualidade"),
+    tabs: [
+      { title: "Grupo de trabalho ISO 17025 · Atas", url: "/qualidade/atas", icon: Users },
     ],
   },
   {

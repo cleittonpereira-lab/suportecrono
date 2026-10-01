@@ -33,6 +33,7 @@ export type TabKey =
   | "relatorio_ensaios_especiais"
   | "chegada_amostras"
   | "relatorio_cisalhamento"
+  | "qualidade_lab"
   | "admin_usuarios"
   | "painel_coordenador";
 
@@ -71,6 +72,7 @@ export const TAB_META: Record<TabKey, { label: string; adminOnly?: boolean; porC
   relatorio_emissoes: { label: "Relatório · Emissões" },
   relatorio_ensaios_especiais: { label: "Ensaios Especiais" },
   chegada_amostras: { label: "Chegada de amostras" },
+  qualidade_lab: { label: "Qualidade - LAB · Atas de reunião" },
   admin_usuarios: { label: "Gestão de usuários", adminOnly: true },
   painel_coordenador: { label: "Gestão · Painel do coordenador", porConcessao: true },
 };
@@ -81,6 +83,7 @@ export const ALL_TABS = Object.keys(TAB_META) as TabKey[];
 export function pathToTab(pathname: string): TabKey | null {
   if (pathname === "/" || pathname === "/dashboard") return "dashboard";
   if (pathname.startsWith("/coordenacao")) return "painel_coordenador";
+  if (pathname.startsWith("/qualidade")) return "qualidade_lab";
   if (pathname.startsWith("/assistente")) return "assistente";
   if (pathname.startsWith("/chegada-amostras") || pathname.startsWith("/registro-amostra") || pathname.startsWith("/registro-chegada")) return "chegada_amostras";
   if (pathname.startsWith("/entregas") || pathname.startsWith("/criar-entrega")) return "entregas";

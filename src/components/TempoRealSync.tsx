@@ -13,6 +13,7 @@ const CONSULTAS_POR_PASTA: Record<string, string[][]> = {
   "lab-pendencias": [["lab-pendencias"]],
   "lab-ensaios": [["emissoes-os"]],
   "os-hub": [["os-hub"]],
+  "qualidade-atas": [["qualidade-atas"]],
   raiz: [["chegada-shared-state"]],
 };
 

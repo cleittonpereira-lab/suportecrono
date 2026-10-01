@@ -20,6 +20,7 @@ import {
   PackagePlus,
   Droplets,
   Gauge,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -99,6 +100,12 @@ const sections: readonly NavSection[] = [
     label: "ENSAIOS ESPECIAIS",
     items: [
       { title: "Ensaios Especiais", url: "/relatorio/especiais", icon: Sparkles },
+    ],
+  },
+  {
+    label: "QUALIDADE - LAB",
+    items: [
+      { title: "GT ISO 17025 · Atas", url: "/qualidade/atas", icon: Users },
     ],
   },
   {

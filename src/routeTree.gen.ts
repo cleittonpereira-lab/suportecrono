@@ -80,6 +80,8 @@ import { Route as AppRelatorioTriaxialCiuRouteImport } from './routes/_app.relat
 import { Route as AppRelatorioTriaxialUuRouteImport } from './routes/_app.relatorio.triaxial-uu'
 import { Route as AppRelatorioUmidadeNaturalRouteImport } from './routes/_app.relatorio.umidade-natural'
 import { Route as ApiPhotoFileIdRouteImport } from './routes/api.photo.$fileId'
+import { Route as AppQualidadeAtasIndexRouteImport } from './routes/_app.qualidade.atas.index'
+import { Route as AppQualidadeAtasReuniaoIdRouteImport } from './routes/_app.qualidade.atas.$reuniaoId'
 import { Route as AppRelatorioDigitalizacaoIndexRouteImport } from './routes/_app.relatorio.digitalizacao.index'
 import { Route as AppRelatorioDigitalizacaoAdensamentoRouteImport } from './routes/_app.relatorio.digitalizacao.adensamento'
 import { Route as AppRelatorioDigitalizacaoAsfDapRouteImport } from './routes/_app.relatorio.digitalizacao.asf-dap'
@@ -478,6 +480,17 @@ const ApiPhotoFileIdRoute = ApiPhotoFileIdRouteImport.update({
   path: '/api/photo/$fileId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppQualidadeAtasIndexRoute = AppQualidadeAtasIndexRouteImport.update({
+  id: '/qualidade/atas/',
+  path: '/qualidade/atas/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppQualidadeAtasReuniaoIdRoute =
+  AppQualidadeAtasReuniaoIdRouteImport.update({
+    id: '/qualidade/atas/$reuniaoId',
+    path: '/qualidade/atas/$reuniaoId',
+    getParentRoute: () => AppRoute,
+  } as any)
 const AppRelatorioDigitalizacaoIndexRoute =
   AppRelatorioDigitalizacaoIndexRouteImport.update({
     id: '/',
@@ -650,6 +663,7 @@ export interface FileRoutesByFullPath {
   '/modelos-relatorios/': typeof AppModelosRelatoriosIndexRoute
   '/programacao/': typeof AppProgramacaoIndexRoute
   '/relatorio/': typeof AppRelatorioIndexRoute
+  '/qualidade/atas/$reuniaoId': typeof AppQualidadeAtasReuniaoIdRoute
   '/relatorio/digitalizacao/adensamento': typeof AppRelatorioDigitalizacaoAdensamentoRoute
   '/relatorio/digitalizacao/asf-dap': typeof AppRelatorioDigitalizacaoAsfDapRoute
   '/relatorio/digitalizacao/asf-tb': typeof AppRelatorioDigitalizacaoAsfTbRoute
@@ -661,6 +675,7 @@ export interface FileRoutesByFullPath {
   '/relatorio/digitalizacao/pendencias': typeof AppRelatorioDigitalizacaoPendenciasRoute
   '/relatorio/digitalizacao/perm-v': typeof AppRelatorioDigitalizacaoPermVRoute
   '/relatorio/especiais/$osNumero': typeof AppRelatorioEspeciaisOsNumeroRoute
+  '/qualidade/atas/': typeof AppQualidadeAtasIndexRoute
   '/relatorio/digitalizacao/': typeof AppRelatorioDigitalizacaoIndexRoute
   '/relatorio/especiais/': typeof AppRelatorioEspeciaisIndexRoute
   '/relatorio/os/': typeof AppRelatorioOsIndexRoute
@@ -738,6 +753,7 @@ export interface FileRoutesByTo {
   '/modelos-relatorios': typeof AppModelosRelatoriosIndexRoute
   '/programacao': typeof AppProgramacaoIndexRoute
   '/relatorio': typeof AppRelatorioIndexRoute
+  '/qualidade/atas/$reuniaoId': typeof AppQualidadeAtasReuniaoIdRoute
   '/relatorio/digitalizacao/adensamento': typeof AppRelatorioDigitalizacaoAdensamentoRoute
   '/relatorio/digitalizacao/asf-dap': typeof AppRelatorioDigitalizacaoAsfDapRoute
   '/relatorio/digitalizacao/asf-tb': typeof AppRelatorioDigitalizacaoAsfTbRoute
@@ -749,6 +765,7 @@ export interface FileRoutesByTo {
   '/relatorio/digitalizacao/pendencias': typeof AppRelatorioDigitalizacaoPendenciasRoute
   '/relatorio/digitalizacao/perm-v': typeof AppRelatorioDigitalizacaoPermVRoute
   '/relatorio/especiais/$osNumero': typeof AppRelatorioEspeciaisOsNumeroRoute
+  '/qualidade/atas': typeof AppQualidadeAtasIndexRoute
   '/relatorio/digitalizacao': typeof AppRelatorioDigitalizacaoIndexRoute
   '/relatorio/especiais': typeof AppRelatorioEspeciaisIndexRoute
   '/relatorio/os': typeof AppRelatorioOsIndexRoute
@@ -829,6 +846,7 @@ export interface FileRoutesById {
   '/_app/modelos-relatorios/': typeof AppModelosRelatoriosIndexRoute
   '/_app/programacao/': typeof AppProgramacaoIndexRoute
   '/_app/relatorio/': typeof AppRelatorioIndexRoute
+  '/_app/qualidade/atas/$reuniaoId': typeof AppQualidadeAtasReuniaoIdRoute
   '/_app/relatorio/digitalizacao/adensamento': typeof AppRelatorioDigitalizacaoAdensamentoRoute
   '/_app/relatorio/digitalizacao/asf-dap': typeof AppRelatorioDigitalizacaoAsfDapRoute
   '/_app/relatorio/digitalizacao/asf-tb': typeof AppRelatorioDigitalizacaoAsfTbRoute
@@ -840,6 +858,7 @@ export interface FileRoutesById {
   '/_app/relatorio/digitalizacao/pendencias': typeof AppRelatorioDigitalizacaoPendenciasRoute
   '/_app/relatorio/digitalizacao/perm-v': typeof AppRelatorioDigitalizacaoPermVRoute
   '/_app/relatorio/especiais/$osNumero': typeof AppRelatorioEspeciaisOsNumeroRoute
+  '/_app/qualidade/atas/': typeof AppQualidadeAtasIndexRoute
   '/_app/relatorio/digitalizacao/': typeof AppRelatorioDigitalizacaoIndexRoute
   '/_app/relatorio/especiais/': typeof AppRelatorioEspeciaisIndexRoute
   '/_app/relatorio/os/': typeof AppRelatorioOsIndexRoute
@@ -920,6 +939,7 @@ export interface FileRouteTypes {
     | '/modelos-relatorios/'
     | '/programacao/'
     | '/relatorio/'
+    | '/qualidade/atas/$reuniaoId'
     | '/relatorio/digitalizacao/adensamento'
     | '/relatorio/digitalizacao/asf-dap'
     | '/relatorio/digitalizacao/asf-tb'
@@ -931,6 +951,7 @@ export interface FileRouteTypes {
     | '/relatorio/digitalizacao/pendencias'
     | '/relatorio/digitalizacao/perm-v'
     | '/relatorio/especiais/$osNumero'
+    | '/qualidade/atas/'
     | '/relatorio/digitalizacao/'
     | '/relatorio/especiais/'
     | '/relatorio/os/'
@@ -1008,6 +1029,7 @@ export interface FileRouteTypes {
     | '/modelos-relatorios'
     | '/programacao'
     | '/relatorio'
+    | '/qualidade/atas/$reuniaoId'
     | '/relatorio/digitalizacao/adensamento'
     | '/relatorio/digitalizacao/asf-dap'
     | '/relatorio/digitalizacao/asf-tb'
@@ -1019,6 +1041,7 @@ export interface FileRouteTypes {
     | '/relatorio/digitalizacao/pendencias'
     | '/relatorio/digitalizacao/perm-v'
     | '/relatorio/especiais/$osNumero'
+    | '/qualidade/atas'
     | '/relatorio/digitalizacao'
     | '/relatorio/especiais'
     | '/relatorio/os'
@@ -1098,6 +1121,7 @@ export interface FileRouteTypes {
     | '/_app/modelos-relatorios/'
     | '/_app/programacao/'
     | '/_app/relatorio/'
+    | '/_app/qualidade/atas/$reuniaoId'
     | '/_app/relatorio/digitalizacao/adensamento'
     | '/_app/relatorio/digitalizacao/asf-dap'
     | '/_app/relatorio/digitalizacao/asf-tb'
@@ -1109,6 +1133,7 @@ export interface FileRouteTypes {
     | '/_app/relatorio/digitalizacao/pendencias'
     | '/_app/relatorio/digitalizacao/perm-v'
     | '/_app/relatorio/especiais/$osNumero'
+    | '/_app/qualidade/atas/'
     | '/_app/relatorio/digitalizacao/'
     | '/_app/relatorio/especiais/'
     | '/_app/relatorio/os/'
@@ -1629,6 +1654,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPhotoFileIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app/qualidade/atas/': {
+      id: '/_app/qualidade/atas/'
+      path: '/qualidade/atas'
+      fullPath: '/qualidade/atas/'
+      preLoaderRoute: typeof AppQualidadeAtasIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/qualidade/atas/$reuniaoId': {
+      id: '/_app/qualidade/atas/$reuniaoId'
+      path: '/qualidade/atas/$reuniaoId'
+      fullPath: '/qualidade/atas/$reuniaoId'
+      preLoaderRoute: typeof AppQualidadeAtasReuniaoIdRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/relatorio/digitalizacao/': {
       id: '/_app/relatorio/digitalizacao/'
       path: '/'
@@ -1863,7 +1902,9 @@ interface AppRouteChildren {
   AppModelosRelatoriosIndexRoute: typeof AppModelosRelatoriosIndexRoute
   AppProgramacaoIndexRoute: typeof AppProgramacaoIndexRoute
   AppRelatorioIndexRoute: typeof AppRelatorioIndexRoute
+  AppQualidadeAtasReuniaoIdRoute: typeof AppQualidadeAtasReuniaoIdRoute
   AppRelatorioEspeciaisOsNumeroRoute: typeof AppRelatorioEspeciaisOsNumeroRoute
+  AppQualidadeAtasIndexRoute: typeof AppQualidadeAtasIndexRoute
   AppRelatorioEspeciaisIndexRoute: typeof AppRelatorioEspeciaisIndexRoute
   AppRelatorioOsIndexRoute: typeof AppRelatorioOsIndexRoute
   AppRelatorioOsOsIdIndexRoute: typeof AppRelatorioOsOsIdIndexRoute
@@ -1937,7 +1978,9 @@ const AppRouteChildren: AppRouteChildren = {
   AppModelosRelatoriosIndexRoute: AppModelosRelatoriosIndexRoute,
   AppProgramacaoIndexRoute: AppProgramacaoIndexRoute,
   AppRelatorioIndexRoute: AppRelatorioIndexRoute,
+  AppQualidadeAtasReuniaoIdRoute: AppQualidadeAtasReuniaoIdRoute,
   AppRelatorioEspeciaisOsNumeroRoute: AppRelatorioEspeciaisOsNumeroRoute,
+  AppQualidadeAtasIndexRoute: AppQualidadeAtasIndexRoute,
   AppRelatorioEspeciaisIndexRoute: AppRelatorioEspeciaisIndexRoute,
   AppRelatorioOsIndexRoute: AppRelatorioOsIndexRoute,
   AppRelatorioOsOsIdIndexRoute: AppRelatorioOsOsIdIndexRoute,
