@@ -22,6 +22,7 @@ import {
   copiaParaReuniaoNova,
   GRUPO_PADRAO,
   itemEmAberto,
+  pendenciasAnteriores,
   renumerarPorData,
   type OperacaoAta,
   type Participante,
@@ -86,6 +87,8 @@ const CriarInput = z.object({
   local: z.string().max(200).default(""),
   pauta: z.string().max(5000).default(""),
   participantes: z.array(ParticipanteSchema).max(80).default([]),
+  /** Já traz as ações em aberto das reuniões anteriores (pela data) para esta. */
+  trazerPendencias: z.boolean().default(false),
 });
 
 export const criarReuniao = createServerFn({ method: "POST" })
@@ -120,7 +123,19 @@ export const criarReuniao = createServerFn({ method: "POST" })
     const folderId = await ensureFolderPath(PASTA);
     await atualizarDriveJson<Reuniao>(nomeDoArquivo(id), folderId, () => reuniao);
     // O número é a posição pela data — calculado junto com as demais.
-    return renumerarPorData([...todas, reuniao]).find((r) => r.id === id) as Reuniao;
+    const lista = renumerarPorData([...todas, reuniao]);
+    const nova = lista.find((r) => r.id === id) as Reuniao;
+    let trazidos = 0;
+    if (data.trazerPendencias) {
+      const porOrigem = new Map<string, { origem: Reuniao; ids: string[] }>();
+      for (const p of pendenciasAnteriores(lista, nova)) {
+        const g = porOrigem.get(p.reuniao.id) ?? { origem: p.reuniao, ids: [] };
+        g.ids.push(p.item.id);
+        porOrigem.set(p.reuniao.id, g);
+      }
+      for (const { origem, ids } of porOrigem.values()) trazidos += await trazerDe(origem, ids, id, quem);
+    }
+    return { ...nova, trazidos };
   });
 
 const ItemBase = z.object({
@@ -179,6 +194,61 @@ export const operarReuniao = createServerFn({ method: "POST" })
     return novo as Reuniao;
   });
 
+/**
+ * Traz ações em aberto de `origem` para a reunião `paraReuniaoId`: cria a
+ * cópia no destino (primeiro) e marca a de origem como "transferida". Se algo
+ * falhar no meio, a pendência pode ficar nas duas — nunca em nenhuma.
+ * Devolve quantas foram trazidas.
+ */
+async function trazerDe(origem: Reuniao, itemIds: string[], paraReuniaoId: string, quem: string): Promise<number> {
+  const folderId = await ensureFolderPath(PASTA);
+  const agora = new Date().toISOString();
+  const itens = origem.itens.filter((i) => itemIds.includes(i.id) && itemEmAberto(i));
+  if (itens.length === 0) return 0;
+
+  let destinoNumeroEData: { numero: number; data: string } | null = null;
+  const idsTrazidos: string[] = [];
+  await atualizarDriveJson<Reuniao>(nomeDoArquivo(paraReuniaoId), folderId, (destino) => {
+    if (!destino) throw new Error("Reunião atual não encontrada.");
+    destinoNumeroEData = { numero: destino.numero, data: destino.data };
+    const novos = [];
+    for (const it of itens) {
+      // Já trazido antes (clique repetido): não duplica.
+      if (destino.itens.some((d) => d.origem?.reuniaoId === origem.id && d.origem.itemId === it.id)) {
+        idsTrazidos.push(it.id);
+        continue;
+      }
+      novos.push(copiaParaReuniaoNova(origem, it, quem, agora, crypto.randomUUID()));
+      idsTrazidos.push(it.id);
+    }
+    if (novos.length === 0) return destino;
+    return { ...destino, itens: [...destino.itens, ...novos], atualizadaEm: agora };
+  });
+
+  const dest = destinoNumeroEData as { numero: number; data: string } | null;
+  await atualizarDriveJson<Reuniao>(nomeDoArquivo(origem.id), folderId, (atual) => {
+    if (!atual) return null;
+    return {
+      ...atual,
+      atualizadaEm: agora,
+      itens: atual.itens.map((i) =>
+        idsTrazidos.includes(i.id) && itemEmAberto(i)
+          ? {
+              ...i,
+              status: "transferida" as const,
+              transferidaPara: {
+                reuniaoId: paraReuniaoId,
+                reuniaoNumero: dest?.numero ?? 0,
+                reuniaoData: dest?.data ?? "",
+              },
+            }
+          : i,
+      ),
+    };
+  });
+  return idsTrazidos.length;
+}
+
 const TrazerInput = z.object({
   deReuniaoId: z.string().min(8).max(64),
   paraReuniaoId: z.string().min(8).max(64),
@@ -186,9 +256,8 @@ const TrazerInput = z.object({
 });
 
 /**
- * Traz ações em aberto de uma reunião anterior para a reunião atual: cria a
- * cópia na atual (primeiro) e marca a de origem como "transferida". Se algo
- * falhar no meio, a pendência pode ficar nas duas — nunca em nenhuma.
+ * Botão "Trazer" da reunião: traz ações em aberto de uma reunião anterior
+ * para a atual (ver trazerDe).
  */
 export const trazerPendencias = createServerFn({ method: "POST" })
   .middleware([exigirLogin])
@@ -196,55 +265,9 @@ export const trazerPendencias = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     if (data.deReuniaoId === data.paraReuniaoId) throw new Error("Escolha uma reunião de origem diferente da atual.");
     const quem = nomeDe(context.claims);
-    const folderId = await ensureFolderPath(PASTA);
-    const agora = new Date().toISOString();
-
     const origem = (await lerTodas()).find((r) => r.id === data.deReuniaoId);
     if (!origem) throw new Error("Reunião de origem não encontrada.");
-    const itens = origem.itens.filter((i) => data.itemIds.includes(i.id) && itemEmAberto(i));
-    if (itens.length === 0) return { trazidos: 0 };
-
-    let destinoNumeroEData: { numero: number; data: string } | null = null;
-    const idsTrazidos: string[] = [];
-    await atualizarDriveJson<Reuniao>(nomeDoArquivo(data.paraReuniaoId), folderId, (destino) => {
-      if (!destino) throw new Error("Reunião atual não encontrada.");
-      destinoNumeroEData = { numero: destino.numero, data: destino.data };
-      const novos = [];
-      for (const it of itens) {
-        // Já trazido antes (clique repetido): não duplica.
-        if (destino.itens.some((d) => d.origem?.reuniaoId === origem.id && d.origem.itemId === it.id)) {
-          idsTrazidos.push(it.id);
-          continue;
-        }
-        novos.push(copiaParaReuniaoNova(origem, it, quem, agora, crypto.randomUUID()));
-        idsTrazidos.push(it.id);
-      }
-      if (novos.length === 0) return destino;
-      return { ...destino, itens: [...destino.itens, ...novos], atualizadaEm: agora };
-    });
-
-    const dest = destinoNumeroEData as { numero: number; data: string } | null;
-    await atualizarDriveJson<Reuniao>(nomeDoArquivo(origem.id), folderId, (atual) => {
-      if (!atual) return null;
-      return {
-        ...atual,
-        atualizadaEm: agora,
-        itens: atual.itens.map((i) =>
-          idsTrazidos.includes(i.id) && itemEmAberto(i)
-            ? {
-                ...i,
-                status: "transferida" as const,
-                transferidaPara: {
-                  reuniaoId: data.paraReuniaoId,
-                  reuniaoNumero: dest?.numero ?? 0,
-                  reuniaoData: dest?.data ?? "",
-                },
-              }
-            : i,
-        ),
-      };
-    });
-    return { trazidos: idsTrazidos.length };
+    return { trazidos: await trazerDe(origem, data.itemIds, data.paraReuniaoId, quem) };
   });
 
 const ExcluirInput = z.object({ reuniaoId: z.string().min(8).max(64) });

@@ -4,14 +4,15 @@ import { useNavigate } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { Loader2, Plus, UserPlus, X } from "lucide-react";
+import { ArrowRightFromLine, Loader2, Plus, UserPlus, X } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { criarReuniao } from "@/lib/atas-qualidade.functions";
-import { gruposExistentes, reunioesDoGrupo, type Participante, type Reuniao } from "@/lib/atas-qualidade";
+import { dataBr, gruposExistentes, itemEmAberto, reunioesDoGrupo, type Participante, type Reuniao } from "@/lib/atas-qualidade";
 import { isoHoje } from "@/features/lab/hooks/use-acoes-da-programacao";
 import { CHAVE_ATAS, usePessoas } from "./atas-hooks";
 import { PessoasPicker } from "./PessoasPicker";
@@ -49,6 +50,12 @@ export function NovaReuniaoDialog({
   // O número segue a data: é a posição desta reunião entre as do grupo.
   const numero = doGrupo.filter((r) => r.data < data || (r.data === data && r.horaInicio <= horaInicio)).length + 1;
   const renumera = numero <= doGrupo.length;
+  // Ações em aberto das reuniões que vêm ANTES desta (pela data): o que dá
+  // para já trazer como ações da reunião nova.
+  const anteriores = doGrupo.slice(0, numero - 1);
+  const pendentes = anteriores.flatMap((r) => r.itens.filter(itemEmAberto).map((item) => ({ r, item })));
+  const ultimaAntes = anteriores[anteriores.length - 1] ?? null;
+  const [trazer, setTrazer] = useState(true);
 
   const criar = useMutation({
     mutationFn: () => {
@@ -58,12 +65,13 @@ export function NovaReuniaoDialog({
         return { nome, presente: true, funcao: anterior?.funcao ?? "", externo: !conta && (anterior ? anterior.externo : true) };
       });
       return criarFn({
-        data: { grupo: grupo.trim(), titulo: titulo.trim(), data, horaInicio, horaFim, local, pauta, participantes: lista },
+        data: { grupo: grupo.trim(), titulo: titulo.trim(), data, horaInicio, horaFim, local, pauta, participantes: lista, trazerPendencias: trazer && pendentes.length > 0 },
       });
     },
     onSuccess: async (r) => {
       await qc.invalidateQueries({ queryKey: CHAVE_ATAS });
       onAbertoChange(false);
+      if (r.trazidos > 0) toast.success(r.trazidos === 1 ? "1 pendência da reunião anterior virou ação desta reunião" : `${r.trazidos} pendências da reunião anterior viraram ações desta reunião`);
       void navigate({ to: "/qualidade/atas/$reuniaoId", params: { reuniaoId: r.id } });
     },
     onError: (e: Error) => toast.error(e.message),
@@ -142,6 +150,26 @@ export function NovaReuniaoDialog({
             </div>
           </div>
         </div>
+
+        {pendentes.length > 0 && (
+          <label className="flex cursor-pointer items-start gap-3 rounded-md border p-3" style={{ borderColor: "#ff642e66", background: "#ff642e0d" }}>
+            <Checkbox checked={trazer} onCheckedChange={(v) => setTrazer(v === true)} className="mt-0.5" />
+            <span className="grid gap-1 text-sm">
+              <span className="flex items-center gap-1.5 font-medium">
+                <ArrowRightFromLine className="h-3.5 w-3.5" /> Trazer as {pendentes.length} pendência(s) em aberto como ações desta reunião
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {ultimaAntes ? `Da reunião nº ${ultimaAntes.numero} (${dataBr(ultimaAntes.data)})` : ""}
+                {anteriores.length > 1 && pendentes.some((p) => p.r.id !== ultimaAntes?.id) ? " e de reuniões mais antigas" : ""}
+                . Na ata de origem elas ficam como "passou para a reunião nova".
+              </span>
+              <ul className="mt-1 max-h-28 list-disc space-y-0.5 overflow-y-auto pl-4 text-xs text-muted-foreground">
+                {pendentes.slice(0, 8).map((p) => <li key={p.item.id} className="truncate">{p.item.descricao}</li>)}
+                {pendentes.length > 8 && <li>e mais {pendentes.length - 8}…</li>}
+              </ul>
+            </span>
+          </label>
+        )}
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onAbertoChange(false)}>Cancelar</Button>
