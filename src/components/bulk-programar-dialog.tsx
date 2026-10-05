@@ -1,7 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { insertRow, updateRow, listRows, ensureColumns } from "@/lib/programacao.functions";
+import { insertRow, updateRow, listRows, ensureColumns, apagarEnsaiosPendentes } from "@/lib/programacao.functions";
+import { acharCopiasPendentes } from "@/lib/programacao-copias";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { optimizeSchedule } from "@/lib/ai-optimize.functions";
 
 import {
@@ -46,6 +57,8 @@ import {
   Split,
   Settings2,
   X,
+  Trash2,
+  Copy,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -328,6 +341,30 @@ export function BulkProgramarDialog({
       (e) => !progIds.has(e.id) && e.status !== "cancelado" && e.status !== "concluido",
     );
   }, [ensaios, programacoes]);
+
+  // Pendentes que repetem outro ensaio (mesma OS + amostra + tipo) — candidatos a apagar.
+  const copias = useMemo(
+    () => acharCopiasPendentes(ensaios, new Set(programacoes.map((p) => p.ensaio_id)), amostraById),
+    [ensaios, programacoes, amostraById],
+  );
+  const copiasPendentes = useMemo(() => pendentes.filter((e) => copias.has(e.id)), [pendentes, copias]);
+
+  const [confirmarExclusao, setConfirmarExclusao] = useState(false);
+  const apagarFn = useServerFn(apagarEnsaiosPendentes);
+  const excluir = useMutation({
+    mutationFn: (ids: string[]) => apagarFn({ data: { ids } }),
+    onSuccess: (r) => {
+      setConfirmarExclusao(false);
+      setSel(new Set());
+      qc.invalidateQueries({ queryKey: ["ensaios"] });
+      if (r.apagados.length > 0) toast.success(`${r.apagados.length} ensaio(s) pendente(s) apagado(s)`);
+      if (r.recusados.length > 0) {
+        toast.warning(`${r.recusados.length} ensaio(s) não foram apagados porque já têm programação.`);
+        qc.invalidateQueries({ queryKey: ["programacoes"] });
+      }
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Erro ao apagar os ensaios"),
+  });
 
   // Filtragem
   const filtrados = useMemo(() => {
@@ -918,6 +955,18 @@ export function BulkProgramarDialog({
                     ? "Desmarcar todos"
                     : "Selecionar todos"}
                 </Button>
+                {copiasPendentes.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 border-amber-300 text-amber-800 hover:bg-amber-50 dark:text-amber-300"
+                    title="Marca só as cópias repetidas (mesma OS, amostra e ensaio), deixando o original"
+                    onClick={() => setSel(new Set(copiasPendentes.map((e) => e.id)))}
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    Selecionar cópias ({copiasPendentes.length})
+                  </Button>
+                )}
                 <div className="inline-flex rounded-md border overflow-hidden">
                   <button
                     type="button"
@@ -1035,6 +1084,7 @@ export function BulkProgramarDialog({
                                     </span>
                                     <span className="text-muted-foreground">·</span>
                                     <span className="font-medium">{a?.codigo_amostra || (a as any)?.identificacao || (e as any).amostra_nome || "Amostra"}</span>
+                                    {copias.has(e.id) && <CopiaBadge />}
                                     {e.prazo && (
                                       <span className="ml-auto text-[11px] text-muted-foreground">
                                         prazo do ensaio: {fmtBr(e.prazo)}
@@ -1119,6 +1169,7 @@ export function BulkProgramarDialog({
                                     <span className="font-medium text-xs">OS {osNum}</span>
                                     <span className="text-muted-foreground">·</span>
                                     <span>{a?.codigo_amostra || (a as any)?.identificacao || (e as any).amostra_nome || "Amostra"}</span>
+                                    {copias.has(e.id) && <CopiaBadge />}
                                     {dl && (
                                       <span className="ml-auto text-[11px] text-muted-foreground">
                                         prazo: {fmtBr(dl)}
@@ -1137,6 +1188,15 @@ export function BulkProgramarDialog({
               </ScrollArea>
 
               <div className="flex items-center justify-end gap-2">
+                <Button
+                  variant="outline"
+                  disabled={selCount === 0 || excluir.isPending}
+                  onClick={() => setConfirmarExclusao(true)}
+                  className="mr-auto gap-1.5 border-red-300 text-red-700 hover:bg-red-50 hover:text-red-800 dark:text-red-300"
+                >
+                  {excluir.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  Apagar selecionados ({selCount})
+                </Button>
                 <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancelar</Button>
                 <Button
                   disabled={selCount === 0}
@@ -1774,12 +1834,79 @@ export function BulkProgramarDialog({
             </div>
           )}
         </Tabs>
+
+        <AlertDialog open={confirmarExclusao} onOpenChange={(v) => !excluir.isPending && setConfirmarExclusao(v)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Apagar {selCount} ensaio(s) pendente(s)?</AlertDialogTitle>
+              <AlertDialogDescription asChild>
+                <div className="space-y-2 text-sm">
+                  <p>
+                    Eles saem da lista de ensaios da programação (e da planilha). Isso não apaga amostras,
+                    OSs nem programações já feitas.
+                  </p>
+                  {(() => {
+                    const escolhidos = pendentes.filter((e) => sel.has(e.id));
+                    const naoCopias = escolhidos.filter((e) => !copias.has(e.id)).length;
+                    return (
+                      <>
+                        {naoCopias > 0 && (
+                          <p className="rounded-md bg-amber-500/10 px-2 py-1.5 text-amber-800 dark:text-amber-300">
+                            Atenção: {naoCopias} deles NÃO são cópias — são o único registro daquele ensaio.
+                          </p>
+                        )}
+                        <ul className="max-h-40 overflow-y-auto rounded-md border px-2 py-1 text-xs">
+                          {escolhidos.map((e) => {
+                            const a = amostraById.get(e.amostra_id);
+                            const t = tipoById.get(e.tipo_ensaio_id);
+                            return (
+                              <li key={e.id} className="flex gap-1.5 py-0.5">
+                                <span className="font-medium">OS {a?.os_numero || "—"}</span>
+                                <span>· {a?.codigo_amostra || "Amostra"}</span>
+                                <span className="text-muted-foreground">· {t?.nome || "Ensaio"}</span>
+                                {copias.has(e.id) && <CopiaBadge />}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </>
+                    );
+                  })()}
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={excluir.isPending}>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                disabled={excluir.isPending}
+                className="bg-red-600 text-white hover:bg-red-700"
+                onClick={(ev) => {
+                  ev.preventDefault();
+                  excluir.mutate(Array.from(sel));
+                }}
+              >
+                {excluir.isPending ? "Apagando..." : `Apagar ${selCount}`}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
 
   );
 }
 
+
+function CopiaBadge() {
+  return (
+    <span
+      className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-medium bg-amber-500/15 text-amber-800 dark:text-amber-300"
+      title="Repete outro ensaio da mesma OS, amostra e tipo"
+    >
+      <Copy className="h-2.5 w-2.5" /> cópia
+    </span>
+  );
+}
 
 function Stat({
   label,

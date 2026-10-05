@@ -116,21 +116,48 @@ export async function atualizar(aba: string, id: string, patch: Record<string, u
 }
 
 export async function apagar(aba: string, id: string): Promise<void> {
+  await apagarVarios(aba, [id]);
+}
+
+/** Apaga vários registros de uma aba numa ida só (uma única chamada à planilha). */
+async function apagarVarios(aba: string, ids: string[], e?: Estado): Promise<void> {
+  if (ids.length === 0) return;
   if (planilhaConfigurada()) {
-    const e = await estado(true);
-    if (naPlanilha(e, aba)) {
-      // Todas as linhas com o id — senão uma cópia antiga "volta" depois.
-      await apagarLinhas(aba, e.modelo.posicoes[aba]?.get(id) ?? []);
+    const atual = e ?? (await estado(true));
+    if (naPlanilha(atual, aba)) {
+      // Todas as linhas de cada id — senão uma cópia antiga "volta" depois.
+      const posicoes = atual.modelo.posicoes[aba];
+      await apagarLinhas(aba, ids.flatMap((id) => posicoes?.get(id) ?? []));
       esquecer();
       return;
     }
   }
+  const alvo = new Set(ids);
   await atualizarStore((d) => {
     const linhas = d[aba] ?? [];
-    const restantes = linhas.filter((r) => r.id !== id);
+    const restantes = linhas.filter((r) => !alvo.has(r.id));
     return restantes.length === linhas.length ? null : { ...d, [aba]: restantes };
   });
   esquecer();
+}
+
+/**
+ * Apaga ensaios que ainda NÃO têm programação (lista "Programações Pendentes").
+ * Confere no servidor, com a planilha lida agora: ensaio que já ganhou
+ * programação é recusado, para não deixar programação órfã no Gantt.
+ */
+export async function apagarEnsaiosSemProgramacao(
+  ids: string[],
+): Promise<{ apagados: string[]; recusados: string[] }> {
+  const e = await estado(true);
+  const linhasDe = (aba: string) => (naPlanilha(e, aba) ? e.modelo.dados[aba] : e.banco[aba]) ?? [];
+  const comProgramacao = new Set(linhasDe("Programações").map((p) => p.ensaio_id).filter(Boolean));
+  const existentes = new Set(linhasDe("Ensaios").map((r) => r.id));
+  const unicos = [...new Set(ids)].filter((id) => existentes.has(id));
+  const recusados = unicos.filter((id) => comProgramacao.has(id));
+  const apagados = unicos.filter((id) => !comProgramacao.has(id));
+  await apagarVarios("Ensaios", apagados, e);
+  return { apagados, recusados };
 }
 
 const ABAS_DA_IMPORTACAO = ["Tipos de Ensaio", "Amostras", "Ensaios"] as const;

@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { exigirLogin, requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { apagar, atualizar, importar, inserir, lerAba } from "./programacao-fonte.server";
+import { apagar, apagarEnsaiosSemProgramacao, atualizar, importar, inserir, lerAba } from "./programacao-fonte.server";
 import type { PedidoImportacao, ResumoImportacao } from "./programacao-importacao";
 import type { Diagnostico, ResultadoArrumacao } from "./programacao-reparo.server";
 
@@ -45,6 +45,17 @@ export const deleteRow = createServerFn({ method: "POST" })
     await apagar(data.sheet, data.id);
     return { ok: true };
   });
+
+/** Apaga de uma vez ensaios pendentes (sem programação) — ex.: cópias duplicadas. */
+export const apagarEnsaiosPendentes = createServerFn({ method: "POST" })
+  .middleware([exigirLogin])
+  .inputValidator((d: { ids: string[] }) => {
+    if (!Array.isArray(d?.ids) || d.ids.some((id) => typeof id !== "string" || !id)) {
+      throw new Error("Lista de ensaios inválida.");
+    }
+    return d;
+  })
+  .handler(async ({ data }) => apagarEnsaiosSemProgramacao(data.ids));
 
 /** Sem efeito: gravar um campo novo já cria a coluna no cabeçalho. Mantida para as telas antigas. */
 export const ensureColumns = createServerFn({ method: "POST" })
