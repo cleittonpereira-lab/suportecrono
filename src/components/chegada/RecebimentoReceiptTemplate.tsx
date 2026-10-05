@@ -86,7 +86,12 @@ export interface PhotoPageGroup {
   fotos: AmostraFoto[];
 }
 
-/** Empacota as fotos das amostras em páginas, agrupadas por amostra (com título repetido "(cont.)" quando uma amostra precisa de mais de uma página). */
+/**
+ * Empacota as fotos das amostras em páginas de até `maxPerPage` fotos, na ordem das amostras.
+ * A página de fotos desenha tudo numa grade única de 3 colunas (a amostra vai no próprio cartão),
+ * então 6 fotos = 2 linhas, que cabem na folha A4. Antes cada amostra abria título + linha própria
+ * e 6 amostras de 1 foto viravam 6 linhas — o que passava da folha era cortado sem aviso.
+ */
 export function paginatePhotosByAmostra(
   amostras: { titulo: string; fotos: AmostraFoto[] }[],
   maxPerPage = 6,
@@ -98,7 +103,6 @@ export function paginatePhotosByAmostra(
   for (const group of amostras) {
     if (group.fotos.length === 0) continue;
     let remaining = group.fotos;
-    let first = true;
     while (remaining.length > 0) {
       const spaceLeft = maxPerPage - currentCount;
       if (spaceLeft <= 0) {
@@ -109,9 +113,8 @@ export function paginatePhotosByAmostra(
       }
       const chunk = remaining.slice(0, spaceLeft);
       remaining = remaining.slice(spaceLeft);
-      currentPage.push({ titulo: first ? group.titulo : `${group.titulo} (cont.)`, fotos: chunk });
+      currentPage.push({ titulo: group.titulo, fotos: chunk });
       currentCount += chunk.length;
-      first = false;
     }
   }
   if (currentPage.length > 0) pages.push(currentPage);
@@ -392,33 +395,34 @@ export function RecebimentoReceiptPhotosPage({
   return (
     <div style={PAGE_STYLE} className="printable-report">
       <ReceiptHeader data={data} page={pageIndex + 2} total={totalPages} />
-      <div className="mt-2 flex-1 overflow-hidden relative min-h-0 space-y-3">
-        {groups.map((group, gi) => (
-          <div key={gi}>
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-[#141414]/60 mb-1.5">
-              Registros Fotográficos — {group.titulo}
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              {group.fotos.map((foto, i) => {
-                const caption = formatCapturedAt(foto.capturedAt);
-                const coords = formatCoords(foto.lat, foto.lng);
-                return (
-                  <div key={i} className="rounded border border-[#141414]/20 overflow-hidden bg-[#f3f4f6]">
-                    <div className="aspect-square flex items-center justify-center bg-[#f3f4f6]">
-                      <img src={foto.url} alt={`Foto ${i + 1}`} crossOrigin="anonymous" className="w-full h-full object-cover" />
-                    </div>
-                    {(caption || coords) && (
-                      <div className="px-1.5 py-1 text-[8px] leading-tight text-[#141414]/70 bg-white border-t border-[#141414]/10">
-                        {caption && <div>{caption}</div>}
-                        {coords && <div className="text-[#141414]/50">{coords}</div>}
-                      </div>
-                    )}
+      <div className="mt-2 flex-1 overflow-hidden relative min-h-0">
+        <div className="text-[10px] font-semibold uppercase tracking-wide text-[#141414]/60 mb-1.5">
+          Registros Fotográficos
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          {groups.flatMap((group, gi) =>
+            group.fotos.map((foto, i) => {
+              const caption = formatCapturedAt(foto.capturedAt);
+              const coords = formatCoords(foto.lat, foto.lng);
+              return (
+                <div key={`${gi}-${i}`} className="rounded border border-[#141414]/20 overflow-hidden bg-[#f3f4f6]">
+                  <div className="px-1.5 py-1 text-[9px] font-semibold leading-tight text-[#141414] bg-white border-b border-[#141414]/10 truncate">
+                    {group.titulo}
                   </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+                  <div className="aspect-square flex items-center justify-center bg-[#f3f4f6]">
+                    <img src={foto.url} alt={`${group.titulo} — foto ${i + 1}`} crossOrigin="anonymous" className="w-full h-full object-cover" />
+                  </div>
+                  {(caption || coords) && (
+                    <div className="px-1.5 py-1 text-[8px] leading-tight text-[#141414]/70 bg-white border-t border-[#141414]/10">
+                      {caption && <div>{caption}</div>}
+                      {coords && <div className="text-[#141414]/50">{coords}</div>}
+                    </div>
+                  )}
+                </div>
+              );
+            }),
+          )}
+        </div>
       </div>
       <ReceiptFooter />
     </div>
