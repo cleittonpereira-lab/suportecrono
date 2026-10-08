@@ -47,6 +47,16 @@ export interface SampleEditData {
   equipment?: string;
 }
 
+/** Opções de "Tipo de Amostragem" — as mesmas aqui e no Relatório Avulso da Central. */
+export const TIPOS_DE_AMOSTRAGEM = [
+  { valor: "Bloco indeformado", rotulo: "Bloco indeformado" },
+  { valor: "Tubo Shelby", rotulo: "Tubo Shelby (Paredes Finas)" },
+  { valor: "Denison", rotulo: "Amostrador Denison" },
+  { valor: "Amostra Deformada", rotulo: "Amostra Deformada (Saco)" },
+  { valor: "Trado helicoidal", rotulo: "Trado helicoidal" },
+  { valor: "Poço de inspeção", rotulo: "Poço de inspeção" },
+] as const;
+
 interface SampleEditDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -102,14 +112,15 @@ export function SampleEditDialog({
   useEffect(() => {
     if (!open || amostrasGantt.length === 0) return;
     setForm((prev) => {
-      const needle = (prev.reportNumber || prev.code || "").trim();
+      // Pelo CÓDIGO de coleta. O nome/furo (ex.: SH-02-189) se repete entre
+      // profundidades: só vale se uma amostra só da OS tiver esse nome.
+      const daOs = (a: any) => !prev.osNumero || normOs(a.os_numero || "") === normOs(prev.osNumero);
+      const codigo = (prev.code || "").trim();
+      const nome = (prev.reportNumber || "").trim();
+      const porNome = nome ? amostrasGantt.filter((a) => daOs(a) && (a.codigo_amostra === nome || a.identificacao === nome)) : [];
       const matchAm =
-        amostrasGantt.find(
-          (a) =>
-            (a.codigo_amostra === needle || a.identificacao === needle || String(a.id) === needle) &&
-            (!prev.osNumero || normOs(a.os_numero || "") === normOs(prev.osNumero)),
-        ) ||
-        amostrasGantt.find((a) => a.codigo_amostra === needle || a.identificacao === needle || String(a.id) === needle);
+        (codigo ? amostrasGantt.find((a) => daOs(a) && (a.codigo_amostra === codigo || String(a.id) === codigo)) : undefined) ||
+        (porNome.length === 1 ? porNome[0] : undefined);
       if (!matchAm) return prev;
 
       const parsed = parseGanttSampleData(matchAm);
@@ -240,12 +251,9 @@ export function SampleEditDialog({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Bloco indeformado">Bloco indeformado</SelectItem>
-                      <SelectItem value="Tubo Shelby">Tubo Shelby (Paredes Finas)</SelectItem>
-                      <SelectItem value="Denison">Amostrador Denison</SelectItem>
-                      <SelectItem value="Amostra Deformada">Amostra Deformada (Saco)</SelectItem>
-                      <SelectItem value="Trado helicoidal">Trado helicoidal</SelectItem>
-                      <SelectItem value="Poço de inspeção">Poço de inspeção</SelectItem>
+                      {TIPOS_DE_AMOSTRAGEM.map((t) => (
+                        <SelectItem key={t.valor} value={t.valor}>{t.rotulo}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>

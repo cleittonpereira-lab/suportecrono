@@ -17,7 +17,8 @@ import {
   type PendenciaDigitacao,
 } from "@/lib/lab-pendencias.functions";
 import { listRows } from "@/lib/programacao.functions";
-import { normOs, normAmostra, normMethod } from "@/lib/pendencia-match";
+import { normOs, normAmostra, normMethod, ensaioVinculado } from "@/lib/pendencia-match";
+import { acharAmostra, normProfundidade, rotuloAmostra, type AlvoAmostra } from "@/lib/identidade-amostra";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
@@ -105,6 +106,7 @@ import {
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useCadastroByOs } from "@/hooks/use-cadastro-by-os";
+import { TIPOS_DE_AMOSTRAGEM } from "@/components/SampleEditDialog";
 import { useAuth } from "@/hooks/use-auth";
 import { EmissoesInner } from "@/components/emissoes-inner";
 import { MesaDeLaudos } from "@/features/lab/components/MesaDeLaudos";
@@ -229,11 +231,18 @@ function CentralRelatoriosPage() {
 
   // Modais
   const [avulsoOpen, setAvulsoOpen] = useState(false);
+  // Os mesmos campos do cabeçalho do laudo e do "Editar Cadastro da Amostra":
+  // o que se digita aqui é o que sai no PDF.
   const [avulsoData, setAvulsoData] = useState({
     os: "",
     cliente: "",
     obra: "",
+    local: "",
     amostra: "",
+    codigo: "",
+    furo: "",
+    prof: "",
+    tipo_amostragem: "",
     ensaio: ENSAIO_LABEL["cisalhamento-direto"],
     tipo_ensaio: "cisalhamento-direto",
     operador_nome: "",
@@ -263,6 +272,8 @@ function CentralRelatoriosPage() {
   // Lista unificada de pendências (Supabase + Estado soberano labState)
   const allPendencias = useMemo(() => {
     const map = new Map<string, PendenciaDigitacao>();
+    // Pendência já ligada a um ensaio (gravado ao abri-la): casa pelo id, sem chute.
+    const porEnsaioLigado = new Map<string, PendenciaDigitacao>();
 
     for (const r of rows) {
       const key = `${normOs(r.os)}::${normAmostra(r.amostra || "")}::${normMethod(r.ensaio || r.tipo_ensaio)}`;
@@ -272,19 +283,37 @@ function CentralRelatoriosPage() {
       const item = { ...r, status: mapWorkflowStatus(r.status) };
       map.set(key, item);
       map.set(r.id, item);
+      const ligado = ensaioVinculado(r);
+      if (ligado) porEnsaioLigado.set(ligado, item);
     }
 
     if (labState?.os) {
       for (const o of labState.os) {
         for (const a of o.amostras) {
+          // Nome repetido na OS (SH-02-189 a 2 m e a 5 m): o nome não identifica
+          // a amostra, só o código. Antes a chave era o nome, e as duas coletas
+          // viravam um card só.
+          const nomeRepetido =
+            o.amostras.filter((b) => normAmostra(b.reportNumber) === normAmostra(a.reportNumber)).length > 1;
           for (const e of a.ensaios) {
             const hasData = e.payload && Object.keys(e.payload).length > 0;
             const etapaEnsaio = normalizarEtapa(e.status) ?? "em_digitacao";
             const isEmProgresso = etapaEnsaio !== "em_digitacao" || hasData || e.status === "em_digitacao" || e.status === "processando";
             if (!isEmProgresso) continue;
 
-            const key = `${normOs(o.numero)}::${normAmostra(a.reportNumber || a.code || "")}::${normMethod(e.sigla || e.nome || e.tipo)}`;
-            const existing = map.get(key) || map.get(e.id);
+            const metodo = normMethod(e.sigla || e.nome || e.tipo);
+            const key = `${normOs(o.numero)}::${normAmostra(a.code || a.reportNumber || "")}::${metodo}`;
+            // Pendência antiga (avulso guardava o nome): só pelo nome se ele for único na OS.
+            const keyNome = nomeRepetido ? "" : `${normOs(o.numero)}::${normAmostra(a.reportNumber || "")}::${metodo}`;
+            const livre = (p: PendenciaDigitacao | undefined) => {
+              const lig = p ? ensaioVinculado(p) : null;
+              return p && (!lig || lig === e.id) ? p : undefined;
+            };
+            const existing =
+              porEnsaioLigado.get(e.id) ||
+              livre(map.get(key)) ||
+              map.get(e.id) ||
+              (keyNome ? livre(map.get(keyNome)) : undefined);
 
             if (existing) {
               // Regra única (src/lib/etapa-laudo.ts): o fluxo formal do ensaio
@@ -292,13 +321,19 @@ function CentralRelatoriosPage() {
               // ensaio sobrescrevia sempre: um rascunho com dados apagava um
               // "Concluído fora (Excel)" ou um "Aguardando verificação" da pendência.
               existing.status = etapaParaPendencia(combinarEtapas(etapaEnsaio, pendenciaParaEtapa(existing.status)));
-              if (e.payload) existing.payload = e.payload as any;
+              // Mantém o vínculo com ESTE ensaio: "Abrir" vai direto a ele.
+              existing.payload = {
+                ...((e.payload as Record<string, unknown>) ?? {}),
+                _linkedEnsaio: { osId: o.id, amostraId: a.id, ensaioId: e.id },
+              } as any;
+              existing.amostra_rotulo = rotuloAmostra(a);
               if (e.operator || o.operator) existing.operador_nome = e.operator || o.operator || existing.operador_nome;
             } else {
               const item: PendenciaDigitacao = {
                 id: e.id,
                 os: o.numero,
-                amostra: a.reportNumber || a.code || null,
+                amostra: a.code || a.reportNumber || null,
+                amostra_rotulo: rotuloAmostra(a),
                 ensaio: e.sigla || e.nome || ENSAIO_LABEL[e.tipo] || e.tipo,
                 tipo_ensaio: e.tipo,
                 equipamento: null,
@@ -308,7 +343,10 @@ function CentralRelatoriosPage() {
                 operador_user_id: null,
                 operador_nome: e.operator || o.operator || null,
                 observacao: null,
-                payload: e.payload as any,
+                payload: {
+                  ...((e.payload as Record<string, unknown>) ?? {}),
+                  _linkedEnsaio: { osId: o.id, amostraId: a.id, ensaioId: e.id },
+                } as any,
                 created_at: e.createdAt || new Date().toISOString(),
                 updated_at: e.updatedAt || e.createdAt || new Date().toISOString(),
               };
@@ -376,6 +414,71 @@ function CentralRelatoriosPage() {
   });
 
   const cadastro = useCadastroByOs();
+
+  // ---- Relatório avulso: preenchimento pela OS e conferência da amostra ----
+  function preencherDaOs(osNum: string) {
+    const cad = osNum.trim() ? cadastro.lookup(osNum) : undefined;
+    const osLab = labState?.os?.find((o) => normOs(o.numero) === normOs(osNum));
+    setAvulsoData((s) => ({
+      ...s,
+      cliente: s.cliente || osLab?.client || cad?.tomador || "",
+      obra: s.obra || osLab?.workNumber || cad?.obra || "",
+      local: s.local || osLab?.local || cad?.local || "",
+    }));
+  }
+
+  const amostrasDaOsAvulso = useMemo(
+    () => (avulsoData.os.trim() ? amostrasProg.filter((a) => normOs(a.os_numero) === normOs(avulsoData.os)) : []),
+    [amostrasProg, avulsoData.os],
+  );
+
+  /**
+   * O que vai acontecer ao criar: abrir uma amostra já cadastrada, criar uma
+   * nova (avisando quando o nome já existe em outra profundidade) ou recusar
+   * quando código, nome e profundidade se contradizem.
+   */
+  const conferenciaAvulso = useMemo((): { tipo: "erro" | "aviso"; texto: string } | null => {
+    const nome = avulsoData.amostra.trim();
+    const codigo = avulsoData.codigo.trim();
+    const prof = avulsoData.prof.trim();
+    if (!avulsoData.os.trim() || (!nome && !codigo)) return null;
+
+    const prog = codigo ? amostrasDaOsAvulso.find((a) => (a.codigo_amostra || "").trim() === codigo) : undefined;
+    const profProg = prog ? (prog.topo_m && prog.base_m ? `${prog.topo_m} – ${prog.base_m} m` : prog.profundidade || "") : "";
+    if (prof && profProg && normProfundidade(prof) !== normProfundidade(profProg)) {
+      return {
+        tipo: "erro",
+        texto: `Na programação, o código ${codigo} é da profundidade ${profProg}, não ${prof}. Confira o código ou a profundidade.`,
+      };
+    }
+
+    const amostras = labState?.os?.find((o) => normOs(o.numero) === normOs(avulsoData.os))?.amostras ?? [];
+    const achou = acharAmostra(amostras, { nome, codigo, prof });
+    if (achou.tipo === "ambigua") {
+      return {
+        tipo: "erro",
+        texto: `Mais de uma amostra bate com estes dados (${achou.amostras.map(rotuloAmostra).join("; ")}). Informe código e profundidade.`,
+      };
+    }
+    if (achou.tipo === "encontrada") {
+      return { tipo: "aviso", texto: `Amostra já cadastrada: ${rotuloAmostra(achou.amostra)}. O ensaio será aberto nela.` };
+    }
+    const mesmoCodigo = codigo ? amostras.find((a) => normAmostra(a.code) === normAmostra(codigo)) : undefined;
+    if (mesmoCodigo) {
+      return {
+        tipo: "erro",
+        texto: `O código ${codigo} já é da amostra ${rotuloAmostra(mesmoCodigo)}. Nome ou profundidade não batem — confira antes de continuar.`,
+      };
+    }
+    const mesmoNome = nome ? amostras.filter((a) => normAmostra(a.reportNumber) === normAmostra(nome)) : [];
+    if (mesmoNome.length > 0) {
+      return {
+        tipo: "aviso",
+        texto: `Já existe(m) amostra(s) "${nome}" nesta OS (${mesmoNome.map(rotuloAmostra).join("; ")}). Como o código e a profundidade são outros, será criada uma amostra nova — nada é gravado por cima.`,
+      };
+    }
+    return null;
+  }, [avulsoData.os, avulsoData.amostra, avulsoData.codigo, avulsoData.prof, amostrasDaOsAvulso, labState]);
 
   // Mapeamento dos itens do Gantt
   const ganttQueue = useMemo(() => {
@@ -550,18 +653,19 @@ function CentralRelatoriosPage() {
     const itemAmNorm = normAmostra(item.amostra);
     const itemFuroNorm = normAmostra(item.furo);
     const itemMethNorm = normMethod(item.ensaio || item.tipoEnsaioNome);
+    // O furo (ex.: SH-02-189) só serve de reserva quando uma amostra só da OS
+    // tem esse furo: com várias profundidades, cada linha pegava a pendência
+    // da outra. E sem reserva que ignore o tipo de ensaio (pegava outro ensaio).
+    const furoUnico =
+      !!itemFuroNorm &&
+      amostrasProg.filter((a) => normOs(a.os_numero) === itemOsNorm && normAmostra(a.identificacao) === itemFuroNorm).length === 1;
+    const mesmoMetodo = (r: PendenciaDigitacao) =>
+      normMethod(r.ensaio) === itemMethNorm || normMethod(r.tipo_ensaio) === itemMethNorm;
     return (
-      pendencias.find(
-        (r) =>
-          normOs(r.os) === itemOsNorm &&
-          (normAmostra(r.amostra) === itemAmNorm || normAmostra(r.amostra) === itemFuroNorm) &&
-          (normMethod(r.ensaio) === itemMethNorm || normMethod(r.tipo_ensaio) === itemMethNorm),
-      ) ||
-      pendencias.find(
-        (r) =>
-          normOs(r.os) === itemOsNorm &&
-          (normAmostra(r.amostra) === itemAmNorm || normAmostra(r.amostra) === itemFuroNorm),
-      )
+      pendencias.find((r) => normOs(r.os) === itemOsNorm && normAmostra(r.amostra) === itemAmNorm && mesmoMetodo(r)) ||
+      (furoUnico
+        ? pendencias.find((r) => normOs(r.os) === itemOsNorm && normAmostra(r.amostra) === itemFuroNorm && mesmoMetodo(r))
+        : undefined)
     );
   };
   /** Para digitar: bancada finalizada e laudo ainda não enviado para verificação. */
@@ -706,8 +810,24 @@ function CentralRelatoriosPage() {
       qc.invalidateQueries({ queryKey: ["lab-pendencias"] });
       setAvulsoOpen(false);
       toast.success("Relatório avulso criado com sucesso! Abrindo editor…");
-      // Abre direto a digitação
-      abrirPorTipo(avulsoData.tipo_ensaio, avulsoData.os, avulsoData.amostra, avulsoData.cliente, avulsoData.obra);
+      // Abre direto a digitação, já ligando a pendência ao ensaio.
+      abrirPorTipo(
+        avulsoData.tipo_ensaio,
+        avulsoData.os,
+        {
+          nome: avulsoData.amostra,
+          codigo: avulsoData.codigo,
+          prof: avulsoData.prof,
+          furo: avulsoData.furo,
+          tipoAmostragem: avulsoData.tipo_amostragem,
+        },
+        avulsoData.cliente,
+        avulsoData.obra,
+        res?.id,
+        undefined,
+        undefined,
+        avulsoData.local,
+      );
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -734,21 +854,36 @@ function CentralRelatoriosPage() {
    */
   function acharEnsaioDaPendencia(p: PendenciaDigitacao): { osId: string; amId: string; enId: string } | null {
     if (!labState?.os) return null;
-    const osN = normOs(p.os);
-    const amN = normAmostra(p.amostra || "");
-    const metN = normMethod(p.ensaio || p.tipo_ensaio);
+    const ligado = ensaioVinculado(p);
     for (const o of labState.os) {
-      if (normOs(o.numero) !== osN) continue;
       for (const a of o.amostras) {
-        if (normAmostra(a.reportNumber || a.code || "") !== amN) continue;
         for (const e of a.ensaios) {
-          if (e.id === p.id || normMethod(e.sigla || e.nome || e.tipo) === metN) {
-            return { osId: o.id, amId: a.id, enId: e.id };
-          }
+          if (e.id === p.id || (ligado && e.id === ligado)) return { osId: o.id, amId: a.id, enId: e.id };
         }
       }
     }
+    // Sem vínculo: pelo código + nome + profundidade. Nome repetido na OS é
+    // ambíguo e não devolve nada — excluir o ensaio de outra amostra não tem volta.
+    const osN = normOs(p.os);
+    const metN = normMethod(p.ensaio || p.tipo_ensaio);
+    for (const o of labState.os) {
+      if (normOs(o.numero) !== osN) continue;
+      const achou = acharAmostra(o.amostras, alvoDaPendencia(p));
+      if (achou.tipo !== "encontrada") continue;
+      const e = achou.amostra.ensaios.find((x) => normMethod(x.sigla || x.nome || x.tipo) === metN);
+      if (e) return { osId: o.id, amId: achou.amostra.id, enId: e.id };
+    }
     return null;
+  }
+
+  /** Identidade da amostra que a pendência guardou (o avulso novo guarda nome, código e profundidade). */
+  function alvoDaPendencia(p: PendenciaDigitacao): AlvoAmostra & { furo?: string } {
+    const pl = p.payload && typeof p.payload === "object" && !Array.isArray(p.payload) ? (p.payload as Record<string, unknown>) : {};
+    const txt = (v: unknown) => (typeof v === "string" ? v : "");
+    if (txt(pl.amostra_codigo) || txt(pl.amostra_nome)) {
+      return { nome: txt(pl.amostra_nome), codigo: txt(pl.amostra_codigo), prof: txt(pl.prof), furo: txt(pl.furo) };
+    }
+    return { qualquer: p.amostra ?? "" };
   }
 
   // Roteamento inteligente para os editores de laudo
@@ -762,18 +897,48 @@ function CentralRelatoriosPage() {
     // do triaxial (CID/CIU/UU) — antes só existia "triaxial-cid".
     const tipo = laudoDoEnsaio(r.ensaio, r.tipo_ensaio, mapaLaudos);
     if (!tipo) return avisarSemLaudo(r.ensaio);
-    abrirPorTipo(tipo, r.os, r.amostra ?? "", undefined, undefined, r.id, r.ensaio, r.status);
+    // Pendência já ligada a um ensaio: abre ele, sem procurar a amostra de novo.
+    const ligado = acharEnsaioDaPendencia(r);
+    if (ligado && ensaioVinculado(r) === ligado.enId && tipo !== "mesp-a") {
+      navigate({
+        to: "/relatorio/os/$osId/amostra/$amostraId/ensaio/$ensaioId",
+        params: { osId: ligado.osId, amostraId: ligado.amId, ensaioId: ligado.enId },
+      });
+      return;
+    }
+    const pl = r.payload && typeof r.payload === "object" && !Array.isArray(r.payload) ? (r.payload as Record<string, unknown>) : {};
+    abrirPorTipo(
+      tipo,
+      r.os,
+      alvoDaPendencia(r),
+      typeof pl.cliente === "string" ? pl.cliente : undefined,
+      typeof pl.obra === "string" ? pl.obra : undefined,
+      // Card montado só do ensaio (id = id do ensaio) não tem pendência para gravar.
+      r.id.startsWith("en_") ? undefined : r.id,
+      r.ensaio,
+      r.status,
+      typeof pl.local === "string" ? pl.local : undefined,
+    );
   }
 
+  /**
+   * Acha (ou cria) OS → amostra → ensaio e abre o editor.
+   *
+   * A amostra é achada pelo conjunto código + nome + profundidade
+   * (lib/identidade-amostra.ts). Antes bastava o nome OU o código: um avulso
+   * "SH-02-189" com outro código abria a amostra SH-02-189 que já existia (de
+   * outra profundidade) e a digitação gravava por cima do ensaio dela.
+   */
   function abrirPorTipo(
     tipo: string,
     osNum: string,
-    amCode: string,
+    alvo: AlvoAmostra & { furo?: string; tipoAmostragem?: string },
     cliente?: string,
     obra?: string,
     pendenciaId?: string,
     siglaOficial?: string,
     currentStatus?: PendenciaDigitacao["status"],
+    local?: string,
   ) {
     if (tipo === "mesp-a") {
       navigate({
@@ -788,17 +953,33 @@ function CentralRelatoriosPage() {
     const cad = cadastro.lookup(osNum);
     const client = cliente || cad?.tomador || `OS ${osNum}`;
     const work = obra || cad?.obra || osNum;
-    const loc = cad?.local || "";
+    const loc = local || cad?.local || "";
 
-    // Resolve dados da amostra do Gantt
-    const amProg =
-      amostrasProg.find((a) => (a.codigo_amostra || a.identificacao || a.id) === amCode && (a.os_numero || "").trim() === osNum.trim()) ||
-      amostrasProg.find((a) => (a.codigo_amostra || a.identificacao) === amCode) ||
-      amostrasProg.find((a) => a.id === amCode);
+    // Amostra do Gantt: pelo CÓDIGO de coleta, que é único. O furo
+    // (identificacao, ex.: SH-02-189) se repete entre profundidades e não serve
+    // para achar a amostra. Pendência antiga (só um texto) tenta como código.
+    const codigoDado = (alvo.codigo || alvo.qualquer || "").trim();
+    const daOs = (a: any) => normOs(a.os_numero) === normOs(osNum);
+    const amProg = codigoDado
+      ? amostrasProg.find((a) => daOs(a) && (a.codigo_amostra || "").trim() === codigoDado) ||
+        amostrasProg.find((a) => (a.codigo_amostra || "").trim() === codigoDado)
+      : undefined;
 
-    const furo = amProg?.identificacao || amProg?.furo || "";
-    const prof = amProg?.topo_m && amProg?.base_m ? `${amProg.topo_m} – ${amProg.base_m} m` : amProg?.profundidade || "";
-    const codigo = amProg?.codigo_amostra || amProg?.id || amCode;
+    const profProg = amProg?.topo_m && amProg?.base_m ? `${amProg.topo_m} – ${amProg.base_m} m` : amProg?.profundidade || "";
+    // O que foi digitado (avulso) vale mais que o Gantt.
+    const furo = alvo.furo?.trim() || amProg?.identificacao || amProg?.furo || "";
+    const prof = alvo.prof?.trim() || profProg;
+    const codigo = alvo.codigo?.trim() || amProg?.codigo_amostra || (alvo.qualquer && amProg ? alvo.qualquer : "");
+    const nome = alvo.nome?.trim() || "";
+
+    // Antes de criar qualquer coisa: profundidade digitada que contradiz o Gantt
+    // para o mesmo código é erro de digitação — não abre nada.
+    if (alvo.prof && profProg && normProfundidade(alvo.prof) !== normProfundidade(profProg)) {
+      toast.error(
+        `A amostra ${codigo} está na programação com profundidade ${profProg}, não ${alvo.prof}. Confira o código ou a profundidade.`,
+      );
+      return;
+    }
 
     if (!os) {
       os = labStore.createOS({
@@ -820,15 +1001,31 @@ function CentralRelatoriosPage() {
       if (updated) labStore.patchOS(os.id, { client: os.client, workNumber: os.workNumber, local: os.local, technicalResp: os.technicalResp });
     }
 
-    const cleanAm = amCode.trim() || "AM-01";
-    let am = os.amostras.find((a) => (a.reportNumber ?? a.code ?? "").trim() === cleanAm || (a.code && a.code === codigo));
+    const achou = acharAmostra(os.amostras, {
+      nome,
+      codigo,
+      prof,
+      qualquer: codigo || nome ? "" : alvo.qualquer,
+    });
+    if (achou.tipo === "ambigua") {
+      // Nunca escolhe uma no chute: a digitação iria para a amostra errada.
+      toast.error(
+        `Há ${achou.amostras.length} amostras que batem com "${nome || codigo || alvo.qualquer}" na OS ${osNum} (${achou.amostras
+          .map(rotuloAmostra)
+          .join("; ")}). Abra o ensaio pela página da OS.`,
+        { duration: 10_000 },
+      );
+      navigate({ to: "/relatorio/os/$osId", params: { osId: os.id } });
+      return;
+    }
+    let am = achou.tipo === "encontrada" ? achou.amostra : undefined;
     if (!am) {
       am = labStore.addAmostra(os.id, {
-        reportNumber: cleanAm,
+        reportNumber: nome || codigo || alvo.qualquer?.trim() || undefined,
         code: codigo,
         borehole: furo,
         depth: prof,
-        sampleType: amProg?.tipo || "Bloco indeformado",
+        sampleType: alvo.tipoAmostragem || amProg?.tipo || "Bloco indeformado",
         description: amProg?.descricao || "",
       });
     } else {
@@ -836,6 +1033,8 @@ function CentralRelatoriosPage() {
       if (!am.borehole && furo) patchAm.borehole = furo;
       if (!am.depth && prof) patchAm.depth = prof;
       if (!am.code && codigo) patchAm.code = codigo;
+      // Amostra antiga sem nome próprio (nome = código) ganha o nome digitado.
+      if (nome && (!am.reportNumber || am.reportNumber === am.code)) patchAm.reportNumber = nome;
       if (Object.keys(patchAm).length > 0) {
         labStore.patchAmostra(os.id, am.id, patchAm);
       }
@@ -1305,7 +1504,21 @@ function CentralRelatoriosPage() {
                                   onClick={() => {
                                     const tipo = laudoDoEnsaio(item.ensaio, item.tipoEnsaioNome, mapaLaudos);
                                     if (!tipo) return avisarSemLaudo(item.ensaio);
-                                    abrirPorTipo(tipo, item.os, item.amostra, cad?.tomador, cad?.obra, pendExistente?.id, item.ensaio, pendExistente?.status);
+                                    // Linha que veio de uma pendência (sem programação): abre como a pendência.
+                                    if (!item.programacaoId && pendExistente) return abrirDigitacao(pendExistente);
+                                    abrirPorTipo(
+                                      tipo,
+                                      item.os,
+                                      // Sem código na programação, "amostra" é o próprio furo: vale como nome ou código.
+                                      item.amostra !== item.furo
+                                        ? { codigo: item.amostra, prof: item.prof || undefined, furo: item.furo || undefined }
+                                        : { qualquer: item.amostra, prof: item.prof || undefined, furo: item.furo || undefined },
+                                      cad?.tomador,
+                                      cad?.obra,
+                                      pendExistente?.id,
+                                      item.ensaio,
+                                      pendExistente?.status,
+                                    );
                                   }}
                                 >
                                   {isAprovado ? (
@@ -1541,7 +1754,7 @@ function CentralRelatoriosPage() {
                   {filteredRows.map((r) => (
                     <TableRow key={r.id} className="hover:bg-muted/30">
                       <TableCell className="font-bold text-xs text-foreground">{r.os}</TableCell>
-                      <TableCell className="text-xs text-foreground">{r.amostra || "—"}</TableCell>
+                      <TableCell className="text-xs text-foreground">{r.amostra_rotulo || r.amostra || "—"}</TableCell>
                       <TableCell>
                         <div className="font-semibold text-xs text-primary">{r.ensaio}</div>
                         {r.tipo_ensaio && <div className="text-[10px] text-muted-foreground">{r.tipo_ensaio}</div>}
@@ -1621,7 +1834,7 @@ function CentralRelatoriosPage() {
           MODAL: PROCESSAR RELATÓRIO AVULSO (FORA DO GANTT)
          ========================================================================= */}
       <Dialog open={avulsoOpen} onOpenChange={setAvulsoOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base">
               <Plus className="h-5 w-5 text-primary" /> Processar Relatório Avulso
@@ -1637,9 +1850,10 @@ function CentralRelatoriosPage() {
                 <Label className="text-xs">Número da OS *</Label>
                 <Input
                   className="h-8 text-xs"
-                  placeholder="Ex: OS-2026-001"
+                  placeholder="Ex: 17948-26"
                   value={avulsoData.os}
                   onChange={(e) => setAvulsoData((s) => ({ ...s, os: e.target.value }))}
+                  onBlur={() => preencherDaOs(avulsoData.os)}
                 />
               </div>
 
@@ -1665,39 +1879,145 @@ function CentralRelatoriosPage() {
               </div>
             </div>
 
+            {/* Obra & Localização — mesmos campos do cabeçalho do laudo (Cliente, Obra, Local) */}
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground pt-1">Obra & Localização</div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">Cliente / Tomador</Label>
                 <Input
                   className="h-8 text-xs"
-                  placeholder="Ex: Cliente Modelo LTDA."
+                  placeholder="Ex: Via Araucária S.A"
                   value={avulsoData.cliente}
                   onChange={(e) => setAvulsoData((s) => ({ ...s, cliente: e.target.value }))}
                 />
               </div>
 
               <div className="space-y-1">
-                <Label className="text-xs">Obra / Local</Label>
+                <Label className="text-xs">Obra / Projeto</Label>
                 <Input
                   className="h-8 text-xs"
-                  placeholder="Ex: Obra Modelo - SP"
+                  placeholder="Ex: 373BPR0330"
                   value={avulsoData.obra}
                   onChange={(e) => setAvulsoData((s) => ({ ...s, obra: e.target.value }))}
                 />
               </div>
             </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Localização Física / Trecho</Label>
+              <Input
+                className="h-8 text-xs"
+                placeholder="Ex: Rodovia BR-373"
+                value={avulsoData.local}
+                onChange={(e) => setAvulsoData((s) => ({ ...s, local: e.target.value }))}
+              />
+            </div>
 
+            {/* Identificação & Furo — mesmos campos do "Editar Cadastro da Amostra" */}
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground pt-1">Identificação & Furo</div>
+            {amostrasDaOsAvulso.length > 0 && (
+              <div className="space-y-1">
+                <Label className="text-xs">Amostra da programação (preenche os campos abaixo)</Label>
+                <Select
+                  value=""
+                  onValueChange={(id) => {
+                    const a = amostrasDaOsAvulso.find((x) => String(x.id) === id);
+                    if (!a) return;
+                    const furo = a.identificacao || a.furo || "";
+                    setAvulsoData((s) => ({
+                      ...s,
+                      codigo: a.codigo_amostra || "",
+                      furo,
+                      amostra: s.amostra || furo,
+                      prof: a.topo_m && a.base_m ? `${a.topo_m} – ${a.base_m} m` : a.profundidade || "",
+                    }));
+                  }}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Escolher pelo código / profundidade…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {amostrasDaOsAvulso.map((a) => (
+                      <SelectItem key={String(a.id)} value={String(a.id)}>
+                        {[a.codigo_amostra, a.identificacao, a.topo_m && a.base_m ? `${a.topo_m} – ${a.base_m} m` : a.profundidade]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="text-xs">Código / Identificação da Amostra</Label>
+                <Label className="text-xs">Identificação da Amostra (Nº Laudo) *</Label>
                 <Input
-                  className="h-8 text-xs"
-                  placeholder="Ex: AM-01 (Furo SP-01)"
+                  className="h-8 text-xs font-mono"
+                  placeholder="Ex: SH-02-189"
                   value={avulsoData.amostra}
                   onChange={(e) => setAvulsoData((s) => ({ ...s, amostra: e.target.value }))}
                 />
               </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Código de Coleta *</Label>
+                <Input
+                  className="h-8 text-xs font-mono"
+                  placeholder="Ex: 13690-03"
+                  value={avulsoData.codigo}
+                  onChange={(e) => setAvulsoData((s) => ({ ...s, codigo: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Furo de Sondagem</Label>
+                <Input
+                  className="h-8 text-xs"
+                  placeholder="Ex: SH-02-189"
+                  value={avulsoData.furo}
+                  onChange={(e) => setAvulsoData((s) => ({ ...s, furo: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Profundidade da Coleta (m) *</Label>
+                <Input
+                  className="h-8 text-xs font-mono"
+                  placeholder="Ex: 5.00 – 5.80 m"
+                  value={avulsoData.prof}
+                  onChange={(e) => setAvulsoData((s) => ({ ...s, prof: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Tipo de Amostragem</Label>
+                <Select
+                  value={avulsoData.tipo_amostragem || undefined}
+                  onValueChange={(v) => setAvulsoData((s) => ({ ...s, tipo_amostragem: v }))}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Escolher…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TIPOS_DE_AMOSTRAGEM.map((t) => (
+                      <SelectItem key={t.valor} value={t.valor}>
+                        {t.rotulo}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
 
+            {conferenciaAvulso && (
+              <div
+                className={`rounded-md border px-3 py-2 text-xs ${
+                  conferenciaAvulso.tipo === "erro"
+                    ? "border-destructive/40 bg-destructive/10 text-destructive"
+                    : "border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-200"
+                }`}
+              >
+                {conferenciaAvulso.texto}
+              </div>
+            )}
+
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground pt-1">Ensaio</div>
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">Operador / Laboratorista</Label>
                 <Input
@@ -1726,7 +2046,15 @@ function CentralRelatoriosPage() {
             </Button>
             <Button
               size="sm"
-              disabled={!avulsoData.os || !avulsoData.tipo_ensaio || criarAvulsoMutation.isPending}
+              disabled={
+                !avulsoData.os ||
+                !avulsoData.tipo_ensaio ||
+                !avulsoData.amostra.trim() ||
+                !avulsoData.codigo.trim() ||
+                !avulsoData.prof.trim() ||
+                conferenciaAvulso?.tipo === "erro" ||
+                criarAvulsoMutation.isPending
+              }
               onClick={() => criarAvulsoMutation.mutate(avulsoData)}
               className="gap-1.5"
             >
@@ -1901,8 +2229,8 @@ function KanbanCard({
               </Badge>
             )}
           </div>
-          <div className="text-[11px] text-muted-foreground font-medium truncate max-w-[170px]">
-            {item.amostra || "Amostra Geral"}
+          <div className="text-[11px] text-muted-foreground font-medium truncate max-w-[170px]" title={item.amostra_rotulo || item.amostra || undefined}>
+            {item.amostra_rotulo || item.amostra || "Amostra Geral"}
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">

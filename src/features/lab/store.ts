@@ -609,6 +609,7 @@ export const labStore = {
       description?: string;
       granulometricDescription?: string;
       code?: string;
+      sampleType?: string;
       coords?: Amostra["coords"];
     },
   ): Amostra | undefined {
@@ -625,6 +626,7 @@ export const labStore = {
       description: input.description?.trim() || "",
       granulometricDescription: input.granulometricDescription?.trim() || "",
       code: input.code?.trim() || "",
+      ...(input.sampleType?.trim() ? { sampleType: input.sampleType.trim() } : {}),
       coords: input.coords,
       photos: [],
       ensaios: [],

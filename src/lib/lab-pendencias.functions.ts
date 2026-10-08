@@ -35,6 +35,8 @@ export type PendenciaDigitacao = {
   id: string;
   os: string;
   amostra: string | null;
+  /** Só na tela: "SH-02-189 · 13690-03 · 5.00 – 5.80 m" (nome, código e profundidade). */
+  amostra_rotulo?: string | null;
   ensaio: string;
   tipo_ensaio: string | null;
   equipamento: string | null;
@@ -285,7 +287,14 @@ const CriarAvulsoInput = z.object({
   os: z.string().min(1),
   cliente: z.string().optional(),
   obra: z.string().optional(),
+  local: z.string().optional(),
+  /** Identificação da amostra (Nº do laudo), ex.: "SH-02-189". */
   amostra: z.string().optional(),
+  /** Código de coleta, ex.: "13690-03" — é ele que identifica a pendência, como nas do Gantt. */
+  codigo: z.string().optional(),
+  furo: z.string().optional(),
+  prof: z.string().optional(),
+  tipo_amostragem: z.string().optional(),
   ensaio: z.string().min(1),
   tipo_ensaio: z.string().min(1),
   operador_nome: z.string().optional(),
@@ -297,7 +306,9 @@ export const criarRelatorioAvulso = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => CriarAvulsoInput.parse(i))
   .handler(async ({ context, data }) => {
     const now = new Date().toISOString();
-    const amostraNorm = data.amostra?.trim() || null;
+    // A pendência leva o CÓDIGO da amostra, como as do Gantt: o nome se repete
+    // entre coletas do mesmo furo (SH-02-189 a 2 m e a 5 m), o código não.
+    const amostraNorm = data.codigo?.trim() || data.amostra?.trim() || null;
     const key = pendenciaKey(data.os.trim(), amostraNorm, data.ensaio.trim());
     const folderId = await ensureFolderPath(FOLDER_PENDENCIAS);
     const name = `${key}.json`;
@@ -312,6 +323,12 @@ export const criarRelatorioAvulso = createServerFn({ method: "POST" })
     const payload = {
       cliente: data.cliente || "",
       obra: data.obra || "",
+      local: data.local || "",
+      amostra_nome: data.amostra?.trim() || "",
+      amostra_codigo: data.codigo?.trim() || "",
+      furo: data.furo?.trim() || "",
+      prof: data.prof?.trim() || "",
+      tipo_amostragem: data.tipo_amostragem?.trim() || "",
       digitacao_started_at: now,
       avulso: true,
     };
