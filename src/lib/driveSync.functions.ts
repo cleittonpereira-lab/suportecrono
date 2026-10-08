@@ -3,7 +3,7 @@
  *
  * Estrutura no Drive (a partir da pasta raiz configurada):
  *   {OS} - {Cliente}/
- *     {AmostraCode}/
+ *     {Amostra}/              ex.: "SH-02-189 (13690-03)" — nome (código), lib/pasta-amostra.ts
  *       {Ensaio}/
  *         relatorios/Rev-XX.pdf
  *         dados/ensaio.json
@@ -19,6 +19,13 @@ import { getGoogleAccessToken, isGoogleAuthConfigured } from "./google-auth.serv
 // pegar `files[0]` sem ordenação — e por isso duplicava pastas `relatorios`.
 import { findFileInFolder, findFolder, withKeyLock } from "./driveStorage";
 import { nomeDoArquivoDoLaudo, siglaDoEnsaio } from "./nome-laudo";
+import {
+  laudoDeOutraAmostra,
+  nomeAntigoDaPastaDaAmostra,
+  nomeDaPastaDaAmostra,
+  safeName,
+  type IdentidadeDoLaudo,
+} from "./pasta-amostra";
 import { registrarMudanca } from "./avisos-mudanca";
 import { podeRegravar, proximaRevisao, type LinhaDeRevisao } from "./revisoes-regra";
 
@@ -99,11 +106,13 @@ async function ensureFolderPath(parts: string[]): Promise<string> {
  * Lista os arquivos de uma pasta. Falha estoura: uma lista vazia no lugar do
  * erro era lida como "este ensaio não tem nenhuma revisão no Drive".
  */
-async function listFilesInFolder(parentId: string): Promise<{ id: string; name: string }[]> {
+type ArquivoNoDrive = { id: string; name: string; size?: string; modifiedTime?: string; createdTime?: string };
+
+async function listFilesInFolder(parentId: string, campos = "id,name"): Promise<ArquivoNoDrive[]> {
   const q = `'${parentId}' in parents and trashed = false and mimeType != '${FOLDER_MIME}'`;
-  const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name)")}&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=drive&driveId=${DRIVE_ROOT_FOLDER_ID}`;
+  const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent(`files(${campos})`)}&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=drive&driveId=${DRIVE_ROOT_FOLDER_ID}`;
   const data = await driveJson(url, { method: "GET", headers: await driveHeaders() });
-  return (data.files ?? []) as { id: string; name: string }[];
+  return (data.files ?? []) as ArquivoNoDrive[];
 }
 
 /**
@@ -193,32 +202,84 @@ async function lerArquivosDoEnsaio(scopeId: string): Promise<ArquivosDoEnsaio | 
   return { os, am, en };
 }
 
+/** Pasta do ensaio, com a amostra por nome e código ("SH-02-189 (13690-03)"). É onde tudo é gravado. */
 function pastaDoEnsaio({ os, am, en }: ArquivosDoEnsaio): string[] {
   return nomesDaPasta({
     osNumero: os.numero,
     osCliente: os.client,
-    amostraCodigo: am.reportNumber || am.code,
+    amostraCodigo: nomeDaPastaDaAmostra(am),
     ensaioTipo: en.tipo,
     ensaioNome: en.label || en.nome || en.sigla,
   });
 }
 
-async function partesDaPastaDoEnsaio(scopeId: string): Promise<string[] | null> {
-  const arquivos = await lerArquivosDoEnsaio(scopeId);
-  return arquivos ? pastaDoEnsaio(arquivos) : null;
+/**
+ * Pasta do ensaio com a amostra só pelo nome — onde estão as revisões
+ * emitidas até 08/10. Duas amostras de mesmo nome dividem esta pasta.
+ */
+function pastaAntigaDoEnsaio(lab: ArquivosDoEnsaio): string[] {
+  const partes = pastaDoEnsaio(lab);
+  partes[1] = nomeAntigoDaPastaDaAmostra(lab.am);
+  return partes;
+}
+
+function identidadeDoLaudo({ os, am, en }: ArquivosDoEnsaio): IdentidadeDoLaudo {
+  return { os: os.numero, amostra: am.reportNumber || am.code, furo: am.borehole, prof: am.depth, sigla: siglaDoEnsaio(en) };
 }
 
 /** Nome oficial do arquivo da revisão: OS_Amostra_Furo_Prof_Sigla_Rev-NN (lib/nome-laudo.ts). */
-function nomeOficial({ os, am, en }: ArquivosDoEnsaio, rev: number, ext: "pdf" | "xlsx"): string {
-  return nomeDoArquivoDoLaudo({
-    os: os.numero,
-    amostra: am.reportNumber || am.code,
-    furo: am.borehole,
-    prof: am.depth,
-    sigla: siglaDoEnsaio(en),
-    rev,
-    ext,
-  });
+function nomeOficial(lab: ArquivosDoEnsaio, rev: number, ext: "pdf" | "xlsx"): string {
+  return nomeDoArquivoDoLaudo({ ...identidadeDoLaudo(lab), rev, ext });
+}
+
+/** Uma pasta `relatorios` do ensaio; `antiga` = nomeada só pelo nome da amostra (pode ser dividida). */
+type PastaDeRelatorios = { id: string; antiga: boolean };
+
+/**
+ * Pastas `relatorios` deste ensaio que existem no Drive, sem criar nada: a da
+ * amostra e, quando o nome é outro, a antiga.
+ */
+async function pastasDeRelatorios(lab: ArquivosDoEnsaio): Promise<PastaDeRelatorios[]> {
+  const nova = pastaDoEnsaio(lab);
+  const antiga = pastaAntigaDoEnsaio(lab);
+  const mesmaPasta = nova[1] === antiga[1];
+  const pastas: PastaDeRelatorios[] = [];
+  const idNova = await resolveFolderPath([...nova, "relatorios"]);
+  if (idNova) pastas.push({ id: idNova, antiga: mesmaPasta });
+  if (!mesmaPasta) {
+    const idAntiga = await resolveFolderPath([...antiga, "relatorios"]);
+    if (idAntiga) pastas.push({ id: idAntiga, antiga: true });
+  }
+  return pastas;
+}
+
+/**
+ * Arquivos de revisão DESTA amostra nas pastas `relatorios`, cada um com a
+ * pasta onde está. Na pasta antiga, o laudo de outra amostra de mesmo nome
+ * (outra profundidade no nome oficial) fica de fora.
+ */
+async function laudosDaAmostra(
+  lab: ArquivosDoEnsaio,
+  pastas: PastaDeRelatorios[],
+  campos?: string,
+): Promise<(ArquivoNoDrive & { pastaId: string })[]> {
+  const meu = identidadeDoLaudo(lab);
+  const laudos: (ArquivoNoDrive & { pastaId: string })[] = [];
+  for (const p of pastas) {
+    for (const f of await listFilesInFolder(p.id, campos)) {
+      if (p.antiga && laudoDeOutraAmostra(f.name, meu)) continue;
+      laudos.push({ ...f, pastaId: p.id });
+    }
+  }
+  return laudos;
+}
+
+/** Revisões da amostra no Drive pelo scopeId; `null` sem os registros do ensaio. */
+async function laudosDoEnsaio(scopeId: string, campos?: string) {
+  const lab = await lerArquivosDoEnsaio(scopeId);
+  if (!lab) return null;
+  const pastas = await pastasDeRelatorios(lab);
+  return { lab, pastas, arquivos: await laudosDaAmostra(lab, pastas, campos) };
 }
 
 function parseScope(scopeId: string): { osId: string; amostraId: string; ensaioId: string } | null {
@@ -244,11 +305,9 @@ function linhasDoFluxo(en: ArquivoLab | null | undefined): LinhaDeRevisao[] {
 /** Números de revisão com PDF na pasta `relatorios` do ensaio no Drive. */
 export async function revisoesComPdfNoDrive(scopeId: string): Promise<number[]> {
   if (!isGoogleAuthConfigured()) return [];
-  const parts = await partesDaPastaDoEnsaio(scopeId);
-  if (!parts) return [];
-  const rel = await resolveFolderPath([...parts, "relatorios"]);
-  if (!rel) return [];
-  return (await listFilesInFolder(rel)).map((f) => revDoArquivo(f.name)).filter((r): r is number => r !== null);
+  const laudos = await laudosDoEnsaio(scopeId);
+  if (!laudos) return [];
+  return laudos.arquivos.map((f) => revDoArquivo(f.name)).filter((r): r is number => r !== null);
 }
 
 /**
@@ -259,11 +318,10 @@ export async function revisoesComPdfNoDrive(scopeId: string): Promise<number[]> 
  */
 export async function revisaoParaLixeiraDoDrive(scopeId: string, rev: number): Promise<string[]> {
   if (!isGoogleAuthConfigured()) return [];
-  const parts = await partesDaPastaDoEnsaio(scopeId);
-  if (!parts) return [];
-  const rel = await resolveFolderPath([...parts, "relatorios"]);
-  if (!rel) return [];
-  const alvos = (await listFilesInFolder(rel)).filter((f) => {
+  // Só os desta amostra: na pasta antiga pode estar a mesma Rev-NN de outra amostra de mesmo nome.
+  const laudos = await laudosDoEnsaio(scopeId);
+  if (!laudos) return [];
+  const alvos = laudos.arquivos.filter((f) => {
     const m = /Rev-?(\d+)\.(pdf|xlsx)$/i.exec(f.name);
     return m !== null && Number(m[1]) === rev;
   });
@@ -378,11 +436,6 @@ const SyncRevisionInput = z.object({
   reemissao: z.boolean().optional(),
 });
 
-function safeName(s: string, fallback: string) {
-  const clean = (s || "").toString().replace(/[\\/:*?"<>|]/g, "-").trim();
-  return clean || fallback;
-}
-
 function ensaioFolderParts(input: z.infer<typeof SyncRevisionInput>) {
   const os = safeName(
     input.os.numero
@@ -455,8 +508,14 @@ async function enviarRevisaoAoDrive(data: z.infer<typeof SyncRevisionInput>, pdf
   // mudou, e uma Rev-00 com o nome antigo não pode ganhar outra Rev-00 ao lado.
   // Listar e gravar na mesma fila: dois envios simultâneos da mesma revisão não
   // criam dois arquivos.
-  const { pdfId, pdfFilename } = await withKeyLock(`${relFolderId}:${rotulo}`, async () => {
-    const existente = (await listFilesInFolder(relFolderId)).find((f) => revDoArquivo(f.name) === data.rev);
+  // A revisão já emitida pode estar na pasta antiga (só o nome da amostra):
+  // procura nas duas, só entre os laudos desta amostra, e regrava onde estiver.
+  const { pdfId, pdfFilename, pdfFolderId } = await withKeyLock(`${relFolderId}:${rotulo}`, async () => {
+    // (A pasta nova acabou de ser garantida acima, então está entre as `pastasDeRelatorios`.)
+    const laudos = lab
+      ? await laudosDaAmostra(lab, await pastasDeRelatorios(lab))
+      : (await listFilesInFolder(relFolderId)).map((f) => ({ ...f, pastaId: relFolderId }));
+    const existente = laudos.find((f) => revDoArquivo(f.name) === data.rev);
     // Revisão que está no fluxo e ainda não foi aprovada (devolvida, reprovada,
     // aguardando) é reaproveitada: o reenvio regrava o PDF dela em vez de abrir
     // outra — era isso que criava versões desnecessárias.
@@ -469,19 +528,20 @@ async function enviarRevisaoAoDrive(data: z.infer<typeof SyncRevisionInput>, pdf
     const id = existente
       ? await uploadBytesOverwrite({ mimeType: "application/pdf", bytes: pdfBytes }, existente.id)
       : await uploadBytesNew({ parentId: relFolderId, name: nomePdf, mimeType: "application/pdf", bytes: pdfBytes });
-    return { pdfId: id, pdfFilename: existente?.name ?? nomePdf };
+    return { pdfId: id, pdfFilename: existente?.name ?? nomePdf, pdfFolderId: existente?.pastaId ?? relFolderId };
   });
-  logSync({ scope_id: data.scopeId, rev: data.rev, kind: "pdf", status: "ok", file_id: pdfId, folder_id: relFolderId });
+  logSync({ scope_id: data.scopeId, rev: data.rev, kind: "pdf", status: "ok", file_id: pdfId, folder_id: pdfFolderId });
 
   if (data.xlsx) {
+    // A planilha fica ao lado do PDF da mesma revisão.
     const xlsxId = await uploadBytes({
-      parentId: relFolderId,
+      parentId: pdfFolderId,
       name: nomeXlsx ?? data.xlsx.filename,
       mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       bytes: b64ToBytes(data.xlsx.base64),
       overwrite: true,
     });
-    logSync({ scope_id: data.scopeId, rev: data.rev, kind: "xlsx", status: "ok", file_id: xlsxId, folder_id: relFolderId });
+    logSync({ scope_id: data.scopeId, rev: data.rev, kind: "xlsx", status: "ok", file_id: xlsxId, folder_id: pdfFolderId });
   }
 
   let dadosId: string | null = null;
@@ -593,16 +653,10 @@ export const listDriveRevisions = createServerFn({ method: "GET" })
   .inputValidator((input: unknown) => z.object({ scopeId: z.string().min(1) }).parse(input))
   .handler(async ({ data }): Promise<{ revisions: RevisaoNoDrive[]; pastaExiste: boolean }> => {
     if (!isGoogleAuthConfigured()) return { revisions: [], pastaExiste: false };
-    const parts = await partesDaPastaDoEnsaio(data.scopeId);
-    if (!parts) return { revisions: [], pastaExiste: false };
-    const rel = await resolveFolderPath([...parts, "relatorios"]);
-    if (!rel) return { revisions: [], pastaExiste: false };
-    const q = `'${rel}' in parents and trashed = false and mimeType != '${FOLDER_MIME}'`;
-    const url = `${DRIVE_V3}/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent("files(id,name,size,modifiedTime,createdTime)")}&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=drive&driveId=${DRIVE_ROOT_FOLDER_ID}`;
-    const resp = (await driveJson(url, { method: "GET", headers: await driveHeaders() })) as {
-      files?: { name: string; size?: string; modifiedTime?: string; createdTime?: string }[];
-    };
-    const revisions = (resp.files ?? [])
+    // A pasta da amostra e a antiga (só o nome), só com os laudos desta amostra.
+    const laudos = await laudosDoEnsaio(data.scopeId, "id,name,size,modifiedTime,createdTime");
+    if (!laudos || laudos.pastas.length === 0) return { revisions: [], pastaExiste: false };
+    const revisions = laudos.arquivos
       .map((f): RevisaoNoDrive | null => {
         const m = /Rev-?(\d+)\.pdf$/i.exec(f.name);
         if (!m) return null;
@@ -633,12 +687,10 @@ export const getDriveSyncStatus = createServerFn({ method: "GET" })
       const ids = parseScope(data.scopeId);
       if (!ids || !isGoogleAuthConfigured()) return { entries: [] };
 
-      const parts = await partesDaPastaDoEnsaio(data.scopeId);
-      if (!parts) return { entries: [] };
       // Só consulta: pasta que não existe = nenhuma revisão enviada. Não cria nada.
-      const relFolderId = await resolveFolderPath([...parts, "relatorios"]);
-      if (!relFolderId) return { entries: [] };
-      const files = (await listFilesInFolder(relFolderId)).filter((f) => f.name.toLowerCase().endsWith(".pdf"));
+      const laudos = await laudosDoEnsaio(data.scopeId);
+      if (!laudos) return { entries: [] };
+      const files = laudos.arquivos.filter((f) => f.name.toLowerCase().endsWith(".pdf"));
       const nowIso = new Date().toISOString();
 
       const entries: DriveSyncEntry[] = files.map((f) => {
@@ -650,7 +702,7 @@ export const getDriveSyncStatus = createServerFn({ method: "GET" })
           status: "ok",
           error: null,
           file_id: f.id,
-          folder_id: relFolderId,
+          folder_id: f.pastaId,
           created_at: nowIso,
         };
       });
@@ -699,15 +751,14 @@ export const getProximaRevisao = createServerFn({ method: "POST" })
 
     if (isGoogleAuthConfigured()) {
       try {
-        const parts = await partesDaPastaDoEnsaio(data.scopeId);
-        if (parts) {
-          const rel = await resolveFolderPath([...parts, "relatorios"]);
+        // Só os laudos desta amostra: a Rev-00 de outra amostra de mesmo nome,
+        // na pasta antiga, não empurra o número desta.
+        const laudos = await laudosDoEnsaio(data.scopeId);
+        if (laudos) {
           fontes.push("drive");
-          if (rel) {
-            for (const f of await listFilesInFolder(rel)) {
-              const m = /Rev-?(\d+)\.pdf$/i.exec(f.name);
-              if (m) revs.push(Number(m[1]));
-            }
+          for (const f of laudos.arquivos) {
+            const r = revDoArquivo(f.name);
+            if (r !== null) revs.push(r);
           }
         }
       } catch (err) {
@@ -746,11 +797,9 @@ export const registerEnsaioDraft = createServerFn({ method: "POST" })
  */
 async function acharPdfDaRevisao(scopeId: string, rev?: number): Promise<{ id: string; name: string }> {
   if (!parseScope(scopeId)) throw new Error("scopeId inválido.");
-  const parts = await partesDaPastaDoEnsaio(scopeId);
-  if (!parts) throw new Error("Ensaio não encontrado.");
-  const relFolderId = await resolveFolderPath([...parts, "relatorios"]);
-  if (!relFolderId) throw new Error("Nenhum PDF encontrado no Drive para este ensaio.");
-  const files = (await listFilesInFolder(relFolderId)).filter((f) => f.name.toLowerCase().endsWith(".pdf"));
+  const laudos = await laudosDoEnsaio(scopeId);
+  if (!laudos) throw new Error("Ensaio não encontrado.");
+  const files = laudos.arquivos.filter((f) => f.name.toLowerCase().endsWith(".pdf"));
   if (files.length === 0) throw new Error("Nenhum PDF encontrado no Drive para este ensaio.");
 
   // Pedida a revisão N, devolve a N ou falha. Antes caía em `files[0]` quando
