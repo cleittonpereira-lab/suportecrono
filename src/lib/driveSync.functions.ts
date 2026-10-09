@@ -913,7 +913,7 @@ export const getRevisionPdfBase64 = createServerFn({ method: "POST" })
       bin += String.fromCharCode(...buf.subarray(i, i + CHUNK));
     }
     const revMatch = target.name.match(/Rev-(\d+)/i);
-    return { base64: btoa(bin), rev: revMatch ? Number(revMatch[1]) : null };
+    return { base64: btoa(bin), rev: revMatch ? Number(revMatch[1]) : null, nome: target.name };
   });
 
 /**

@@ -6,7 +6,10 @@
  */
 import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { CheckCircle2, CloudUpload, Globe, PackageCheck, Search } from "lucide-react";
+import { CheckCircle2, CloudUpload, Download, Globe, Loader2, PackageCheck, Search } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { usePacoteDeLaudos } from "@/features/lab/hooks/use-pacote-de-laudos";
+import { chaveDoEnsaio, ultimaRevisaoDeCada } from "@/lib/pacote-laudos";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -55,6 +58,9 @@ export function EntregasView({ familia = "all" }: { familia?: Familia | "all" })
   const [filtro, setFiltro] = useState<Filtro>("a-entregar");
   const [periodo, setPeriodo] = useState<Periodo>("60");
   const [busca, setBusca] = useState("");
+  // Laudos marcados para o pacote de PDFs (por scope_id).
+  const [marcados, setMarcados] = useState<Set<string>>(new Set());
+  const { baixar, progresso } = usePacoteDeLaudos();
 
   const aprovados = useMemo(
     () =>
@@ -65,6 +71,12 @@ export function EntregasView({ familia = "all" }: { familia?: Familia | "all" })
       ),
     [rows, familia],
   );
+  // Laudo com revisão mais nova do MESMO ensaio em outra linha: não entra no pacote.
+  const substituidoPor = useMemo(() => {
+    const { manter, substituidos } = ultimaRevisaoDeCada(aprovados);
+    const vigente = new Map(manter.map((r) => [chaveDoEnsaio(r), r]));
+    return new Map(substituidos.map((r) => [r.scope_id, vigente.get(chaveDoEnsaio(r))?.rev ?? null]));
+  }, [aprovados]);
   const grupos = useMemo(() => {
     const termo = busca.trim().toLowerCase();
     const agora = Date.now();
@@ -94,6 +106,20 @@ export function EntregasView({ familia = "all" }: { familia?: Familia | "all" })
       }))
       .sort((a, b) => a.maisAntigo - b.maisAntigo);
   }, [aprovados, filtro, periodo, busca]);
+
+  const visiveis = useMemo(
+    () => grupos.flatMap((g) => g.itens).filter((r) => !substituidoPor.has(r.scope_id)),
+    [grupos, substituidoPor],
+  );
+  const alternar = (ids: string[], marcar: boolean) =>
+    setMarcados((s) => {
+      const novo = new Set(s);
+      for (const id of ids) {
+        if (marcar) novo.add(id);
+        else novo.delete(id);
+      }
+      return novo;
+    });
 
   const pedirOs = (canal: "sond" | "gdrive", os: string, itens: EmissaoRow[]) => {
     const faltam = itens.filter((r) => !r.entrega![canal]);
@@ -166,6 +192,39 @@ export function EntregasView({ familia = "all" }: { familia?: Familia | "all" })
         {!podeMarcar && (
           <span className="text-xs text-muted-foreground">Só quem verifica marca a entrega.</span>
         )}
+        <div className="ml-auto flex items-center gap-1.5">
+          {marcados.size > 0 && !progresso && (
+            <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setMarcados(new Set())}>
+              Limpar seleção
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 text-xs"
+            disabled={visiveis.length === 0 || !!progresso}
+            onClick={() => setMarcados(new Set(visiveis.map((r) => r.scope_id)))}
+          >
+            Selecionar todos ({visiveis.length})
+          </Button>
+          <Button
+            size="sm"
+            className="h-8 gap-1.5 text-xs"
+            disabled={marcados.size === 0 || !!progresso}
+            title="PDF original do Drive, sempre a última revisão aprovada de cada laudo"
+            onClick={() => baixar(aprovados.filter((r) => marcados.has(r.scope_id)))}
+          >
+            {progresso ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Baixando {progresso.feitos}/{progresso.total}…
+              </>
+            ) : (
+              <>
+                <Download className="h-3.5 w-3.5" /> Baixar PDFs ({marcados.size})
+              </>
+            )}
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -185,9 +244,19 @@ export function EntregasView({ familia = "all" }: { familia?: Familia | "all" })
             const entregues = g.itens.filter((r) => r.entrega!.entregue).length;
             const faltaSond = g.itens.some((r) => !r.entrega!.sond);
             const faltaGdrive = g.itens.some((r) => !r.entrega!.gdrive);
+            const idsDaOs = g.itens.filter((r) => !substituidoPor.has(r.scope_id)).map((r) => r.scope_id);
+            const marcadosDaOs = idsDaOs.filter((id) => marcados.has(id)).length;
             return (
               <section key={g.os} className="overflow-hidden rounded-lg border bg-card">
                 <header className="flex flex-wrap items-center gap-2 border-b bg-muted/30 px-3 py-2">
+                  <Checkbox
+                    aria-label={`Selecionar os laudos da OS ${g.os} para baixar`}
+                    disabled={idsDaOs.length === 0 || !!progresso}
+                    checked={
+                      marcadosDaOs === 0 ? false : marcadosDaOs === idsDaOs.length ? true : "indeterminate"
+                    }
+                    onCheckedChange={(v) => alternar(idsDaOs, v === true)}
+                  />
                   <span className="font-bold">OS {g.os}</span>
                   <span className="truncate text-xs text-muted-foreground">{g.cliente}</span>
                   <SondButton os={g.os} variant="button" />
@@ -226,11 +295,19 @@ export function EntregasView({ familia = "all" }: { familia?: Familia | "all" })
                 <div className="divide-y">
                   {g.itens.map((r) => {
                     const destino = rota(r.scope_id);
+                    const revMaisNova = substituidoPor.get(r.scope_id);
+                    const antigo = substituidoPor.has(r.scope_id);
                     return (
                       <div
                         key={r.scope_id}
                         className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 text-xs"
                       >
+                        <Checkbox
+                          aria-label="Selecionar este laudo para baixar"
+                          disabled={antigo || !!progresso}
+                          checked={marcados.has(r.scope_id)}
+                          onCheckedChange={(v) => alternar([r.scope_id], v === true)}
+                        />
                         <div className="flex min-w-[220px] flex-1 items-center gap-2">
                           {r.ensaio_tipo && <EnsaioTag tipo={r.ensaio_tipo as EnsaioTipo} />}
                           <div className="min-w-0">
@@ -241,6 +318,11 @@ export function EntregasView({ familia = "all" }: { familia?: Familia | "all" })
                               Rev-{String(r.rev ?? 0).padStart(2, "0")} aprovada em{" "}
                               {fmtDia(r.decided_at)}
                               {r.decided_by_name ? ` por ${r.decided_by_name}` : ""}
+                              {antigo && (
+                                <span className="ml-1 font-semibold text-amber-700 dark:text-amber-400">
+                                  · há Rev-{String(revMaisNova ?? 0).padStart(2, "0")} deste ensaio — não entra no pacote
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
