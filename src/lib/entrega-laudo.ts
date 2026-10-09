@@ -47,6 +47,17 @@ export function revisaoAprovadaVigente(
   return ultima.status === "aprovado" ? ultima.rev : null;
 }
 
+/**
+ * Maior revisão aprovada, mesmo com uma revisão nova ainda em andamento
+ * (Rev-02 aprovada + Rev-03 em digitação → 2). É o PDF que pode ir ao cliente.
+ */
+export function maiorRevisaoAprovada(
+  approvals: readonly { rev: number; status?: string | null }[] | null | undefined,
+): number | null {
+  const aprovadas = (approvals ?? []).filter((a) => a.status === "aprovado").map((a) => a.rev);
+  return aprovadas.length ? Math.max(...aprovadas) : null;
+}
+
 /** Situação da entrega para a revisão aprovada `revAprovada` (null = laudo ainda não aprovado). */
 export function situacaoDaEntrega(
   entrega: EntregaDoLaudo | null | undefined,

@@ -8,7 +8,7 @@ import { z } from "zod";
 import { ensureFolderPath, lerJsonsDaPasta, type ArquivoListado } from "@/lib/driveStorage";
 import { FOLDER_ENSAIOS, type EnsaioFile } from "@/lib/lab-entities.functions";
 import { etapaDasAprovacoes } from "@/lib/etapa-laudo";
-import { revisaoAprovadaVigente, situacaoDaEntrega, type EntregaDoLaudo, type SituacaoDaEntrega } from "@/lib/entrega-laudo";
+import { maiorRevisaoAprovada, revisaoAprovadaVigente, situacaoDaEntrega, type EntregaDoLaudo, type SituacaoDaEntrega } from "@/lib/entrega-laudo";
 
 /**
  * Índice id → conteúdo. Havendo cópias homônimas do mesmo registro, fica a
@@ -42,6 +42,8 @@ export interface EmissaoRow {
   id: string | null;
   scope_id: string;
   rev: number | null;
+  /** Maior revisão APROVADA (menor que `rev` quando há uma revisão nova em andamento). É a que vai ao cliente. */
+  rev_aprovada: number | null;
   status: string; // status da última revisão OU "digitacao" quando não há revisão
   workflow_status: string; // status do fluxo no arquivo do ensaio
   requested_by: string | null;
@@ -120,6 +122,7 @@ export const listEmissoes = createServerFn({ method: "POST" })
             id: latest?.id ?? null,
             scope_id: scopeId,
             rev: latest?.rev ?? null,
+            rev_aprovada: maiorRevisaoAprovada(en.reportApprovals),
             status: latest?.status ?? "digitacao",
             workflow_status: deriveWorkflowStatus(en),
             requested_by: latest?.requested_by ?? null,

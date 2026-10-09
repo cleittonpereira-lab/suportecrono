@@ -4,7 +4,8 @@
  * última revisão aprovada de cada laudo.
  *
  * Regras:
- * - Cada laudo baixa exatamente a revisão aprovada vigente (`rev` da linha).
+ * - Cada laudo baixa exatamente a maior revisão APROVADA (`rev_aprovada`), mesmo
+ *   com uma revisão nova em digitação.
  *   Se ela não estiver no Drive, o laudo fica de fora e é avisado — nunca entra
  *   outra revisão no lugar.
  * - Dois laudos do mesmo ensaio na mesma amostra (OS + amostra + ensaio): só
@@ -22,12 +23,12 @@ import { ultimaRevisaoDeCada } from "@/lib/pacote-laudos";
 
 export type LaudoDoPacote = Pick<
   EmissaoRow,
-  "scope_id" | "rev" | "os_numero" | "os_cliente" | "amostra_code" | "ensaio_tipo" | "ensaio_nome" | "decided_at"
+  "scope_id" | "rev" | "rev_aprovada" | "os_numero" | "os_cliente" | "amostra_code" | "ensaio_tipo" | "ensaio_nome" | "decided_at"
 >;
 
 const rotuloRev = (rev: number | null) => `Rev-${String(rev ?? 0).padStart(2, "0")}`;
 
-function base64ParaBytes(b64: string): Uint8Array {
+function base64ParaBytes(b64: string): Uint8Array<ArrayBuffer> {
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
@@ -38,12 +39,50 @@ function limpar(v: string): string {
   return v.replace(/[\\/:*?"<>|]+/g, "-").trim();
 }
 
+function salvar(blob: Blob, nome: string) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = nome;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+}
+
 export function usePacoteDeLaudos() {
   const pdfFn = useServerFn(getRevisionPdfBase64);
   const [progresso, setProgresso] = useState<{ feitos: number; total: number } | null>(null);
 
-  async function baixar(laudos: LaudoDoPacote[]) {
-    if (laudos.length === 0 || progresso) return;
+  /** Um PDF só, direto (sem .zip): o original do Drive na maior revisão aprovada. */
+  async function baixarUm(laudo: LaudoDoPacote) {
+    if (laudo.rev_aprovada == null) {
+      toast.error("Este laudo ainda não tem revisão aprovada.");
+      return;
+    }
+    const id = toast.loading("Baixando o PDF do Drive…");
+    try {
+      const r = await pdfFn({ data: { scopeId: laudo.scope_id, rev: laudo.rev_aprovada } });
+      const blob = new Blob([base64ParaBytes(r.base64)], { type: "application/pdf" });
+      salvar(blob, limpar(r.nome || `${laudo.os_numero}_${laudo.amostra_code}_${rotuloRev(laudo.rev_aprovada)}.pdf`));
+      toast.success(`PDF baixado (${rotuloRev(laudo.rev_aprovada)}).`, { id });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e), { id });
+    }
+  }
+
+  /**
+   * `extras` acrescenta outros arquivos ao .zip (ex.: as planilhas da aba Por OS).
+   */
+  async function baixar(laudosPedidos: LaudoDoPacote[], extras?: (zip: JSZip) => Promise<void>) {
+    if (laudosPedidos.length === 0 || progresso) return;
+    // Só o que tem revisão aprovada; a revisão do pacote é a maior aprovada,
+    // mesmo com uma revisão nova em digitação.
+    const semAprovada = laudosPedidos.filter((l) => l.rev_aprovada == null);
+    const laudos = laudosPedidos.filter((l) => l.rev_aprovada != null).map((l) => ({ ...l, rev: l.rev_aprovada }));
+    if (laudos.length === 0) {
+      toast.error("Nenhum dos laudos escolhidos tem revisão aprovada.");
+      return;
+    }
     const { manter, substituidos } = ultimaRevisaoDeCada(laudos);
     const variasOs = new Set(manter.map((l) => l.os_numero)).size > 1;
     const zip = new JSZip();
@@ -88,22 +127,20 @@ export function usePacoteDeLaudos() {
         `No pacote (${ok.length}):`,
         ...ok.map((o) => `  ${linha(o.laudo)}  →  ${o.arquivo}`),
         ...(falhas.length ? ["", `NÃO baixados (${falhas.length}):`, ...falhas.map((f) => `  ${linha(f.laudo)}  —  ${f.erro}`)] : []),
+        ...(semAprovada.length
+          ? ["", `Sem revisão aprovada — fora do pacote (${semAprovada.length}):`, ...semAprovada.map((s) => `  ${linha(s)}`)]
+          : []),
         ...(substituidos.length
           ? ["", `Fora por haver revisão mais nova do mesmo ensaio (${substituidos.length}):`, ...substituidos.map((s) => `  ${linha(s)}`)]
           : []),
       ].join("\r\n");
       zip.file("LEIA-ME.txt", leiame);
+      if (extras) await extras(zip);
 
       const blob = await zip.generateAsync({ type: "blob", compression: "STORE" });
       const dia = new Date().toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
       const unicaOs = !variasOs ? manter[0]?.os_numero : null;
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = unicaOs ? `Laudos_OS-${limpar(unicaOs)}_${dia}.zip` : `Laudos_${dia}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+      salvar(blob, unicaOs ? `Laudos_OS-${limpar(unicaOs)}_${dia}.zip` : `Laudos_${dia}.zip`);
 
       if (falhas.length) {
         toast.warning(`${ok.length} PDF(s) no pacote; ${falhas.length} não baixado(s) — veja o LEIA-ME.txt.`, { duration: 10_000 });
@@ -115,5 +152,5 @@ export function usePacoteDeLaudos() {
     }
   }
 
-  return { baixar, progresso };
+  return { baixar, baixarUm, progresso };
 }

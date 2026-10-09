@@ -50,7 +50,6 @@ import {
 import { useOsGroups, extractSampleDetails, abrirEnsaioNaCentral, type EnsaioItemOS, type OsGroup } from "@/features/lab/hooks/use-os-groups";
 import {
   formatReportFilename,
-  generateOfficialPdfBlob,
   generateOfficialExcelBuffer,
   getEnsaioSigla,
   type ReportItemMeta,
@@ -61,6 +60,8 @@ import JSZip from "jszip";
 import { ETAPAS_COM_BANCADA, corEtapa, rotuloEtapa } from "@/lib/etapa-laudo";
 import { useAuth } from "@/hooks/use-auth";
 import { podeConcluirFora } from "@/lib/papeis";
+import { useLaudosNoFluxo } from "@/features/lab/hooks/use-laudos-no-fluxo";
+import { usePacoteDeLaudos } from "@/features/lab/hooks/use-pacote-de-laudos";
 
 // Rótulos e cores de src/lib/etapa-laudo.ts — os mesmos da Central e da página da OS.
 const STATUS_BADGE = Object.fromEntries(
@@ -93,6 +94,16 @@ export function OsReportsView() {
   const [busca, setBusca] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "em_andamento" | "concluidas">("all");
   const [expandedOs, setExpandedOs] = useState<Record<string, boolean>>({});
+
+  // PDFs: sempre o arquivo ORIGINAL do Drive (assinado), na maior revisão
+  // aprovada. Antes estes botões geravam um PDF genérico na hora, sem os
+  // resultados do ensaio.
+  const { data: laudosNoFluxo } = useLaudosNoFluxo();
+  const { baixar: baixarPacote, baixarUm, progresso: progressoPacote } = usePacoteDeLaudos();
+  const laudosAprovadosDaOs = (osNumero: string) =>
+    (laudosNoFluxo ?? []).filter((r) => normOs(r.os_numero ?? "") === normOs(osNumero) && r.rev_aprovada != null);
+  const laudoDoEnsaio = (en: EnsaioItemOS) =>
+    (laudosNoFluxo ?? []).find((r) => r.scope_id.endsWith(`/ensaio/${en.id}`));
 
   // Modal de Exclusão com Confirmação
   const [deleteModal, setDeleteModal] = useState<{
@@ -181,48 +192,14 @@ export function OsReportsView() {
     }
   }
 
-  // Baixa laudo individual em PDF
-  async function downloadSinglePdf(group: OsGroup, en: EnsaioItemOS) {
-    const meta: ReportItemMeta = {
-      os: group.osNumero,
-      cliente: group.cliente,
-      obra: group.obra,
-      local: group.local,
-      amostraId: en.amostra,
-      amostraCodigo: en.codigo || en.amostra,
-      furo: en.furo,
-      profundidade: en.prof,
-      ensaio: en.ensaio,
-      tipo: en.tipo,
-      revisao: en.revisao || "0",
-      status: "Aprovado",
-      responsavel: en.aprovador || en.verificador || "Engº Maurício Silva · CREA-SP",
-    };
-
-    const filename = formatReportFilename({
-      os: group.osNumero,
-      amostraId: en.amostra,
-      amostraCodigo: en.codigo || en.amostra,
-      tipoOrNome: en.ensaio,
-      revisao: en.revisao || "0",
-      ext: "pdf",
-    });
-
-    toast.loading(`Gerando PDF de ${en.amostra}…`, { id: "single-pdf" });
-    try {
-      const blob = await generateOfficialPdfBlob(meta);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      toast.success(`PDF baixado com sucesso: ${filename}`, { id: "single-pdf" });
-    } catch (err: any) {
-      toast.error(`Erro ao gerar PDF: ${err.message}`, { id: "single-pdf" });
+  // Baixa laudo individual em PDF: o original do Drive, na maior revisão aprovada.
+  async function downloadSinglePdf(_group: OsGroup, en: EnsaioItemOS) {
+    const laudo = laudoDoEnsaio(en);
+    if (!laudo || laudo.rev_aprovada == null) {
+      toast.error(`${en.amostra} · ${en.ensaio}: não há revisão aprovada com PDF no Drive para baixar.`);
+      return;
     }
+    await baixarUm(laudo);
   }
 
   // Baixa laudo individual em Excel
@@ -278,6 +255,50 @@ export function OsReportsView() {
       (e) => e.status === "aprovado" || e.status === "concluido_externo",
     );
 
+    // PDF (com ou sem as planilhas): os PDFs ORIGINAIS do Drive, última revisão aprovada.
+    if (tipoDownload !== "excel") {
+      const laudos = laudosAprovadosDaOs(group.osNumero);
+      if (laudos.length === 0) {
+        toast.error(`OS ${group.osNumero}: nenhum laudo com revisão aprovada no fluxo para baixar.`);
+        return;
+      }
+      await baixarPacote(
+        laudos,
+        tipoDownload === "pdf_excel"
+          ? async (zip) => {
+              const pasta = zip.folder("Planilhas") || zip;
+              for (const en of ensaiosAprovados) {
+                const meta: ReportItemMeta = {
+                  os: group.osNumero,
+                  cliente: group.cliente,
+                  obra: group.obra,
+                  local: group.local,
+                  amostraId: en.amostra,
+                  amostraCodigo: en.codigo || en.amostra,
+                  furo: en.furo,
+                  profundidade: en.prof,
+                  ensaio: en.ensaio,
+                  tipo: en.tipo,
+                  revisao: en.revisao || "0",
+                  status: "Aprovado",
+                  responsavel: en.aprovador || en.verificador || "Engº Maurício Silva · CREA-SP",
+                };
+                const nome = formatReportFilename({
+                  os: group.osNumero,
+                  amostraId: en.amostra,
+                  amostraCodigo: en.codigo || en.amostra,
+                  tipoOrNome: en.ensaio,
+                  revisao: en.revisao || "0",
+                  ext: "xlsx",
+                });
+                pasta.file(nome, await generateOfficialExcelBuffer(meta));
+              }
+            }
+          : undefined,
+      );
+      return;
+    }
+
     if (ensaiosAprovados.length === 0) {
       toast.error("Não há laudos aprovados/concluídos nesta OS para baixar.");
       return;
@@ -317,17 +338,8 @@ export function OsReportsView() {
           responsavel: en.aprovador || en.verificador || "Engº Maurício Silva · CREA-SP",
         };
 
-        const formato = tipoDownload === "excel" ? "XLSX" : tipoDownload === "pdf_excel" ? "PDF + XLSX" : "PDF";
-
-        // Gera o nome padronizado: OS - ID - Código - Sigla - Revisão
-        const pdfName = formatReportFilename({
-          os: group.osNumero,
-          amostraId: en.amostra,
-          amostraCodigo: en.codigo || en.amostra,
-          tipoOrNome: en.ensaio,
-          revisao: en.revisao || "0",
-          ext: "pdf",
-        });
+        // Daqui em diante só "Excel": os pacotes com PDF saem acima, do Drive.
+        const formato = "XLSX";
 
         const xlsxName = formatReportFilename({
           os: group.osNumero,
@@ -338,23 +350,15 @@ export function OsReportsView() {
           ext: "xlsx",
         });
 
-        if (tipoDownload === "pdf_excel" || tipoDownload === "excel") {
-          const excelBuffer = await generateOfficialExcelBuffer(meta);
-          folder.file(xlsxName, excelBuffer);
-        }
+        const excelBuffer = await generateOfficialExcelBuffer(meta);
+        folder.file(xlsxName, excelBuffer);
 
-        if (tipoDownload !== "excel") {
-          const pdfBlob = await generateOfficialPdfBlob(meta);
-          const pdfBuffer = await pdfBlob.arrayBuffer();
-          folder.file(pdfName, pdfBuffer);
-        }
-
-        manifesto += `- Arquivo: ${tipoDownload === "excel" ? xlsxName : pdfName} | Amostra: ${en.amostra} | Furo: ${en.furo || "—"} | Prof: ${en.prof || "—"}\n`;
+        manifesto += `- Arquivo: ${xlsxName} | Amostra: ${en.amostra} | Furo: ${en.furo || "—"} | Prof: ${en.prof || "—"}\n`;
         logItens.push({
           amostra: en.amostra,
           ensaio: en.ensaio,
           formato,
-          nomeArquivo: tipoDownload === "excel" ? xlsxName : pdfName,
+          nomeArquivo: xlsxName,
         });
       }
 
@@ -375,12 +379,7 @@ export function OsReportsView() {
       setDownloadLog({
         open: true,
         osNumero: group.osNumero,
-        tipo:
-          tipoDownload === "aprovados_pdf"
-            ? "Relatórios Aprovados em PDF"
-            : tipoDownload === "pdf_excel"
-              ? "Relatórios Completos (PDF + Excel)"
-              : "Planilhas em Excel",
+        tipo: "Planilhas em Excel",
         total: ensaiosAprovados.length,
         itens: logItens,
       });
@@ -700,11 +699,12 @@ export function OsReportsView() {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                disabled={!hasAprovados}
+                                disabled={(!hasAprovados && laudosAprovadosDaOs(group.osNumero).length === 0) || !!progressoPacote}
                                 className="h-8 text-xs gap-1.5 border-emerald-600/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 disabled:opacity-50"
                                 onClick={() => handleBatchDownload(group, "aprovados_pdf")}
                               >
-                                <FileText className="h-3.5 w-3.5 text-emerald-600" /> Aprovados (PDF)
+                                <FileText className="h-3.5 w-3.5 text-emerald-600" />{" "}
+                                {progressoPacote ? `Baixando ${progressoPacote.feitos}/${progressoPacote.total}…` : "Aprovados (PDF)"}
                               </Button>
                             </span>
                           </TooltipTrigger>
@@ -723,7 +723,7 @@ export function OsReportsView() {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                disabled={!hasAprovados}
+                                disabled={(!hasAprovados && laudosAprovadosDaOs(group.osNumero).length === 0) || !!progressoPacote}
                                 className="h-8 text-xs gap-1.5 disabled:opacity-50"
                                 onClick={() => handleBatchDownload(group, "pdf_excel")}
                               >
