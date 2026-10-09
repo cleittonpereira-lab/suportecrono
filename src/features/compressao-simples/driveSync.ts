@@ -2,6 +2,7 @@ import { syncRevisionToDrive, getDriveSyncStatus } from "@/lib/driveSync.functio
 import { blobToBase64 } from "@/lib/drive-sync-client";
 import type { CompressaoSimplesSample } from "./types";
 import type { Photo } from "@/features/lab/types";
+import { getCompressaoSimplesXlsxBase64, type ExportCsParams } from "./exportXlsx";
 
 export { blobToBase64 };
 
@@ -25,6 +26,8 @@ export interface SyncRevisionArgs {
   fotos?: DrivePhotoInput[];
   /** Substitui deliberadamente o PDF de uma revisão já emitida (ver enviarRevisaoAoDrive). */
   reemissao?: boolean;
+  /** Resultados para a planilha da revisão, gravada no Drive ao lado do PDF. */
+  planilha?: Omit<ExportCsParams, "sample" | "photos">;
 }
 
 export async function syncRevision(args: SyncRevisionArgs) {
@@ -34,6 +37,17 @@ export async function syncRevision(args: SyncRevisionArgs) {
     savedAt: new Date().toISOString(),
     rev: args.rev,
   };
+
+  // A planilha da revisão fica no Drive ao lado do PDF: é a que os pacotes
+  // de download entregam (antes eles geravam uma planilha genérica).
+  let xlsx: { filename: string; base64: string } | undefined;
+  if (args.planilha) {
+    try {
+      xlsx = await getCompressaoSimplesXlsxBase64({ ...args.planilha, sample: args.sample, photos: args.photos });
+    } catch (err) {
+      console.warn("Falha ao gerar XLSX para sync no Drive:", err);
+    }
+  }
 
   return syncRevisionToDrive({
     data: {
@@ -52,6 +66,7 @@ export async function syncRevision(args: SyncRevisionArgs) {
       },
       rev: args.rev,
       pdf: { filename: args.pdfFilename, base64: pdfBase64 },
+      xlsx,
       dadosJson: JSON.stringify(dados),
       fotos: args.fotos ?? [],
       manifest: {

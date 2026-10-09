@@ -2,6 +2,7 @@ import { syncRevisionToDrive } from "@/lib/driveSync.functions";
 import { blobToBase64 } from "@/lib/drive-sync-client";
 import type { OedSampleProps, OedStage, OedStageCalculated, OedPhysicalIndices, OedCompressibilityParams } from "./types";
 import type { Photo } from "@/features/lab/types";
+import { getOedometerXlsxBase64 } from "./exportXlsx";
 
 export interface SyncDriveResult {
   ok: boolean;
@@ -52,6 +53,22 @@ export async function syncOedometerRevisionToDrive(args: {
 
     const pdfBase64 = await blobToBase64(args.pdfBlob);
 
+    // A planilha da revisão fica no Drive ao lado do PDF: é a que os pacotes
+    // de download entregam (antes eles geravam uma planilha genérica).
+    let xlsx: { filename: string; base64: string } | undefined;
+    try {
+      xlsx = await getOedometerXlsxBase64({
+        sample: args.sample,
+        stages: args.stages,
+        phys: args.phys,
+        stagesCalc: args.stagesCalc,
+        params: args.params,
+        photos: args.photos,
+      });
+    } catch (err) {
+      console.warn("Falha ao gerar XLSX para sync no Drive:", err);
+    }
+
     const res = await syncRevisionToDrive({
       data: {
         scopeId: args.scopeId,
@@ -64,6 +81,7 @@ export async function syncOedometerRevisionToDrive(args: {
           filename: `ADENSAMENTO_${args.sample.os || "OS"}_${args.sample.code || "AMOSTRA"}_Rev${String(args.revNumber).padStart(2, "0")}.pdf`,
           base64: pdfBase64,
         },
+        xlsx,
         dadosJson,
         fotos: fotosPayload,
         manifest: {},

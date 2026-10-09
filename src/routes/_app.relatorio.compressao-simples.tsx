@@ -498,6 +498,7 @@ export function CompressaoSimplesPage() {
           scopeId, rev: last.rev, pdfBlob: last.pdfBlob, pdfFilename: last.filename, sample,
           photos: ctx?.photos || [], ctxOs: ctx?.os, ctxAmostra: ctx?.amostra,
           ctxEnsaio: { tipo: "compressao-simples", nome: sample.reportNumber }, fotos: fotosParaDrive(),
+          planilha: { results, media, comIndices, isCompleto },
         }),
         25000,
         "Sincronização com o Drive",
@@ -754,6 +755,7 @@ export function CompressaoSimplesPage() {
           scopeId, rev: saved.rev, pdfBlob: blob, pdfFilename: filename, sample,
           photos: ctx?.photos || [], ctxOs: ctx?.os, ctxAmostra: ctx?.amostra,
           ctxEnsaio: { tipo: "compressao-simples", nome: sample.reportNumber }, fotos: fotosParaDrive(),
+          planilha: { results, media, comIndices, isCompleto },
         }),
         25000,
         "Sincronização com o Drive",
@@ -826,6 +828,7 @@ export function CompressaoSimplesPage() {
           scopeId, rev: revAtual, pdfBlob: blob, pdfFilename: filename, sample,
           photos: ctx?.photos || [], ctxOs: ctx?.os, ctxAmostra: ctx?.amostra,
           ctxEnsaio: { tipo: "compressao-simples", nome: sample.reportNumber }, fotos: fotosParaDrive(),
+          planilha: { results, media, comIndices, isCompleto },
           // Substitui deliberadamente o PDF da MESMA revisão já emitida.
           reemissao: true,
         });

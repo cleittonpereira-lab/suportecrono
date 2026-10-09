@@ -920,3 +920,38 @@ export const getRevisionPdfBase64 = createServerFn({ method: "POST" })
  * Re-exporta getWorkflowStatuses centralizado e soberano de approvals.functions.ts
  */
 export { getWorkflowStatuses } from "./approvals.functions";
+
+/**
+ * Planilha ORIGINAL (.xlsx) de uma revisão, como foi gravada no Drive ao lado
+ * do PDF. `base64: null` quando a revisão não tem planilha no Drive — quem pede
+ * avisa em vez de gerar uma planilha genérica no lugar.
+ */
+export const getRevisionXlsxBase64 = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((v: unknown) => z.object({ scopeId: z.string().min(1), rev: z.number().int().nonnegative() }).parse(v))
+  .handler(async ({ data }): Promise<{ base64: string | null; nome: string | null }> => {
+    if (!isGoogleAuthConfigured()) {
+      throw new Error("O Google Drive não está configurado neste servidor.");
+    }
+    if (!parseScope(data.scopeId)) throw new Error("scopeId inválido.");
+    const laudos = await laudosDoEnsaio(data.scopeId);
+    if (!laudos) throw new Error("Ensaio não encontrado.");
+    const alvo = laudos.arquivos.find((f) => {
+      const m = /Rev-?(\d+)\.xlsx$/i.exec(f.name);
+      return m != null && Number(m[1]) === data.rev;
+    });
+    if (!alvo) return { base64: null, nome: null };
+
+    const res = await fetch(`${DRIVE_V3}/files/${alvo.id}?alt=media&supportsAllDrives=true`, {
+      method: "GET",
+      headers: await driveHeaders(),
+    });
+    if (!res.ok) throw new Error(`Drive download ${res.status}`);
+    const buf = new Uint8Array(await res.arrayBuffer());
+    let bin = "";
+    const CHUNK = 0x8000;
+    for (let i = 0; i < buf.length; i += CHUNK) {
+      bin += String.fromCharCode(...buf.subarray(i, i + CHUNK));
+    }
+    return { base64: btoa(bin), nome: alvo.name };
+  });

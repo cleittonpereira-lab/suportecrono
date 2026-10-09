@@ -48,15 +48,8 @@ import {
   removerPendenciaDigitacao,
 } from "@/lib/lab-pendencias.functions";
 import { useOsGroups, extractSampleDetails, abrirEnsaioNaCentral, type EnsaioItemOS, type OsGroup } from "@/features/lab/hooks/use-os-groups";
-import {
-  formatReportFilename,
-  generateOfficialExcelBuffer,
-  getEnsaioSigla,
-  type ReportItemMeta,
-} from "@/lib/report-export-generators";
 import { normOs } from "@/lib/schedule-utils";
 import { toast } from "sonner";
-import JSZip from "jszip";
 import { ETAPAS_COM_BANCADA, corEtapa, rotuloEtapa } from "@/lib/etapa-laudo";
 import { useAuth } from "@/hooks/use-auth";
 import { podeConcluirFora } from "@/lib/papeis";
@@ -118,15 +111,6 @@ export function OsReportsView() {
   const [archiveModal, setArchiveModal] = useState<OsGroup | null>(null);
   const [archiveObs, setArchiveObs] = useState("OS Arquivada — Relatório entregue fora da Central (Planilha Excel)");
   const [archiving, setArchiving] = useState(false);
-
-  // Modal de Log de Download
-  const [downloadLog, setDownloadLog] = useState<{
-    open: boolean;
-    osNumero: string;
-    tipo: string;
-    total: number;
-    itens: Array<{ amostra: string; ensaio: string; formato: string; nomeArquivo: string }>;
-  } | null>(null);
 
   // Queries
   const conclExtFn = useServerFn(concluirPendenciaExterna);
@@ -202,193 +186,27 @@ export function OsReportsView() {
     await baixarUm(laudo);
   }
 
-  // Baixa laudo individual em Excel
-  async function downloadSingleExcel(group: OsGroup, en: EnsaioItemOS) {
-    const meta: ReportItemMeta = {
-      os: group.osNumero,
-      cliente: group.cliente,
-      obra: group.obra,
-      local: group.local,
-      amostraId: en.amostra,
-      amostraCodigo: en.codigo || en.amostra,
-      furo: en.furo,
-      profundidade: en.prof,
-      ensaio: en.ensaio,
-      tipo: en.tipo,
-      revisao: en.revisao || "0",
-      status: "Aprovado",
-      responsavel: en.aprovador || en.verificador || "Engº Maurício Silva · CREA-SP",
-    };
-
-    const filename = formatReportFilename({
-      os: group.osNumero,
-      amostraId: en.amostra,
-      amostraCodigo: en.codigo || en.amostra,
-      tipoOrNome: en.ensaio,
-      revisao: en.revisao || "0",
-      ext: "xlsx",
-    });
-
-    toast.loading(`Gerando planilha Excel de ${en.amostra}…`, { id: "single-xlsx" });
-    try {
-      const buffer = await generateOfficialExcelBuffer(meta);
-      const blob = new Blob([buffer], {
-        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      toast.success(`Planilha Excel baixada: ${filename}`, { id: "single-xlsx" });
-    } catch (err: any) {
-      toast.error(`Erro ao gerar Excel: ${err.message}`, { id: "single-xlsx" });
+  // Baixa a planilha individual: a ORIGINAL do Drive, da maior revisão aprovada.
+  async function downloadSingleExcel(_group: OsGroup, en: EnsaioItemOS) {
+    const laudo = laudoDoEnsaio(en);
+    if (!laudo || laudo.rev_aprovada == null) {
+      toast.error(`${en.amostra} · ${en.ensaio}: não há revisão aprovada para baixar a planilha.`);
+      return;
     }
+    await baixarUm(laudo, "xlsx");
   }
 
-  // Download em massa por OS - COM ARQUIVOS REAIS E NOMENCLATURA PADRÃO
+  // Download em lote por OS: arquivos ORIGINAIS do Drive (PDF e/ou planilha), última revisão aprovada.
+  // Antes os três botões geravam arquivos genéricos na hora, sem os resultados do ensaio.
   async function handleBatchDownload(group: OsGroup, tipoDownload: "aprovados_pdf" | "pdf_excel" | "excel") {
-    const ensaiosAprovados = group.ensaios.filter(
-      (e) => e.status === "aprovado" || e.status === "concluido_externo",
-    );
-
-    // PDF (com ou sem as planilhas): os PDFs ORIGINAIS do Drive, última revisão aprovada.
-    if (tipoDownload !== "excel") {
-      const laudos = laudosAprovadosDaOs(group.osNumero);
-      if (laudos.length === 0) {
-        toast.error(`OS ${group.osNumero}: nenhum laudo com revisão aprovada no fluxo para baixar.`);
-        return;
-      }
-      await baixarPacote(
-        laudos,
-        tipoDownload === "pdf_excel"
-          ? async (zip) => {
-              const pasta = zip.folder("Planilhas") || zip;
-              for (const en of ensaiosAprovados) {
-                const meta: ReportItemMeta = {
-                  os: group.osNumero,
-                  cliente: group.cliente,
-                  obra: group.obra,
-                  local: group.local,
-                  amostraId: en.amostra,
-                  amostraCodigo: en.codigo || en.amostra,
-                  furo: en.furo,
-                  profundidade: en.prof,
-                  ensaio: en.ensaio,
-                  tipo: en.tipo,
-                  revisao: en.revisao || "0",
-                  status: "Aprovado",
-                  responsavel: en.aprovador || en.verificador || "Engº Maurício Silva · CREA-SP",
-                };
-                const nome = formatReportFilename({
-                  os: group.osNumero,
-                  amostraId: en.amostra,
-                  amostraCodigo: en.codigo || en.amostra,
-                  tipoOrNome: en.ensaio,
-                  revisao: en.revisao || "0",
-                  ext: "xlsx",
-                });
-                pasta.file(nome, await generateOfficialExcelBuffer(meta));
-              }
-            }
-          : undefined,
-      );
+    const laudos = laudosAprovadosDaOs(group.osNumero);
+    if (laudos.length === 0) {
+      toast.error(`OS ${group.osNumero}: nenhum laudo com revisão aprovada no fluxo para baixar.`);
       return;
     }
-
-    if (ensaiosAprovados.length === 0) {
-      toast.error("Não há laudos aprovados/concluídos nesta OS para baixar.");
-      return;
-    }
-
-    toast.loading(`Gerando pacote oficial da OS ${group.osNumero}…`, { id: "batch-dl" });
-
-    try {
-      const zip = new JSZip();
-      const folder = zip.folder(`OS_${group.osNumero}_Laudos_Oficiais`) || zip;
-
-      const logItens: Array<{ amostra: string; ensaio: string; formato: string; nomeArquivo: string }> = [];
-
-      let manifesto = `====================================================\n`;
-      manifesto += `SUPORTE INFRA — PACOTE OFICIAL DE LAUDOS DE LABORATÓRIO\n`;
-      manifesto += `OS: ${group.osNumero} | CLIENTE: ${group.cliente || "—"}\n`;
-      manifesto += `OBRA: ${group.obra || "—"}\n`;
-      manifesto += `LOCAL: ${group.local || "—"}\n`;
-      manifesto += `DATA DE EMISSÃO: ${new Date().toLocaleString("pt-BR")}\n`;
-      manifesto += `====================================================\n\n`;
-      manifesto += `LAUDOS OFICIAIS EXPORTADOS (PADRÃO NOMENCLATURA CORPORATIVO):\n`;
-
-      for (const en of ensaiosAprovados) {
-        const meta: ReportItemMeta = {
-          os: group.osNumero,
-          cliente: group.cliente,
-          obra: group.obra,
-          local: group.local,
-          amostraId: en.amostra,
-          amostraCodigo: en.codigo || en.amostra,
-          furo: en.furo,
-          profundidade: en.prof,
-          ensaio: en.ensaio,
-          tipo: en.tipo,
-          revisao: en.revisao || "0",
-          status: "Aprovado",
-          responsavel: en.aprovador || en.verificador || "Engº Maurício Silva · CREA-SP",
-        };
-
-        // Daqui em diante só "Excel": os pacotes com PDF saem acima, do Drive.
-        const formato = "XLSX";
-
-        const xlsxName = formatReportFilename({
-          os: group.osNumero,
-          amostraId: en.amostra,
-          amostraCodigo: en.codigo || en.amostra,
-          tipoOrNome: en.ensaio,
-          revisao: en.revisao || "0",
-          ext: "xlsx",
-        });
-
-        const excelBuffer = await generateOfficialExcelBuffer(meta);
-        folder.file(xlsxName, excelBuffer);
-
-        manifesto += `- Arquivo: ${xlsxName} | Amostra: ${en.amostra} | Furo: ${en.furo || "—"} | Prof: ${en.prof || "—"}\n`;
-        logItens.push({
-          amostra: en.amostra,
-          ensaio: en.ensaio,
-          formato,
-          nomeArquivo: xlsxName,
-        });
-      }
-
-      folder.file("MANIFESTO_DE_ENTREGA.txt", manifesto);
-
-      const content = await zip.generateAsync({ type: "blob" });
-      const url = URL.createObjectURL(content);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `OS_${group.osNumero}_Laudos_Oficiais_${tipoDownload}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      toast.success(`Pacote da OS ${group.osNumero} baixado com sucesso!`, { id: "batch-dl" });
-
-      setDownloadLog({
-        open: true,
-        osNumero: group.osNumero,
-        tipo: "Planilhas em Excel",
-        total: ensaiosAprovados.length,
-        itens: logItens,
-      });
-    } catch (err: any) {
-      toast.error(`Erro ao gerar download: ${err.message}`, { id: "batch-dl" });
-    }
+    await baixarPacote(laudos, tipoDownload === "aprovados_pdf" ? "pdf" : tipoDownload === "pdf_excel" ? "pdf_xlsx" : "xlsx");
   }
 
-  // Confirmação de exclusão
   function handleDeleteConfirm() {
     if (!deleteModal) return;
     if (deleteModal.type === "os") {
@@ -966,60 +784,6 @@ export function OsReportsView() {
             >
               {archiving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
               Confirmar Arquivamento da OS
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Modal de Log de Download */}
-      <Dialog open={Boolean(downloadLog?.open)} onOpenChange={(o) => !o && setDownloadLog(null)}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base text-emerald-700 dark:text-emerald-400">
-              <CheckCircle2 className="h-5 w-5 text-emerald-600" /> Exportação Concluída com Sucesso!
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              Pacote de laudos gerado para a <b>OS {downloadLog?.osNumero}</b> ({downloadLog?.tipo}).
-            </DialogDescription>
-          </DialogHeader>
-
-          {downloadLog && (
-            <div className="space-y-3 py-2">
-              <div className="p-3 bg-muted/40 rounded-lg text-xs space-y-1.5 border">
-                <div className="font-semibold text-foreground">
-                  Total de laudos aprovados exportados: <span className="text-primary">{downloadLog.total}</span>
-                </div>
-                <div className="text-muted-foreground text-[11px]">
-                  Todos os arquivos foram gerados no padrão corporativo e compactados em ZIP com manifesto.
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <div className="text-xs font-semibold text-muted-foreground">Arquivos incluídos no pacote:</div>
-                <div className="max-h-56 overflow-y-auto rounded border bg-card p-2 text-xs space-y-1.5">
-                  {downloadLog.itens.map((it, idx) => (
-                    <div key={idx} className="flex flex-col border-b pb-1.5 last:border-0 last:pb-0">
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-foreground">
-                          {it.amostra} · {it.ensaio}
-                        </span>
-                        <Badge variant="secondary" className="text-[9px]">
-                          {it.formato}
-                        </Badge>
-                      </div>
-                      <div className="text-[10px] text-muted-foreground font-mono truncate" title={it.nomeArquivo}>
-                        📄 {it.nomeArquivo}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button size="sm" onClick={() => setDownloadLog(null)}>
-              Fechar
             </Button>
           </DialogFooter>
         </DialogContent>
