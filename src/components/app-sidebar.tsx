@@ -22,6 +22,7 @@ import {
   Gauge,
   Users,
   type LucideIcon,
+  Drill,
 } from "lucide-react";
 import {
   Sidebar,
@@ -100,6 +101,7 @@ const sections: readonly NavSection[] = [
     label: "ENSAIOS ESPECIAIS",
     items: [
       { title: "Ensaios Especiais", url: "/relatorio/especiais", icon: Sparkles },
+      { title: "Acompanhamento de CPTu", url: "/relatorio/especiais/cptu", icon: Drill },
     ],
   },
   {
@@ -119,8 +121,12 @@ const sections: readonly NavSection[] = [
 export function AppSidebar() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { canAccess, role } = useAuth();
-  const isActive = (url: string) =>
+  const casa = (url: string) =>
     url === "/" ? pathname === "/" : pathname.startsWith(url);
+  // Só o item mais específico fica ativo (ex.: Ensaios Especiais × CPTu).
+  const todasUrls = sections.flatMap((s) => s.items.map((i) => i.url));
+  const isActive = (url: string) =>
+    casa(url) && !todasUrls.some((u) => u.length > url.length && u.startsWith(url + "/") && casa(u));
 
   // Filtra items conforme permissão + adiciona admin section para admins
   const visibleSections = sections

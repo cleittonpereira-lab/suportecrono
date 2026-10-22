@@ -55,6 +55,8 @@ export const PASTAS_DE_DADOS: readonly string[] = [
   "operacao",
   // Qualidade - LAB: atas de reunião (um JSON por reunião).
   "qualidade-atas",
+  // Acompanhamento de CPTu (extrato da SOND + controle da equipe).
+  "cptu",
 ];
 /** JSON soltos na raiz do Drive que também são dados do app. */
 export const DOCUMENTOS_DA_RAIZ: readonly string[] = [

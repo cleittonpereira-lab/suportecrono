@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useCadastroOs } from "@/hooks/use-cadastro-os";
+import { CadastroAviso } from "@/components/cadastro-aviso";
 import {
   SERVICOS,
   MESES,
@@ -93,6 +94,7 @@ export function CadastroListView() {
 
   return (
     <div className="space-y-5">
+      <CadastroAviso data={data} />
       {/* Resumo compacto por serviço */}
       <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-2">
         {SERVICOS.map((s) => {
