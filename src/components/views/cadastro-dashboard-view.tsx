@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useCadastroOs } from "@/hooks/use-cadastro-os";
+import { CadastroAviso } from "@/components/cadastro-aviso";
 import {
   SERVICOS,
   MESES,
@@ -113,6 +114,7 @@ export function CadastroDashboardView() {
 
   return (
     <div className="space-y-5">
+      <CadastroAviso data={data} />
       {/* Filtro Mês */}
       <div className="flex items-center justify-end">
         <Select value={mes} onValueChange={(v) => setMes(v as "all" | Mes)}>
