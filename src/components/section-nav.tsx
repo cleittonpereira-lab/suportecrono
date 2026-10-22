@@ -31,6 +31,7 @@ import {
   Droplets,
   Gauge,
   type LucideIcon,
+  Drill,
 } from "lucide-react";
 
 type Tab = { title: string; url: string; icon: LucideIcon };
@@ -125,6 +126,7 @@ const SECTIONS: readonly Section[] = [
     match: (p) => p.startsWith("/relatorio/especiais"),
     tabs: [
       { title: "Ensaios Especiais", url: "/relatorio/especiais", icon: Sparkles },
+      { title: "Acompanhamento de CPTu", url: "/relatorio/especiais/cptu", icon: Drill },
     ],
   },
   {
@@ -173,8 +175,13 @@ export function SectionNav() {
 
   const activeSection = visibleSections.find((s) => s.match(pathname));
 
-  const isActive = (url: string) =>
+  const casa = (url: string) =>
     url === "/" ? pathname === "/" : pathname === url || pathname.startsWith(url + "/");
+  // Só o item mais específico fica ativo (em /relatorio/especiais/cptu, o
+  // "Acompanhamento de CPTu" — não também o "Ensaios Especiais").
+  const todasUrls = visibleSections.flatMap((s) => s.tabs.map((t) => t.url));
+  const isActive = (url: string) =>
+    casa(url) && !todasUrls.some((u) => u.length > url.length && u.startsWith(url + "/") && casa(u));
 
   return (
     <nav aria-label="Navegação principal" className="w-full overflow-x-auto scrollbar-none">

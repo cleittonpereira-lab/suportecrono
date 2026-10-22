@@ -53,6 +53,8 @@ export const PASTAS_DE_DADOS: readonly string[] = [
   "avisos",
   // Saúde do servidor (Fase 6): falhas e lentidão anotadas, último alerta.
   "operacao",
+  // Acompanhamento de CPTu (extrato da SOND + controle da equipe).
+  "cptu",
 ];
 /** JSON soltos na raiz do Drive que também são dados do app. */
 export const DOCUMENTOS_DA_RAIZ: readonly string[] = [

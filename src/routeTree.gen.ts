@@ -82,6 +82,7 @@ import { Route as AppRelatorioDigitalizacaoPendenciasRouteImport } from './route
 import { Route as AppRelatorioDigitalizacaoPermVRouteImport } from './routes/_app.relatorio.digitalizacao.perm-v'
 import { Route as AppRelatorioEspeciaisIndexRouteImport } from './routes/_app.relatorio.especiais.index'
 import { Route as AppRelatorioEspeciaisOsNumeroRouteImport } from './routes/_app.relatorio.especiais.$osNumero'
+import { Route as AppRelatorioEspeciaisCptuRouteImport } from './routes/_app.relatorio.especiais.cptu'
 import { Route as AppRelatorioOsIndexRouteImport } from './routes/_app.relatorio.os.index'
 import { Route as AppRelatorioOsOsIdIndexRouteImport } from './routes/_app.relatorio.os.$osId.index'
 import { Route as AppRelatorioOsOsIdAmostraAmostraIdIndexRouteImport } from './routes/_app.relatorio.os.$osId.amostra.$amostraId.index'
@@ -484,6 +485,12 @@ const AppRelatorioEspeciaisOsNumeroRoute =
     path: '/relatorio/especiais/$osNumero',
     getParentRoute: () => AppRoute,
   } as any)
+const AppRelatorioEspeciaisCptuRoute =
+  AppRelatorioEspeciaisCptuRouteImport.update({
+    id: '/relatorio/especiais/cptu',
+    path: '/relatorio/especiais/cptu',
+    getParentRoute: () => AppRoute,
+  } as any)
 const AppRelatorioOsIndexRoute = AppRelatorioOsIndexRouteImport.update({
   id: '/relatorio/os/',
   path: '/relatorio/os/',
@@ -578,6 +585,7 @@ export interface FileRoutesByFullPath {
   '/relatorio/digitalizacao/pendencias': typeof AppRelatorioDigitalizacaoPendenciasRoute
   '/relatorio/digitalizacao/perm-v': typeof AppRelatorioDigitalizacaoPermVRoute
   '/relatorio/especiais/$osNumero': typeof AppRelatorioEspeciaisOsNumeroRoute
+  '/relatorio/especiais/cptu': typeof AppRelatorioEspeciaisCptuRoute
   '/relatorio/digitalizacao/': typeof AppRelatorioDigitalizacaoIndexRoute
   '/relatorio/especiais/': typeof AppRelatorioEspeciaisIndexRoute
   '/relatorio/os/': typeof AppRelatorioOsIndexRoute
@@ -655,6 +663,7 @@ export interface FileRoutesByTo {
   '/relatorio/digitalizacao/pendencias': typeof AppRelatorioDigitalizacaoPendenciasRoute
   '/relatorio/digitalizacao/perm-v': typeof AppRelatorioDigitalizacaoPermVRoute
   '/relatorio/especiais/$osNumero': typeof AppRelatorioEspeciaisOsNumeroRoute
+  '/relatorio/especiais/cptu': typeof AppRelatorioEspeciaisCptuRoute
   '/relatorio/digitalizacao': typeof AppRelatorioDigitalizacaoIndexRoute
   '/relatorio/especiais': typeof AppRelatorioEspeciaisIndexRoute
   '/relatorio/os': typeof AppRelatorioOsIndexRoute
@@ -735,6 +744,7 @@ export interface FileRoutesById {
   '/_app/relatorio/digitalizacao/pendencias': typeof AppRelatorioDigitalizacaoPendenciasRoute
   '/_app/relatorio/digitalizacao/perm-v': typeof AppRelatorioDigitalizacaoPermVRoute
   '/_app/relatorio/especiais/$osNumero': typeof AppRelatorioEspeciaisOsNumeroRoute
+  '/_app/relatorio/especiais/cptu': typeof AppRelatorioEspeciaisCptuRoute
   '/_app/relatorio/digitalizacao/': typeof AppRelatorioDigitalizacaoIndexRoute
   '/_app/relatorio/especiais/': typeof AppRelatorioEspeciaisIndexRoute
   '/_app/relatorio/os/': typeof AppRelatorioOsIndexRoute
@@ -815,6 +825,7 @@ export interface FileRouteTypes {
     | '/relatorio/digitalizacao/pendencias'
     | '/relatorio/digitalizacao/perm-v'
     | '/relatorio/especiais/$osNumero'
+    | '/relatorio/especiais/cptu'
     | '/relatorio/digitalizacao/'
     | '/relatorio/especiais/'
     | '/relatorio/os/'
@@ -892,6 +903,7 @@ export interface FileRouteTypes {
     | '/relatorio/digitalizacao/pendencias'
     | '/relatorio/digitalizacao/perm-v'
     | '/relatorio/especiais/$osNumero'
+    | '/relatorio/especiais/cptu'
     | '/relatorio/digitalizacao'
     | '/relatorio/especiais'
     | '/relatorio/os'
@@ -971,6 +983,7 @@ export interface FileRouteTypes {
     | '/_app/relatorio/digitalizacao/pendencias'
     | '/_app/relatorio/digitalizacao/perm-v'
     | '/_app/relatorio/especiais/$osNumero'
+    | '/_app/relatorio/especiais/cptu'
     | '/_app/relatorio/digitalizacao/'
     | '/_app/relatorio/especiais/'
     | '/_app/relatorio/os/'
@@ -1505,6 +1518,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRelatorioEspeciaisOsNumeroRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/relatorio/especiais/cptu': {
+      id: '/_app/relatorio/especiais/cptu'
+      path: '/relatorio/especiais/cptu'
+      fullPath: '/relatorio/especiais/cptu'
+      preLoaderRoute: typeof AppRelatorioEspeciaisCptuRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/relatorio/os/': {
       id: '/_app/relatorio/os/'
       path: '/relatorio/os'
@@ -1633,6 +1653,7 @@ interface AppRouteChildren {
   AppProgramacaoIndexRoute: typeof AppProgramacaoIndexRoute
   AppRelatorioIndexRoute: typeof AppRelatorioIndexRoute
   AppRelatorioEspeciaisOsNumeroRoute: typeof AppRelatorioEspeciaisOsNumeroRoute
+  AppRelatorioEspeciaisCptuRoute: typeof AppRelatorioEspeciaisCptuRoute
   AppRelatorioEspeciaisIndexRoute: typeof AppRelatorioEspeciaisIndexRoute
   AppRelatorioOsIndexRoute: typeof AppRelatorioOsIndexRoute
   AppRelatorioOsOsIdIndexRoute: typeof AppRelatorioOsOsIdIndexRoute
@@ -1698,6 +1719,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppProgramacaoIndexRoute: AppProgramacaoIndexRoute,
   AppRelatorioIndexRoute: AppRelatorioIndexRoute,
   AppRelatorioEspeciaisOsNumeroRoute: AppRelatorioEspeciaisOsNumeroRoute,
+  AppRelatorioEspeciaisCptuRoute: AppRelatorioEspeciaisCptuRoute,
   AppRelatorioEspeciaisIndexRoute: AppRelatorioEspeciaisIndexRoute,
   AppRelatorioOsIndexRoute: AppRelatorioOsIndexRoute,
   AppRelatorioOsOsIdIndexRoute: AppRelatorioOsOsIdIndexRoute,
