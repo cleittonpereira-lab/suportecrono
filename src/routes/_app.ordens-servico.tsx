@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useCadastroOs } from "@/hooks/use-cadastro-os";
+import { CadastroAviso } from "@/components/cadastro-aviso";
 import { useSchedule } from "@/hooks/use-schedule";
 import { useEntregues } from "@/hooks/use-entregues";
 import {
@@ -232,6 +233,7 @@ function Page() {
         title="Painel de OS"
         description="Visão consolidada de cada Ordem de Serviço"
       />
+      <CadastroAviso data={cadData} />
 
       <Card>
         <CardContent className="pt-6 space-y-3">
