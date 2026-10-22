@@ -87,6 +87,8 @@ import {
 
 const QK = ["cptu"] as const;
 const QK_CAD = ["cptu-cadastro"] as const;
+/** Valor do filtro de tomador para as OS que não estão no Cadastro de OS. */
+const FORA_DO_CADASTRO = "__fora__";
 
 const fmtM = (n: number) => n.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
 const fmtData = (iso: string | null) => (iso ? iso.split("-").reverse().join("/") : "—");
@@ -170,6 +172,7 @@ export function CptuView() {
   const [busca, setBusca] = useState("");
   const [statusFiltro, setStatusFiltro] = useState<Set<CptuStatus>>(new Set());
   const [osFiltro, setOsFiltro] = useState<string>("todas");
+  const [tomadorFiltro, setTomadorFiltro] = useState<string>("todos");
   const [etapa, setEtapa] = useState<FiltroEtapa>("todas");
   const [mostrarAusentes, setMostrarAusentes] = useState(false);
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
@@ -178,6 +181,7 @@ export function CptuView() {
 
   const porOs = cad?.porOs ?? {};
   const infoOs = (os: string): CptuOsInfo | undefined => porOs[chaveOs(os)];
+  const tomadorDe = (os: string) => infoOs(os)?.tomador?.trim() || FORA_DO_CADASTRO;
 
   const todos = useMemo(() => {
     const regs = data?.registros ?? [];
@@ -207,6 +211,7 @@ export function CptuView() {
     return ativos.filter((r) => {
       if (statusFiltro.size && !statusFiltro.has(r.status)) return false;
       if (osFiltro !== "todas" && r.os !== osFiltro) return false;
+      if (tomadorFiltro !== "todos" && tomadorDe(r.os) !== tomadorFiltro) return false;
       if (etapa === "faltando" && etapasFaltando(r).length === 0) return false;
       if (etapa === "sem-recebimento" && !(foiExecutado(r) && !r.recebimentoCampo)) return false;
       if (etapa === "sem-verificacao" && !(foiExecutado(r) && !r.verificacaoBrutos)) return false;
@@ -222,9 +227,27 @@ export function CptuView() {
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ativos, busca, statusFiltro, osFiltro, etapa, porOs]);
+  }, [ativos, busca, statusFiltro, osFiltro, tomadorFiltro, etapa, porOs]);
 
-  const listaOs = useMemo(() => [...new Set(ativos.map((r) => r.os))].sort(), [ativos]);
+  // Tomadores com quantos CPTu cada um tem; "fora do cadastro" vai por último.
+  const listaTomadores = useMemo(() => {
+    const cont = new Map<string, number>();
+    for (const r of ativos) cont.set(tomadorDe(r.os), (cont.get(tomadorDe(r.os)) ?? 0) + 1);
+    return [...cont.entries()].sort(([a], [b]) =>
+      a === FORA_DO_CADASTRO ? 1 : b === FORA_DO_CADASTRO ? -1 : a.localeCompare(b, "pt-BR"),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ativos, porOs]);
+
+  // Com um tomador escolhido, a lista de OS mostra só as dele.
+  const listaOs = useMemo(
+    () =>
+      [...new Set(ativos.map((r) => r.os))]
+        .filter((os) => tomadorFiltro === "todos" || tomadorDe(os) === tomadorFiltro)
+        .sort(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [ativos, tomadorFiltro, porOs],
+  );
 
   const salvar = (ids: string[], patch: CptuPatch) => atualizar.mutate({ ids, patch });
 
@@ -240,9 +263,15 @@ export function CptuView() {
     setBusca("");
     setStatusFiltro(new Set());
     setOsFiltro("todas");
+    setTomadorFiltro("todos");
     setEtapa("todas");
   };
-  const temFiltro = busca || statusFiltro.size || osFiltro !== "todas" || etapa !== "todas";
+  const temFiltro =
+    busca ||
+    statusFiltro.size ||
+    osFiltro !== "todas" ||
+    tomadorFiltro !== "todos" ||
+    etapa !== "todas";
 
   const ultimaImportacao = data?.importacoes.at(-1);
 
@@ -346,6 +375,28 @@ export function CptuView() {
                   <span className="tabular-nums opacity-70">{resumo.porStatus[s]}</span>
                 </button>
               ))}
+              <Select
+                value={tomadorFiltro}
+                onValueChange={(t) => {
+                  setTomadorFiltro(t);
+                  // A OS escolhida pode não ser desse tomador.
+                  if (t !== "todos" && osFiltro !== "todas" && tomadorDe(osFiltro) !== t)
+                    setOsFiltro("todas");
+                }}
+              >
+                <SelectTrigger className="h-8 w-52 text-xs">
+                  <SelectValue placeholder="Tomador" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todos os tomadores</SelectItem>
+                  {listaTomadores.map(([t, n]) => (
+                    <SelectItem key={t} value={t}>
+                      {t === FORA_DO_CADASTRO ? "OS fora do cadastro" : t}{" "}
+                      <span className="opacity-60">({n})</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Select value={osFiltro} onValueChange={setOsFiltro}>
                 <SelectTrigger className="h-8 w-44 text-xs">
                   <SelectValue placeholder="OS" />
@@ -932,6 +983,8 @@ function Planilha({
               />
             </th>
             <th className={th}>OS</th>
+            <th className={th}>Tomador</th>
+            <th className={th}>Obra / Local</th>
             <th className={th}>CPTu</th>
             <th className={th}>Status</th>
             <th className={th}>Desde</th>
@@ -976,11 +1029,36 @@ function Planilha({
                     <span className="font-mono font-semibold">{r.os}</span>
                     <SondButton os={r.os} />
                   </div>
+                  {info?.sup && (
+                    <div className="whitespace-nowrap text-[10px] text-muted-foreground">
+                      {info.sup}
+                    </div>
+                  )}
+                </td>
+                <td className={td}>
                   {info ? (
+                    <div className="max-w-[150px] text-[11px] font-medium leading-tight">
+                      {info.tomador}
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-muted-foreground/60">fora do cadastro</div>
+                  )}
+                </td>
+                <td className={td}>
+                  {info && (info.obra || info.local) ? (
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <div className="max-w-[170px] cursor-default truncate text-[11px] text-muted-foreground">
-                          {info.tomador}
+                        <div className="min-w-[220px] max-w-[300px] cursor-default">
+                          {info.obra && (
+                            <div className="line-clamp-2 text-[11px] leading-tight">
+                              {info.obra}
+                            </div>
+                          )}
+                          {info.local && (
+                            <div className="mt-0.5 truncate text-[10px] text-muted-foreground">
+                              {info.local}
+                            </div>
+                          )}
                         </div>
                       </TooltipTrigger>
                       <TooltipContent className="max-w-sm text-xs">
@@ -994,7 +1072,7 @@ function Planilha({
                       </TooltipContent>
                     </Tooltip>
                   ) : (
-                    <div className="text-[11px] text-muted-foreground/60">fora do cadastro</div>
+                    <span className="text-muted-foreground/50">—</span>
                   )}
                 </td>
                 <td className={td}>
@@ -1478,6 +1556,7 @@ async function exportarExcel(
       Tomador: info?.tomador ?? "",
       Obra: info?.obra ?? "",
       Local: info?.local ?? "",
+      SUP: info?.sup ?? "",
       CPTu: r.identificacao,
       Status: STATUS_LABEL[r.status],
       Desde: fmtData(r.desde),
