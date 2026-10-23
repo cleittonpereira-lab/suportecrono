@@ -116,6 +116,8 @@ const AtualizarInput = z.object({
       observacoes: z.string().max(4000),
       linkSondagemRef: link,
       linkDadosBrutos: link,
+      atencaoVerificada: z.boolean(),
+      atencaoNota: z.string().max(500),
     })
     .partial()
     .refine((p) => Object.keys(p).length > 0, "Nada para alterar."),

@@ -68,6 +68,12 @@ export type CptuRegistro = CptuLinhaImportada & {
   linkDadosBrutos: string;
   /** Não veio na última importação (saiu do mapa da SOND). */
   ausenteNaSond: boolean;
+  /** Atenção verificada pela equipe: quando e quem deu a baixa ("" = não verificada). */
+  atencaoVerificadaEm: string;
+  atencaoVerificadaPor: string;
+  /** Status + descrição de campo no momento da baixa. Se a SOND mudar isso, a baixa deixa de valer. */
+  atencaoSnapshot: string;
+  atencaoNota: string;
   criadoEm: string;
   atualizadoEm: string;
   atualizadoPor: string;
@@ -248,7 +254,7 @@ export function lerExtratoSond(tabela: string[][]): ResultadoLeitura {
   return { linhas, ignoradas };
 }
 
-function novoRegistro(l: CptuLinhaImportada, em: string, por: string): CptuRegistro {
+export function novoRegistro(l: CptuLinhaImportada, em: string, por: string): CptuRegistro {
   return {
     ...l,
     id: chaveCptu(l.os, l.identificacao),
@@ -260,12 +266,28 @@ function novoRegistro(l: CptuLinhaImportada, em: string, por: string): CptuRegis
     linkSondagemRef: "",
     linkDadosBrutos: "",
     ausenteNaSond: false,
+    atencaoVerificadaEm: "",
+    atencaoVerificadaPor: "",
+    atencaoSnapshot: "",
+    atencaoNota: "",
     criadoEm: em,
     atualizadoEm: em,
     atualizadoPor: por,
     historico: [{ em, por, campo: "importação", de: "", para: STATUS_LABEL[l.status] }],
   };
 }
+
+/** Status + descrição de campo: o que a baixa de atenção "viu". */
+export const snapshotAtencao = (r: Pick<CptuRegistro, "status" | "obsCampo">) =>
+  `${r.status}|${r.obsCampo}`;
+
+/**
+ * A atenção foi verificada e a SOND não mudou nada desde então. Registros de
+ * antes desta marcação não têm os campos: contam como não verificados.
+ */
+export const verificacaoVale = (
+  r: Pick<CptuRegistro, "status" | "obsCampo" | "atencaoVerificadaEm" | "atencaoSnapshot">,
+) => !!r.atencaoVerificadaEm && r.atencaoSnapshot === snapshotAtencao(r);
 
 function registrarEvento(r: CptuRegistro, ev: CptuEvento) {
   r.historico = [...r.historico, ev].slice(-MAX_HISTORICO);
@@ -360,8 +382,12 @@ export type CptuPatch = Partial<
     | "observacoes"
     | "linkSondagemRef"
     | "linkDadosBrutos"
+    | "atencaoNota"
   >
->;
+> & {
+  /** Dar baixa (true) ou reabrir (false) o ponto de atenção. Não é um campo gravado direto. */
+  atencaoVerificada?: boolean;
+};
 
 const NOME_CAMPO: Record<keyof CptuPatch, string> = {
   status: "status",
@@ -371,6 +397,8 @@ const NOME_CAMPO: Record<keyof CptuPatch, string> = {
   observacoes: "observações",
   linkSondagemRef: "link da sondagem de referência",
   linkDadosBrutos: "link dos dados brutos",
+  atencaoNota: "nota da atenção",
+  atencaoVerificada: "atenção verificada",
 };
 
 function textoDoValor(campo: keyof CptuPatch, v: unknown): string {
@@ -389,6 +417,7 @@ export function aplicarPatch(
 ): CptuRegistro {
   let novo: CptuRegistro | null = null;
   for (const campo of Object.keys(patch) as (keyof CptuPatch)[]) {
+    if (campo === "atencaoVerificada") continue;
     const v = patch[campo];
     if (v === undefined || v === r[campo]) continue;
     novo ??= { ...r, historico: [...r.historico] };
@@ -400,6 +429,20 @@ export function aplicarPatch(
       para: textoDoValor(campo, v),
     });
     (novo as Record<string, unknown>)[campo] = v;
+  }
+  const baixa = patch.atencaoVerificada;
+  if (baixa !== undefined && baixa !== verificacaoVale(r)) {
+    novo ??= { ...r, historico: [...r.historico] };
+    registrarEvento(novo, {
+      em,
+      por,
+      campo: NOME_CAMPO.atencaoVerificada,
+      de: baixa ? "Não" : "Sim",
+      para: baixa ? "Sim" : "Não",
+    });
+    novo.atencaoVerificadaEm = baixa ? em : "";
+    novo.atencaoVerificadaPor = baixa ? por : "";
+    novo.atencaoSnapshot = baixa ? snapshotAtencao(r) : "";
   }
   if (!novo) return r;
   novo.atualizadoEm = em;

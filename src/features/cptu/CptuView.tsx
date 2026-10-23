@@ -61,6 +61,16 @@ import {
 } from "@/lib/cptu.functions";
 import { CptuMap, STATUS_COR } from "./CptuMap";
 import {
+  LIMITE_RASO_M,
+  POSSIBILIDADE_LABEL,
+  POSSIBILIDADE_ORDEM,
+  analisarAtencao,
+  pontosDeAtencao,
+  resumoAtencao,
+  type ItemAtencao,
+  type Possibilidade,
+} from "./atencao";
+import {
   CPTU_STATUS,
   RELATORIO_LABEL,
   STATUS_LABEL,
@@ -78,6 +88,7 @@ import {
   profundidadePrevista,
   prontoParaConcluir,
   resumir,
+  verificacaoVale,
   type CptuLinhaImportada,
   type CptuPatch,
   type CptuRegistro,
@@ -175,6 +186,8 @@ export function CptuView() {
   const [tomadorFiltro, setTomadorFiltro] = useState<string>("todos");
   const [etapa, setEtapa] = useState<FiltroEtapa>("todas");
   const [mostrarAusentes, setMostrarAusentes] = useState(false);
+  const [dataDe, setDataDe] = useState("");
+  const [dataAte, setDataAte] = useState("");
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [focado, setFocado] = useState<string | null>(null);
   const [aba, setAba] = useState("planilha");
@@ -218,6 +231,8 @@ export function CptuView() {
       if (etapa === "sem-relatorio" && !(foiExecutado(r) && r.relatorio !== "SIM_SOND"))
         return false;
       if (etapa === "prontos" && !prontoParaConcluir(r)) return false;
+      if (dataDe && (!r.desde || r.desde < dataDe)) return false;
+      if (dataAte && (!r.desde || r.desde > dataAte)) return false;
       if (q) {
         const info = infoOs(r.os);
         const alvo =
@@ -227,7 +242,9 @@ export function CptuView() {
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ativos, busca, statusFiltro, osFiltro, tomadorFiltro, etapa, porOs]);
+  }, [ativos, busca, statusFiltro, osFiltro, tomadorFiltro, etapa, dataDe, dataAte, porOs]);
+
+  const atencoes = useMemo(() => pontosDeAtencao(filtrados), [filtrados]);
 
   // Tomadores com quantos CPTu cada um tem; "fora do cadastro" vai por último.
   const listaTomadores = useMemo(() => {
@@ -265,13 +282,17 @@ export function CptuView() {
     setOsFiltro("todas");
     setTomadorFiltro("todos");
     setEtapa("todas");
+    setDataDe("");
+    setDataAte("");
   };
   const temFiltro =
     busca ||
     statusFiltro.size ||
     osFiltro !== "todas" ||
     tomadorFiltro !== "todos" ||
-    etapa !== "todas";
+    etapa !== "todas" ||
+    dataDe ||
+    dataAte;
 
   const ultimaImportacao = data?.importacoes.at(-1);
 
@@ -424,6 +445,28 @@ export function CptuView() {
                 </SelectContent>
               </Select>
               <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                Desde
+                <Input
+                  type="date"
+                  value={dataDe}
+                  max={dataAte || undefined}
+                  onChange={(e) => setDataDe(e.target.value)}
+                  className="h-8 w-36 text-xs"
+                  aria-label="Data inicial"
+                />
+              </label>
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                até
+                <Input
+                  type="date"
+                  value={dataAte}
+                  min={dataDe || undefined}
+                  onChange={(e) => setDataAte(e.target.value)}
+                  className="h-8 w-36 text-xs"
+                  aria-label="Data final"
+                />
+              </label>
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Checkbox
                   checked={mostrarAusentes}
                   onCheckedChange={(v) => setMostrarAusentes(v === true)}
@@ -448,6 +491,12 @@ export function CptuView() {
                 </TabsTrigger>
                 <TabsTrigger value="por-os" className="gap-1.5 text-xs">
                   <Building2 className="h-3.5 w-3.5" /> Por OS
+                </TabsTrigger>
+                <TabsTrigger value="atencao" className="gap-1.5 text-xs">
+                  <AlertTriangle className="h-3.5 w-3.5" /> Pontos de atenção{" "}
+                  <span className="opacity-60">
+                    ({atencoes.filter((i) => !i.verificada).length} a verificar)
+                  </span>
                 </TabsTrigger>
               </TabsList>
 
@@ -492,6 +541,18 @@ export function CptuView() {
                 <PorOs
                   registros={filtrados}
                   infoOs={infoOs}
+                  onAbrirOs={(os) => {
+                    setOsFiltro(os);
+                    setAba("planilha");
+                  }}
+                />
+              </TabsContent>
+
+              <TabsContent value="atencao">
+                <PontosDeAtencao
+                  itens={atencoes}
+                  infoOs={infoOs}
+                  salvar={salvar}
                   onAbrirOs={(os) => {
                     setOsFiltro(os);
                     setAba("planilha");
@@ -1362,6 +1423,210 @@ function PorOs({
 
 // ── Importação ───────────────────────────────────────────────────────────────
 
+// ── Pontos de atenção ────────────────────────────────────────────────────────
+
+const POSSIBILIDADE_BADGE: Record<Possibilidade, string> = {
+  SIM: "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30",
+  VERIFICAR:
+    "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30",
+  AVALIAR:
+    "bg-violet-100 text-violet-800 border-violet-200 dark:bg-violet-500/15 dark:text-violet-300 dark:border-violet-500/30",
+  DEPENDE:
+    "bg-sky-100 text-sky-800 border-sky-200 dark:bg-sky-500/15 dark:text-sky-300 dark:border-sky-500/30",
+  NAO: "bg-zinc-100 text-zinc-600 border-zinc-200 dark:bg-zinc-500/15 dark:text-zinc-400 dark:border-zinc-500/30",
+};
+
+function PontosDeAtencao({
+  itens,
+  infoOs,
+  onAbrirOs,
+  salvar,
+}: {
+  itens: ItemAtencao[];
+  infoOs: (os: string) => CptuOsInfo | undefined;
+  onAbrirOs: (os: string) => void;
+  salvar: (ids: string[], patch: CptuPatch) => void;
+}) {
+  const [possFiltro, setPossFiltro] = useState<Possibilidade | "todas">("todas");
+  const [baixaFiltro, setBaixaFiltro] = useState<"pendentes" | "verificadas" | "todas">(
+    "pendentes",
+  );
+  const base = useMemo(
+    () =>
+      itens.filter(
+        (i) =>
+          baixaFiltro === "todas" || (baixaFiltro === "verificadas") === i.verificada,
+      ),
+    [itens, baixaFiltro],
+  );
+  const resumo = useMemo(() => resumoAtencao(base), [base]);
+  const visiveis =
+    possFiltro === "todas" ? base : base.filter((i) => i.atencao.possibilidade === possFiltro);
+  const th =
+    "sticky top-0 z-10 bg-muted px-2 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap";
+  const td = "px-2 py-1.5 align-top";
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">
+        Cancelados cujo motivo ainda deixa refazer o furo, e concluídos que não foram executados ou
+        pararam por impenetrável. A classificação sai da descrição de campo; a coluna{" "}
+        <b className="text-foreground">Ação</b> diz o que fazer. Impenetrável com até {LIMITE_RASO_M} m
+        é tratado como raso. Dê baixa quando a equipe resolver o ponto: a baixa fica guardada e só
+        volta a contar como pendente se a SOND mudar o status ou a descrição desse CPTu.
+      </p>
+
+      <div className="flex flex-wrap gap-2">
+        {(
+          [
+            ["pendentes", "A verificar", itens.filter((i) => !i.verificada).length],
+            ["verificadas", "Verificadas", itens.filter((i) => i.verificada).length],
+            ["todas", "Todas", itens.length],
+          ] as const
+        ).map(([valor, rotulo, n]) => (
+          <button
+            key={valor}
+            onClick={() => setBaixaFiltro(valor)}
+            className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-medium ${
+              baixaFiltro === valor
+                ? "bg-foreground text-background"
+                : "bg-background text-muted-foreground hover:bg-muted"
+            }`}
+          >
+            {rotulo} <span className="ml-1.5 tabular-nums opacity-70">{n}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => setPossFiltro("todas")}
+          className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-medium ${
+            possFiltro === "todas"
+              ? "bg-primary text-primary-foreground"
+              : "bg-background text-muted-foreground hover:bg-muted"
+          }`}
+        >
+          Todos <span className="ml-1.5 tabular-nums opacity-70">{resumo.total}</span>
+        </button>
+        {POSSIBILIDADE_ORDEM.filter((p) => resumo.porPossibilidade[p] > 0).map((p) => (
+          <button
+            key={p}
+            onClick={() => setPossFiltro(p)}
+            className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium ${
+              possFiltro === p
+                ? POSSIBILIDADE_BADGE[p] + " ring-2 ring-offset-1 ring-primary/30"
+                : "bg-background text-muted-foreground hover:bg-muted"
+            }`}
+          >
+            {POSSIBILIDADE_LABEL[p]}{" "}
+            <span className="tabular-nums opacity-70">{resumo.porPossibilidade[p]}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+        {[...resumo.porGrupo.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .map(([g, n]) => (
+            <span key={g}>
+              {g} <b className="text-foreground tabular-nums">{n}</b>
+            </span>
+          ))}
+      </div>
+
+      {visiveis.length === 0 ? (
+        <div className="rounded-lg border py-10 text-center text-sm text-muted-foreground">
+          Nenhum ponto de atenção com esses filtros.
+        </div>
+      ) : (
+        <div className="max-h-[70vh] overflow-auto rounded-lg border">
+          <table className="w-full border-collapse text-xs">
+            <thead>
+              <tr>
+                <th className={th}>Pode refazer?</th>
+                <th className={th}>OS</th>
+                <th className={th}>Tomador</th>
+                <th className={th}>CPTu</th>
+                <th className={th}>Status</th>
+                <th className={th}>Desde</th>
+                <th className={th}>Prof. (m)</th>
+                <th className={th}>Motivo</th>
+                <th className={th}>Ação sugerida</th>
+                <th className={th}>Observação de campo</th>
+                <th className={th}>Baixa</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visiveis.map(({ registro: r, atencao: a, verificada }) => (
+                <tr key={r.id} className={`border-t hover:bg-muted/30 ${verificada ? "opacity-60" : ""}`}>
+                  <td className={td}>
+                    <Badge variant="outline" className={`whitespace-nowrap ${POSSIBILIDADE_BADGE[a.possibilidade]}`}>
+                      {POSSIBILIDADE_LABEL[a.possibilidade]}
+                    </Badge>
+                    <div className="mt-1 text-[10px] text-muted-foreground">{a.grupo}</div>
+                  </td>
+                  <td className={td}>
+                    <button className="font-medium hover:underline" onClick={() => onAbrirOs(r.os)}>
+                      {r.os}
+                    </button>
+                    {a.osCitada ? (
+                      <div className="text-[10px] text-muted-foreground">cita OS {a.osCitada}</div>
+                    ) : null}
+                  </td>
+                  <td className={td}>{infoOs(r.os)?.tomador || "OS fora do cadastro"}</td>
+                  <td className={`${td} font-mono`}>{r.identificacao}</td>
+                  <td className={td}>
+                    <span
+                      className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-medium ${STATUS_BADGE[r.status]}`}
+                    >
+                      {STATUS_LABEL[r.status]}
+                    </span>
+                  </td>
+                  <td className={`${td} whitespace-nowrap`}>{fmtData(r.desde)}</td>
+                  <td className={`${td} tabular-nums`}>{fmtM(r.profundidade)}</td>
+                  <td className={`${td} min-w-[14rem]`}>{a.motivo}</td>
+                  <td className={`${td} min-w-[16rem]`}>{a.acao}</td>
+                  <td className={`${td} max-w-xs text-muted-foreground`}>
+                    <span className="line-clamp-3" title={r.obsCampo}>
+                      {r.obsCampo.replace(/["\\]+/g, " ").trim() || "—"}
+                    </span>
+                  </td>
+                  <td className={`${td} min-w-[12rem]`}>
+                    <Button
+                      size="sm"
+                      variant={verificada ? "outline" : "default"}
+                      className="h-7 text-xs"
+                      onClick={() => salvar([r.id], { atencaoVerificada: !verificada })}
+                    >
+                      {verificada ? "✓ Verificada · reabrir" : "Dar baixa"}
+                    </Button>
+                    {verificada ? (
+                      <div className="mt-1 text-[10px] text-muted-foreground">
+                        {r.atencaoVerificadaPor} · {fmtDataHora(r.atencaoVerificadaEm)}
+                      </div>
+                    ) : r.atencaoVerificadaEm ? (
+                      <div className="mt-1 text-[10px] text-amber-700 dark:text-amber-400">
+                        A SOND mudou status ou descrição desde a baixa de {r.atencaoVerificadaPor}
+                      </div>
+                    ) : null}
+                    <div className="mt-1.5">
+                      <ObservacaoCell
+                        valor={r.atencaoNota ?? ""}
+                        onSalvar={(v) => salvar([r.id], { atencaoNota: v })}
+                      />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 async function lerArquivo(file: File): Promise<string[][]> {
   if (/\.(xlsx|xls)$/i.test(file.name)) {
     const XLSX = await import("xlsx");
@@ -1551,6 +1816,7 @@ async function exportarExcel(
   const linhas = registros.map((r) => {
     const info = infoOs(r.os);
     const prev = profundidadePrevista(r.criterio);
+    const a = analisarAtencao(r);
     return {
       OS: r.os,
       Tomador: info?.tomador ?? "",
@@ -1570,6 +1836,13 @@ async function exportarExcel(
       "Dados brutos": r.linkDadosBrutos,
       "Obs. de campo": r.obsCampo,
       "Critério de paralisação": r.criterio,
+      "Ponto de atenção": a ? a.grupo : "",
+      "Pode refazer?": a ? POSSIBILIDADE_LABEL[a.possibilidade] : "",
+      "Ação sugerida": a ? a.acao : "",
+      "Atenção verificada": a ? (verificacaoVale(r) ? "Sim" : "Não") : "",
+      "Verificada por": verificacaoVale(r) ? r.atencaoVerificadaPor : "",
+      "Verificada em": verificacaoVale(r) ? fmtDataHora(r.atencaoVerificadaEm) : "",
+      "Nota da atenção": r.atencaoNota ?? "",
       Latitude: r.lat ?? "",
       Longitude: r.lng ?? "",
     };
@@ -1577,5 +1850,31 @@ async function exportarExcel(
   const ws = XLSX.utils.json_to_sheet(linhas);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "CPTu");
+
+  const atencao = pontosDeAtencao(registros).map(({ registro: r, atencao: a, verificada }) => {
+    const info = infoOs(r.os);
+    return {
+      "Pode refazer?": POSSIBILIDADE_LABEL[a.possibilidade],
+      OS: r.os,
+      Tomador: info?.tomador ?? "",
+      Obra: info?.obra ?? "",
+      Local: info?.local ?? "",
+      CPTu: r.identificacao,
+      Status: STATUS_LABEL[r.status],
+      Desde: fmtData(r.desde),
+      "Prof. executada (m)": r.profundidade,
+      "Ponto de atenção": a.grupo,
+      Motivo: a.motivo,
+      "Ação sugerida": a.acao,
+      "Atenção verificada": verificada ? "Sim" : "Não",
+      "Verificada por": verificada ? r.atencaoVerificadaPor : "",
+      "Verificada em": verificada ? fmtDataHora(r.atencaoVerificadaEm) : "",
+      "Nota da atenção": r.atencaoNota ?? "",
+      "Obs. de campo": r.obsCampo,
+    };
+  });
+  const wsAtencao = XLSX.utils.json_to_sheet(atencao);
+  XLSX.utils.book_append_sheet(wb, wsAtencao, "Pontos de atenção");
+
   XLSX.writeFile(wb, `acompanhamento-cptu-${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
