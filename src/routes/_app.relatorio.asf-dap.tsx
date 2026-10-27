@@ -144,9 +144,11 @@ function NumField({ label, value, onChange, className }: { label: string; value:
 /** Página única do laudo: identificação (via ReportHeader) + resultados por CP. */
 function ASFDapReportPage({
   sample,
+  serie,
   photos: photosRecebidas = [],
 }: {
   sample: AsfDapSample;
+  serie?: string | null;
   photos?: import("@/features/lab/types").Photo[];
 }) {
   const photos = fotosPublicadas(photosRecebidas);
@@ -164,7 +166,7 @@ function ASFDapReportPage({
   const anyNeedsFilme = results.some((r) => r.needsFilme);
   return (
     <ReportPage
-      sample={sample as unknown as ReportSample}
+      sample={{ ...sample, serie } as unknown as ReportSample}
       page={1}
       total={1}
       title="DENSIDADE RELATIVA APARENTE E MASSA ESPECÍFICA APARENTE"
@@ -973,7 +975,7 @@ export function ASFPage() {
           <div className="flex-1 min-h-0 overflow-auto bg-[#525659] p-8 flex justify-center">
             <div className="flex flex-col items-center gap-8 shrink-0 pb-12">
               <div className="w-[210mm] h-[297mm] shadow-2xl bg-white shrink-0 overflow-hidden">
-                <ASFDapReportPage sample={sample} photos={ctx?.photos ?? []} />
+                <ASFDapReportPage sample={sample} serie={ctx?.ensaio?.serie} photos={ctx?.photos ?? []} />
               </div>
             </div>
           </div>
@@ -1326,7 +1328,7 @@ export function ASFPage() {
           }}
           className="print-only-report mx-auto flex flex-col items-center gap-4"
         >
-          <ASFDapReportPage sample={sample} photos={ctx?.photos ?? []} />
+          <ASFDapReportPage sample={sample} serie={ctx?.ensaio?.serie} photos={ctx?.photos ?? []} />
         </div>
         <style>{`
           @media print {
