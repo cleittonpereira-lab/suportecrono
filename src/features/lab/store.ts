@@ -264,7 +264,7 @@ function sincronizarBaseDeFotos(estado: LabState): void {
 
 function scheduleSaveEnsaio(amostraId: string, en: Ensaio) {
   scheduleEntitySave(en.id, async () => {
-    await upsertEnsaioFn({
+    const salvo = await upsertEnsaioFn({
       data: {
         id: en.id,
         amostraId,
@@ -282,7 +282,28 @@ function scheduleSaveEnsaio(amostraId: string, en: Ensaio) {
       },
     });
     fotosBaseConfirmada.set(en.id, en.photos ?? []);
+    if (salvo.serie) aplicarSerie(en.id, salvo.serie);
   });
+}
+
+/** Número de série que o servidor deu a um ensaio novo: aparece na tela sem recarregar. */
+function aplicarSerie(enId: string, serie: string) {
+  let mudou = false;
+  state = {
+    ...state,
+    os: state.os.map((o) => ({
+      ...o,
+      amostras: o.amostras.map((a) => ({
+        ...a,
+        ensaios: a.ensaios.map((e) => {
+          if (e.id !== enId || e.serie) return e;
+          mudou = true;
+          return { ...e, serie };
+        }),
+      })),
+    })),
+  };
+  if (mudou) notify();
 }
 
 function isEmptyState(s: LabState): boolean {

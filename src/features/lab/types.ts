@@ -107,6 +107,8 @@ export interface Ensaio {
   /** Nome / sigla de referência (ex.: "CD4.IN", "TRI3.CU"). */
   nome?: string;
   sigla?: string;
+  /** Número de série dado pelo servidor ao criar o ensaio (ex.: ASF.DAP-26-00123). */
+  serie?: string | null;
   /** Operador/laboratorista responsável por ESTE ensaio (não da OS). */
   operator?: string;
   /** Registro fotográfico do ensaio (moldagem/ruptura). */

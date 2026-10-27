@@ -1,3 +1,4 @@
+import { pdfDaRevisaoEstaNoDrive } from "@/lib/revisoes-do-drive";
 import { SyncStatusBadge } from "@/components/SyncStatusBadge";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { DadosTravados } from "@/components/report/DadosTravados";
@@ -838,6 +839,8 @@ export function TriaxialCidPage() {
         console.error(err);
         toast.error("Falha ao enviar ao Drive: " + (err instanceof Error ? err.message : String(err)), { id: syncToastId });
         await refreshDriveStatus();
+        // Sem o PDF no Drive a revisão não vai para verificação.
+        if (!(await pdfDaRevisaoEstaNoDrive(scopeId, saved.rev))) return;
       }
 
       // Envia automaticamente para verificação — o fluxo é "Terminei a digitação".

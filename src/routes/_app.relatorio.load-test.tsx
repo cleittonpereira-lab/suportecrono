@@ -1,3 +1,4 @@
+import { exigirPdfNoDrive } from "@/lib/revisoes-do-drive";
 import { useDraftActivity } from "@/hooks/use-draft-activity";
 import { EditingPresenceBanner } from "@/components/DraftActivityInfo";
 import { DadosTravados } from "@/components/report/DadosTravados";
@@ -675,7 +676,7 @@ export function PLTPage() {
         });
         if (resDrive?.folderUrl) setDriveFolderUrl(resDrive.folderUrl);
       } catch (err) {
-        console.warn("Drive sync standby:", err);
+        await exigirPdfNoDrive(scopeId, saved.rev, err);
       }
 
       await requestApproval({
@@ -740,7 +741,7 @@ export function PLTPage() {
           reemissao: true,
         });
       } catch (err) {
-        console.warn("Drive sync standby:", err);
+        throw new Error(`a cópia do Drive não foi atualizada (${err instanceof Error ? err.message : String(err)}). Tente de novo.`);
       }
 
       const currentDraft = { sample: sampleAtualizado, photos: ctx?.photos || [] };
@@ -945,6 +946,8 @@ export function PLTPage() {
 
         <div className="mt-3">
           <AmostraSummaryCard
+            codigo={ctx?.amostra?.code ?? undefined}
+            serie={ctx?.ensaio?.serie ?? undefined}
             reportNumber={sample.reportNumber}
             osNumero={sample.os}
             subtitle={`${sample.client || "—"} · ${sample.local || "—"} · Furo ${sample.borehole || "—"} · Prof. ${sample.depth || "—"}`}

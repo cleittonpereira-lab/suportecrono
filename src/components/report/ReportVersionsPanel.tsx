@@ -172,7 +172,14 @@ export function ReportVersionsPanel({
         <CardContent>
           {versions.length === 0 ? (
             <div className="rounded border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-              Nenhuma versão salva ainda. Use os botões no topo do relatório pra gerar e enviar a primeira.
+              {approvals.length > 0 ? (
+                <>
+                  Há revisão enviada para aprovação, mas nenhuma cópia do PDF foi encontrada neste navegador nem no Drive.
+                  Use <b>Atualizar PDF com os dados atuais</b> no topo do relatório para enviar o PDF de novo.
+                </>
+              ) : (
+                "Nenhuma versão salva ainda. Use os botões no topo do relatório pra gerar e enviar a primeira."
+              )}
             </div>
           ) : (
             <Table>

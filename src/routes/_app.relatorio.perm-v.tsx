@@ -1,3 +1,4 @@
+import { pdfDaRevisaoEstaNoDrive } from "@/lib/revisoes-do-drive";
 import { useDraftActivity } from "@/hooks/use-draft-activity";
 import { EditingPresenceBanner } from "@/components/DraftActivityInfo";
 import { DadosTravados } from "@/components/report/DadosTravados";
@@ -1025,6 +1026,8 @@ export function PermVPage() {
       await refreshDriveStatus();
     } catch (err) {
       avisarQueNaoChegouAoDrive(revisao, err instanceof Error ? err.message : String(err));
+      // Sem o PDF no Drive a revisão não segue para verificação.
+      if (!(await pdfDaRevisaoEstaNoDrive(scopeId, revisao))) throw err;
     }
   };
 
@@ -1068,9 +1071,8 @@ export function PermVPage() {
       const saved = await saveVersion({ scopeId, rev, filename, size: blob.size, pdfBlob: blob });
       await refreshVersions();
 
-      // A versão já está salva aqui. Um Drive lento ou fora do ar não impede o
-      // fluxo de chegar em "aguardando verificação", mas agora avisa na tela,
-      // de forma persistente, em vez de só escrever no console.
+      // A versão já está salva aqui. A revisão só vai para verificação com o PDF
+      // no Drive: se o envio falhar, avisa na tela e para antes da solicitação.
       await enviarRevisaoAoDrive(blob, saved.rev, filename);
 
       await requestApproval({

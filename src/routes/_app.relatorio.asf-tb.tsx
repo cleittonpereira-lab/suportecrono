@@ -38,7 +38,7 @@ import {
   downloadVersion,
   type ReportVersion,
 } from "@/features/asf-tb/report-versions";
-import { sincronizarVersoesComDrive, useVersoesAoVivo } from "@/lib/revisoes-do-drive";
+import { exigirPdfNoDrive, sincronizarVersoesComDrive, useVersoesAoVivo } from "@/lib/revisoes-do-drive";
 import { excluirRevisaoDoLaudo } from "@/lib/excluir-revisao";
 import { syncRevision, fetchDriveStatus } from "@/features/asf-tb/driveSync";
 import { ReportVersionsPanel } from "@/components/report/ReportVersionsPanel";
@@ -782,7 +782,7 @@ export function AsfTbPage() {
         });
         if (resDrive?.folderUrl) setDriveFolderUrl(resDrive.folderUrl);
       } catch (err) {
-        console.warn("Drive sync standby:", err);
+        await exigirPdfNoDrive(scopeId, saved.rev, err);
       }
 
       await requestApproval({
@@ -868,7 +868,7 @@ export function AsfTbPage() {
           reemissao: true,
         });
       } catch (err) {
-        console.warn("Drive sync standby:", err);
+        throw new Error(`a cópia do Drive não foi atualizada (${err instanceof Error ? err.message : String(err)}). Tente de novo.`);
       }
 
       const currentDraft = { sample: sampleAtualizado, photos: ctx?.photos || [] };
@@ -1083,6 +1083,8 @@ export function AsfTbPage() {
         {/* Identificação */}
         <div className="mt-3">
           <AmostraSummaryCard
+            codigo={ctx?.amostra?.code ?? undefined}
+            serie={ctx?.ensaio?.serie ?? undefined}
             reportNumber={sample.reportNumber}
             osNumero={sample.os}
             subtitle={`${sample.client || "—"} · ${sample.local || "—"} · Furo ${sample.borehole || "—"} · Prof. ${sample.depth || "—"}`}

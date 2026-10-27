@@ -70,7 +70,7 @@ import {
   viewVersion,
   type ReportVersion,
 } from "@/features/cisalhamento-direto/report-versions";
-import { sincronizarVersoesComDrive, useVersoesAoVivo } from "@/lib/revisoes-do-drive";
+import { exigirPdfNoDrive, sincronizarVersoesComDrive, useVersoesAoVivo } from "@/lib/revisoes-do-drive";
 import { excluirRevisaoDoLaudo } from "@/lib/excluir-revisao";
 import { syncRevision, fetchDriveStatus } from "@/features/cisalhamento-direto/driveSync";
 import {
@@ -776,7 +776,7 @@ export function CDPage() {
         if (resDrive?.folderUrl) setDriveFolderUrl(resDrive.folderUrl);
         await refreshDriveStatus();
       } catch (err) {
-        console.warn("Drive sync standby:", err);
+        await exigirPdfNoDrive(scopeId, saved.rev, err);
       }
 
       await requestApproval({

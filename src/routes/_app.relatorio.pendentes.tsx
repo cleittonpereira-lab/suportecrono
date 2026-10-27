@@ -12,6 +12,7 @@ import {
   listPendenciasDigitacao,
   atualizarPendenciaDigitacao,
   concluirPendenciaExterna,
+  buscarEnsaiosIguais,
   criarRelatorioAvulso,
   removerPendenciaDigitacao,
   type PendenciaDigitacao,
@@ -803,6 +804,30 @@ function CentralRelatoriosPage() {
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  const buscarIguaisFn = useServerFn(buscarEnsaiosIguais);
+  /** Antes de criar o avulso, avisa se já existe ensaio igual (mesmo tipo, furo e profundidade). */
+  const confirmarAvulso = async () => {
+    const { iguais } = await buscarIguaisFn({
+      data: {
+        os: avulsoData.os,
+        tipo_ensaio: avulsoData.tipo_ensaio,
+        amostra: avulsoData.amostra,
+        codigo: avulsoData.codigo,
+        furo: avulsoData.furo,
+        prof: avulsoData.prof,
+      },
+    });
+    if (iguais.length > 0) {
+      const lista = iguais.map((i) => `• código ${i.codigo || "—"} (${i.status})`).join("\n");
+      const criar = window.confirm(
+        `Já existe ensaio deste tipo nesta OS, com o mesmo furo e profundidade:\n${lista}\n\n` +
+          "Se o código digitado for um desses, o sistema abre o que já existe. Criar mesmo assim?",
+      );
+      if (!criar) return;
+    }
+    criarAvulsoMutation.mutate(avulsoData);
+  };
 
   const criarAvulsoMutation = useMutation({
     mutationFn: (data: typeof avulsoData) => criarAvulsoFn({ data }),
@@ -2055,7 +2080,7 @@ function CentralRelatoriosPage() {
                 conferenciaAvulso?.tipo === "erro" ||
                 criarAvulsoMutation.isPending
               }
-              onClick={() => criarAvulsoMutation.mutate(avulsoData)}
+              onClick={() => void confirmarAvulso()}
               className="gap-1.5"
             >
               {criarAvulsoMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4 fill-current" />}

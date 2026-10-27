@@ -42,6 +42,31 @@ function base64ParaBlob(b64: string): Blob {
  */
 const emAndamento = new Map<string, Promise<boolean>>();
 
+/**
+ * A revisão tem o PDF na pasta `relatorios` do ensaio no Drive? Falha da consulta
+ * estoura — não vira "não tem", senão uma queda do Drive pareceria ausência.
+ */
+export async function pdfDaRevisaoEstaNoDrive(scopeId: string, rev: number): Promise<boolean> {
+  const { revisions } = await listDriveRevisions({ data: { scopeId } });
+  return revisions.some((r) => r.rev === rev);
+}
+
+/**
+ * Chamado quando o envio do PDF ao Drive falhou. A revisão só segue para a
+ * verificação se o PDF estiver no Drive mesmo assim (a falha pode ter vindo da
+ * planilha ou das fotos, que não impedem a conferência). Senão, lança o erro e
+ * a revisão não é enviada.
+ */
+export async function exigirPdfNoDrive(scopeId: string, rev: number, erro: unknown): Promise<void> {
+  const msg = erro instanceof Error ? erro.message : String(erro);
+  const rotulo = `Rev-${String(rev).padStart(2, "0")}`;
+  if (await pdfDaRevisaoEstaNoDrive(scopeId, rev)) {
+    console.warn(`[drive] ${rotulo} com falha parcial no Drive:`, msg);
+    return;
+  }
+  throw new Error(`o PDF da ${rotulo} não chegou ao Drive (${msg}). A revisão não foi enviada: tente de novo.`);
+}
+
 /** Devolve `true` se mudou alguma coisa na lista local (a tela relê). */
 export async function sincronizarVersoesComDrive(
   scopeId: string,
