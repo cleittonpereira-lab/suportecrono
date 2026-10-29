@@ -38,7 +38,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Download, FileText, Beaker, Activity, BarChart3, FlaskConical, Settings2, Plus, X, Ruler, User, FileEdit, ShieldCheck } from "lucide-react";
+import { Download, FileText, FileSpreadsheet, Beaker, Activity, BarChart3, FlaskConical, Settings2, Plus, X, Ruler, User, FileEdit, ShieldCheck } from "lucide-react";
 import { ChevronDown, ChevronRight, Info } from "lucide-react";
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
@@ -104,6 +104,12 @@ import {
   mohrCirclePoints,
   processSpecimen,
 } from "@/features/triaxial-cid/domain/calc";
+import {
+  GLOSSARIO_UU_1,
+  GLOSSARIO_UU_2,
+  GLOSSARIO_UU_CONVENCAO,
+  GLOSSARIO_UU_REFERENCIAS,
+} from "@/features/triaxial-cid/glossario-uu";
 
 const NORMS_CID: ReportNorm[] = [
   { text: "ASTM D7181-20 — Consolidated Drained Triaxial Compression Test for Soils" },
@@ -134,6 +140,13 @@ const testTypeFromEnsaioTipo = (tipo: string | undefined): TestType =>
 const normsFor = (testType: TestType) => (testType === "uu" ? NORMS_UU : testType === "ciu" ? NORMS_CIU : NORMS_CID);
 /** @deprecated use `normsFor("cid")` — mantido para não quebrar referências existentes. */
 const NORMS = NORMS_CID;
+
+/** O que cada etapa do arquivo de dados significa, por tipo de ensaio (mostrado ao importar). */
+const LEGENDA_ETAPAS: { tipo: TestType; rotulo: string; texto: string }[] = [
+  { tipo: "cid", rotulo: "CID (drenado)", texto: 'adensamento isotrópico + ruptura drenada ("Ruptura Dren.").' },
+  { tipo: "ciu", rotulo: "CIU (não drenado)", texto: 'adensamento isotrópico + ruptura não drenada ("Ruptura N/Dren."), com poropressão.' },
+  { tipo: "uu", rotulo: "UU (não consolidado não drenado)", texto: 'aplicação de TC (sem adensamento) + ruptura não drenada ("Ruptura N/Dren.").' },
+];
 
 const reportTitleFor = (condition: "saturado" | "natural", testType: TestType = "cid") => {
   if (testType === "uu") return "ENSAIO TRIAXIAL NÃO CONSOLIDADO NÃO DRENADO (UU)";
@@ -633,6 +646,7 @@ export function TriaxialCidPage() {
 
   const [reportOpen, setReportOpen] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
+  const [excelBusy, setExcelBusy] = useState(false);
   const [versions, setVersions] = useState<ReportVersion[]>([]);
   const [saveBusy, setSaveBusy] = useState(false);
   const [driveStatus, setDriveStatus] = useState<Awaited<ReturnType<typeof fetchDriveStatus>> | null>(null);
@@ -986,6 +1000,47 @@ export function TriaxialCidPage() {
     }
   };
 
+  /**
+   * Excel do UU (espelho do PDF, página por página). Usa a mesma amostra, CPs e
+   * escalas que o relatório da tela, então sai igual ao PDF baixado agora.
+   */
+  const handleGenerateExcel = async () => {
+    setExcelBusy(true);
+    try {
+      const { exportTriaxialUuXlsx } = await import("@/features/triaxial-cid/exportXlsx");
+      const active = approvals[0];
+      const amostraDoRelatorio = {
+        ...sample,
+        coordN: ctx?.coords?.N ?? sample.coordN,
+        coordE: ctx?.coords?.E ?? sample.coordE,
+        coordCota: ctx?.coords?.cota ?? sample.coordCota,
+        coordDatum: ctx?.coords?.datum ?? sample.coordDatum,
+        revision: active ? String(active.rev).padStart(2, "0") : sample.revision,
+        verifiedBy: active?.verified_by_name ?? "",
+        approvedBy: active?.status === "aprovado" ? (active.decided_by_name ?? "") : "",
+      };
+      const base = (sample.workNumber || "relatorio").toString().replace(/[^\w-]+/g, "_");
+      await exportTriaxialUuXlsx(
+        {
+          sample: amostraDoRelatorio,
+          specimens: sortedSpecimens,
+          results,
+          envelope,
+          envelopePts,
+          photos: ctx?.photos ?? [],
+          axisCfg,
+        },
+        `Triaxial-UU_${base}.xlsx`,
+      );
+      toast.success("Excel gerado com sucesso");
+    } catch (err) {
+      console.error(err);
+      toast.error("Falha ao gerar Excel: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setExcelBusy(false);
+    }
+  };
+
   const cp = sortedSpecimens[selIdx] ?? sortedSpecimens[0];
   const res = results[selIdx] ?? results[0];
 
@@ -1094,6 +1149,17 @@ export function TriaxialCidPage() {
                 : ' Ensaios sem etapa "Ruptura Não Dren." ficam desabilitados (este é um ensaio CIU/UU).'}
             </DialogDescription>
           </DialogHeader>
+          <div className="rounded-md border bg-muted/40 p-3 text-xs space-y-1.5">
+            <div className="font-semibold text-foreground">Como ler as etapas do arquivo</div>
+            {LEGENDA_ETAPAS.map((l) => (
+              <div
+                key={l.tipo}
+                className={l.tipo === testType ? "font-medium text-foreground" : "text-muted-foreground"}
+              >
+                <span className="font-semibold">{l.rotulo}:</span> {l.texto}
+              </div>
+            ))}
+          </div>
           <div className="space-y-2">
             {ntPickerState.tests.map((t) => {
               const canImport = testType === "cid" ? t.hasDrained : t.hasUndrained;
@@ -2124,6 +2190,7 @@ export function TriaxialCidPage() {
             <ShearPhaseSection
               cp={cp}
               res={res}
+              isUU={isUU}
               onUpdateRow={(ri, patch) => updateShearRow(cp.id, ri, patch)}
               onAddRow={() =>
                 updateSpecimen(cp.id, {
@@ -2559,6 +2626,12 @@ export function TriaxialCidPage() {
                   <FileText className="h-4 w-4" />
                   {pdfBusy ? "Gerando PDF…" : "Baixar PDF"}
                 </Button>
+                {testType === "uu" && (
+                  <Button variant="outline" onClick={handleGenerateExcel} disabled={excelBusy} className="gap-2">
+                    <FileSpreadsheet className="h-4 w-4" />
+                    {excelBusy ? "Gerando Excel…" : "Baixar Excel"}
+                  </Button>
+                )}
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -2803,12 +2876,15 @@ function HeadWithInfo({ label, formula }: { label: React.ReactNode; formula: str
 function ShearPhaseSection({
   cp,
   res,
+  isUU = false,
   onUpdateRow,
   onAddRow,
   onRemoveRow,
 }: {
   cp: TriaxialSpecimen;
   res: SpecimenResults;
+  /** UU: sem variação de volume nem poropressão — a tabela não mostra essas colunas. */
+  isUU?: boolean;
   onUpdateRow: (rowIdx: number, patch: Partial<ShearReading>) => void;
   onAddRow: () => void;
   onRemoveRow: (rowIdx: number) => void;
@@ -2877,24 +2953,30 @@ function ShearPhaseSection({
                         <span className="text-[10px] text-muted-foreground">(kPa)</span>
                       </div>
                     </TableHead>
-                    <TableHead className="text-center">
-                      <div className="flex flex-col items-center leading-tight">
-                        <HeadWithInfo label="Poropressão" formula={"Poropressão medida.\nCID (drenado): u ≈ u_back — se vazio, assume u_back.\nCIU (não drenado): preencha com a leitura real do transdutor a cada estágio — é o dado principal do ensaio."} />
-                        <span className="text-[10px] text-muted-foreground">(kPa)</span>
-                      </div>
-                    </TableHead>
-                    <TableHead className="text-center">
-                      <div className="flex flex-col items-center leading-tight">
-                        <HeadWithInfo label="Variação de Volume" formula={"ΔV drenado (bureta), (+) compressão."} />
-                        <span className="text-[10px] text-muted-foreground">(cm³)</span>
-                      </div>
-                    </TableHead>
-                    <TableHead className="text-center text-muted-foreground">
-                      <div className="flex flex-col items-center leading-tight">
-                        <HeadWithInfo label="Volume do CP" formula={"V = V_c − ΔV\nV_c = volume após adensamento."} />
-                        <span className="text-[10px]">(cm³)</span>
-                      </div>
-                    </TableHead>
+                    {!isUU && (
+                      <TableHead className="text-center">
+                        <div className="flex flex-col items-center leading-tight">
+                          <HeadWithInfo label="Poropressão" formula={"Poropressão medida.\nCID (drenado): u ≈ u_back — se vazio, assume u_back.\nCIU (não drenado): preencha com a leitura real do transdutor a cada estágio — é o dado principal do ensaio."} />
+                          <span className="text-[10px] text-muted-foreground">(kPa)</span>
+                        </div>
+                      </TableHead>
+                    )}
+                    {!isUU && (
+                      <TableHead className="text-center">
+                        <div className="flex flex-col items-center leading-tight">
+                          <HeadWithInfo label="Variação de Volume" formula={"ΔV drenado (bureta), (+) compressão."} />
+                          <span className="text-[10px] text-muted-foreground">(cm³)</span>
+                        </div>
+                      </TableHead>
+                    )}
+                    {!isUU && (
+                      <TableHead className="text-center text-muted-foreground">
+                        <div className="flex flex-col items-center leading-tight">
+                          <HeadWithInfo label="Volume do CP" formula={"V = V_c − ΔV\nV_c = volume após adensamento."} />
+                          <span className="text-[10px]">(cm³)</span>
+                        </div>
+                      </TableHead>
+                    )}
                     <TableHead className="text-center text-muted-foreground">
                       <div className="flex flex-col items-center leading-tight">
                         <HeadWithInfo label="Força Aplicada" formula={"F [kN] = Carga [kgf] · 9,80665 / 1000"} />
@@ -2921,16 +3003,21 @@ function ShearPhaseSection({
                     </TableHead>
                     <TableHead className="text-center text-muted-foreground">
                       <div className="flex flex-col items-center leading-tight">
-                        <HeadWithInfo label="Área Corrigida" formula={"ISO 17892-9 / Bishop & Henkel:\nA = A_c · (1 − εv) / (1 − εa)"} />
+                        <HeadWithInfo
+                          label="Área Corrigida"
+                          formula={isUU ? "UU (volume constante): A = A₀ / (1 − εa)" : "ISO 17892-9 / Bishop & Henkel:\nA = A_c · (1 − εv) / (1 − εa)"}
+                        />
                         <span className="text-[10px]">(cm²)</span>
                       </div>
                     </TableHead>
-                    <TableHead className="text-center text-muted-foreground">
-                      <div className="flex flex-col items-center leading-tight">
-                        <HeadWithInfo label="Índ. Vazios" formula={"e = V / V_s − 1\nV_s = V₀ / (1 + e₀)  (constante)"} />
-                        <span className="text-[10px]">(—)</span>
-                      </div>
-                    </TableHead>
+                    {!isUU && (
+                      <TableHead className="text-center text-muted-foreground">
+                        <div className="flex flex-col items-center leading-tight">
+                          <HeadWithInfo label="Índ. Vazios" formula={"e = V / V_s − 1\nV_s = V₀ / (1 + e₀)  (constante)"} />
+                          <span className="text-[10px]">(—)</span>
+                        </div>
+                      </TableHead>
+                    )}
                     <TableHead className="text-center text-muted-foreground">
                       <div className="flex flex-col items-center leading-tight">
                         <HeadWithInfo label="Tensão Desvio" formula={"σ_d = (F[N] / A[cm²]) · 10  [kPa]"} />
@@ -2945,13 +3032,18 @@ function ShearPhaseSection({
                     </TableHead>
                     <TableHead className="text-center text-muted-foreground">
                       <div className="flex flex-col items-center leading-tight">
-                        <HeadWithInfo label="s'" formula={"Convenção MIT / ISO 17892-9 Anexo B:\ns' = (σ₁' + σ₃') / 2\nσ₃' = σ₃ − u ; σ₁' = σ₃' + σ_d"} />
+                        <HeadWithInfo
+                          label={isUU ? "s" : "s'"}
+                          formula={isUU
+                            ? "Convenção MIT / ISO 17892-9 Anexo B (tensões totais):\ns = (σ₁ + σ₃) / 2\nσ₁ = σ₃ + σ_d"
+                            : "Convenção MIT / ISO 17892-9 Anexo B:\ns' = (σ₁' + σ₃') / 2\nσ₃' = σ₃ − u ; σ₁' = σ₃' + σ_d"}
+                        />
                         <span className="text-[10px]">(kPa)</span>
                       </div>
                     </TableHead>
                     <TableHead className="text-center text-muted-foreground">
                       <div className="flex flex-col items-center leading-tight">
-                        <HeadWithInfo label="σ'₁/σ'₃" formula={"Razão de tensões efetivas principais."} />
+                        <HeadWithInfo label={isUU ? "σ₁/σ₃" : "σ'₁/σ'₃"} formula={isUU ? "Razão de tensões totais principais." : "Razão de tensões efetivas principais."} />
                         <span className="text-[10px]">(—)</span>
                       </div>
                     </TableHead>
@@ -2979,15 +3071,15 @@ function ShearPhaseSection({
                         <TableCell><MiniNum value={loadKgf} step={0.01} onChange={(v) => handleLoad(ri, v)} /></TableCell>
                         <TableCell><MiniNum value={dispCm} step={0.001} onChange={(v) => handleDispCm(ri, v)} /></TableCell>
                         <TableCell><MiniNum value={r.sigma3Corr ?? 0} step={0.1} onChange={(v) => onUpdateRow(ri, { sigma3Corr: v || undefined })} /></TableCell>
-                        <TableCell><MiniNum value={r.uPore ?? 0} step={0.1} onChange={(v) => onUpdateRow(ri, { uPore: v || undefined })} /></TableCell>
-                        <TableCell><MiniNum value={dvCm3} step={0.01} onChange={(v) => handleDv(ri, v)} /></TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{fmt(V_cp, 2)}</TableCell>
+                        {!isUU && <TableCell><MiniNum value={r.uPore ?? 0} step={0.1} onChange={(v) => onUpdateRow(ri, { uPore: v || undefined })} /></TableCell>}
+                        {!isUU && <TableCell><MiniNum value={dvCm3} step={0.01} onChange={(v) => handleDv(ri, v)} /></TableCell>}
+                        {!isUU && <TableCell className="text-xs text-muted-foreground">{fmt(V_cp, 2)}</TableCell>}
                         <TableCell className="text-xs text-muted-foreground">{fmt(F_kN, 4)}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">{fmt(r.eaPct, 3)}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">{fmt(dAvM, 4)}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">{fmt(D_corr, 3)}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">{fmt(A_cm2, 3)}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{fmt(e_row, 3)}</TableCell>
+                        {!isUU && <TableCell className="text-xs text-muted-foreground">{fmt(e_row, 3)}</TableCell>}
                         <TableCell className="text-xs text-muted-foreground">{fmt(c?.sigmaD, 1)}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">{fmt(c?.q, 1)}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">{fmt(c?.pPrime, 1)}</TableCell>
@@ -4194,8 +4286,8 @@ function TriaxialReport({
       ))}
 
       {/* Últimas páginas — Glossário: Formulações e Convenções */}
-      {page(total - 1, (<GlossaryPage part={1} />))}
-      {page(total, (<GlossaryPage part={2} />))}
+      {page(total - 1, (<GlossaryPage part={1} isUU={isUUReport} />))}
+      {page(total, (<GlossaryPage part={2} isUU={isUUReport} />))}
 
     </>
   );
@@ -4216,7 +4308,42 @@ function ReportStat({ label, value }: { label: string; value: string }) {
  * módulo Triaxial CID (ver src/features/triaxial-cid/domain/calc.ts).
  * Referências: ASTM D7181-20 e ISO 17892-9:2018 (Anexo B para MIT).
  */
-function GlossaryPage({ part = 1 }: { part?: 1 | 2 } = {}) {
+/** Glossário do UU: só as contas do ensaio sem volume nem poropressão (ver glossario-uu.ts). */
+function GlossaryUUPage({ part }: { part: 1 | 2 }) {
+  const grupos = part === 1 ? GLOSSARIO_UU_1 : GLOSSARIO_UU_2;
+  return (
+    <div className="flex h-full flex-col text-[10px] text-[#141414]">
+      <SectionBar>Formulações e Convenções {part === 1 ? "(1/2)" : "(2/2)"}</SectionBar>
+      <div className="mt-1 text-[9px] text-[#141414]/70">{GLOSSARIO_UU_CONVENCAO}</div>
+      <div className="mt-2 space-y-1">
+        {grupos.map((g) => (
+          <div key={g.titulo} className="mb-2">
+            <div className="mb-1 rounded bg-[#e5e7eb] px-2 py-[3px] text-[10.5px] font-semibold uppercase tracking-wide text-[#141414]">
+              {g.titulo}
+            </div>
+            <table className="w-full border-collapse text-[9.5px] leading-tight text-[#141414]">
+              <tbody>
+                {g.linhas.map((l) => (
+                  <tr key={`${l.sym}-${l.nome}`} className="border-b border-[#e5e7eb] align-top">
+                    <td className="w-[10%] py-[2px] pr-1 font-semibold">{l.sym}</td>
+                    <td className="w-[30%] py-[2px] pr-2">{l.nome}</td>
+                    <td className="w-[42%] py-[2px] pr-2 font-mono text-[9.5px]">{l.formula}</td>
+                    <td className="w-[8%] py-[2px] pr-1 text-[#141414]/70">{l.unidade ?? ""}</td>
+                    <td className="w-[10%] py-[2px] text-[8.5px] text-[#141414]/60">{l.ref ?? ""}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+      </div>
+      <div className="mt-auto pt-1 text-[8.5px] text-[#141414]/70">{GLOSSARIO_UU_REFERENCIAS}</div>
+    </div>
+  );
+}
+
+function GlossaryPage({ part = 1, isUU = false }: { part?: 1 | 2; isUU?: boolean } = {}) {
+  if (isUU) return <GlossaryUUPage part={part} />;
   const Group = ({ title, children }: { title: string; children: React.ReactNode }) => (
     <div className="mb-2">
       <div className="mb-1 rounded bg-[#e5e7eb] px-2 py-[3px] text-[10.5px] font-semibold uppercase tracking-wide text-[#141414]">
@@ -4502,42 +4629,53 @@ function SpecimenPage({
         </ResponsiveContainer>
         <PhotoBox title="Registro Fotográfico na Moldagem" photo={moldagem} />
       </div>
-      <SectionBar>
-        {isUUReport
-          ? "Controle Volumétrico (esperado ≈ 0 — ensaio não drenado)"
-          : isCIUReport
-            ? "Poropressão Gerada (u) versus Deformação Axial Específica"
-            : "Variação Volumétrica versus Deformação Axial Específica"} — {cp.displayId ?? cp.id}
-      </SectionBar>
-      <div className="grid h-[46%] grid-cols-[1fr_38%] gap-2">
-        <ResponsiveContainer>
-          <ComposedChart margin={{ top: 6, right: 12, bottom: 22, left: 40 }}>
-            <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" />
-            <XAxis type="number" dataKey="eaPct" domain={axisDomain(0, cfg.eaMax)} tick={{ fontSize: 9 }} ticks={equalTicks(0, cfg.eaMax)} interval={0}>
-              <RLabel value="εa - Deformação Axial Específica [%]" position="insideBottom" offset={-6} fontSize={9} />
-            </XAxis>
-            {isCIUReport ? (
-              <YAxis domain={axisDomain(0, cfg.dvShearMax)} tick={{ fontSize: 9 }} interval={0}>
-                <RLabel value="u - Poropressão [kPa]" angle={-90} position="insideLeft" offset={-2} fontSize={9} />
-              </YAxis>
-            ) : (
-              <YAxis reversed domain={axisDomain(cfg.dvShearMin, cfg.dvShearMax)} tick={{ fontSize: 9 }} ticks={equalTicks(cfg.dvShearMin, cfg.dvShearMax)} interval={0}>
-                <RLabel value="Variação Volumétrica [cm³]" angle={-90} position="insideLeft" offset={-2} fontSize={9} />
-              </YAxis>
-            )}
-            <ReferenceLine y={0} stroke="#999" />
-            <Line data={dvShear} dataKey="dv" stroke={cp.color} name={legend} type="monotone"
-              dot={false} strokeWidth={1.8} isAnimationActive={false} />
-            <Legend wrapperStyle={{ fontSize: 9 }} verticalAlign="top" />
-          </ComposedChart>
-        </ResponsiveContainer>
-        <PhotoBox title="Registro Fotográfico após a Ruptura" photo={ruptura} />
-      </div>
-      <div className="text-[8.5px] text-[#141414]/70">
-        {isCIUReport
-          ? "Poropressão gerada durante o cisalhamento não drenado (leitura direta, u = σ1 − σ'1)."
-          : "Legenda: (+) Valores Positivos Representam REDUÇÃO DE VOLUME; (−) Valores Negativos representam AUMENTO DE VOLUME."}
-      </div>
+      {isUUReport ? (
+        // UU: não há variação de volume nem poropressão — a segunda metade da
+        // página é só a foto após a ruptura, na largura toda.
+        <>
+          <SectionBar>Registro Fotográfico após a Ruptura — {cp.displayId ?? cp.id}</SectionBar>
+          <div className="h-[46%]">
+            <PhotoBox title="Registro Fotográfico após a Ruptura" photo={ruptura} />
+          </div>
+        </>
+      ) : (
+        <>
+          <SectionBar>
+            {isCIUReport
+              ? "Poropressão Gerada (u) versus Deformação Axial Específica"
+              : "Variação Volumétrica versus Deformação Axial Específica"} — {cp.displayId ?? cp.id}
+          </SectionBar>
+          <div className="grid h-[46%] grid-cols-[1fr_38%] gap-2">
+            <ResponsiveContainer>
+              <ComposedChart margin={{ top: 6, right: 12, bottom: 22, left: 40 }}>
+                <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" />
+                <XAxis type="number" dataKey="eaPct" domain={axisDomain(0, cfg.eaMax)} tick={{ fontSize: 9 }} ticks={equalTicks(0, cfg.eaMax)} interval={0}>
+                  <RLabel value="εa - Deformação Axial Específica [%]" position="insideBottom" offset={-6} fontSize={9} />
+                </XAxis>
+                {isCIUReport ? (
+                  <YAxis domain={axisDomain(0, cfg.dvShearMax)} tick={{ fontSize: 9 }} interval={0}>
+                    <RLabel value="u - Poropressão [kPa]" angle={-90} position="insideLeft" offset={-2} fontSize={9} />
+                  </YAxis>
+                ) : (
+                  <YAxis reversed domain={axisDomain(cfg.dvShearMin, cfg.dvShearMax)} tick={{ fontSize: 9 }} ticks={equalTicks(cfg.dvShearMin, cfg.dvShearMax)} interval={0}>
+                    <RLabel value="Variação Volumétrica [cm³]" angle={-90} position="insideLeft" offset={-2} fontSize={9} />
+                  </YAxis>
+                )}
+                <ReferenceLine y={0} stroke="#999" />
+                <Line data={dvShear} dataKey="dv" stroke={cp.color} name={legend} type="monotone"
+                  dot={false} strokeWidth={1.8} isAnimationActive={false} />
+                <Legend wrapperStyle={{ fontSize: 9 }} verticalAlign="top" />
+              </ComposedChart>
+            </ResponsiveContainer>
+            <PhotoBox title="Registro Fotográfico após a Ruptura" photo={ruptura} />
+          </div>
+          <div className="text-[8.5px] text-[#141414]/70">
+            {isCIUReport
+              ? "Poropressão gerada durante o cisalhamento não drenado (leitura direta, u = σ1 − σ'1)."
+              : "Legenda: (+) Valores Positivos Representam REDUÇÃO DE VOLUME; (−) Valores Negativos representam AUMENTO DE VOLUME."}
+          </div>
+        </>
+      )}
     </div>
   );
 }

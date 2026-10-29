@@ -73,7 +73,9 @@ export function processGeometry(cp: TriaxialSpecimen, sample: TriaxialSample) {
   const e0 = (sample.Gs * 9.81) / gammaDry - 1;
   const Sr0 = e0 > 0 ? Math.min(100, (w0 * sample.Gs) / e0 * 100) : 0;
 
-  const dVcons = cp.consolidation.length
+  // UU: sem fase de adensamento e sem drenagem — o volume do CP não muda
+  // (H, A e V continuam iguais aos iniciais), então ΔV = 0 mesmo que haja dados.
+  const dVcons = sample.testType !== "uu" && cp.consolidation.length
     ? cp.consolidation[cp.consolidation.length - 1].dv
     : 0;
   const vRatio = Math.max(0, 1 - dVcons / V0);
@@ -98,7 +100,10 @@ export function processShear(
   geom: ReturnType<typeof processGeometry>,
   sample: TriaxialSample,
 ): SpecimenResults["shearCurve"] {
-  const uBack = cp.backPressure;
+  // UU (ASTM D2850): ensaio em tensões totais, sem drenagem e sem poropressão
+  // controlada — não há back-pressure, poropressão lida nem variação de volume.
+  const isUU = sample.testType === "uu";
+  const uBack = isUU ? 0 : cp.backPressure;
   const sigma3Total = cp.sigma3Target + uBack; // σ3 total aplicado
   // Diâmetro corrigido após adensamento (mm) — usado nas correções de
   // membrana e papel filtro (ISO 17892-9:2018 §7.2.3 e §7.2.4).
@@ -131,13 +136,15 @@ export function processShear(
   // recalculamos por linha para ficar consistente com a norma.
   const rows = cp.shear.map((r: ShearReading) => {
     const ea = r.eaPct / 100;
-    const ev = r.dvPct / 100; // ε_vol durante o cisalhamento (fração)
-    const uRow = r.uPore != null && isFinite(r.uPore) ? r.uPore : uBack;
+    // ε_vol durante o cisalhamento (fração). No UU o volume é constante: εv = 0.
+    const ev = isUU ? 0 : r.dvPct / 100;
+    const uRow = isUU ? 0 : r.uPore != null && isFinite(r.uPore) ? r.uPore : uBack;
     const sigma3TotRow =
       r.sigma3Corr != null && isFinite(r.sigma3Corr) ? r.sigma3Corr + uRow : sigma3Total;
     // Área corrigida em cm² — ISO 17892-9:2018 §7.2.2 Fórmula (4),
     // expressa em termos de ε_a e ε_vol pós-adensamento (Bishop & Henkel):
     //   A_cor = A_c · (1 − ε_vol) / (1 − ε_a)
+    // UU (εv = 0, volume constante): A_cor = A₀ / (1 − ε_a).
     const A = (geom.Ac * (1 - ev)) / Math.max(1e-6, 1 - ea); // cm²
     // Força axial em N: preferir kgf lido na célula (F = kgf · 9,80665) se informado.
     const Praw_N =
@@ -193,7 +200,7 @@ export function processShear(
       sigma1,
       sigma1Prime,
       sigma3Prime,
-      evPct: r.dvPct,
+      evPct: isUU ? 0 : r.dvPct,
       A,
     };
   });

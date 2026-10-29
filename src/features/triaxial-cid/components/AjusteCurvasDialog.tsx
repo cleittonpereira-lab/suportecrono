@@ -88,6 +88,10 @@ export function AjusteCurvasDialog({
   const mexer = (patch: Partial<OpcoesAjuste>) => setOpcoes((o) => ({ ...o, ...patch }));
 
   const adaptador = ADAPTADORES[variavel]!;
+  // UU: sem variação de volume nem poropressão — essas curvas não existem no ensaio.
+  const variaveisDisponiveis = (Object.keys(ADAPTADORES) as VariavelAjustavel[]).filter(
+    (v) => !(sample.testType === "uu" && (v === "poropressao" || v === "variacao-volumetrica")),
+  );
   const cpAtual = specimens.find((c) => c.id === cpId) ?? specimens[0];
   const registroAtual = cpAtual?.ajustesDeCurva?.[variavel];
 
@@ -240,7 +244,7 @@ export function AjusteCurvasDialog({
               <Select value={variavel} onValueChange={(v) => setVariavel(v as VariavelAjustavel)}>
                 <SelectTrigger className="h-8 w-[230px] text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {(Object.keys(ADAPTADORES) as VariavelAjustavel[]).map((v) => (
+                  {variaveisDisponiveis.map((v) => (
                     <SelectItem key={v} value={v} className="text-xs">{PERFIS[v].rotulo}</SelectItem>
                   ))}
                 </SelectContent>
