@@ -4,7 +4,7 @@
  * linhas de 1,8 px e linha de referência em y = 0.
  * Só roda no navegador (precisa de canvas).
  */
-import { baseQueCobre, niceStep, topoQueCobre } from "./eixos";
+import { baseQueCobre, escalaIgual, niceStep, topoQueCobre } from "./eixos";
 
 /** Fator de resolução: o PNG sai com o dobro do tamanho em px para ficar nítido no Excel. */
 const SCALE = 2;
@@ -39,8 +39,12 @@ export interface ChartSpec {
   yLabel: string;
   yReversed?: boolean;
   zeroLine?: boolean;
-  /** Área do gráfico quadrada (escala 1:1 quando os dois eixos têm o mesmo intervalo — Mohr). */
-  quadrado?: boolean;
+  /**
+   * Escala 1:1 (mesmos kPa/px nos dois eixos) preenchendo a área — Mohr e caminho
+   * de tensões. `xDomain[1]` e `yDomain[1]` passam a ser o mínimo que cada eixo
+   * precisa mostrar; os intervalos e ticks finais saem de `escalaIgual`.
+   */
+  escala11?: boolean;
   series: ChartSeries[];
   /** Tamanho da fonte dos eixos em px (o PDF usa 9–10 px). */
   tickPx?: number;
@@ -140,22 +144,22 @@ export function renderChartPng(spec: ChartSpec): string | null {
   }
   const legendHeight = legendRows.length ? ly + legendLine : 0;
 
-  let left = spec.margin.left;
-  let right = spec.width - spec.margin.right;
-  let top = spec.margin.top + legendHeight + (legendHeight ? 4 : 0);
-  let bottom = spec.height - spec.margin.bottom;
-  if (spec.quadrado) {
-    // Mesmo tamanho em px nos dois eixos: o quadrado fica centralizado na área livre.
-    const lado = Math.min(right - left, bottom - top);
-    left += (right - left - lado) / 2;
-    right = left + lado;
-    top += (bottom - top - lado) / 2;
-    bottom = top + lado;
-  }
+  const left = spec.margin.left;
+  const right = spec.width - spec.margin.right;
+  const top = spec.margin.top + legendHeight + (legendHeight ? 4 : 0);
+  const bottom = spec.height - spec.margin.bottom;
   const plotW = right - left;
   const plotH = bottom - top;
-  const [x0, x1] = spec.xDomain;
-  const [y0, y1] = spec.yDomain;
+  let [x0, x1] = spec.xDomain;
+  let [y0, y1] = spec.yDomain;
+  let xTicks = spec.xTicks;
+  let yTicks = spec.yTicks;
+  if (spec.escala11) {
+    const e = escalaIgual(plotW, plotH, x1, y1);
+    [x0, x1, y0, y1] = [0, e.xMax, 0, e.yMax];
+    xTicks = e.ticksX;
+    yTicks = e.ticksY;
+  }
   const sx = (x: number) => left + ((x - x0) / (x1 - x0 || 1)) * plotW;
   const sy = (y: number) =>
     spec.yReversed
@@ -184,7 +188,7 @@ export function renderChartPng(spec: ChartSpec): string | null {
   ctx.strokeStyle = GRID_COLOR;
   ctx.lineWidth = 1;
   ctx.setLineDash([3, 3]);
-  for (const t of spec.xTicks) {
+  for (const t of xTicks) {
     const px = sx(t);
     if (px < left - 0.5 || px > right + 0.5) continue;
     ctx.beginPath();
@@ -192,7 +196,7 @@ export function renderChartPng(spec: ChartSpec): string | null {
     ctx.lineTo(px, bottom);
     ctx.stroke();
   }
-  for (const t of spec.yTicks) {
+  for (const t of yTicks) {
     const py = sy(t);
     if (py < top - 0.5 || py > bottom + 0.5) continue;
     ctx.beginPath();
@@ -215,14 +219,14 @@ export function renderChartPng(spec: ChartSpec): string | null {
   ctx.font = `${tickPx}px ${FONT}`;
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
-  for (const t of spec.xTicks) {
+  for (const t of xTicks) {
     const px = sx(t);
     if (px < left - 0.5 || px > right + 0.5) continue;
     ctx.fillText(tickLabel(t), px, bottom + 3);
   }
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
-  for (const t of spec.yTicks) {
+  for (const t of yTicks) {
     const py = sy(t);
     if (py < top - 0.5 || py > bottom + 0.5) continue;
     ctx.fillText(tickLabel(t), left - 4, py);

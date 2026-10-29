@@ -69,12 +69,12 @@ function textosDaFolha(ws: ExcelJS.Worksheet): string[] {
 const quebrasDe = (ws: ExcelJS.Worksheet) => ((ws as unknown as { rowBreaks: { id: number }[] }).rowBreaks ?? []).map((q) => q.id);
 
 describe("exportXlsx — Triaxial UU", () => {
-  it("gera as dez folhas do PDF (capa, resumo, 4 gráficos, 2 CPs, 2 do glossário)", async () => {
+  it("gera as nove folhas do PDF (capa, resumo, σd×εa, Mohr + caminho, módulo, 2 CPs, 2 do glossário)", async () => {
     const wb = await buildTriaxialUuXlsxWorkbook({ ...montaParametros(), semGraficos: true });
     const ws = wb.getWorksheet("Laudo Triaxial UU");
     expect(ws).toBeDefined();
-    // 6 folhas fixas + 2 CPs + 2 do glossário = 10 folhas, cada uma com quebra no fim.
-    expect(quebrasDe(ws!).length).toBe(10);
+    // 5 folhas fixas (Mohr e caminho de tensões juntos) + 2 CPs + 2 do glossário = 9.
+    expect(quebrasDe(ws!).length).toBe(9);
   });
 
   it("cada folha soma exatamente 813 pt de linhas (uma folha A4 do PDF)", async () => {

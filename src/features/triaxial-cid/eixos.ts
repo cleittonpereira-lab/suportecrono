@@ -35,6 +35,36 @@ export function baseQueCobre(digitado: number, menorDado: number): number {
 }
 
 /**
+ * Escala 1:1 — os mesmos kPa por pixel nos dois eixos — preenchendo a área do
+ * gráfico (Mohr e caminho de tensões). O eixo x vai até o valor redondo acima de
+ * `xNecessario`; o y vai até onde a altura deixar com a mesma escala. Se aí não
+ * couber `yNecessario`, é o x que estica. Os ticks usam o mesmo passo nos dois
+ * eixos, então a grade sai em quadrados.
+ */
+export function escalaIgual(
+  plotW: number,
+  plotH: number,
+  xNecessario: number,
+  yNecessario: number,
+): { xMax: number; yMax: number; ticksX: number[]; ticksY: number[] } {
+  const w = Math.max(1, plotW);
+  const h = Math.max(1, plotH);
+  let xMax = niceCeil(Math.max(0, xNecessario));
+  let yMax = (xMax * h) / w;
+  if (yMax < yNecessario) {
+    yMax = niceCeil(yNecessario);
+    xMax = (yMax * w) / h;
+  }
+  const passo = niceStep(Math.max(xMax, yMax), 7);
+  const ticks = (max: number) => {
+    const out: number[] = [];
+    for (let v = 0; v <= max + 1e-9; v += passo) out.push(Math.round(v * 1e6) / 1e6);
+    return out;
+  };
+  return { xMax, yMax, ticksX: ticks(xMax), ticksY: ticks(yMax) };
+}
+
+/**
  * Valores da faixa de baixo dos gráficos por εa: poropressão medida no UU,
  * poropressão gerada (σ1 − σ'1) no CIU e variação de volume (cm³) no CID.
  */

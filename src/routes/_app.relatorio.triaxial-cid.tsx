@@ -116,7 +116,7 @@ import {
   GLOSSARIO_UU_CONVENCAO,
   GLOSSARIO_UU_REFERENCIAS,
 } from "@/features/triaxial-cid/glossario-uu";
-import { eixosQueCobremOsDados, niceCeil, niceStep, valoresDaFaixaInferior } from "@/features/triaxial-cid/eixos";
+import { eixosQueCobremOsDados, escalaIgual, niceStep, valoresDaFaixaInferior } from "@/features/triaxial-cid/eixos";
 
 const NORMS_CID: ReportNorm[] = [
   { text: "ASTM D7181-20 — Consolidated Drained Triaxial Compression Test for Soils" },
@@ -3793,24 +3793,16 @@ function MohrChart({
     )
     .filter((x): x is { id: string; displayId: string; color: string; sigma3Target: number; data: { sigma: number; tau: number }[] } => x != null);
 
-  const autoSigma = Math.max(1, ...circles.flatMap((c) => c.data.map((p) => p.sigma))) * 1.1;
-  const autoTau = Math.max(1, ...circles.flatMap((c) => c.data.map((p) => p.tau))) * 1.4;
-  const maxSigma = sigmaMaxProp && sigmaMaxProp > 0 ? sigmaMaxProp : autoSigma;
-  const maxTau = tauMaxProp && tauMaxProp > 0 ? tauMaxProp : autoTau;
-  // Escala 1:1 — o círculo de Mohr tem de sair redondo: mesmo intervalo [0, U]
-  // nos dois eixos (topo redondo) e área do gráfico quadrada (ver margens abaixo).
-  const U = niceCeil(Math.max(maxSigma, maxTau));
-  const ticks = equalTicks(0, U);
-
-  const envLine = envelope
-    ? [
-        { sigma: 0, tau: envelope.cPrime },
-        {
-          sigma: U,
-          tau: envelope.cPrime + Math.tan((envelope.phiDeg * Math.PI) / 180) * U,
-        },
-      ]
-    : null;
+  // O eixo σ cobre o maior círculo (σ1) com folga; o τ, o maior raio e a envoltória.
+  // `sigmaMax`/`tauMax` (quando informados) só ampliam esses mínimos.
+  const sigmaNecessario = Math.max(
+    sigmaMaxProp ?? 0,
+    1.05 * Math.max(1, ...circles.flatMap((c) => c.data.map((p) => p.sigma))),
+  );
+  const tauNecessario = Math.max(
+    tauMaxProp ?? 0,
+    1.15 * Math.max(1, ...circles.flatMap((c) => c.data.map((p) => p.tau)), envelope ? envelope.cPrime : 0),
+  );
   // UU: envoltória horizontal — o que importa é Su (= cu), com φu = 0.
   const nomeEnvoltoria = envelope
     ? totalStress
@@ -3826,54 +3818,203 @@ function MohrChart({
     ...(envelope ? [{ cor: ACCENT, tracejado: true, nome: nomeEnvoltoria }] : []),
   ];
 
-  // Margens + eixos iguais na horizontal e na vertical (14+60+20 = 10+30+54 = 94 px):
-  // num contêiner quadrado, a área do gráfico também fica quadrada.
   return (
-    <div className="flex h-full min-h-[240px] w-full flex-col items-center">
-      <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 pb-1 text-[9px] text-[#141414]">
-        {legenda.map((l) => (
-          <span key={l.nome} className="inline-flex items-center gap-1">
-            <svg width="18" height="6" aria-hidden>
-              <line x1="0" y1="3" x2="18" y2="3" stroke={l.cor} strokeWidth="2" strokeDasharray={l.tracejado ? "6 4" : undefined} />
-            </svg>
-            {l.nome}
-          </span>
-        ))}
-      </div>
-      <div className="aspect-square min-h-0 max-w-full flex-1">
+    <div className="flex h-full min-h-[200px] w-full flex-col">
+      <LegendaHtml itens={legenda} />
+      <div className="min-h-0 w-full flex-1">
         <ResponsiveContainer>
-          <ScatterChart margin={{ top: 10, right: 20, bottom: 54, left: 14 }}>
-            <CartesianGrid stroke="#eee" strokeDasharray="3 3" />
-            <XAxis type="number" dataKey="sigma" domain={[0, U]} ticks={ticks} interval={0} height={30} allowDataOverflow>
-              <RLabel value={`${sigmaSym} (kPa)`} position="insideBottom" offset={-24} fontSize={11} />
-            </XAxis>
-            <YAxis type="number" dataKey="tau" domain={[0, U]} ticks={ticks} interval={0} width={60} allowDataOverflow>
-              <RLabel value="τ (kPa)" angle={-90} position="insideLeft" offset={-2} fontSize={11} />
-            </YAxis>
-            <Tooltip formatter={(v: number) => fmt(v, 1)} />
-            {circles.map((c) => (
-              <Scatter
-                key={c.id}
-                data={c.data}
-                name={`${c.displayId ?? c.id} · ${sigmaSym}3=${fmt(c.sigma3Target, 0)} kPa`}
-                line={{ stroke: c.color, strokeWidth: 2 }}
-                shape={() => <g />}
-                fill={c.color}
-              />
-            ))}
-            {envLine && (
-              <Scatter
-                data={envLine}
-                name={nomeEnvoltoria}
-                line={{ stroke: ACCENT, strokeWidth: 2, strokeDasharray: "6 4" }}
-                shape={() => <g />}
-                fill={ACCENT}
-              />
-            )}
-          </ScatterChart>
+          <MohrPlano
+            circles={circles}
+            envelope={envelope}
+            sigmaNecessario={sigmaNecessario}
+            tauNecessario={tauNecessario}
+            sigmaSym={sigmaSym}
+            nomeEnvoltoria={nomeEnvoltoria}
+          />
         </ResponsiveContainer>
       </div>
     </div>
+  );
+}
+
+/** Legenda fora da área do gráfico (não muda o tamanho usado na escala 1:1). */
+function LegendaHtml({ itens }: { itens: { cor: string; tracejado: boolean; nome: string }[] }) {
+  return (
+    <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 pb-1 text-[9px] text-[#141414]">
+      {itens.map((l) => (
+        <span key={l.nome} className="inline-flex items-center gap-1">
+          <svg width="18" height="6" aria-hidden>
+            <line x1="0" y1="3" x2="18" y2="3" stroke={l.cor} strokeWidth="2" strokeDasharray={l.tracejado ? "6 4" : undefined} />
+          </svg>
+          {l.nome}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// Espaço fora da área de plotagem dos gráficos 1:1 (margens + eixos), em px.
+const MARGEM_11 = { top: 10, right: 20, bottom: 30, left: 14 };
+const EIXO_Y_11 = 60;
+const EIXO_X_11 = 30;
+const areaDePlotagem = (width: number, height: number) => ({
+  w: width - MARGEM_11.left - MARGEM_11.right - EIXO_Y_11,
+  h: height - MARGEM_11.top - MARGEM_11.bottom - EIXO_X_11,
+});
+
+/**
+ * Círculos de Mohr em escala 1:1 (mesmos kPa/px em σ e τ). Recebe a largura e a
+ * altura do ResponsiveContainer e escolhe os intervalos para preencher a área.
+ */
+function MohrPlano({
+  width = 0,
+  height = 0,
+  circles,
+  envelope,
+  sigmaNecessario,
+  tauNecessario,
+  sigmaSym,
+  nomeEnvoltoria,
+}: {
+  width?: number;
+  height?: number;
+  circles: { id: string; displayId: string; color: string; sigma3Target: number; data: { sigma: number; tau: number }[] }[];
+  envelope: ReturnType<typeof fitEnvelope>;
+  sigmaNecessario: number;
+  tauNecessario: number;
+  sigmaSym: string;
+  nomeEnvoltoria: string;
+}) {
+  const area = areaDePlotagem(width, height);
+  const esc = escalaIgual(area.w, area.h, sigmaNecessario, tauNecessario);
+  const envLine = envelope
+    ? [
+        { sigma: 0, tau: envelope.cPrime },
+        { sigma: esc.xMax, tau: envelope.cPrime + Math.tan((envelope.phiDeg * Math.PI) / 180) * esc.xMax },
+      ]
+    : null;
+  return (
+    <ScatterChart width={width} height={height} margin={MARGEM_11}>
+      <CartesianGrid stroke="#eee" strokeDasharray="3 3" />
+      <XAxis type="number" dataKey="sigma" domain={[0, esc.xMax]} ticks={esc.ticksX} interval={0} height={EIXO_X_11} allowDataOverflow>
+        <RLabel value={`${sigmaSym} (kPa)`} position="insideBottom" offset={-24} fontSize={11} />
+      </XAxis>
+      <YAxis type="number" dataKey="tau" domain={[0, esc.yMax]} ticks={esc.ticksY} interval={0} width={EIXO_Y_11} allowDataOverflow>
+        <RLabel value="τ (kPa)" angle={-90} position="insideLeft" offset={-2} fontSize={11} />
+      </YAxis>
+      <Tooltip formatter={(v: number) => fmt(v, 1)} />
+      {circles.map((c) => (
+        <Scatter
+          key={c.id}
+          data={c.data}
+          name={`${c.displayId ?? c.id} · ${sigmaSym}3=${fmt(c.sigma3Target, 0)} kPa`}
+          line={{ stroke: c.color, strokeWidth: 2 }}
+          shape={() => <g />}
+          fill={c.color}
+        />
+      ))}
+      {envLine && (
+        <Scatter
+          data={envLine}
+          name={nomeEnvoltoria}
+          line={{ stroke: ACCENT, strokeWidth: 2, strokeDasharray: "6 4" }}
+          shape={() => <g />}
+          fill={ACCENT}
+        />
+      )}
+    </ScatterChart>
+  );
+}
+
+/** Caminho de tensões t–s (MIT) em escala 1:1, com a reta Kf (no UU, horizontal em Su). */
+function CaminhoChart({
+  specimens,
+  results,
+  envelope,
+  isUU,
+}: {
+  specimens: TriaxialSpecimen[];
+  results: ReturnType<typeof processSpecimen>[];
+  envelope: ReturnType<typeof fitEnvelope>;
+  isUU: boolean;
+}) {
+  const sNecessario = 1.05 * Math.max(1, ...results.flatMap((r) => r.shearCurve.map((p) => p.pPrime)));
+  const tNecessario = 1.15 * Math.max(1, ...results.flatMap((r) => r.shearCurve.map((p) => p.q)), envelope ? envelope.a : 0);
+  const nomeKf = envelope ? (isUU ? `Su = ${fmt(envelope.a, 1)} kPa (φᵤ = 0)` : "Envoltória Efetiva Kf") : "";
+  const legenda = [
+    ...specimens.map((cp) => ({
+      cor: cp.color ?? BRAND,
+      tracejado: false,
+      nome: `${cp.displayId ?? cp.id} · ${isUU ? "σ3" : "σ3'"}=${cp.sigma3Target} kPa`,
+    })),
+    ...(envelope ? [{ cor: "#8a6f4c", tracejado: false, nome: nomeKf }] : []),
+  ];
+  return (
+    <div className="flex h-full min-h-[200px] w-full flex-col">
+      <LegendaHtml itens={legenda} />
+      <div className="min-h-0 w-full flex-1">
+        <ResponsiveContainer>
+          <CaminhoPlano
+            specimens={specimens}
+            results={results}
+            envelope={envelope}
+            sNecessario={sNecessario}
+            tNecessario={tNecessario}
+            rotuloS={isUU ? "s [kPa]" : "s' [kPa]"}
+            nomeKf={nomeKf}
+          />
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+function CaminhoPlano({
+  width = 0,
+  height = 0,
+  specimens,
+  results,
+  envelope,
+  sNecessario,
+  tNecessario,
+  rotuloS,
+  nomeKf,
+}: {
+  width?: number;
+  height?: number;
+  specimens: TriaxialSpecimen[];
+  results: ReturnType<typeof processSpecimen>[];
+  envelope: ReturnType<typeof fitEnvelope>;
+  sNecessario: number;
+  tNecessario: number;
+  rotuloS: string;
+  nomeKf: string;
+}) {
+  const area = areaDePlotagem(width, height);
+  const esc = escalaIgual(area.w, area.h, sNecessario, tNecessario);
+  return (
+    <ComposedChart width={width} height={height} margin={MARGEM_11}>
+      <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" />
+      <XAxis type="number" dataKey="pPrime" domain={[0, esc.xMax]} tick={{ fontSize: 10 }} ticks={esc.ticksX} interval={0} height={EIXO_X_11} allowDataOverflow>
+        <RLabel value={rotuloS} position="insideBottom" offset={-24} fontSize={10} />
+      </XAxis>
+      <YAxis type="number" dataKey="q" domain={[0, esc.yMax]} tick={{ fontSize: 10 }} ticks={esc.ticksY} interval={0} width={EIXO_Y_11} allowDataOverflow>
+        <RLabel value="t [kPa]" angle={-90} position="insideLeft" offset={-2} fontSize={10} />
+      </YAxis>
+      {specimens.map((cp, i) => (
+        <Line key={cp.id} data={results[i].shearCurve} dataKey="q" stroke={cp.color} name={cp.displayId ?? cp.id}
+          type="monotone" dot={false} strokeWidth={1.8} isAnimationActive={false} />
+      ))}
+      {envelope && (
+        <Line
+          data={[
+            { pPrime: 0, q: envelope.a },
+            { pPrime: esc.xMax, q: envelope.a + envelope.M * esc.xMax },
+          ]}
+          dataKey="q" type="linear" stroke="#8a6f4c" strokeWidth={2} dot={false} name={nomeKf} isAnimationActive={false}
+        />
+      )}
+    </ComposedChart>
   );
 }
 
@@ -4046,7 +4187,10 @@ function TriaxialReport({
 }) {
   const photos = fotosPublicadas(photosRecebidas);
   const perCpPages = specimens.length; // uma página por CP com gráficos + fotos
-  const total = 6 + perCpPages + 2; // +2 → Glossário (Formulações e Convenções), 2 páginas
+  // Folhas antes das dos CPs: capa, resumo, σd×εa, Mohr, caminho de tensões e módulo.
+  // No UU, Mohr e caminho de tensões dividem a mesma folha → 5 em vez de 6.
+  const folhasFixas = sample.testType === "uu" ? 5 : 6;
+  const total = folhasFixas + perCpPages + 2; // +2 → Glossário (Formulações e Convenções), 2 páginas
   const reportTestType = sample.testType ?? "cid";
   // Os limites do "Ajuste de Eixos" só valem se cobrirem os dados: um limite salvo
   // antes da importação (εa máx = 1 %) espremia os ticks num canto do eixo.
@@ -4159,92 +4303,62 @@ function TriaxialReport({
         </div>
       ))}
 
-      {/* Páginas 4 e 5 — Envoltória Mohr-Coulomb e Caminho de Tensões (mesma escala quadrada, em páginas separadas) */}
+      {/* Envoltória de Mohr e caminho de tensões em escala 1:1 (mesmos kPa/px nos dois eixos).
+          UU: os dois na mesma folha (4). CID/CIU: folhas 4 e 5. */}
       {(() => {
-        // Escala unificada: mesmo intervalo para X e Y em ambos gráficos → quadrado.
-        const autoSigmaTau = Math.max(
-          cfg.sigmaMax || 0, cfg.tauMax || 0,
-          cfg.pMax || 0, cfg.qMax || 0,
-          ...results.flatMap((r) => r.failure ? [r.failure.sigma1Prime * 1.1, r.failure.sigma1Prime * 0.7] : []),
-          ...envelopePts.map((p) => Math.max(p.pPrime, p.q) * 1.2),
-        );
-        // Topo redondo (ex.: 120 em vez de 118,06) — vale para os dois eixos, escala 1:1.
-        const unified = niceCeil(Math.max(1, autoSigmaTau));
         const alphaDeg = envelope ? Math.atan(envelope.M) * 180 / Math.PI : 0;
-        const mohrPage = page(4, (
-          <div className="flex h-full flex-col gap-2 text-[10px] text-[#141414]">
+        const caixa = "rounded border border-[#141414]/60 bg-[#f3f4f6] px-3 py-1";
+        const caixas = `flex flex-wrap justify-center gap-2 ${isUUReport ? "text-[10.5px]" : "mt-1 text-[12px]"}`;
+        const desvioOuR2 = (
+          <span className={caixa}>
+            {isUUReport ? (
+              <><b>Desvio padrão de Su =</b> {envelope ? `${fmt(envelope.desvioPadrao, 2)} kPa` : "—"}</>
+            ) : (
+              <><b>R² =</b> {envelope ? fmt(envelope.r2, 3) : "—"}</>
+            )}
+          </span>
+        );
+        const mohr = (
+          <>
             <SectionBar>Envoltória de Ruptura — Mohr-Coulomb — {isUUReport ? "Tensões Totais" : "Tensões Efetivas"}</SectionBar>
             <div className="w-full flex-1 min-h-0">
-              <MohrChart specimens={specimens} results={results} envelope={envelope} sigmaMax={unified} tauMax={unified} totalStress={isUUReport} />
+              <MohrChart specimens={specimens} results={results} envelope={envelope} totalStress={isUUReport} />
             </div>
-            <div className="mt-1 flex flex-wrap justify-center gap-2 text-[12px]">
-                  <span className="rounded border border-[#141414]/60 bg-[#f3f4f6] px-3 py-1">
-                    <b>{isUUReport ? "Su = cᵤ" : "c'"}</b> <span className="text-[10px] text-[#141414]/70">({isUUReport ? "resistência não drenada" : "intercepto coesivo efetivo"})</span> <b>=</b> {envelope ? `${fmt(envelope.cPrime, 2)} kPa` : "—"}
-                  </span>
-                  <span className="rounded border border-[#141414]/60 bg-[#f3f4f6] px-3 py-1">
-                    <b>{isUUReport ? "φᵤ" : "φ'"}</b> <span className="text-[10px] text-[#141414]/70">({isUUReport ? "envoltória horizontal" : "ângulo de atrito efetivo"})</span> <b>=</b> {envelope ? `${fmt(envelope.phiDeg, 2)}°` : "—"}
-                  </span>
-                  <span className="rounded border border-[#141414]/60 bg-[#f3f4f6] px-3 py-1">
-                    {isUUReport ? (
-                      <><b>Desvio padrão de Su =</b> {envelope ? `${fmt(envelope.desvioPadrao, 2)} kPa` : "—"}</>
-                    ) : (
-                      <><b>R² =</b> {envelope ? fmt(envelope.r2, 3) : "—"}</>
-                    )}
-                  </span>
+            <div className={caixas}>
+              <span className={caixa}>
+                <b>{isUUReport ? "Su = cᵤ" : "c'"}</b> <span className="text-[10px] text-[#141414]/70">({isUUReport ? "resistência não drenada" : "intercepto coesivo efetivo"})</span> <b>=</b> {envelope ? `${fmt(envelope.cPrime, 2)} kPa` : "—"}
+              </span>
+              <span className={caixa}>
+                <b>{isUUReport ? "φᵤ" : "φ'"}</b> <span className="text-[10px] text-[#141414]/70">({isUUReport ? "envoltória horizontal" : "ângulo de atrito efetivo"})</span> <b>=</b> {envelope ? `${fmt(envelope.phiDeg, 2)}°` : "—"}
+              </span>
+              {desvioOuR2}
             </div>
-          </div>
-        ));
-        const pathPage = page(5, (
-          <div className="flex h-full flex-col gap-2 text-[10px] text-[#141414]">
+          </>
+        );
+        const caminho = (
+          <>
             <SectionBar>Caminho de Tensões (stress path) — Diagrama t–{isUUReport ? "s" : "s'"} (MIT) — {isUUReport ? "Tensões Totais" : "Tensões Efetivas"}</SectionBar>
             <div className="w-full flex-1 min-h-0">
-              <ResponsiveContainer>
-                <ComposedChart margin={{ top: 24, right: 16, bottom: 56, left: 52 }}>
-                  <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" />
-                  <XAxis type="number" dataKey="pPrime" domain={[0, unified]} tick={{ fontSize: 10 }} ticks={equalTicks(0, unified)} interval={0}>
-                    <RLabel value={isUUReport ? "s [kPa]" : "s' [kPa]"} position="insideBottom" offset={-24} fontSize={10} />
-                  </XAxis>
-                  <YAxis type="number" dataKey="q" domain={[0, unified]} tick={{ fontSize: 10 }} ticks={equalTicks(0, unified)} interval={0}>
-                    <RLabel value="t [kPa]" angle={-90} position="insideLeft" offset={-6} fontSize={10} />
-                  </YAxis>
-                  <Legend wrapperStyle={{ fontSize: 10 }} verticalAlign="top" />
-                  {specimens.map((cp, i) => (
-                    <Line key={cp.id} data={results[i].shearCurve} dataKey="q" stroke={cp.color}
-                      name={`${cp.displayId ?? cp.id} · ${isUUReport ? "σ3" : "σ3'"}=${cp.sigma3Target} kPa`} type="monotone"
-                      dot={false} strokeWidth={1.8} isAnimationActive={false} />
-                  ))}
-                  {envelope && (() => {
-                    const envLine = [
-                      { pPrime: 0, q: envelope.a },
-                      { pPrime: unified, q: envelope.a + envelope.M * unified },
-                    ];
-                    return <Line data={envLine} dataKey="q" type="linear" stroke="#8a6f4c" strokeWidth={2} dot={false} name={isUUReport ? `Su = ${fmt(envelope.a, 1)} kPa (φᵤ = 0)` : "Envoltória Efetiva Kf"} isAnimationActive={false} />;
-                  })()}
-                </ComposedChart>
-              </ResponsiveContainer>
+              <CaminhoChart specimens={specimens} results={results} envelope={envelope} isUU={isUUReport} />
             </div>
-            <div className="mt-1 flex flex-wrap justify-center gap-2 text-[12px]">
-                  <span className="rounded border border-[#141414]/60 bg-[#f3f4f6] px-3 py-1">
-                    <b>{isUUReport ? "a" : "a'"}</b> <span className="text-[10px] text-[#141414]/70">(intercepto Kf)</span> <b>=</b> {envelope ? `${fmt(envelope.a, 2)} kPa` : "—"}
-                  </span>
-                  <span className="rounded border border-[#141414]/60 bg-[#f3f4f6] px-3 py-1">
-                    <b>{isUUReport ? "α" : "α'"}</b> <span className="text-[10px] text-[#141414]/70">(inclinação Kf)</span> <b>=</b> {envelope ? `${fmt(alphaDeg, 2)}°` : "—"}
-                  </span>
-                  <span className="rounded border border-[#141414]/60 bg-[#f3f4f6] px-3 py-1">
-                    {isUUReport ? (
-                      <><b>Desvio padrão de Su =</b> {envelope ? `${fmt(envelope.desvioPadrao, 2)} kPa` : "—"}</>
-                    ) : (
-                      <><b>R² =</b> {envelope ? fmt(envelope.r2, 3) : "—"}</>
-                    )}
-                  </span>
+            <div className={caixas}>
+              <span className={caixa}>
+                <b>{isUUReport ? "a" : "a'"}</b> <span className="text-[10px] text-[#141414]/70">(intercepto Kf)</span> <b>=</b> {envelope ? `${fmt(envelope.a, 2)} kPa` : "—"}
+              </span>
+              <span className={caixa}>
+                <b>{isUUReport ? "α" : "α'"}</b> <span className="text-[10px] text-[#141414]/70">(inclinação Kf)</span> <b>=</b> {envelope ? `${fmt(alphaDeg, 2)}°` : "—"}
+              </span>
+              {desvioOuR2}
             </div>
-          </div>
-        ));
-        return <>{mohrPage}{pathPage}</>;
+          </>
+        );
+        const folha = (n: number, conteudo: React.ReactNode) =>
+          page(n, <div className="flex h-full flex-col gap-2 text-[10px] text-[#141414]">{conteudo}</div>);
+        return isUUReport ? folha(4, <>{mohr}{caminho}</>) : <>{folha(4, mohr)}{folha(5, caminho)}</>;
       })()}
 
-      {/* Página 6 — Módulo de Deformabilidade + Razão σ'1/σ'3 */}
-      {page(6, (
+      {/* Módulo de Deformabilidade + Razão σ'1/σ'3 (folha 5 no UU, 6 no CID/CIU) */}
+      {page(folhasFixas, (
         <div className="flex h-full flex-col gap-2 text-[10px] text-[#141414]">
           <SectionBar>Módulo de Deformabilidade versus Deformação Axial Específica</SectionBar>
           <div className="h-[48%]">
@@ -4302,7 +4416,7 @@ function TriaxialReport({
         <ReportPage
           key={`cp-${cp.id}`}
           sample={sample}
-          page={7 + i}
+          page={folhasFixas + 1 + i}
           total={total}
           title={REPORT_TITLE}
           norms={normsFor(reportTestType)}

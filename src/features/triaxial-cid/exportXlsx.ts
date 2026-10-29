@@ -18,7 +18,6 @@ import { fotosPublicadas } from "@/features/lab/photos";
 import type { Photo } from "@/features/lab/types";
 import { formatSignerName } from "@/lib/assinaturas-pdf";
 import { GLOSSARIO_UU_1, GLOSSARIO_UU_2, GLOSSARIO_UU_CONVENCAO, GLOSSARIO_UU_REFERENCIAS } from "./glossario-uu";
-import { niceCeil } from "./eixos";
 
 // ---------------------------------------------------------------------------
 // Parâmetros
@@ -425,7 +424,6 @@ function graficoLinha(cx: Ctx, hPt: number, col1: number, col2: number, monta: (
 
 interface Derivados {
   cfg: TriaxialAxisCfg;
-  unified: number;
   alphaDeg: number;
   /** Umidade final, S final e demais valores por CP, na mesma ordem dos specimens. */
   porCp: {
@@ -450,16 +448,8 @@ function derivar(p: ExportTriaxialUuParams): Derivados {
     const failCrit = cp.failureCriterion === "max_ratio" ? "Máx. Obliquidade (σ1'/σ3')" : "Máx. t = (σ1−σ3)/2";
     return { sf, eFinal, failCrit };
   });
-  // Escala única do Mohr e do caminho de tensões (mesma regra do relatório).
-  const autoSigmaTau = Math.max(
-    cfg.sigmaMax || 0, cfg.tauMax || 0, cfg.pMax || 0, cfg.qMax || 0,
-    ...p.results.flatMap((r) => (r.failure ? [r.failure.sigma1Prime * 1.1, r.failure.sigma1Prime * 0.7] : [])),
-    ...p.envelopePts.map((pt) => Math.max(pt.pPrime, pt.q) * 1.2),
-  );
-  // Topo redondo, o mesmo nos dois eixos (Mohr em escala 1:1), como no PDF.
-  const unified = niceCeil(Math.max(1, autoSigmaTau));
   const alphaDeg = p.envelope ? (Math.atan(p.envelope.M) * 180) / Math.PI : 0;
-  return { cfg, unified, alphaDeg, porCp };
+  return { cfg, alphaDeg, porCp };
 }
 
 /** Largura de cada grupo de CPs dentro das colunas 21..60, distribuídas igualmente. */
@@ -642,9 +632,21 @@ function paginaQvsEa(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
   put(cx, nota, 1, nota, COLS, NOTA_UU_POROPRESSAO, { size: 6.4, color: MUTED });
 }
 
-function paginaMohr(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
+/**
+ * Envoltória de Mohr e caminho de tensões na mesma folha (como no PDF do UU), os
+ * dois em escala 1:1 — mesmos kPa/px nos dois eixos, preenchendo a faixa.
+ */
+function paginaMohrECaminho(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
+  const env = p.envelope;
+  // Cada gráfico fica com metade do que sobra depois das duas barras e das duas linhas de caixas.
+  const hGrafico = Math.floor((restante(cx) - 2 * 16 - 2 * 22) / 2);
+
   barra(cx, "Envoltória de Ruptura — Mohr-Coulomb — Tensões Totais");
-  const u = d.unified;
+  const falhas = p.results.flatMap((r) => (r.failure ? [r.failure] : []));
+  const sigmaNecessario = 1.05 * Math.max(1, ...falhas.map((f) => f.sigma1Prime));
+  const tauNecessario = 1.15 * Math.max(1, ...falhas.map((f) => (f.sigma1Prime - f.sigma3Prime) / 2), env ? env.cPrime : 0);
+  // A reta vai bem além do eixo e é cortada na borda (o topo do eixo só sai no desenho).
+  const xLonge = sigmaNecessario * 20;
   const circulos: ChartSeries[] = p.results.flatMap((r, i) =>
     r.failure
       ? [{
@@ -654,79 +656,76 @@ function paginaMohr(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
         }]
       : [],
   );
-  const env = p.envelope;
-  const series: ChartSeries[] = [...circulos];
+  const seriesMohr: ChartSeries[] = [...circulos];
   if (env) {
-    series.push({
+    seriesMohr.push({
       name: `Envoltória: Su = cᵤ = ${fmt(env.cPrime, 1)} kPa (φᵤ = 0)`,
       color: argb(ACCENT),
       points: [
         { x: 0, y: env.cPrime },
-        { x: u, y: env.cPrime + Math.tan((env.phiDeg * Math.PI) / 180) * u },
+        { x: xLonge, y: env.cPrime + Math.tan((env.phiDeg * Math.PI) / 180) * xLonge },
       ],
       dash: [6, 4],
       width: 2,
     });
   }
-  const r = restante(cx) - 22;
-  graficoLinha(cx, r, 1, COLS, (w, h) => ({
+  graficoLinha(cx, hGrafico, 1, COLS, (w, h) => ({
     width: w,
     height: h,
-    margin: { top: 28, right: 20, bottom: 56, left: 44 },
-    quadrado: true,
-    xDomain: [0, u],
-    yDomain: [0, u],
-    xTicks: equalTicks(0, u),
-    yTicks: equalTicks(0, u),
+    margin: { top: 8, right: 20, bottom: 34, left: 44 },
+    escala11: true,
+    xDomain: [0, sigmaNecessario],
+    yDomain: [0, tauNecessario],
+    xTicks: [],
+    yTicks: [],
     xLabel: "σ (kPa)",
     yLabel: "τ (kPa)",
-    series,
+    series: seriesMohr,
   }));
-  const bx = newRow(cx, 22);
+  const bxMohr = newRow(cx, 22);
   const cPrime = env ? `${fmt(env.cPrime, 2)} kPa` : "—";
   const phiDeg = env ? `${fmt(env.phiDeg, 2)}°` : "—";
-  caixa(cx, bx, 1, 20, [{ t: "Su = cᵤ", bold: true }, { t: " (resistência não drenada) = ", size: 6 }, { t: cPrime, bold: true }]);
-  caixa(cx, bx, 21, 40, [{ t: "φᵤ", bold: true }, { t: " (envoltória horizontal) = ", size: 6 }, { t: phiDeg, bold: true }]);
-  caixa(cx, bx, 41, 60, [{ t: "Desvio padrão de Su = ", bold: true }, { t: desvioSu(env), bold: true }]);
-}
+  caixa(cx, bxMohr, 1, 20, [{ t: "Su = cᵤ", bold: true }, { t: " (resistência não drenada) = ", size: 6 }, { t: cPrime, bold: true }]);
+  caixa(cx, bxMohr, 21, 40, [{ t: "φᵤ", bold: true }, { t: " (envoltória horizontal) = ", size: 6 }, { t: phiDeg, bold: true }]);
+  caixa(cx, bxMohr, 41, 60, [{ t: "Desvio padrão de Su = ", bold: true }, { t: desvioSu(env), bold: true }]);
 
-function paginaCaminho(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
   barra(cx, "Caminho de Tensões (stress path) — Diagrama t–s (MIT) — Tensões Totais");
-  const u = d.unified;
-  const env = p.envelope;
-  const series: ChartSeries[] = p.specimens.map((cp, i) => ({
+  const sNecessario = 1.05 * Math.max(1, ...p.results.flatMap((r) => r.shearCurve.map((q) => q.pPrime)));
+  const tNecessario = 1.15 * Math.max(1, ...p.results.flatMap((r) => r.shearCurve.map((q) => q.q)), env ? env.a : 0);
+  const seriesCaminho: ChartSeries[] = p.specimens.map((cp, i) => ({
     name: `${cp.displayId ?? cp.id} · σ3=${cp.sigma3Target} kPa`,
     color: argb(cp.color ?? BRAND),
     points: p.results[i].shearCurve.map((q) => ({ x: q.pPrime, y: q.q })),
   }));
   if (env) {
-    series.push({
+    const sLonge = sNecessario * 20;
+    seriesCaminho.push({
       name: `Su = ${fmt(env.a, 1)} kPa (φᵤ = 0)`,
       color: ENVELOPE_INK,
       points: [
         { x: 0, y: env.a },
-        { x: u, y: env.a + env.M * u },
+        { x: sLonge, y: env.a + env.M * sLonge },
       ],
       width: 2,
     });
   }
-  const r = restante(cx) - 22;
-  graficoLinha(cx, r, 1, COLS, (w, h) => ({
+  graficoLinha(cx, restante(cx) - 22, 1, COLS, (w, h) => ({
     width: w,
     height: h,
-    margin: { top: 24, right: 16, bottom: 56, left: 52 },
-    xDomain: [0, u],
-    yDomain: [0, u],
-    xTicks: equalTicks(0, u),
-    yTicks: equalTicks(0, u),
+    margin: { top: 8, right: 20, bottom: 34, left: 44 },
+    escala11: true,
+    xDomain: [0, sNecessario],
+    yDomain: [0, tNecessario],
+    xTicks: [],
+    yTicks: [],
     xLabel: "s [kPa]",
     yLabel: "t [kPa]",
-    series,
+    series: seriesCaminho,
   }));
-  const bx = newRow(cx, 22);
-  caixa(cx, bx, 1, 20, [{ t: "a", bold: true }, { t: " (intercepto Kf) = ", size: 6 }, { t: env ? `${fmt(env.a, 2)} kPa` : "—", bold: true }]);
-  caixa(cx, bx, 21, 40, [{ t: "α", bold: true }, { t: " (inclinação Kf) = ", size: 6 }, { t: env ? `${fmt(d.alphaDeg, 2)}°` : "—", bold: true }]);
-  caixa(cx, bx, 41, 60, [{ t: "Desvio padrão de Su = ", bold: true }, { t: desvioSu(env), bold: true }]);
+  const bxCaminho = newRow(cx, 22);
+  caixa(cx, bxCaminho, 1, 20, [{ t: "a", bold: true }, { t: " (intercepto Kf) = ", size: 6 }, { t: env ? `${fmt(env.a, 2)} kPa` : "—", bold: true }]);
+  caixa(cx, bxCaminho, 21, 40, [{ t: "α", bold: true }, { t: " (inclinação Kf) = ", size: 6 }, { t: env ? `${fmt(d.alphaDeg, 2)}°` : "—", bold: true }]);
+  caixa(cx, bxCaminho, 41, 60, [{ t: "Desvio padrão de Su = ", bold: true }, { t: desvioSu(env), bold: true }]);
 }
 
 function paginaModulo(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
@@ -1037,7 +1036,8 @@ export async function buildTriaxialUuXlsxWorkbook(p: ExportTriaxialUuParams): Pr
   }
 
   const d = derivar(p);
-  const total = 6 + p.specimens.length + 2;
+  // 5 folhas fixas (capa, resumo, σd×εa, Mohr + caminho de tensões, módulo) + CPs + 2 do glossário.
+  const total = 5 + p.specimens.length + 2;
   const cx: Ctx = {
     wb, ws, row: 1, used: 0, pageNo: 0, total,
     sample: p.sample, semGraficos,
@@ -1058,19 +1058,15 @@ export async function buildTriaxialUuXlsxWorkbook(p: ExportTriaxialUuParams): Pr
   fimPagina(cx);
 
   inicioPagina(cx, 4);
-  paginaMohr(cx, p, d);
+  paginaMohrECaminho(cx, p, d);
   fimPagina(cx);
 
   inicioPagina(cx, 5);
-  paginaCaminho(cx, p, d);
-  fimPagina(cx);
-
-  inicioPagina(cx, 6);
   paginaModulo(cx, p, d);
   fimPagina(cx);
 
   for (let i = 0; i < p.specimens.length; i++) {
-    inicioPagina(cx, 7 + i);
+    inicioPagina(cx, 6 + i);
     paginaCp(cx, p, d, i);
     fimPagina(cx);
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { baseQueCobre, niceCeil, topoQueCobre } from "./eixos";
+import { baseQueCobre, escalaIgual, niceCeil, topoQueCobre } from "./eixos";
 
 describe("eixos que cobrem os dados", () => {
   it("arredonda o topo para um valor redondo acima do dado", () => {
@@ -19,6 +19,21 @@ describe("eixos que cobrem os dados", () => {
 
   it("0 = automático: vai até o redondo acima do dado", () => {
     expect(topoQueCobre(0, 46)).toBe(50);
+  });
+
+  it("escala 1:1 preenche a área: mesmo kPa/px nos dois eixos", () => {
+    // Faixa larga e baixa (600 × 200 px) com σ até 285 e τ até 48 (os círculos do UU).
+    const e = escalaIgual(600, 200, 285, 48);
+    expect(e.xMax).toBe(300);
+    expect(e.xMax / 600).toBeCloseTo(e.yMax / 200, 9);
+    expect(e.yMax).toBeGreaterThanOrEqual(48);
+    expect(e.ticksX[1] - e.ticksX[0]).toBe(e.ticksY[1] - e.ticksY[0]);
+  });
+
+  it("escala 1:1 estica o x quando o y necessário não cabe", () => {
+    const e = escalaIgual(600, 100, 50, 80);
+    expect(e.yMax).toBe(80);
+    expect(e.xMax / 600).toBeCloseTo(e.yMax / 100, 9);
   });
 
   it("base negativa cobre poropressão negativa", () => {

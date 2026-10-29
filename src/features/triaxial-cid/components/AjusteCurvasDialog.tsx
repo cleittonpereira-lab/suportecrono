@@ -92,15 +92,33 @@ export function AjusteCurvasDialog({
   const [pensando, setPensando] = useState(false);
 
   const perfil = PERFIS[variavel];
-  const [opcoes, setOpcoes] = useState<OpcoesAjuste>(() => opcoesPadrao(variavel));
+  const cpAtual = specimens.find((c) => c.id === cpId) ?? specimens[0];
+  const registroAtual = cpAtual?.ajustesDeCurva?.[variavel];
 
-  const mexer = (patch: Partial<OpcoesAjuste>) => setOpcoes((o) => ({ ...o, ...patch }));
-  // Cada curva tem as suas regras (a poropressão pode ser negativa, a tensão
-  // desviadora não): ao trocar de curva, as opções voltam ao padrão dela.
+  // Opções guardadas por CP e por curva: ao voltar a uma curva, ela está onde foi
+  // deixada. Curva ainda não mexida abre com o ajuste já gravado (método, fator…)
+  // ou, sem ajuste, com o padrão dela — a poropressão pode ser negativa, a tensão
+  // desviadora não.
+  const chave = `${cpAtual?.id ?? ""}|${variavel}`;
+  const [opcoesPorCurva, setOpcoesPorCurva] = useState<Record<string, OpcoesAjuste>>({});
+  const opcoesIniciais = (): OpcoesAjuste =>
+    registroAtual
+      ? { ...opcoesPadrao(variavel), ...registroAtual.opcoes, metodo: registroAtual.metodo }
+      : opcoesPadrao(variavel);
+  const opcoes = opcoesPorCurva[chave] ?? opcoesIniciais();
+  const mexer = (patch: Partial<OpcoesAjuste>) =>
+    setOpcoesPorCurva((m) => ({ ...m, [chave]: { ...(m[chave] ?? opcoesIniciais()), ...patch } }));
+
   // Fator de escala: o campo aceita "-" e "1," enquanto se digita; o texto só é
-  // reescrito quando o fator muda por outro controle (barra, sinal, "voltar a ×1").
+  // reescrito quando o fator muda por outro controle (barra, sinal, "voltar a ×1")
+  // ou quando se troca de curva/CP.
   const fator = opcoes.fatorEscala ?? 1;
-  const [fatorTexto, setFatorTexto] = useState(n(1, 2));
+  const [fatorTexto, setFatorTexto] = useState(() => n(fator, 2));
+  const [chaveDoTexto, setChaveDoTexto] = useState(chave);
+  if (chaveDoTexto !== chave) {
+    setChaveDoTexto(chave);
+    setFatorTexto(n(fator, 2));
+  }
   const definirFator = (v: number) => {
     mexer({ fatorEscala: v });
     setFatorTexto(n(v, 2));
@@ -113,8 +131,6 @@ export function AjusteCurvasDialog({
 
   const trocarVariavel = (v: VariavelAjustavel) => {
     setVariavel(v);
-    setOpcoes(opcoesPadrao(v));
-    setFatorTexto(n(1, 2));
     setSugestao(null);
   };
 
@@ -124,8 +140,6 @@ export function AjusteCurvasDialog({
   const variaveisDisponiveis = (Object.keys(ADAPTADORES) as VariavelAjustavel[]).filter(
     (v) => !(sample.testType === "uu" && v === "variacao-volumetrica"),
   );
-  const cpAtual = specimens.find((c) => c.id === cpId) ?? specimens[0];
-  const registroAtual = cpAtual?.ajustesDeCurva?.[variavel];
 
   /**
    * Base do ajuste: SEMPRE o dado medido. Se já houve ajuste nesta curva,
