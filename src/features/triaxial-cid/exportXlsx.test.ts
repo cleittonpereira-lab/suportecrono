@@ -111,6 +111,7 @@ describe("exportXlsx — Triaxial UU", () => {
     expect(todo).not.toContain("REDUÇÃO DE VOLUME");
     expect(todo).not.toContain("Adensamento (isotrópico)");
     expect(todo).toContain("A = A₀ / (1 − εa)");
-    expect(todo).toContain("REGISTRO FOTOGRÁFICO APÓS A RUPTURA — CP1");
+    expect(todo).toContain("POROPRESSÃO (U) VERSUS DEFORMAÇÃO AXIAL ESPECÍFICA — CP1");
+    expect(todo).toContain("REGISTRO FOTOGRÁFICO APÓS A RUPTURA");
   });
 });

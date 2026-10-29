@@ -144,6 +144,8 @@ const NORMS = [
 const NOTA =
   "Os resultados apresentados referem-se exclusivamente à amostra ensaiada. A reprodução deste documento somente poderá ser feita na íntegra, após aprovação prévia e por escrito da empresa.";
 const RESPONSAVEL_GERENTE = "Tecnº Geotécnico Carlos Christian da Silva";
+const NOTA_UU_POROPRESSAO =
+  "Poropressão medida durante o cisalhamento não drenado (leitura direta). No UU a análise é em tensões totais: a poropressão não entra no cálculo da envoltória.";
 
 // ---------------------------------------------------------------------------
 // Estilo de célula
@@ -593,7 +595,8 @@ function paginaQvsEa(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
   barra(cx, "Gráfico de Tensão Desvio versus Deformação Axial Específica");
   const ea = axisDomainAndTicks(0, d.cfg.eaMax, 0, maxDe(p, (q) => q.eaPct));
   const sd = axisDomainAndTicks(0, d.cfg.sigmaDMax, 0, maxDe(p, (q) => q.sigmaD));
-  graficoLinha(cx, restante(cx), 1, COLS, (w, h) => ({
+  const hTopo = Math.floor((restante(cx) - 16 - 12) / 2);
+  graficoLinha(cx, hTopo, 1, COLS, (w, h) => ({
     width: w,
     height: h,
     margin: { top: 6, right: 12, bottom: 24, left: 44 },
@@ -609,6 +612,30 @@ function paginaQvsEa(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
       points: p.results[i].shearCurve.map((q) => ({ x: q.eaPct, y: q.sigmaD })),
     })),
   }));
+
+  // Embaixo: poropressão medida (leitura do ensaio), como no PDF.
+  barra(cx, "Poropressão (u) versus Deformação Axial Específica");
+  const poros = p.specimens.flatMap((cp) => cp.shear.map((s) => s.uPore ?? 0));
+  const poro = axisDomainAndTicks(0, d.cfg.dvShearMax, Math.min(0, ...poros), Math.max(0, ...poros));
+  graficoLinha(cx, restante(cx) - 12, 1, COLS, (w, h) => ({
+    width: w,
+    height: h,
+    margin: { top: 6, right: 12, bottom: 24, left: 44 },
+    xDomain: ea.domain,
+    yDomain: poro.domain,
+    xTicks: ea.ticks,
+    yTicks: poro.ticks,
+    zeroLine: true,
+    xLabel: "εa - Deformação Axial Específica [%]",
+    yLabel: "u - Poropressão [kPa]",
+    series: p.specimens.map((cp) => ({
+      name: cp.displayId ?? cp.id,
+      color: cp.color ?? BRAND,
+      points: cp.shear.map((s) => ({ x: s.eaPct, y: s.uPore ?? 0 })),
+    })),
+  }));
+  const nota = newRow(cx, 12);
+  put(cx, nota, 1, nota, COLS, NOTA_UU_POROPRESSAO, { size: 6.4, color: MUTED });
 }
 
 function paginaMohr(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
@@ -789,8 +816,8 @@ function paginaCp(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados, idx: number)
   const ea = axisDomainAndTicks(0, d.cfg.eaMax, 0, maxDe(p, (q) => q.eaPct));
   const sd = axisDomainAndTicks(0, d.cfg.sigmaDMax, 0, maxDe(p, (q) => q.sigmaD));
   barra(cx, `Gráfico de Tensão Desvio versus Deformação Axial Específica — ${cpNome}`);
-  // UU: duas faixas iguais — σd×εa e a foto da ruptura (sem volume nem poropressão).
-  const hBloco = Math.floor((restante(cx) - 16) / 2);
+  // UU: duas faixas iguais (σd×εa e poropressão), cada uma com a sua foto ao lado.
+  const hBloco = Math.floor((restante(cx) - 16 - 12) / 2);
   blocoLadoAlado(cx, hBloco, {
     grafico: (w, h) => ({
       width: w,
@@ -814,12 +841,31 @@ function paginaCp(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados, idx: number)
     legenda,
   });
 
-  barra(cx, `Registro Fotográfico após a Ruptura — ${cpNome}`);
-  const hFoto = restante(cx);
-  const linhaTitulo = newRow(cx, 14);
-  newRow(cx, hFoto - 28);
-  newRow(cx, 14);
-  caixaFoto(cx, linhaTitulo, hFoto - 28, 1, COLS, "Registro Fotográfico após a Ruptura", ruptura, legenda);
+  // Faixa inferior do UU: poropressão medida × εa, com a foto da ruptura ao lado (como no PDF).
+  barra(cx, `Poropressão (u) versus Deformação Axial Específica — ${cpNome}`);
+  const poros = cp.shear.map((s) => s.uPore ?? 0);
+  const poro = axisDomainAndTicks(0, d.cfg.dvShearMax, Math.min(0, ...poros), Math.max(0, ...poros));
+  blocoLadoAlado(cx, hBloco, {
+    grafico: (w, h) => ({
+      width: w,
+      height: h,
+      margin: { top: 6, right: 8, bottom: 22, left: 40 },
+      xDomain: ea.domain,
+      yDomain: poro.domain,
+      xTicks: ea.ticks,
+      yTicks: poro.ticks,
+      zeroLine: true,
+      xLabel: "εa - Deformação Axial Específica [%]",
+      yLabel: "u - Poropressão [kPa]",
+      tickPx: 9,
+      series: [{ name: legenda, color: cp.color ?? BRAND, points: cp.shear.map((s) => ({ x: s.eaPct, y: s.uPore ?? 0 })) }],
+    }),
+    titulo: "Registro Fotográfico após a Ruptura",
+    foto: ruptura,
+    legenda,
+  });
+  const nota = newRow(cx, 12);
+  put(cx, nota, 1, nota, COLS, NOTA_UU_POROPRESSAO, { size: 6.4, color: MUTED });
 }
 
 /** Gráfico à esquerda (até a coluna 36) e caixa de foto à direita (colunas 38..60). */

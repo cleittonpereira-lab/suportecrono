@@ -4073,11 +4073,11 @@ function TriaxialReport({
         />
       ))}
 
-      {/* Página 3 — q vs εa (topo) + Variação Volumétrica cm³ vs εa (baixo, só CID — no UU não há variação de volume) */}
+      {/* Página 3 — q vs εa (topo) + embaixo: poropressão (CIU e UU) ou variação volumétrica (CID) */}
       {page(3, (
         <div className="flex h-full flex-col gap-2 text-[10px] text-[#141414]">
           <SectionBar>Gráfico de Tensão Desvio versus Deformação Axial Específica</SectionBar>
-          <div className={isUUReport ? "h-full" : "h-[52%]"}>
+          <div className="h-[52%]">
             <ResponsiveContainer>
               <ComposedChart margin={{ top: 6, right: 12, bottom: 24, left: 40 }}>
                 <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" />
@@ -4096,10 +4096,10 @@ function TriaxialReport({
               </ComposedChart>
             </ResponsiveContainer>
           </div>
-          {!isUUReport && (
+          {(
             <>
               <SectionBar>
-                {isCIUReport ? "Poropressão Gerada (u) versus Deformação Axial Específica" : "Variação Volumétrica versus Deformação Axial Específica"}
+                {isCIUReport || isUUReport ? "Poropressão Gerada (u) versus Deformação Axial Específica" : "Variação Volumétrica versus Deformação Axial Específica"}
               </SectionBar>
               <div className="h-[42%]">
                 <ResponsiveContainer>
@@ -4108,7 +4108,7 @@ function TriaxialReport({
                     <XAxis type="number" dataKey="eaPct" domain={axisDomain(0, cfg.eaMax)} tick={{ fontSize: 10 }} ticks={equalTicks(0, cfg.eaMax)} interval={0}>
                       <RLabel value="εa - Deformação Axial Específica [%]" position="insideBottom" offset={-8} fontSize={10} />
                     </XAxis>
-                    {isCIUReport ? (
+                    {isCIUReport || isUUReport ? (
                       <YAxis domain={axisDomain(0, cfg.dvShearMax)} tick={{ fontSize: 10 }} interval={0}>
                         <RLabel value="u - Poropressão [kPa]" angle={-90} position="insideLeft" offset={-4} fontSize={10} />
                       </YAxis>
@@ -4121,9 +4121,12 @@ function TriaxialReport({
                     <Legend wrapperStyle={{ fontSize: 10 }} verticalAlign="top" />
                     {specimens.map((cp, i) => {
                       const V0 = results[i].V0;
-                      const data = isCIUReport
-                        ? results[i].shearCurve.map((p) => ({ eaPct: p.eaPct, dv: p.sigma1 - p.sigma1Prime }))
-                        : results[i].shearCurve.map((p) => ({ eaPct: p.eaPct, dv: (p.evPct / 100) * V0 }));
+                      // UU: poropressão medida (leitura do ensaio); CIU: σ1 − σ'1; CID: variação volumétrica.
+                      const data = isUUReport
+                        ? cp.shear.map((s) => ({ eaPct: s.eaPct, dv: s.uPore ?? 0 }))
+                        : isCIUReport
+                          ? results[i].shearCurve.map((p) => ({ eaPct: p.eaPct, dv: p.sigma1 - p.sigma1Prime }))
+                          : results[i].shearCurve.map((p) => ({ eaPct: p.eaPct, dv: (p.evPct / 100) * V0 }));
                       return (
                         <Line key={cp.id} data={data} dataKey="dv" stroke={cp.color} name={cp.displayId ?? cp.id}
                           type="monotone" dot={false} strokeWidth={1.8} isAnimationActive={false} />
@@ -4133,9 +4136,11 @@ function TriaxialReport({
                 </ResponsiveContainer>
               </div>
               <div className="text-[8.5px] text-[#141414]/70">
-                {isCIUReport
-                  ? "Poropressão gerada durante o cisalhamento não drenado (leitura direta, u = σ1 − σ'1)."
-                  : "Legenda: (+) Valores Positivos Representam REDUÇÃO DE VOLUME; (−) Valores Negativos representam AUMENTO DE VOLUME."}
+                {isUUReport
+                  ? "Poropressão medida durante o cisalhamento não drenado (leitura direta). No UU a análise é em tensões totais: a poropressão não entra no cálculo da envoltória."
+                  : isCIUReport
+                    ? "Poropressão gerada durante o cisalhamento não drenado (leitura direta, u = σ1 − σ'1)."
+                    : "Legenda: (+) Valores Positivos Representam REDUÇÃO DE VOLUME; (−) Valores Negativos representam AUMENTO DE VOLUME."}
               </div>
             </>
           )}
@@ -4581,9 +4586,13 @@ function SpecimenPage({
   isUUReport?: boolean;
   isCIUReport?: boolean;
 }) {
-  const dvShear = isCIUReport
-    ? r.shearCurve.map((p) => ({ eaPct: p.eaPct, dv: p.sigma1 - p.sigma1Prime }))
-    : r.shearCurve.map((p) => ({ eaPct: p.eaPct, dv: (p.evPct / 100) * r.V0 }));
+  // Faixa inferior: poropressão medida (CIU e UU) ou variação volumétrica (CID).
+  // No UU a poropressão é só leitura do ensaio: o cálculo é em tensões totais.
+  const dvShear = isUUReport
+    ? cp.shear.map((s) => ({ eaPct: s.eaPct, dv: s.uPore ?? 0 }))
+    : isCIUReport
+      ? r.shearCurve.map((p) => ({ eaPct: p.eaPct, dv: p.sigma1 - p.sigma1Prime }))
+      : r.shearCurve.map((p) => ({ eaPct: p.eaPct, dv: (p.evPct / 100) * r.V0 }));
   const moldagem = photos.find((p) => p.kind === "moldagem");
   const ruptura = photos.find((p) => p.kind === "ruptura");
   const legend = `${cp.displayId ?? cp.id} · ${isUUReport ? "σ3" : "σ3'"}=${cp.sigma3Target} kPa`;
@@ -4629,53 +4638,44 @@ function SpecimenPage({
         </ResponsiveContainer>
         <PhotoBox title="Registro Fotográfico na Moldagem" photo={moldagem} />
       </div>
-      {isUUReport ? (
-        // UU: não há variação de volume nem poropressão — a segunda metade da
-        // página é só a foto após a ruptura, na largura toda.
-        <>
-          <SectionBar>Registro Fotográfico após a Ruptura — {cp.displayId ?? cp.id}</SectionBar>
-          <div className="h-[46%]">
-            <PhotoBox title="Registro Fotográfico após a Ruptura" photo={ruptura} />
-          </div>
-        </>
-      ) : (
-        <>
-          <SectionBar>
-            {isCIUReport
-              ? "Poropressão Gerada (u) versus Deformação Axial Específica"
-              : "Variação Volumétrica versus Deformação Axial Específica"} — {cp.displayId ?? cp.id}
-          </SectionBar>
-          <div className="grid h-[46%] grid-cols-[1fr_38%] gap-2">
-            <ResponsiveContainer>
-              <ComposedChart margin={{ top: 6, right: 12, bottom: 22, left: 40 }}>
-                <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" />
-                <XAxis type="number" dataKey="eaPct" domain={axisDomain(0, cfg.eaMax)} tick={{ fontSize: 9 }} ticks={equalTicks(0, cfg.eaMax)} interval={0}>
-                  <RLabel value="εa - Deformação Axial Específica [%]" position="insideBottom" offset={-6} fontSize={9} />
-                </XAxis>
-                {isCIUReport ? (
-                  <YAxis domain={axisDomain(0, cfg.dvShearMax)} tick={{ fontSize: 9 }} interval={0}>
-                    <RLabel value="u - Poropressão [kPa]" angle={-90} position="insideLeft" offset={-2} fontSize={9} />
-                  </YAxis>
-                ) : (
-                  <YAxis reversed domain={axisDomain(cfg.dvShearMin, cfg.dvShearMax)} tick={{ fontSize: 9 }} ticks={equalTicks(cfg.dvShearMin, cfg.dvShearMax)} interval={0}>
-                    <RLabel value="Variação Volumétrica [cm³]" angle={-90} position="insideLeft" offset={-2} fontSize={9} />
-                  </YAxis>
-                )}
-                <ReferenceLine y={0} stroke="#999" />
-                <Line data={dvShear} dataKey="dv" stroke={cp.color} name={legend} type="monotone"
-                  dot={false} strokeWidth={1.8} isAnimationActive={false} />
-                <Legend wrapperStyle={{ fontSize: 9 }} verticalAlign="top" />
-              </ComposedChart>
-            </ResponsiveContainer>
-            <PhotoBox title="Registro Fotográfico após a Ruptura" photo={ruptura} />
-          </div>
-          <div className="text-[8.5px] text-[#141414]/70">
-            {isCIUReport
-              ? "Poropressão gerada durante o cisalhamento não drenado (leitura direta, u = σ1 − σ'1)."
-              : "Legenda: (+) Valores Positivos Representam REDUÇÃO DE VOLUME; (−) Valores Negativos representam AUMENTO DE VOLUME."}
-          </div>
-        </>
-      )}
+      <SectionBar>
+        {isUUReport
+          ? "Poropressão (u) versus Deformação Axial Específica"
+          : isCIUReport
+            ? "Poropressão Gerada (u) versus Deformação Axial Específica"
+            : "Variação Volumétrica versus Deformação Axial Específica"} — {cp.displayId ?? cp.id}
+      </SectionBar>
+      <div className="grid h-[46%] grid-cols-[1fr_38%] gap-2">
+        <ResponsiveContainer>
+          <ComposedChart margin={{ top: 6, right: 12, bottom: 22, left: 40 }}>
+            <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" />
+            <XAxis type="number" dataKey="eaPct" domain={axisDomain(0, cfg.eaMax)} tick={{ fontSize: 9 }} ticks={equalTicks(0, cfg.eaMax)} interval={0}>
+              <RLabel value="εa - Deformação Axial Específica [%]" position="insideBottom" offset={-6} fontSize={9} />
+            </XAxis>
+            {isCIUReport || isUUReport ? (
+              <YAxis domain={axisDomain(0, cfg.dvShearMax)} tick={{ fontSize: 9 }} interval={0}>
+                <RLabel value="u - Poropressão [kPa]" angle={-90} position="insideLeft" offset={-2} fontSize={9} />
+              </YAxis>
+            ) : (
+              <YAxis reversed domain={axisDomain(cfg.dvShearMin, cfg.dvShearMax)} tick={{ fontSize: 9 }} ticks={equalTicks(cfg.dvShearMin, cfg.dvShearMax)} interval={0}>
+                <RLabel value="Variação Volumétrica [cm³]" angle={-90} position="insideLeft" offset={-2} fontSize={9} />
+              </YAxis>
+            )}
+            <ReferenceLine y={0} stroke="#999" />
+            <Line data={dvShear} dataKey="dv" stroke={cp.color} name={legend} type="monotone"
+              dot={false} strokeWidth={1.8} isAnimationActive={false} />
+            <Legend wrapperStyle={{ fontSize: 9 }} verticalAlign="top" />
+          </ComposedChart>
+        </ResponsiveContainer>
+        <PhotoBox title="Registro Fotográfico após a Ruptura" photo={ruptura} />
+      </div>
+      <div className="text-[8.5px] text-[#141414]/70">
+        {isUUReport
+          ? "Poropressão medida durante o cisalhamento não drenado (leitura direta). No UU a análise é em tensões totais: a poropressão não entra no cálculo da envoltória."
+          : isCIUReport
+            ? "Poropressão gerada durante o cisalhamento não drenado (leitura direta, u = σ1 − σ'1)."
+            : "Legenda: (+) Valores Positivos Representam REDUÇÃO DE VOLUME; (−) Valores Negativos representam AUMENTO DE VOLUME."}
+      </div>
     </div>
   );
 }
