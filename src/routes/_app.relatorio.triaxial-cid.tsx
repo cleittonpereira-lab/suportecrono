@@ -100,16 +100,22 @@ import { EditingPresenceBanner, DraftHistoryButton } from "@/components/DraftAct
 import { listPendenciasDigitacao, atualizarPendenciaDigitacao } from "@/lib/lab-pendencias.functions";
 import { findMatchingPendencia } from "@/lib/pendencia-match";
 import {
+  cylinderVolume,
   fitEnvelope,
   mohrCirclePoints,
   processSpecimen,
 } from "@/features/triaxial-cid/domain/calc";
+import {
+  ImportarDadosBrutosDialog,
+  type DestinoDeImportacao,
+} from "@/features/triaxial-cid/components/ImportarDadosBrutosDialog";
 import {
   GLOSSARIO_UU_1,
   GLOSSARIO_UU_2,
   GLOSSARIO_UU_CONVENCAO,
   GLOSSARIO_UU_REFERENCIAS,
 } from "@/features/triaxial-cid/glossario-uu";
+import { eixosQueCobremOsDados, niceCeil, niceStep, valoresDaFaixaInferior } from "@/features/triaxial-cid/eixos";
 
 const NORMS_CID: ReportNorm[] = [
   { text: "ASTM D7181-20 — Consolidated Drained Triaxial Compression Test for Soils" },
@@ -140,13 +146,6 @@ const testTypeFromEnsaioTipo = (tipo: string | undefined): TestType =>
 const normsFor = (testType: TestType) => (testType === "uu" ? NORMS_UU : testType === "ciu" ? NORMS_CIU : NORMS_CID);
 /** @deprecated use `normsFor("cid")` — mantido para não quebrar referências existentes. */
 const NORMS = NORMS_CID;
-
-/** O que cada etapa do arquivo de dados significa, por tipo de ensaio (mostrado ao importar). */
-const LEGENDA_ETAPAS: { tipo: TestType; rotulo: string; texto: string }[] = [
-  { tipo: "cid", rotulo: "CID (drenado)", texto: 'adensamento isotrópico + ruptura drenada ("Ruptura Dren.").' },
-  { tipo: "ciu", rotulo: "CIU (não drenado)", texto: 'adensamento isotrópico + ruptura não drenada ("Ruptura N/Dren."), com poropressão.' },
-  { tipo: "uu", rotulo: "UU (não consolidado não drenado)", texto: 'aplicação de TC (sem adensamento) + ruptura não drenada ("Ruptura N/Dren.").' },
-];
 
 const reportTitleFor = (condition: "saturado" | "natural", testType: TestType = "cid") => {
   if (testType === "uu") return "ENSAIO TRIAXIAL NÃO CONSOLIDADO NÃO DRENADO (UU)";
@@ -188,13 +187,6 @@ const axisDomain = (
  * valores inteiros. Se o passo natural for < 1, ainda arredonda para 1 casa
  * decimal. Mantém o intervalo original — só emite ticks que caibam em [min,max].
  */
-const niceStep = (range: number, count: number): number => {
-  const raw = range / Math.max(1, count - 1);
-  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
-  const n = raw / mag;
-  const s = n < 1.5 ? 1 : n < 3 ? 2 : n < 7 ? 5 : 10;
-  return s * mag;
-};
 const equalTicks = (
   min: number | "auto" | undefined,
   max: number | "auto" | undefined,
@@ -479,13 +471,15 @@ export function TriaxialCidPage() {
     onConfirm: () => void;
   }) => setConfirmState({ open: true, ...opts });
 
-  // Diálogo de seleção de NT quando o arquivo XLSX contém mais de um ensaio.
-  const [ntPickerState, setNtPickerState] = useState<{
-    open: boolean;
-    filename: string;
+  // Janela de importação dos dados brutos: um arquivo pode ter vários ensaios (NT),
+  // e cada um vai para o CP escolhido pelo operador.
+  const [importacao, setImportacao] = useState<{
+    id: number;
+    arquivo: string;
+    buf: ArrayBuffer;
     tests: import("@/features/triaxial-cid/importXlsx").OwnTecTestSummary[];
-    onPick?: (nt: string) => void;
-  }>({ open: false, filename: "", tests: [] });
+    cpDeOrigem: string;
+  } | null>(null);
 
   // ===== Ajuste de Eixos dos gráficos (aplicado ao relatório) =====
   const [axisCfg, setAxisCfg] = useState<AxisCfg>(() => ({
@@ -1041,6 +1035,62 @@ export function TriaxialCidPage() {
     }
   };
 
+  /**
+   * Grava no CP as leituras de um ensaio (NT) do arquivo de dados brutos.
+   * εv = ΔV / Vc — a mesma conta da digitação na tabela de cisalhamento.
+   */
+  const aplicarDadosBrutos = (
+    cpId: string,
+    data: import("@/features/triaxial-cid/importXlsx").ImportedRawData,
+  ) => {
+    const alvo = specimens.find((c) => c.id === cpId);
+    if (!alvo) return;
+    const consolidacao = data.consolidation.length ? data.consolidation : alvo.consolidation;
+    const dVcons = consolidacao.length ? consolidacao[consolidacao.length - 1].dv : 0;
+    const Vc = cylinderVolume(alvo.D0 || 50, alvo.H0 || 100) - dVcons; // cm³
+    const shear = data.shear.map((r) => ({
+      ...r,
+      dvPct: r.dVcm3 != null && Vc > 0 ? (r.dVcm3 / Vc) * 100 : 0,
+    }));
+    updateSpecimen(cpId, {
+      consolidation: consolidacao,
+      shear: shear.length ? shear : alvo.shear,
+      rawImport: {
+        filename: data.filename,
+        nt: data.nt,
+        importedAt: new Date().toISOString(),
+        consolidationCount: data.consolidation.length,
+        shearCount: shear.length,
+      },
+    });
+  };
+
+  /** Importa cada ensaio (NT) escolhido na janela para o CP de destino. */
+  const importarDestinos = async (destinos: DestinoDeImportacao[]) => {
+    if (!importacao) return;
+    const { buf, arquivo } = importacao;
+    setImportacao(null);
+    const { parseOwnTecXlsx } = await import("@/features/triaxial-cid/importXlsx");
+    const feitos: string[] = [];
+    for (const d of destinos) {
+      try {
+        const data = await parseOwnTecXlsx(buf, arquivo, { selectedNT: d.nt, tipo: testType });
+        if (!data.consolidation.length && !data.shear.length) {
+          toast.error(`NT ${d.nt}: nenhum dado reconhecido no arquivo.`);
+          continue;
+        }
+        aplicarDadosBrutos(d.cpId, data);
+        if (feitos.length === 0 && data.code) setSample((prev) => ({ ...prev, code: data.code || prev.code }));
+        const nome = sortedSpecimens.find((c) => c.id === d.cpId)?.displayId ?? d.cpId;
+        feitos.push(`NT ${d.nt} → ${nome} (${data.shear.length} leituras)`);
+      } catch (err) {
+        console.error(err);
+        toast.error(`NT ${d.nt}: ` + (err instanceof Error ? err.message : String(err)));
+      }
+    }
+    if (feitos.length) toast.success(`Dados importados: ${feitos.join(" · ")}`);
+  };
+
   const cp = sortedSpecimens[selIdx] ?? sortedSpecimens[0];
   const res = results[selIdx] ?? results[0];
 
@@ -1133,83 +1183,20 @@ export function TriaxialCidPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Diálogo de escolha de NT quando o XLSX contém múltiplos ensaios */}
-      <Dialog
-        open={ntPickerState.open}
-        onOpenChange={(o) => setNtPickerState((s) => ({ ...s, open: o }))}
-      >
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Selecione qual ensaio importar</DialogTitle>
-            <DialogDescription>
-              O arquivo <strong>{ntPickerState.filename}</strong> contém mais de um
-              ensaio (coluna NT). Escolha qual deles deseja importar para este CP.
-              {testType === "cid"
-                ? ' Ensaios sem etapa "Ruptura Dren." ficam desabilitados (este é um ensaio CID).'
-                : ' Ensaios sem etapa "Ruptura Não Dren." ficam desabilitados (este é um ensaio CIU/UU).'}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="rounded-md border bg-muted/40 p-3 text-xs space-y-1.5">
-            <div className="font-semibold text-foreground">Como ler as etapas do arquivo</div>
-            {LEGENDA_ETAPAS.map((l) => (
-              <div
-                key={l.tipo}
-                className={l.tipo === testType ? "font-medium text-foreground" : "text-muted-foreground"}
-              >
-                <span className="font-semibold">{l.rotulo}:</span> {l.texto}
-              </div>
-            ))}
-          </div>
-          <div className="space-y-2">
-            {ntPickerState.tests.map((t) => {
-              const canImport = testType === "cid" ? t.hasDrained : t.hasUndrained;
-              const sigma =
-                t.sigmaRupture ?? t.sigmaAdens;
-              const sigmaTxt = sigma != null ? `σ₃ ≈ ${sigma.toFixed(0)} kPa` : "σ₃ n/d";
-              const etapasTxt = t.etapas
-                .map((e) => `${e.name} (${e.count})`)
-                .join(" · ");
-              return (
-                <button
-                  key={t.nt}
-                  type="button"
-                  disabled={!canImport}
-                  onClick={() => ntPickerState.onPick?.(t.nt)}
-                  className={
-                    "w-full text-left rounded-md border p-3 transition " +
-                    (canImport
-                      ? "hover:bg-accent hover:border-primary cursor-pointer"
-                      : "opacity-50 cursor-not-allowed")
-                  }
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="font-medium">NT {t.nt}</div>
-                    <div className="text-xs text-muted-foreground">{sigmaTxt}</div>
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    {etapasTxt}
-                  </div>
-                  {!canImport && (
-                    <div className="text-xs text-destructive mt-1">
-                      {testType === "cid"
-                        ? 'Não tem "Ruptura Dren." — não serve pra este ensaio CID.'
-                        : 'Não tem "Ruptura Não Dren." — não serve pra este ensaio CIU/UU.'}
-                    </div>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setNtPickerState((s) => ({ ...s, open: false }))}
-            >
-              Cancelar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Janela de importação dos dados brutos: NT, σ₃ do arquivo e CP de destino de cada ensaio */}
+      {importacao && (
+        <ImportarDadosBrutosDialog
+          key={importacao.id}
+          aberto
+          onFechar={() => setImportacao(null)}
+          arquivo={importacao.arquivo}
+          tests={importacao.tests}
+          specimens={sortedSpecimens}
+          tipo={testType}
+          cpDeOrigem={importacao.cpDeOrigem}
+          onImportar={(destinos) => void importarDestinos(destinos)}
+        />
+      )}
 
       {/* Estilo para impressão: só o relatório é impresso */}
       <style>{`
@@ -1899,69 +1886,37 @@ export function TriaxialCidPage() {
                       input.onchange = async () => {
                         const file = input.files?.[0];
                         if (!file) return;
-                        const buf = await file.arrayBuffer();
-                        const cpId = cp.id;
-                        const D0 = cp.D0 || 50;
-                        const H0 = cp.H0 || 100;
-                        const V0 = (Math.PI * D0 * D0) / 4 * (H0 / 10); // cm³
-                        const doImport = async (selectedNT?: string) => {
-                          try {
-                            const { parseOwnTecXlsx } = await import(
-                              "@/features/triaxial-cid/importXlsx"
-                            );
-                            const data = await parseOwnTecXlsx(buf, file.name, { selectedNT, tipo: testType });
-                            if (!data.consolidation.length && !data.shear.length) {
-                              toast.error("Nenhum dado reconhecido no arquivo.");
-                              return;
-                            }
-                            const shear = data.shear.map((r) => ({
-                              ...r,
-                              dvPct:
-                                r.dVcm3 != null && V0 > 0 ? (r.dVcm3 / V0) * 100 : 0,
-                            }));
-                            updateSpecimen(cpId, {
-                              consolidation: data.consolidation.length
-                                ? data.consolidation
-                                : cp.consolidation,
-                              shear: shear.length ? shear : cp.shear,
-                              rawImport: {
-                                filename: data.filename,
-                                nt: data.nt,
-                                importedAt: new Date().toISOString(),
-                                consolidationCount: data.consolidation.length,
-                                shearCount: shear.length,
-                              },
-                            });
-                            if (data.code) {
-                              setSample((prev) => ({ ...prev, code: data.code || prev.code }));
-                            }
-                            toast.success(
-                              `Dados importados em ${cp.displayId ?? cpId}: ${data.consolidation.length} pts adensamento · ${data.shear.length} pts ruptura`,
-                            );
-                          } catch (err) {
-                            const { MultipleOwnTecTestsError } = await import(
-                              "@/features/triaxial-cid/importXlsx"
-                            );
-                            if (err instanceof MultipleOwnTecTestsError) {
-                              setNtPickerState({
-                                open: true,
-                                filename: file.name,
-                                tests: err.tests,
-                                onPick: (nt) => {
-                                  setNtPickerState((s) => ({ ...s, open: false }));
-                                  void doImport(nt);
-                                },
-                              });
-                              return;
-                            }
-                            console.error(err);
-                            toast.error(
-                              "Falha ao ler XLSX: " +
-                                (err instanceof Error ? err.message : String(err)),
-                            );
+                        try {
+                          const buf = await file.arrayBuffer();
+                          const { listOwnTecTests, parseOwnTecXlsx } = await import(
+                            "@/features/triaxial-cid/importXlsx"
+                          );
+                          const tests = await listOwnTecTests(buf);
+                          if (tests.length > 0) {
+                            // Mostra NT, σ₃ e etapas de cada ensaio e deixa escolher o CP de cada um.
+                            setImportacao({ id: Date.now(), arquivo: file.name, buf, tests, cpDeOrigem: cp.id });
+                            return;
                           }
-                        };
-                        void doImport();
+                          // Planilha sem coluna NT (formato antigo, por seções): vai direto para este CP.
+                          const data = await parseOwnTecXlsx(buf, file.name, { tipo: testType });
+                          if (!data.consolidation.length && !data.shear.length) {
+                            toast.error("Nenhum dado reconhecido no arquivo.");
+                            return;
+                          }
+                          aplicarDadosBrutos(cp.id, data);
+                          if (data.code) {
+                            setSample((prev) => ({ ...prev, code: data.code || prev.code }));
+                          }
+                          toast.success(
+                            `Dados importados em ${cp.displayId ?? cp.id}: ${data.consolidation.length} pts adensamento · ${data.shear.length} pts ruptura`,
+                          );
+                        } catch (err) {
+                          console.error(err);
+                          toast.error(
+                            "Falha ao ler XLSX: " +
+                              (err instanceof Error ? err.message : String(err)),
+                          );
+                        }
                       };
                       input.click();
                     }}
@@ -2259,7 +2214,7 @@ export function TriaxialCidPage() {
               </CardHeader>
               <CardContent>
                 <div className="h-[420px] w-full">
-                  <MohrChart specimens={specimens} results={results} envelope={envelope} totalStress={isUU} />
+                  <MohrChart specimens={sortedSpecimens} results={results} envelope={envelope} totalStress={isUU} />
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4 text-sm">
                   <Stat label={isUU ? "φᵤ " : "φ' "} value={envelope ? `${fmt(envelope.phiDeg, 2)}°` : "—"} />
@@ -2883,7 +2838,7 @@ function ShearPhaseSection({
 }: {
   cp: TriaxialSpecimen;
   res: SpecimenResults;
-  /** UU: sem variação de volume nem poropressão — a tabela não mostra essas colunas. */
+  /** UU: sem variação de volume — a tabela não mostra ΔV, volume do CP nem índice de vazios. */
   isUU?: boolean;
   onUpdateRow: (rowIdx: number, patch: Partial<ShearReading>) => void;
   onAddRow: () => void;
@@ -2953,14 +2908,12 @@ function ShearPhaseSection({
                         <span className="text-[10px] text-muted-foreground">(kPa)</span>
                       </div>
                     </TableHead>
-                    {!isUU && (
-                      <TableHead className="text-center">
-                        <div className="flex flex-col items-center leading-tight">
-                          <HeadWithInfo label="Poropressão" formula={"Poropressão medida.\nCID (drenado): u ≈ u_back — se vazio, assume u_back.\nCIU (não drenado): preencha com a leitura real do transdutor a cada estágio — é o dado principal do ensaio."} />
-                          <span className="text-[10px] text-muted-foreground">(kPa)</span>
-                        </div>
-                      </TableHead>
-                    )}
+                    <TableHead className="text-center">
+                      <div className="flex flex-col items-center leading-tight">
+                        <HeadWithInfo label="Poropressão" formula={"Poropressão medida.\nCID (drenado): u ≈ u_back — se vazio, assume u_back.\nCIU (não drenado): preencha com a leitura real do transdutor a cada estágio — é o dado principal do ensaio.\nUU: leitura do transdutor, só para registro e gráfico — não entra no cálculo (tensões totais)."} />
+                        <span className="text-[10px] text-muted-foreground">(kPa)</span>
+                      </div>
+                    </TableHead>
                     {!isUU && (
                       <TableHead className="text-center">
                         <div className="flex flex-col items-center leading-tight">
@@ -3071,7 +3024,7 @@ function ShearPhaseSection({
                         <TableCell><MiniNum value={loadKgf} step={0.01} onChange={(v) => handleLoad(ri, v)} /></TableCell>
                         <TableCell><MiniNum value={dispCm} step={0.001} onChange={(v) => handleDispCm(ri, v)} /></TableCell>
                         <TableCell><MiniNum value={r.sigma3Corr ?? 0} step={0.1} onChange={(v) => onUpdateRow(ri, { sigma3Corr: v || undefined })} /></TableCell>
-                        {!isUU && <TableCell><MiniNum value={r.uPore ?? 0} step={0.1} onChange={(v) => onUpdateRow(ri, { uPore: v || undefined })} /></TableCell>}
+                        <TableCell><MiniNum value={r.uPore ?? 0} step={0.1} onChange={(v) => onUpdateRow(ri, { uPore: v || undefined })} /></TableCell>
                         {!isUU && <TableCell><MiniNum value={dvCm3} step={0.01} onChange={(v) => handleDv(ri, v)} /></TableCell>}
                         {!isUU && <TableCell className="text-xs text-muted-foreground">{fmt(V_cp, 2)}</TableCell>}
                         <TableCell className="text-xs text-muted-foreground">{fmt(F_kN, 4)}</TableCell>
@@ -3822,51 +3775,78 @@ function MohrChart({
   const autoTau = Math.max(1, ...circles.flatMap((c) => c.data.map((p) => p.tau))) * 1.4;
   const maxSigma = sigmaMaxProp && sigmaMaxProp > 0 ? sigmaMaxProp : autoSigma;
   const maxTau = tauMaxProp && tauMaxProp > 0 ? tauMaxProp : autoTau;
+  // Escala 1:1 — o círculo de Mohr tem de sair redondo: mesmo intervalo [0, U]
+  // nos dois eixos (topo redondo) e área do gráfico quadrada (ver margens abaixo).
+  const U = niceCeil(Math.max(maxSigma, maxTau));
+  const ticks = equalTicks(0, U);
 
   const envLine = envelope
     ? [
         { sigma: 0, tau: envelope.cPrime },
         {
-          sigma: maxSigma,
-          tau: envelope.cPrime + Math.tan((envelope.phiDeg * Math.PI) / 180) * maxSigma,
+          sigma: U,
+          tau: envelope.cPrime + Math.tan((envelope.phiDeg * Math.PI) / 180) * U,
         },
       ]
     : null;
+  const legenda = [
+    ...circles.map((c) => ({
+      cor: c.color,
+      tracejado: false,
+      nome: `${c.displayId ?? c.id} · ${sigmaSym}3=${fmt(c.sigma3Target, 0)} kPa`,
+    })),
+    ...(envelope
+      ? [{ cor: ACCENT, tracejado: true, nome: `Envoltória: ${phiSym}=${fmt(envelope.phiDeg, 1)}°, ${cSym}=${fmt(envelope.cPrime, 1)} kPa` }]
+      : []),
+  ];
 
+  // Margens + eixos iguais na horizontal e na vertical (14+60+20 = 10+30+54 = 94 px):
+  // num contêiner quadrado, a área do gráfico também fica quadrada.
   return (
-    <div className="h-full min-h-[240px] w-full">
-      <ResponsiveContainer>
-        <ScatterChart margin={{ top: 28, right: 20, bottom: 56, left: 14 }}>
-          <CartesianGrid stroke="#eee" strokeDasharray="3 3" />
-          <XAxis type="number" dataKey="sigma" domain={[0, maxSigma]} ticks={equalTicks(0, maxSigma)} interval={0}>
-            <RLabel value={`${sigmaSym} (kPa)`} position="insideBottom" offset={-24} fontSize={11} />
-          </XAxis>
-          <YAxis type="number" dataKey="tau" domain={[0, maxTau]} ticks={equalTicks(0, maxTau)} interval={0}>
-            <RLabel value="τ (kPa)" angle={-90} position="insideLeft" offset={-2} fontSize={11} />
-          </YAxis>
-          <Tooltip formatter={(v: number) => fmt(v, 1)} />
-          <Legend wrapperStyle={{ fontSize: 9 }} verticalAlign="top" />
-          {circles.map((c) => (
-            <Scatter
-              key={c.id}
-              data={c.data}
-              name={`${c.displayId ?? c.id} · ${sigmaSym}3=${fmt(c.sigma3Target, 0)} kPa`}
-              line={{ stroke: c.color, strokeWidth: 2 }}
-              shape={() => <g />}
-              fill={c.color}
-            />
-          ))}
-          {envLine && (
-            <Scatter
-              data={envLine}
-              name={`Envoltória: ${phiSym}=${fmt(envelope!.phiDeg, 1)}°, ${cSym}=${fmt(envelope!.cPrime, 1)} kPa`}
-              line={{ stroke: ACCENT, strokeWidth: 2, strokeDasharray: "6 4" }}
-              shape={() => <g />}
-              fill={ACCENT}
-            />
-          )}
-        </ScatterChart>
-      </ResponsiveContainer>
+    <div className="flex h-full min-h-[240px] w-full flex-col items-center">
+      <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 pb-1 text-[9px] text-[#141414]">
+        {legenda.map((l) => (
+          <span key={l.nome} className="inline-flex items-center gap-1">
+            <svg width="18" height="6" aria-hidden>
+              <line x1="0" y1="3" x2="18" y2="3" stroke={l.cor} strokeWidth="2" strokeDasharray={l.tracejado ? "6 4" : undefined} />
+            </svg>
+            {l.nome}
+          </span>
+        ))}
+      </div>
+      <div className="aspect-square min-h-0 max-w-full flex-1">
+        <ResponsiveContainer>
+          <ScatterChart margin={{ top: 10, right: 20, bottom: 54, left: 14 }}>
+            <CartesianGrid stroke="#eee" strokeDasharray="3 3" />
+            <XAxis type="number" dataKey="sigma" domain={[0, U]} ticks={ticks} interval={0} height={30} allowDataOverflow>
+              <RLabel value={`${sigmaSym} (kPa)`} position="insideBottom" offset={-24} fontSize={11} />
+            </XAxis>
+            <YAxis type="number" dataKey="tau" domain={[0, U]} ticks={ticks} interval={0} width={60} allowDataOverflow>
+              <RLabel value="τ (kPa)" angle={-90} position="insideLeft" offset={-2} fontSize={11} />
+            </YAxis>
+            <Tooltip formatter={(v: number) => fmt(v, 1)} />
+            {circles.map((c) => (
+              <Scatter
+                key={c.id}
+                data={c.data}
+                name={`${c.displayId ?? c.id} · ${sigmaSym}3=${fmt(c.sigma3Target, 0)} kPa`}
+                line={{ stroke: c.color, strokeWidth: 2 }}
+                shape={() => <g />}
+                fill={c.color}
+              />
+            ))}
+            {envLine && (
+              <Scatter
+                data={envLine}
+                name={`Envoltória: ${phiSym}=${fmt(envelope!.phiDeg, 1)}°, ${cSym}=${fmt(envelope!.cPrime, 1)} kPa`}
+                line={{ stroke: ACCENT, strokeWidth: 2, strokeDasharray: "6 4" }}
+                shape={() => <g />}
+                fill={ACCENT}
+              />
+            )}
+          </ScatterChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }
@@ -4037,12 +4017,19 @@ function TriaxialReport({
   const photos = fotosPublicadas(photosRecebidas);
   const perCpPages = specimens.length; // uma página por CP com gráficos + fotos
   const total = 6 + perCpPages + 2; // +2 → Glossário (Formulações e Convenções), 2 páginas
-  const cfg: AxisCfg = axisCfg ?? {
-    eaMax: 0, qMax: 0, sigmaDMax: 0, evMin: 0, evMax: 0,
-    pMax: 0, sigmaMax: 0, tauMax: 0, sqrtTMax: 0, dvMax: 0,
-    dvShearMin: 0, dvShearMax: 0, eModMax: 0, ratioMax: 0,
-  };
   const reportTestType = sample.testType ?? "cid";
+  // Os limites do "Ajuste de Eixos" só valem se cobrirem os dados: um limite salvo
+  // antes da importação (εa máx = 1 %) espremia os ticks num canto do eixo.
+  const cfg: AxisCfg = eixosQueCobremOsDados(
+    axisCfg ?? {
+      eaMax: 0, qMax: 0, sigmaDMax: 0, evMin: 0, evMax: 0,
+      pMax: 0, sigmaMax: 0, tauMax: 0, sqrtTMax: 0, dvMax: 0,
+      dvShearMin: 0, dvShearMax: 0, eModMax: 0, ratioMax: 0,
+    },
+    specimens,
+    results,
+    reportTestType,
+  );
   const isUUReport = reportTestType === "uu";
   const isCIUReport = reportTestType === "ciu";
   const REPORT_TITLE = reportTitleFor(sample.condition, reportTestType);
@@ -4109,7 +4096,7 @@ function TriaxialReport({
                       <RLabel value="εa - Deformação Axial Específica [%]" position="insideBottom" offset={-8} fontSize={10} />
                     </XAxis>
                     {isCIUReport || isUUReport ? (
-                      <YAxis domain={axisDomain(0, cfg.dvShearMax)} tick={{ fontSize: 10 }} interval={0}>
+                      <YAxis domain={axisDomain(cfg.dvShearMin, cfg.dvShearMax)} tick={{ fontSize: 10 }} ticks={equalTicks(cfg.dvShearMin, cfg.dvShearMax)} interval={0}>
                         <RLabel value="u - Poropressão [kPa]" angle={-90} position="insideLeft" offset={-4} fontSize={10} />
                       </YAxis>
                     ) : (
@@ -4120,13 +4107,8 @@ function TriaxialReport({
                     <ReferenceLine y={0} stroke="#999" />
                     <Legend wrapperStyle={{ fontSize: 10 }} verticalAlign="top" />
                     {specimens.map((cp, i) => {
-                      const V0 = results[i].V0;
                       // UU: poropressão medida (leitura do ensaio); CIU: σ1 − σ'1; CID: variação volumétrica.
-                      const data = isUUReport
-                        ? cp.shear.map((s) => ({ eaPct: s.eaPct, dv: s.uPore ?? 0 }))
-                        : isCIUReport
-                          ? results[i].shearCurve.map((p) => ({ eaPct: p.eaPct, dv: p.sigma1 - p.sigma1Prime }))
-                          : results[i].shearCurve.map((p) => ({ eaPct: p.eaPct, dv: (p.evPct / 100) * V0 }));
+                      const data = valoresDaFaixaInferior(cp, results[i], reportTestType);
                       return (
                         <Line key={cp.id} data={data} dataKey="dv" stroke={cp.color} name={cp.displayId ?? cp.id}
                           type="monotone" dot={false} strokeWidth={1.8} isAnimationActive={false} />
@@ -4156,7 +4138,8 @@ function TriaxialReport({
           ...results.flatMap((r) => r.failure ? [r.failure.sigma1Prime * 1.1, r.failure.sigma1Prime * 0.7] : []),
           ...envelopePts.map((p) => Math.max(p.pPrime, p.q) * 1.2),
         );
-        const unified = Math.max(1, autoSigmaTau);
+        // Topo redondo (ex.: 120 em vez de 118,06) — vale para os dois eixos, escala 1:1.
+        const unified = niceCeil(Math.max(1, autoSigmaTau));
         const alphaDeg = envelope ? Math.atan(envelope.M) * 180 / Math.PI : 0;
         const mohrPage = page(4, (
           <div className="flex h-full flex-col gap-2 text-[10px] text-[#141414]">
@@ -4588,11 +4571,7 @@ function SpecimenPage({
 }) {
   // Faixa inferior: poropressão medida (CIU e UU) ou variação volumétrica (CID).
   // No UU a poropressão é só leitura do ensaio: o cálculo é em tensões totais.
-  const dvShear = isUUReport
-    ? cp.shear.map((s) => ({ eaPct: s.eaPct, dv: s.uPore ?? 0 }))
-    : isCIUReport
-      ? r.shearCurve.map((p) => ({ eaPct: p.eaPct, dv: p.sigma1 - p.sigma1Prime }))
-      : r.shearCurve.map((p) => ({ eaPct: p.eaPct, dv: (p.evPct / 100) * r.V0 }));
+  const dvShear = valoresDaFaixaInferior(cp, r, isUUReport ? "uu" : isCIUReport ? "ciu" : "cid");
   const moldagem = photos.find((p) => p.kind === "moldagem");
   const ruptura = photos.find((p) => p.kind === "ruptura");
   const legend = `${cp.displayId ?? cp.id} · ${isUUReport ? "σ3" : "σ3'"}=${cp.sigma3Target} kPa`;
@@ -4653,7 +4632,7 @@ function SpecimenPage({
               <RLabel value="εa - Deformação Axial Específica [%]" position="insideBottom" offset={-6} fontSize={9} />
             </XAxis>
             {isCIUReport || isUUReport ? (
-              <YAxis domain={axisDomain(0, cfg.dvShearMax)} tick={{ fontSize: 9 }} interval={0}>
+              <YAxis domain={axisDomain(cfg.dvShearMin, cfg.dvShearMax)} tick={{ fontSize: 9 }} ticks={equalTicks(cfg.dvShearMin, cfg.dvShearMax)} interval={0}>
                 <RLabel value="u - Poropressão [kPa]" angle={-90} position="insideLeft" offset={-2} fontSize={9} />
               </YAxis>
             ) : (

@@ -342,6 +342,12 @@ export type OpcoesAjuste = {
   grauPolinomio?: number;
   /** Quando falso, valores negativos são levados a zero. */
   permiteNegativo?: boolean;
+  /**
+   * Multiplica a curva ajustada (1 = sem escala; 0,9 diminui 10 %). Fica gravado
+   * nas `opcoes` do registro do ajuste, então aparece na auditoria e é desfeito
+   * pelo "Restaurar original" junto com o resto do ajuste.
+   */
+  fatorEscala?: number;
 };
 
 export type PontoAjustado = { x: number; yBruto: number; yEnvelope: number; yAjustado: number };
@@ -439,6 +445,7 @@ export function ajustarCurva(pontos: Ponto[], opcoes: OpcoesAjuste = {}): Result
     iteracoes = 4000,
     grauPolinomio = 5,
     permiteNegativo = true,
+    fatorEscala = 1,
   } = opcoes;
 
   // Índices dos pontos numéricos, em ordem crescente de x. Os filtros de
@@ -477,6 +484,9 @@ export function ajustarCurva(pontos: Ponto[], opcoes: OpcoesAjuste = {}): Result
     ajustada = lowess(x, envelope, fracaoLowess);
   }
 
+  if (fatorEscala !== 1 && Number.isFinite(fatorEscala) && fatorEscala > 0) {
+    ajustada = ajustada.map((v) => v * fatorEscala);
+  }
   if (!permiteNegativo) ajustada = ajustada.map((v) => Math.max(0, v));
   if (forcarZeroInicial && ajustada.length) ajustada[0] = 0;
 

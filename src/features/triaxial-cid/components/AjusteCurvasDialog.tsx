@@ -88,9 +88,10 @@ export function AjusteCurvasDialog({
   const mexer = (patch: Partial<OpcoesAjuste>) => setOpcoes((o) => ({ ...o, ...patch }));
 
   const adaptador = ADAPTADORES[variavel]!;
-  // UU: sem variação de volume nem poropressão — essas curvas não existem no ensaio.
+  // UU: não há variação de volume. A poropressão é medida (e aparece nos gráficos),
+  // então pode ser ajustada — ela só não entra no cálculo, que é em tensões totais.
   const variaveisDisponiveis = (Object.keys(ADAPTADORES) as VariavelAjustavel[]).filter(
-    (v) => !(sample.testType === "uu" && (v === "poropressao" || v === "variacao-volumetrica")),
+    (v) => !(sample.testType === "uu" && v === "variacao-volumetrica"),
   );
   const cpAtual = specimens.find((c) => c.id === cpId) ?? specimens[0];
   const registroAtual = cpAtual?.ajustesDeCurva?.[variavel];
@@ -258,6 +259,9 @@ export function AjusteCurvasDialog({
                   Curva já ajustada por <b>{registroAtual.aplicadoPor}</b> em{" "}
                   {new Date(registroAtual.aplicadoEm).toLocaleDateString("pt-BR")} ·{" "}
                   {NOMES_DOS_METODOS[registroAtual.metodo]}
+                  {(registroAtual.opcoes?.fatorEscala ?? 1) !== 1 && (
+                    <> · fator ×{n(registroAtual.opcoes.fatorEscala, 2)}</>
+                  )}
                 </span>
                 <Button variant="ghost" size="sm" className="h-6 gap-1 px-2 text-[11px]" onClick={restaurar}>
                   <RotateCcw className="h-3 w-3" /> Restaurar original
@@ -386,6 +390,23 @@ export function AjusteCurvasDialog({
                     <Label className="text-[11px]">Começar em zero</Label>
                     <Switch checked={!!opcoes.forcarZeroInicial}
                       onCheckedChange={(v) => mexer({ forcarZeroInicial: v })} />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="flex justify-between text-[11px]">
+                      <span>Fator de escala</span>
+                      <span className="text-muted-foreground">×{n(opcoes.fatorEscala ?? 1, 2)}</span>
+                    </Label>
+                    <Slider min={0.5} max={1.5} step={0.01} value={[opcoes.fatorEscala ?? 1]}
+                      onValueChange={([v]) => mexer({ fatorEscala: v })} />
+                    <div className="flex items-center justify-between text-[10px] leading-snug text-muted-foreground">
+                      <span>Multiplica a curva ajustada. Fica registrado no ajuste.</span>
+                      {(opcoes.fatorEscala ?? 1) !== 1 && (
+                        <button type="button" className="underline" onClick={() => mexer({ fatorEscala: 1 })}>
+                          voltar a ×1
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 rounded border bg-muted/30 p-2 text-[11px]">

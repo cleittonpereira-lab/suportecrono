@@ -4,6 +4,7 @@
  * linhas de 1,8 px e linha de referência em y = 0.
  * Só roda no navegador (precisa de canvas).
  */
+import { baseQueCobre, niceStep, topoQueCobre } from "./eixos";
 
 /** Fator de resolução: o PNG sai com o dobro do tamanho em px para ficar nítido no Excel. */
 const SCALE = 2;
@@ -38,18 +39,11 @@ export interface ChartSpec {
   yLabel: string;
   yReversed?: boolean;
   zeroLine?: boolean;
+  /** Área do gráfico quadrada (escala 1:1 quando os dois eixos têm o mesmo intervalo — Mohr). */
+  quadrado?: boolean;
   series: ChartSeries[];
   /** Tamanho da fonte dos eixos em px (o PDF usa 9–10 px). */
   tickPx?: number;
-}
-
-/** Passo "bonito" (1, 2, 2,5, 5 × 10^k) para dividir `range` em ~`count` intervalos. */
-export function niceStep(range: number, count: number): number {
-  const raw = range / Math.max(1, count - 1);
-  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
-  const n = raw / mag;
-  const s = n < 1.5 ? 1 : n < 3 ? 2 : n < 7 ? 5 : 10;
-  return s * mag;
 }
 
 /** Ticks em [min, max] com passo "bonito" — mesma regra usada no relatório da tela. */
@@ -67,9 +61,8 @@ export function equalTicks(min: number, max: number, count = 6): number[] {
 }
 
 /**
- * Domínio de um eixo como o Recharts o escolhe quando o usuário deixa "auto"
- * (valor 0 em `lo`/`hi`): começa em 0 para dados não negativos e termina no
- * múltiplo do passo acima do maior dado. Com `hi` informado, usa `hi`.
+ * Domínio e ticks de um eixo que sempre cobre os dados (mesma regra do PDF, ver
+ * eixos.ts): o limite digitado só vale se couber o maior/menor dado.
  */
 export function axisDomainAndTicks(
   lo: number,
@@ -77,16 +70,9 @@ export function axisDomainAndTicks(
   dataLo: number,
   dataHi: number,
 ): { domain: [number, number]; ticks: number[] } {
-  const loEff = lo !== 0 ? lo : dataLo >= 0 ? 0 : -niceCeil(-dataLo);
-  const hiEff = hi > 0 ? hi : niceCeil(Math.max(0, dataHi));
-  const ticks = hi > 0 && hiEff > loEff ? equalTicks(loEff, hiEff) : equalTicks(loEff, hiEff, 5);
-  return { domain: [loEff, hiEff], ticks };
-}
-
-function niceCeil(v: number): number {
-  if (!(v > 0)) return 1;
-  const step = niceStep(v, 5);
-  return Math.ceil(v / step - 1e-9) * step;
+  const loEff = baseQueCobre(lo, dataLo);
+  const hiEff = topoQueCobre(hi, dataHi);
+  return { domain: [loEff, hiEff], ticks: equalTicks(loEff, hiEff) };
 }
 
 /** Texto em base 10 sem zeros à direita (0,50 → "0.5"), como o Recharts exibe os ticks. */
@@ -154,10 +140,18 @@ export function renderChartPng(spec: ChartSpec): string | null {
   }
   const legendHeight = legendRows.length ? ly + legendLine : 0;
 
-  const left = spec.margin.left;
-  const right = spec.width - spec.margin.right;
-  const top = spec.margin.top + legendHeight + (legendHeight ? 4 : 0);
-  const bottom = spec.height - spec.margin.bottom;
+  let left = spec.margin.left;
+  let right = spec.width - spec.margin.right;
+  let top = spec.margin.top + legendHeight + (legendHeight ? 4 : 0);
+  let bottom = spec.height - spec.margin.bottom;
+  if (spec.quadrado) {
+    // Mesmo tamanho em px nos dois eixos: o quadrado fica centralizado na área livre.
+    const lado = Math.min(right - left, bottom - top);
+    left += (right - left - lado) / 2;
+    right = left + lado;
+    top += (bottom - top - lado) / 2;
+    bottom = top + lado;
+  }
   const plotW = right - left;
   const plotH = bottom - top;
   const [x0, x1] = spec.xDomain;

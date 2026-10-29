@@ -18,6 +18,7 @@ import { fotosPublicadas } from "@/features/lab/photos";
 import type { Photo } from "@/features/lab/types";
 import { formatSignerName } from "@/lib/assinaturas-pdf";
 import { GLOSSARIO_UU_1, GLOSSARIO_UU_2, GLOSSARIO_UU_CONVENCAO, GLOSSARIO_UU_REFERENCIAS } from "./glossario-uu";
+import { niceCeil } from "./eixos";
 
 // ---------------------------------------------------------------------------
 // Parâmetros
@@ -455,7 +456,8 @@ function derivar(p: ExportTriaxialUuParams): Derivados {
     ...p.results.flatMap((r) => (r.failure ? [r.failure.sigma1Prime * 1.1, r.failure.sigma1Prime * 0.7] : [])),
     ...p.envelopePts.map((pt) => Math.max(pt.pPrime, pt.q) * 1.2),
   );
-  const unified = Math.max(1, autoSigmaTau);
+  // Topo redondo, o mesmo nos dois eixos (Mohr em escala 1:1), como no PDF.
+  const unified = niceCeil(Math.max(1, autoSigmaTau));
   const alphaDeg = p.envelope ? (Math.atan(p.envelope.M) * 180) / Math.PI : 0;
   return { cfg, unified, alphaDeg, porCp };
 }
@@ -669,6 +671,7 @@ function paginaMohr(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
     width: w,
     height: h,
     margin: { top: 28, right: 20, bottom: 56, left: 44 },
+    quadrado: true,
     xDomain: [0, u],
     yDomain: [0, u],
     xTicks: equalTicks(0, u),
