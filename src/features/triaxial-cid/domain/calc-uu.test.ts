@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { processSpecimen, circleArea } from "./calc";
+import { processSpecimen, circleArea, envoltoriaUU } from "./calc";
 import type { TriaxialSample, TriaxialSpecimen } from "../types";
 
 // Ensaio UU sem drenagem: o volume do CP não muda, então o que o operador
@@ -66,6 +66,26 @@ describe("Triaxial UU — contas sem variação de volume", () => {
     ).shearCurve[1];
     expect(comU.sigmaD).toBeCloseTo(semU.sigmaD, 9);
     expect(comU.sigma1).toBeCloseTo(semU.sigma1, 9);
+  });
+
+  it("envoltória horizontal: φu = 0 e cu = Su = média de (σ1 − σ3)/2 na ruptura", () => {
+    // q de ruptura dos CPs do exemplo do usuário: 23, 9 e 42 kPa.
+    const env = envoltoriaUU([
+      { pPrime: 73, q: 23, cp: "CP1" },
+      { pPrime: 109, q: 9, cp: "CP2" },
+      { pPrime: 242, q: 42, cp: "CP3" },
+    ])!;
+    expect(env.phiDeg).toBe(0);
+    expect(env.M).toBe(0);
+    expect(env.cPrime).toBeCloseTo(74 / 3, 9);
+    expect(env.a).toBeCloseTo(74 / 3, 9);
+    expect(env.desvioPadrao).toBeCloseTo(Math.sqrt(((23 - 74 / 3) ** 2 + (9 - 74 / 3) ** 2 + (42 - 74 / 3) ** 2) / 2), 9);
+    expect(Number.isNaN(env.r2)).toBe(true);
+  });
+
+  it("um só CP já dá Su (desvio padrão 0); sem CP não há envoltória", () => {
+    expect(envoltoriaUU([{ pPrime: 60, q: 15, cp: "CP1" }])).toMatchObject({ cPrime: 15, phiDeg: 0, desvioPadrao: 0 });
+    expect(envoltoriaUU([])).toBeNull();
   });
 
   it("no CID a mesma leitura ainda usa ΔV e poropressão (não muda o comportamento drenado)", () => {

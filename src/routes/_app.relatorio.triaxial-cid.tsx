@@ -101,6 +101,7 @@ import { listPendenciasDigitacao, atualizarPendenciaDigitacao } from "@/lib/lab-
 import { findMatchingPendencia } from "@/lib/pendencia-match";
 import {
   cylinderVolume,
+  envoltoriaUU,
   fitEnvelope,
   mohrCirclePoints,
   processSpecimen,
@@ -549,7 +550,11 @@ export function TriaxialCidPage() {
     [results, sortedSpecimens],
   );
 
-  const envelope = useMemo(() => fitEnvelope(envelopePts), [envelopePts]);
+  // UU: φu = 0 — envoltória horizontal em Su (média dos CPs), não regressão em (s, t).
+  const envelope = useMemo(
+    () => (isUU ? envoltoriaUU(envelopePts) : fitEnvelope(envelopePts)),
+    [envelopePts, isUU],
+  );
 
   const updateSample = (k: keyof TriaxialSample, v: string | number | boolean) =>
     setSample((s) => ({ ...s, [k]: v as never }));
@@ -2195,7 +2200,7 @@ export function TriaxialCidPage() {
                           { pPrime: maxP, q: envelope.a + envelope.M * maxP },
                         ];
                         return (
-                          <Line data={envLine} dataKey="q" type="linear" stroke={ACCENT} strokeWidth={2} strokeDasharray="6 4" dot={false} name={`Envoltória (Kf)  M=${fmt(envelope.M, 3)}`} isAnimationActive={false} />
+                          <Line data={envLine} dataKey="q" type="linear" stroke={ACCENT} strokeWidth={2} strokeDasharray="6 4" dot={false} name={isUU ? `Su = ${fmt(envelope.a, 1)} kPa (φᵤ = 0)` : `Envoltória (Kf)  M=${fmt(envelope.M, 3)}`} isAnimationActive={false} />
                         );
                       })()}
                       <Scatter data={envelopePts} fill={ACCENT} name="Ruptura" />
@@ -2209,7 +2214,9 @@ export function TriaxialCidPage() {
               <CardHeader>
                 <CardTitle className="text-sm">Círculos de Mohr &amp; envoltória (σn, τ)</CardTitle>
                 <CardDescription>
-                  {isUU ? "φᵤ e cᵤ" : "φ' e c'"} calculados a partir do ajuste em ({isUU ? "s" : "p'"}, q).
+                  {isUU
+                    ? "UU: envoltória horizontal (φᵤ = 0) na resistência não drenada Su = cᵤ, média de (σ1 − σ3)/2 na ruptura dos CPs."
+                    : "φ' e c' calculados a partir do ajuste em (p', q)."}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -2217,10 +2224,21 @@ export function TriaxialCidPage() {
                   <MohrChart specimens={sortedSpecimens} results={results} envelope={envelope} totalStress={isUU} />
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4 text-sm">
-                  <Stat label={isUU ? "φᵤ " : "φ' "} value={envelope ? `${fmt(envelope.phiDeg, 2)}°` : "—"} />
-                  <Stat label={isUU ? "cᵤ " : "c' "} value={envelope ? `${fmt(envelope.cPrime, 2)} kPa` : "—"} />
-                  <Stat label={`M (t vs ${isUU ? "s" : "s'"})`} value={envelope ? fmt(envelope.M, 3) : "—"} />
-                  <Stat label={`a (t vs ${isUU ? "s" : "s'"})`} value={envelope ? `${fmt(envelope.a, 1)} kPa` : "—"} />
+                  {isUU ? (
+                    <>
+                      <Stat label="Su = cᵤ " value={envelope ? `${fmt(envelope.cPrime, 2)} kPa` : "—"} />
+                      <Stat label="φᵤ " value="0° (UU)" />
+                      <Stat label="Desvio padrão de Su" value={envelope ? `${fmt(envelope.desvioPadrao, 2)} kPa` : "—"} />
+                      <Stat label="CPs na média" value={envelope ? String(envelope.points.length) : "—"} />
+                    </>
+                  ) : (
+                    <>
+                      <Stat label="φ' " value={envelope ? `${fmt(envelope.phiDeg, 2)}°` : "—"} />
+                      <Stat label="c' " value={envelope ? `${fmt(envelope.cPrime, 2)} kPa` : "—"} />
+                      <Stat label="M (t vs s')" value={envelope ? fmt(envelope.M, 3) : "—"} />
+                      <Stat label="a (t vs s')" value={envelope ? `${fmt(envelope.a, 1)} kPa` : "—"} />
+                    </>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -2600,9 +2618,13 @@ export function TriaxialCidPage() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <SummaryStat label={isUU ? "φᵤ (total)" : "φ' (efetivo)"} value={envelope ? `${fmt(envelope.phiDeg, 1)}°` : "—"} />
-              <SummaryStat label={isUU ? "cᵤ (total)" : "c' (efetivo)"} value={envelope ? `${fmt(envelope.cPrime, 1)} kPa` : "—"} />
-              <SummaryStat label="R² (ajuste)" value={envelope ? fmt(envelope.r2, 3) : "—"} />
+              <SummaryStat label={isUU ? "φᵤ (UU)" : "φ' (efetivo)"} value={envelope ? `${fmt(envelope.phiDeg, 1)}°` : "—"} />
+              <SummaryStat label={isUU ? "Su = cᵤ" : "c' (efetivo)"} value={envelope ? `${fmt(envelope.cPrime, 1)} kPa` : "—"} />
+              {isUU ? (
+                <SummaryStat label="Desvio padrão de Su" value={envelope ? `${fmt(envelope.desvioPadrao, 1)} kPa` : "—"} />
+              ) : (
+                <SummaryStat label="R² (ajuste)" value={envelope ? fmt(envelope.r2, 3) : "—"} />
+              )}
               <SummaryStat label="Nº CPs" value={String(specimens.length)} />
             </div>
           </CardContent>
@@ -3789,15 +3811,19 @@ function MohrChart({
         },
       ]
     : null;
+  // UU: envoltória horizontal — o que importa é Su (= cu), com φu = 0.
+  const nomeEnvoltoria = envelope
+    ? totalStress
+      ? `Envoltória: Su = ${cSym} = ${fmt(envelope.cPrime, 1)} kPa (${phiSym} = 0)`
+      : `Envoltória: ${phiSym}=${fmt(envelope.phiDeg, 1)}°, ${cSym}=${fmt(envelope.cPrime, 1)} kPa`
+    : "";
   const legenda = [
     ...circles.map((c) => ({
       cor: c.color,
       tracejado: false,
       nome: `${c.displayId ?? c.id} · ${sigmaSym}3=${fmt(c.sigma3Target, 0)} kPa`,
     })),
-    ...(envelope
-      ? [{ cor: ACCENT, tracejado: true, nome: `Envoltória: ${phiSym}=${fmt(envelope.phiDeg, 1)}°, ${cSym}=${fmt(envelope.cPrime, 1)} kPa` }]
-      : []),
+    ...(envelope ? [{ cor: ACCENT, tracejado: true, nome: nomeEnvoltoria }] : []),
   ];
 
   // Margens + eixos iguais na horizontal e na vertical (14+60+20 = 10+30+54 = 94 px):
@@ -3838,7 +3864,7 @@ function MohrChart({
             {envLine && (
               <Scatter
                 data={envLine}
-                name={`Envoltória: ${phiSym}=${fmt(envelope!.phiDeg, 1)}°, ${cSym}=${fmt(envelope!.cPrime, 1)} kPa`}
+                name={nomeEnvoltoria}
                 line={{ stroke: ACCENT, strokeWidth: 2, strokeDasharray: "6 4" }}
                 shape={() => <g />}
                 fill={ACCENT}
@@ -3987,10 +4013,14 @@ function SummaryTablePage({
           <b>{isUUReport ? "φᵤ =" : "φ' ="}</b> {envelope ? `${fmt(envelope.phiDeg, 2)}°` : "—"}
         </div>
         <div className="rounded border border-[#141414]/40 px-2 py-1">
-          <b>{isUUReport ? "cᵤ =" : "c' ="}</b> {envelope ? `${fmt(envelope.cPrime, 2)} kPa` : "—"}
+          <b>{isUUReport ? "Su = cᵤ =" : "c' ="}</b> {envelope ? `${fmt(envelope.cPrime, 2)} kPa` : "—"}
         </div>
         <div className="rounded border border-[#141414]/40 px-2 py-1">
-          <b>R² =</b> {envelope ? fmt(envelope.r2, 3) : "—"}
+          {isUUReport ? (
+            <><b>Desvio padrão de Su =</b> {envelope ? `${fmt(envelope.desvioPadrao, 2)} kPa` : "—"}</>
+          ) : (
+            <><b>R² =</b> {envelope ? fmt(envelope.r2, 3) : "—"}</>
+          )}
         </div>
       </div>
     </div>
@@ -4149,13 +4179,17 @@ function TriaxialReport({
             </div>
             <div className="mt-1 flex flex-wrap justify-center gap-2 text-[12px]">
                   <span className="rounded border border-[#141414]/60 bg-[#f3f4f6] px-3 py-1">
-                    <b>{isUUReport ? "cᵤ" : "c'"}</b> <span className="text-[10px] text-[#141414]/70">(intercepto coesivo {isUUReport ? "não drenado" : "efetivo"})</span> <b>=</b> {envelope ? `${fmt(envelope.cPrime, 2)} kPa` : "—"}
+                    <b>{isUUReport ? "Su = cᵤ" : "c'"}</b> <span className="text-[10px] text-[#141414]/70">({isUUReport ? "resistência não drenada" : "intercepto coesivo efetivo"})</span> <b>=</b> {envelope ? `${fmt(envelope.cPrime, 2)} kPa` : "—"}
                   </span>
                   <span className="rounded border border-[#141414]/60 bg-[#f3f4f6] px-3 py-1">
-                    <b>{isUUReport ? "φᵤ" : "φ'"}</b> <span className="text-[10px] text-[#141414]/70">(ângulo de atrito {isUUReport ? "não drenado" : "efetivo"})</span> <b>=</b> {envelope ? `${fmt(envelope.phiDeg, 2)}°` : "—"}
+                    <b>{isUUReport ? "φᵤ" : "φ'"}</b> <span className="text-[10px] text-[#141414]/70">({isUUReport ? "envoltória horizontal" : "ângulo de atrito efetivo"})</span> <b>=</b> {envelope ? `${fmt(envelope.phiDeg, 2)}°` : "—"}
                   </span>
                   <span className="rounded border border-[#141414]/60 bg-[#f3f4f6] px-3 py-1">
-                    <b>R² =</b> {envelope ? fmt(envelope.r2, 3) : "—"}
+                    {isUUReport ? (
+                      <><b>Desvio padrão de Su =</b> {envelope ? `${fmt(envelope.desvioPadrao, 2)} kPa` : "—"}</>
+                    ) : (
+                      <><b>R² =</b> {envelope ? fmt(envelope.r2, 3) : "—"}</>
+                    )}
                   </span>
             </div>
           </div>
@@ -4184,7 +4218,7 @@ function TriaxialReport({
                       { pPrime: 0, q: envelope.a },
                       { pPrime: unified, q: envelope.a + envelope.M * unified },
                     ];
-                    return <Line data={envLine} dataKey="q" type="linear" stroke="#8a6f4c" strokeWidth={2} dot={false} name={isUUReport ? "Envoltória Kf" : "Envoltória Efetiva Kf"} isAnimationActive={false} />;
+                    return <Line data={envLine} dataKey="q" type="linear" stroke="#8a6f4c" strokeWidth={2} dot={false} name={isUUReport ? `Su = ${fmt(envelope.a, 1)} kPa (φᵤ = 0)` : "Envoltória Efetiva Kf"} isAnimationActive={false} />;
                   })()}
                 </ComposedChart>
               </ResponsiveContainer>
@@ -4197,7 +4231,11 @@ function TriaxialReport({
                     <b>{isUUReport ? "α" : "α'"}</b> <span className="text-[10px] text-[#141414]/70">(inclinação Kf)</span> <b>=</b> {envelope ? `${fmt(alphaDeg, 2)}°` : "—"}
                   </span>
                   <span className="rounded border border-[#141414]/60 bg-[#f3f4f6] px-3 py-1">
-                    <b>R² =</b> {envelope ? fmt(envelope.r2, 3) : "—"}
+                    {isUUReport ? (
+                      <><b>Desvio padrão de Su =</b> {envelope ? `${fmt(envelope.desvioPadrao, 2)} kPa` : "—"}</>
+                    ) : (
+                      <><b>R² =</b> {envelope ? fmt(envelope.r2, 3) : "—"}</>
+                    )}
                   </span>
             </div>
           </div>

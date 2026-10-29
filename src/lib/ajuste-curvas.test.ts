@@ -202,6 +202,19 @@ describe("fator de escala", () => {
     expect(um.pontos.map((p) => p.yAjustado)).toEqual(sem.pontos.map((p) => p.yAjustado));
   });
 
+  it("fator negativo inverte o sinal; acima de 1,5 também vale", () => {
+    const inv = ajustarCurva(pts, { metodo: "mediana", janela: 1, fatorEscala: -1 });
+    inv.pontos.forEach((p, i) => expect(p.yAjustado).toBeCloseTo(-pts[i].y, 4));
+    const tres = ajustarCurva(pts, { metodo: "mediana", janela: 1, fatorEscala: 3 });
+    tres.pontos.forEach((p, i) => expect(p.yAjustado).toBeCloseTo(pts[i].y * 3, 4));
+  });
+
+  it("curva que pode ser negativa (poropressão) não é cortada em zero", () => {
+    const u: Ponto[] = [0, 1, 2, 3].map((x) => ({ x, y: 2 - 3 * x }));
+    const r = ajustarCurva(u, { metodo: "mediana", janela: 1, permiteNegativo: true });
+    expect(r.pontos[3].yAjustado).toBeCloseTo(-7, 4);
+  });
+
   it("'começar em zero' continua valendo depois da escala", () => {
     const r = ajustarCurva(pts, { metodo: "mediana", janela: 1, fatorEscala: 1.2, forcarZeroInicial: true });
     expect(r.pontos[0].yAjustado).toBe(0);

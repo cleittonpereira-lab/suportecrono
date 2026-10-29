@@ -258,6 +258,8 @@ export interface EnvelopeResult {
   cPrime: number;    // intercepto coesivo [kPa]
   M: number;         // inclinação em (p', q)
   a: number;         // intercepto em (p', q)
-  r2: number;        // qualidade do ajuste
+  r2: number;        // qualidade do ajuste (NaN no UU: envoltória horizontal, sem regressão)
   points: { pPrime: number; q: number; cp: string }[];
+  /** UU: desvio padrão de Su entre os CPs [kPa] (no lugar do R²). */
+  desvioPadrao?: number;
 }

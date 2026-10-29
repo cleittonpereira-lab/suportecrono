@@ -343,9 +343,9 @@ export type OpcoesAjuste = {
   /** Quando falso, valores negativos são levados a zero. */
   permiteNegativo?: boolean;
   /**
-   * Multiplica a curva ajustada (1 = sem escala; 0,9 diminui 10 %). Fica gravado
-   * nas `opcoes` do registro do ajuste, então aparece na auditoria e é desfeito
-   * pelo "Restaurar original" junto com o resto do ajuste.
+   * Multiplica a curva ajustada (1 = sem escala; 0,9 diminui 10 %; negativo
+   * inverte o sinal; 0 é ignorado). Fica gravado nas `opcoes` do registro do
+   * ajuste, então aparece na auditoria e é desfeito pelo "Restaurar original".
    */
   fatorEscala?: number;
 };
@@ -484,7 +484,7 @@ export function ajustarCurva(pontos: Ponto[], opcoes: OpcoesAjuste = {}): Result
     ajustada = lowess(x, envelope, fracaoLowess);
   }
 
-  if (fatorEscala !== 1 && Number.isFinite(fatorEscala) && fatorEscala > 0) {
+  if (fatorEscala !== 1 && Number.isFinite(fatorEscala) && fatorEscala !== 0) {
     ajustada = ajustada.map((v) => v * fatorEscala);
   }
   if (!permiteNegativo) ajustada = ajustada.map((v) => Math.max(0, v));

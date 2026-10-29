@@ -286,6 +286,22 @@ export function fitEnvelope(
   return { phiDeg, cPrime, M, a, r2, points: pts };
 }
 
+/**
+ * Envoltória do UU (ASTM D2850): em tensões totais o ensaio não consolidado não
+ * drenado tem φu = 0 — a envoltória é horizontal, na resistência não drenada
+ * Su = cu, média de (σ1 − σ3)/2 na ruptura dos CPs (q = t no ponto de ruptura).
+ * No lugar do R² vai o desvio padrão de Su entre os CPs.
+ */
+export function envoltoriaUU(
+  pts: { pPrime: number; q: number; cp: string }[],
+): EnvelopeResult | null {
+  if (pts.length < 1) return null;
+  const n = pts.length;
+  const su = pts.reduce((a, p) => a + p.q, 0) / n;
+  const desvioPadrao = n > 1 ? Math.sqrt(pts.reduce((a, p) => a + (p.q - su) ** 2, 0) / (n - 1)) : 0;
+  return { phiDeg: 0, cPrime: su, M: 0, a: su, r2: NaN, points: pts, desvioPadrao };
+}
+
 /** Gera pontos para desenhar um círculo de Mohr (σn, τ). */
 export function mohrCirclePoints(sigma3: number, sigma1: number, n = 60) {
   const center = (sigma1 + sigma3) / 2;

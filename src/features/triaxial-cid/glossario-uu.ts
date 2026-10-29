@@ -70,12 +70,12 @@ export const GLOSSARIO_UU_2: GrupoGlossario[] = [
     ],
   },
   {
-    titulo: "Envoltória — Reta Kf em tensões totais",
+    titulo: "Envoltória — Resistência não drenada (φu = 0)",
     linhas: [
-      { sym: "Kf", nome: "Ajuste linear em (s,t)", formula: "t_f = tan α·s_f + a", unidade: "kPa", ref: "ISO Anexo B" },
-      { sym: "φu", nome: "Ângulo de atrito não drenado", formula: "sen φu = tan α", unidade: "°", ref: "ISO B.1" },
-      { sym: "cu", nome: "Intercepto coesivo não drenado", formula: "cu = a / cos φu", unidade: "kPa", ref: "ISO B.2" },
-      { sym: "R²", nome: "Coef. de determinação", formula: "1 − SS_res/SS_tot", unidade: "—" },
+      { sym: "Su", nome: "Resistência não drenada do CP", formula: "Su = (σ₁ − σ₃)_f / 2 = t_f", unidade: "kPa", ref: "ASTM D2850" },
+      { sym: "cu", nome: "Coesão não drenada (envoltória)", formula: "cu = Su médio = Σ Su / n", unidade: "kPa" },
+      { sym: "φu", nome: "Ângulo de atrito não drenado", formula: "φu = 0 (envoltória horizontal)", unidade: "°" },
+      { sym: "s(Su)", nome: "Desvio padrão de Su", formula: "√[ Σ (Su − cu)² / (n − 1) ]", unidade: "kPa" },
     ],
   },
   {

@@ -582,11 +582,13 @@ function paginaResumo(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
   const caixas = newRow(cx, 17);
   const phi = p.envelope ? `${fmt(p.envelope.phiDeg, 2)}°` : "—";
   const coe = p.envelope ? `${fmt(p.envelope.cPrime, 2)} kPa` : "—";
-  const r2 = p.envelope ? fmt(p.envelope.r2, 3) : "—";
   caixa(cx, caixas, 1, 20, [{ t: "φᵤ =", bold: true }, { t: ` ${phi}` }]);
-  caixa(cx, caixas, 21, 40, [{ t: "cᵤ =", bold: true }, { t: ` ${coe}` }]);
-  caixa(cx, caixas, 41, 60, [{ t: "R² =", bold: true }, { t: ` ${r2}` }]);
+  caixa(cx, caixas, 21, 40, [{ t: "Su = cᵤ =", bold: true }, { t: ` ${coe}` }]);
+  caixa(cx, caixas, 41, 60, [{ t: "Desvio padrão de Su =", bold: true }, { t: ` ${desvioSu(p.envelope)}` }]);
 }
+
+/** Desvio padrão de Su entre os CPs (UU: vai no lugar do R² da regressão). */
+const desvioSu = (env: EnvelopeResult | null) => (env ? `${fmt(env.desvioPadrao, 2)} kPa` : "—");
 
 function caixa(cx: Ctx, r: number, c1: number, c2: number, runs: Run[]) {
   put(cx, r, c1, r, c2, runs, { size: 6.75, align: "left" });
@@ -656,7 +658,7 @@ function paginaMohr(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
   const series: ChartSeries[] = [...circulos];
   if (env) {
     series.push({
-      name: `Envoltória: φᵤ=${fmt(env.phiDeg, 1)}°, cᵤ=${fmt(env.cPrime, 1)} kPa`,
+      name: `Envoltória: Su = cᵤ = ${fmt(env.cPrime, 1)} kPa (φᵤ = 0)`,
       color: argb(ACCENT),
       points: [
         { x: 0, y: env.cPrime },
@@ -683,9 +685,9 @@ function paginaMohr(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
   const bx = newRow(cx, 22);
   const cPrime = env ? `${fmt(env.cPrime, 2)} kPa` : "—";
   const phiDeg = env ? `${fmt(env.phiDeg, 2)}°` : "—";
-  caixa(cx, bx, 1, 20, [{ t: "cᵤ", bold: true }, { t: " (intercepto coesivo não drenado) = ", size: 6 }, { t: cPrime, bold: true }]);
-  caixa(cx, bx, 21, 40, [{ t: "φᵤ", bold: true }, { t: " (ângulo de atrito não drenado) = ", size: 6 }, { t: phiDeg, bold: true }]);
-  caixa(cx, bx, 41, 60, [{ t: "R² = ", bold: true }, { t: env ? fmt(env.r2, 3) : "—", bold: true }]);
+  caixa(cx, bx, 1, 20, [{ t: "Su = cᵤ", bold: true }, { t: " (resistência não drenada) = ", size: 6 }, { t: cPrime, bold: true }]);
+  caixa(cx, bx, 21, 40, [{ t: "φᵤ", bold: true }, { t: " (envoltória horizontal) = ", size: 6 }, { t: phiDeg, bold: true }]);
+  caixa(cx, bx, 41, 60, [{ t: "Desvio padrão de Su = ", bold: true }, { t: desvioSu(env), bold: true }]);
 }
 
 function paginaCaminho(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
@@ -699,7 +701,7 @@ function paginaCaminho(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
   }));
   if (env) {
     series.push({
-      name: "Envoltória Kf",
+      name: `Su = ${fmt(env.a, 1)} kPa (φᵤ = 0)`,
       color: ENVELOPE_INK,
       points: [
         { x: 0, y: env.a },
@@ -724,7 +726,7 @@ function paginaCaminho(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
   const bx = newRow(cx, 22);
   caixa(cx, bx, 1, 20, [{ t: "a", bold: true }, { t: " (intercepto Kf) = ", size: 6 }, { t: env ? `${fmt(env.a, 2)} kPa` : "—", bold: true }]);
   caixa(cx, bx, 21, 40, [{ t: "α", bold: true }, { t: " (inclinação Kf) = ", size: 6 }, { t: env ? `${fmt(d.alphaDeg, 2)}°` : "—", bold: true }]);
-  caixa(cx, bx, 41, 60, [{ t: "R² = ", bold: true }, { t: env ? fmt(env.r2, 3) : "—", bold: true }]);
+  caixa(cx, bx, 41, 60, [{ t: "Desvio padrão de Su = ", bold: true }, { t: desvioSu(env), bold: true }]);
 }
 
 function paginaModulo(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
