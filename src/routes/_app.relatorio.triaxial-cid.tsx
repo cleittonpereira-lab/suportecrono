@@ -99,6 +99,7 @@ import { useDraftActivity } from "@/hooks/use-draft-activity";
 import { EditingPresenceBanner, DraftHistoryButton } from "@/components/DraftActivityInfo";
 import { listPendenciasDigitacao, atualizarPendenciaDigitacao } from "@/lib/lab-pendencias.functions";
 import { findMatchingPendencia } from "@/lib/pendencia-match";
+import { nomeDoArquivoDoLaudo, siglaDoEnsaio } from "@/lib/nome-laudo";
 import {
   cylinderVolume,
   envoltoriaUU,
@@ -125,7 +126,6 @@ const NORMS_CID: ReportNorm[] = [
 
 const NORMS_UU: ReportNorm[] = [
   { text: "ASTM D2850-15 — Unconsolidated-Undrained Triaxial Compression Test on Cohesive Soils" },
-  { text: "NBR 12770 — Solo coesivo — Determinação da resistência à compressão não confinada", italic: true },
 ];
 
 const NORMS_CIU: ReportNorm[] = [
@@ -793,6 +793,26 @@ export function TriaxialCidPage() {
   };
   useRegerarPdfNoFluxo(scopeId, buildReportPdfBlob);
 
+  /**
+   * Nome oficial do laudo — o mesmo do Drive: OS_Amostra_Furo_Prof_Sigla_Rev-NN
+   * (ex.: 18279-26_14198-02_SH-F-KM360-01_1.50-1.50_TRI.UU_Rev-00.pdf).
+   */
+  const nomeDoLaudo = (ext: "pdf" | "xlsx", rev?: number) =>
+    nomeDoArquivoDoLaudo({
+      os: sample.os || sample.workNumber,
+      amostra: sample.reportNumber || ctx?.amostra?.reportNumber || ctx?.amostra?.code || sample.code,
+      furo: sample.borehole || ctx?.amostra?.borehole,
+      prof: sample.depth || ctx?.amostra?.depth,
+      sigla: siglaDoEnsaio({
+        sigla: ctx?.ensaio?.sigla,
+        label: ctx?.ensaio?.label,
+        nome: ctx?.ensaio?.nome,
+        tipo: ctx?.ensaio?.tipo ?? (testType === "uu" ? "triaxial-uu" : testType === "ciu" ? "triaxial-ciu" : "triaxial-cid"),
+      }),
+      rev: rev ?? (Number(sample.revision) || 0),
+      ext,
+    });
+
   const handleSaveVersion = async (opts?: { skipVerification?: boolean }) => {
     const skipVerification = opts?.skipVerification === true;
     // "Digitado por" passa a refletir quem realmente concluiu e enviou a
@@ -806,8 +826,7 @@ export function TriaxialCidPage() {
     try {
       const blob = await buildReportPdfBlob();
       const rev = await nextRev(scopeId);
-      const base = (sample.workNumber || "relatorio").toString().replace(/[^\w-]+/g, "_");
-      const filename = `Triaxial-CID_${base}_Rev-${String(rev).padStart(2, "0")}.pdf`;
+      const filename = nomeDoLaudo("pdf", rev);
       const saved = await saveVersion({
         scopeId,
         rev,
@@ -981,11 +1000,10 @@ export function TriaxialCidPage() {
     setPdfBusy(true);
     try {
       const blob = await buildReportPdfBlob();
-      const base = (sample.workNumber || "relatorio").toString().replace(/[^\w-]+/g, "_");
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `Triaxial-CID_${base}.pdf`;
+      a.download = nomeDoLaudo("pdf");
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -1014,11 +1032,11 @@ export function TriaxialCidPage() {
         coordE: ctx?.coords?.E ?? sample.coordE,
         coordCota: ctx?.coords?.cota ?? sample.coordCota,
         coordDatum: ctx?.coords?.datum ?? sample.coordDatum,
+        operator: ctx?.ensaio?.operator || sample.operator,
         revision: active ? String(active.rev).padStart(2, "0") : sample.revision,
         verifiedBy: active?.verified_by_name ?? "",
         approvedBy: active?.status === "aprovado" ? (active.decided_by_name ?? "") : "",
       };
-      const base = (sample.workNumber || "relatorio").toString().replace(/[^\w-]+/g, "_");
       await exportTriaxialUuXlsx(
         {
           sample: amostraDoRelatorio,
@@ -1029,7 +1047,7 @@ export function TriaxialCidPage() {
           photos: ctx?.photos ?? [],
           axisCfg,
         },
-        `Triaxial-UU_${base}.xlsx`,
+        nomeDoLaudo("xlsx"),
       );
       toast.success("Excel gerado com sucesso");
     } catch (err) {
@@ -1085,7 +1103,7 @@ export function TriaxialCidPage() {
           continue;
         }
         aplicarDadosBrutos(d.cpId, data);
-        if (feitos.length === 0 && data.code) setSample((prev) => ({ ...prev, code: data.code || prev.code }));
+        // O código da amostra vem do cadastro (Gantt), nunca do nº do teste (NT) do arquivo.
         const nome = sortedSpecimens.find((c) => c.id === d.cpId)?.displayId ?? d.cpId;
         feitos.push(`NT ${d.nt} → ${nome} (${data.shear.length} leituras)`);
       } catch (err) {
@@ -1909,9 +1927,6 @@ export function TriaxialCidPage() {
                             return;
                           }
                           aplicarDadosBrutos(cp.id, data);
-                          if (data.code) {
-                            setSample((prev) => ({ ...prev, code: data.code || prev.code }));
-                          }
                           toast.success(
                             `Dados importados em ${cp.displayId ?? cp.id}: ${data.consolidation.length} pts adensamento · ${data.shear.length} pts ruptura`,
                           );
@@ -2466,6 +2481,7 @@ export function TriaxialCidPage() {
                         coordE: ctx?.coords?.E ?? sample.coordE,
                         coordCota: ctx?.coords?.cota ?? sample.coordCota,
                         coordDatum: ctx?.coords?.datum ?? sample.coordDatum,
+                        operator: ctx?.ensaio?.operator || sample.operator,
                         ...(() => {
                           // Cada revisão tem o seu próprio verificador/aprovador.
                           // Usa o registro mais recente (revisão em curso ou última fechada).
@@ -2640,6 +2656,7 @@ export function TriaxialCidPage() {
             coordE: ctx?.coords?.E ?? sample.coordE,
             coordCota: ctx?.coords?.cota ?? sample.coordCota,
             coordDatum: ctx?.coords?.datum ?? sample.coordDatum,
+            operator: ctx?.ensaio?.operator || sample.operator,
             ...(() => {
               const active = approvals[0];
               return {
@@ -3793,7 +3810,7 @@ function MohrChart({
     )
     .filter((x): x is { id: string; displayId: string; color: string; sigma3Target: number; data: { sigma: number; tau: number }[] } => x != null);
 
-  // O eixo σ cobre o maior círculo (σ1) com folga; o τ, o maior raio e a envoltória.
+  // O eixo σ cobre o maior círculo (σ₁) com folga; o τ, o maior raio e a envoltória.
   // `sigmaMax`/`tauMax` (quando informados) só ampliam esses mínimos.
   const sigmaNecessario = Math.max(
     sigmaMaxProp ?? 0,
@@ -3861,6 +3878,13 @@ const areaDePlotagem = (width: number, height: number) => ({
   w: width - MARGEM_11.left - MARGEM_11.right - EIXO_Y_11,
   h: height - MARGEM_11.top - MARGEM_11.bottom - EIXO_X_11,
 });
+/** Margens com a sobra que a escala igual não usa: os eixos acabam num tick redondo. */
+const margemComSobra = (esc: { sobraW: number; sobraH: number }) => ({
+  top: MARGEM_11.top + esc.sobraH,
+  right: MARGEM_11.right + esc.sobraW / 2,
+  bottom: MARGEM_11.bottom,
+  left: MARGEM_11.left + esc.sobraW / 2,
+});
 
 /**
  * Círculos de Mohr em escala 1:1 (mesmos kPa/px em σ e τ). Recebe a largura e a
@@ -3894,7 +3918,7 @@ function MohrPlano({
       ]
     : null;
   return (
-    <ScatterChart width={width} height={height} margin={MARGEM_11}>
+    <ScatterChart width={width} height={height} margin={margemComSobra(esc)}>
       <CartesianGrid stroke="#eee" strokeDasharray="3 3" />
       <XAxis type="number" dataKey="sigma" domain={[0, esc.xMax]} ticks={esc.ticksX} interval={0} height={EIXO_X_11} allowDataOverflow>
         <RLabel value={`${sigmaSym} (kPa)`} position="insideBottom" offset={-24} fontSize={11} />
@@ -3945,7 +3969,7 @@ function CaminhoChart({
     ...specimens.map((cp) => ({
       cor: cp.color ?? BRAND,
       tracejado: false,
-      nome: `${cp.displayId ?? cp.id} · ${isUU ? "σ3" : "σ3'"}=${cp.sigma3Target} kPa`,
+      nome: `${cp.displayId ?? cp.id} · ${isUU ? "σ₃" : "σ₃'"}=${cp.sigma3Target} kPa`,
     })),
     ...(envelope ? [{ cor: "#8a6f4c", tracejado: false, nome: nomeKf }] : []),
   ];
@@ -3993,13 +4017,13 @@ function CaminhoPlano({
   const area = areaDePlotagem(width, height);
   const esc = escalaIgual(area.w, area.h, sNecessario, tNecessario);
   return (
-    <ComposedChart width={width} height={height} margin={MARGEM_11}>
+    <ComposedChart width={width} height={height} margin={margemComSobra(esc)}>
       <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" />
-      <XAxis type="number" dataKey="pPrime" domain={[0, esc.xMax]} tick={{ fontSize: 10 }} ticks={esc.ticksX} interval={0} height={EIXO_X_11} allowDataOverflow>
-        <RLabel value={rotuloS} position="insideBottom" offset={-24} fontSize={10} />
+      <XAxis type="number" dataKey="pPrime" domain={[0, esc.xMax]} tick={{ fontSize: 11 }} ticks={esc.ticksX} interval={0} height={EIXO_X_11} allowDataOverflow>
+        <RLabel value={rotuloS} position="insideBottom" offset={-24} fontSize={11} />
       </XAxis>
-      <YAxis type="number" dataKey="q" domain={[0, esc.yMax]} tick={{ fontSize: 10 }} ticks={esc.ticksY} interval={0} width={EIXO_Y_11} allowDataOverflow>
-        <RLabel value="t [kPa]" angle={-90} position="insideLeft" offset={-2} fontSize={10} />
+      <YAxis type="number" dataKey="q" domain={[0, esc.yMax]} tick={{ fontSize: 11 }} ticks={esc.ticksY} interval={0} width={EIXO_Y_11} allowDataOverflow>
+        <RLabel value="t [kPa]" angle={-90} position="insideLeft" offset={-2} fontSize={11} />
       </YAxis>
       {specimens.map((cp, i) => (
         <Line key={cp.id} data={results[i].shearCurve} dataKey="q" stroke={cp.color} name={cp.displayId ?? cp.id}
@@ -4033,7 +4057,7 @@ function SummaryTablePage({
   envelope: ReturnType<typeof fitEnvelope>;
 }) {
   const isUUReport = sample.testType === "uu";
-  const sigSym = isUUReport ? "σ3" : "σ3'";
+  const sigSym = isUUReport ? "σ₃" : "σ₃'";
   // Derivações por CP
   const rowData = specimens.map((cp, i) => {
     const r = results[i];
@@ -4050,14 +4074,14 @@ function SummaryTablePage({
       cp.wFinalPct != null && eFinal > 0 && sample.Gs > 0
         ? (cp.wFinalPct * sample.Gs) / eFinal
         : null;
-    // p (total) na ruptura ≈ (σ1+σ3)/2 usando σ3' + backPressure (para CID saturado).
+    // p (total) na ruptura ≈ (σ₁+σ₃)/2 usando σ₃' + backPressure (para CID saturado).
     // Para CID drenado Δu≈0 na ruptura → σ_total ≈ σ' + u_back.
     const uBack = sample.condition === "saturado" ? cp.backPressure : 0;
     const sig1Total = r.failure ? r.failure.sigma1Prime + uBack : NaN;
     const sig3Total = r.failure ? r.failure.sigma3Prime + uBack : NaN;
     const pTotal = r.failure ? (sig1Total + sig3Total) / 2 : NaN;
     const failCritLabel =
-      cp.failureCriterion === "max_ratio" ? "Máx. Obliquidade (σ1'/σ3')" : "Máx. t = (σ1−σ3)/2";
+      cp.failureCriterion === "max_ratio" ? "Máx. Obliquidade (σ₁'/σ₃')" : "Máx. t = (σ₁−σ₃)/2";
     return { cp, r, Df_mm, evConsPct, evTotalPct, eFinal, Sf, pTotal, failCritLabel };
   });
 
@@ -4134,9 +4158,9 @@ function SummaryTablePage({
           <Row label="Critério de Ruptura Adotado" values={rowData.map((d) => d.failCritLabel)} />
           <Row label="Tensão Desviadora Corrigida" unit="kPa" values={rowData.map((d) => d.r.failure ? fmt(d.r.failure.q, 2) : "—")} />
           <Row label="Deformação Axial na Ruptura" unit="%" values={rowData.map((d) => d.r.failure ? fmt(d.r.failure.eaPct, 2) : "—")} />
-          <Row label={isUUReport ? "Tensão Principal Menor, σ3" : "Tensão Efetiva Principal Menor, σ3'"} unit="kPa" values={rowData.map((d) => d.r.failure ? fmt(d.r.failure.sigma3Prime, 2) : "—")} />
-          <Row label={isUUReport ? "Tensão Principal Maior, σ1" : "Tensão Efetiva Principal Maior, σ1'"} unit="kPa" values={rowData.map((d) => d.r.failure ? fmt(d.r.failure.sigma1Prime, 2) : "—")} />
-          <Row label={isUUReport ? "Razão de Tensões Principais σ1/σ3" : "Razão de Tensões Principais σ1'/σ3'"} values={rowData.map((d) => d.r.failure ? fmt(d.r.failure.ratio, 2) : "—")} />
+          <Row label={isUUReport ? "Tensão Principal Menor, σ₃" : "Tensão Efetiva Principal Menor, σ₃'"} unit="kPa" values={rowData.map((d) => d.r.failure ? fmt(d.r.failure.sigma3Prime, 2) : "—")} />
+          <Row label={isUUReport ? "Tensão Principal Maior, σ₁" : "Tensão Efetiva Principal Maior, σ₁'"} unit="kPa" values={rowData.map((d) => d.r.failure ? fmt(d.r.failure.sigma1Prime, 2) : "—")} />
+          <Row label={isUUReport ? "Razão de Tensões Principais σ₁/σ₃" : "Razão de Tensões Principais σ₁'/σ₃'"} values={rowData.map((d) => d.r.failure ? fmt(d.r.failure.ratio, 2) : "—")} />
           <Row label={isUUReport ? "s na ruptura" : "s' na ruptura"} unit="kPa" values={rowData.map((d) => d.r.failure ? fmt(d.r.failure.pPrime, 2) : "—")} />
           {!isUUReport && (
             <Row label="p na ruptura" unit="kPa" values={rowData.map((d) => isFinite(d.pTotal) ? fmt(d.pTotal, 2) : "—")} />
@@ -4149,14 +4173,14 @@ function SummaryTablePage({
           </tr>
         </tbody>
       </table>
-      <div className="mt-1 grid grid-cols-3 gap-2 text-[9px]">
-        <div className="rounded border border-[#141414]/40 px-2 py-1">
+      <div className="mt-1 grid grid-cols-3 gap-2">
+        <div className="rounded border border-[#E5A832] bg-[#FBF6EA] px-2 py-1.5 text-[11.5px] font-medium">
           <b>{isUUReport ? "φᵤ =" : "φ' ="}</b> {envelope ? `${fmt(envelope.phiDeg, 2)}°` : "—"}
         </div>
-        <div className="rounded border border-[#141414]/40 px-2 py-1">
+        <div className="rounded border border-[#E5A832] bg-[#FBF6EA] px-2 py-1.5 text-[11.5px] font-medium">
           <b>{isUUReport ? "Su = cᵤ =" : "c' ="}</b> {envelope ? `${fmt(envelope.cPrime, 2)} kPa` : "—"}
         </div>
-        <div className="rounded border border-[#141414]/40 px-2 py-1">
+        <div className="rounded border border-[#E5A832] bg-[#FBF6EA] px-2 py-1.5 text-[11.5px] font-medium">
           {isUUReport ? (
             <><b>Desvio padrão de Su =</b> {envelope ? `${fmt(envelope.desvioPadrao, 2)} kPa` : "—"}</>
           ) : (
@@ -4240,18 +4264,18 @@ function TriaxialReport({
           <SectionBar>Gráfico de Tensão Desvio versus Deformação Axial Específica</SectionBar>
           <div className="h-[52%]">
             <ResponsiveContainer>
-              <ComposedChart margin={{ top: 6, right: 12, bottom: 24, left: 40 }}>
+              <ComposedChart margin={{ top: 26, right: 14, bottom: 30, left: 60 }}>
                 <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" />
-                <XAxis type="number" dataKey="eaPct" domain={axisDomain(0, cfg.eaMax)} tick={{ fontSize: 10 }} ticks={equalTicks(0, cfg.eaMax)} interval={0}>
-                  <RLabel value="εa - Deformação Axial Específica [%]" position="insideBottom" offset={-8} fontSize={10} />
+                <XAxis type="number" dataKey="eaPct" domain={axisDomain(0, cfg.eaMax)} tick={{ fontSize: 11 }} ticks={equalTicks(0, cfg.eaMax)} interval={0}>
+                  <RLabel value="εa - Deformação Axial Específica [%]" position="insideBottom" offset={-8} fontSize={11} />
                 </XAxis>
-                <YAxis domain={axisDomain(0, cfg.sigmaDMax)} tick={{ fontSize: 10 }} ticks={equalTicks(0, cfg.sigmaDMax)} interval={0}>
-                  <RLabel value="σd = (σ1−σ3) - Tensão Desvio [kPa]" angle={-90} position="insideLeft" offset={-4} fontSize={10} />
+                <YAxis domain={axisDomain(0, cfg.sigmaDMax)} tick={{ fontSize: 11 }} ticks={equalTicks(0, cfg.sigmaDMax)} interval={0}>
+                  <RLabel value="σd = (σ₁−σ₃) - Tensão Desvio [kPa]" angle={-90} position="insideLeft" offset={-4} fontSize={11} />
                 </YAxis>
-                <Legend wrapperStyle={{ fontSize: 10 }} verticalAlign="top" />
+                <Legend wrapperStyle={{ fontSize: 11 }} verticalAlign="top" />
                 {specimens.map((cp, i) => (
                   <Line key={cp.id} data={results[i].shearCurve} dataKey="sigmaD" stroke={cp.color}
-                    name={`${cp.displayId ?? cp.id} · ${isUUReport ? "σ3" : "σ3'"}=${cp.sigma3Target} kPa`} type="monotone" dot={false}
+                    name={`${cp.displayId ?? cp.id} · ${isUUReport ? "σ₃" : "σ₃'"}=${cp.sigma3Target} kPa`} type="monotone" dot={false}
                     strokeWidth={1.8} isAnimationActive={false} />
                 ))}
               </ComposedChart>
@@ -4264,24 +4288,24 @@ function TriaxialReport({
               </SectionBar>
               <div className="h-[42%]">
                 <ResponsiveContainer>
-                  <ComposedChart margin={{ top: 6, right: 12, bottom: 24, left: 40 }}>
+                  <ComposedChart margin={{ top: 26, right: 14, bottom: 30, left: 60 }}>
                     <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" />
-                    <XAxis type="number" dataKey="eaPct" domain={axisDomain(0, cfg.eaMax)} tick={{ fontSize: 10 }} ticks={equalTicks(0, cfg.eaMax)} interval={0}>
-                      <RLabel value="εa - Deformação Axial Específica [%]" position="insideBottom" offset={-8} fontSize={10} />
+                    <XAxis type="number" dataKey="eaPct" domain={axisDomain(0, cfg.eaMax)} tick={{ fontSize: 11 }} ticks={equalTicks(0, cfg.eaMax)} interval={0}>
+                      <RLabel value="εa - Deformação Axial Específica [%]" position="insideBottom" offset={-8} fontSize={11} />
                     </XAxis>
                     {isCIUReport || isUUReport ? (
-                      <YAxis domain={axisDomain(cfg.dvShearMin, cfg.dvShearMax)} tick={{ fontSize: 10 }} ticks={equalTicks(cfg.dvShearMin, cfg.dvShearMax)} interval={0}>
-                        <RLabel value="u - Poropressão [kPa]" angle={-90} position="insideLeft" offset={-4} fontSize={10} />
+                      <YAxis domain={axisDomain(cfg.dvShearMin, cfg.dvShearMax)} tick={{ fontSize: 11 }} ticks={equalTicks(cfg.dvShearMin, cfg.dvShearMax)} interval={0}>
+                        <RLabel value="u - Poropressão [kPa]" angle={-90} position="insideLeft" offset={-4} fontSize={11} />
                       </YAxis>
                     ) : (
-                      <YAxis reversed domain={axisDomain(cfg.dvShearMin, cfg.dvShearMax)} tick={{ fontSize: 10 }} ticks={equalTicks(cfg.dvShearMin, cfg.dvShearMax)} interval={0}>
-                        <RLabel value="Variação Volumétrica [cm³]" angle={-90} position="insideLeft" offset={-4} fontSize={10} />
+                      <YAxis reversed domain={axisDomain(cfg.dvShearMin, cfg.dvShearMax)} tick={{ fontSize: 11 }} ticks={equalTicks(cfg.dvShearMin, cfg.dvShearMax)} interval={0}>
+                        <RLabel value="Variação Volumétrica [cm³]" angle={-90} position="insideLeft" offset={-4} fontSize={11} />
                       </YAxis>
                     )}
                     <ReferenceLine y={0} stroke="#999" />
-                    <Legend wrapperStyle={{ fontSize: 10 }} verticalAlign="top" />
+                    <Legend wrapperStyle={{ fontSize: 11 }} verticalAlign="top" />
                     {specimens.map((cp, i) => {
-                      // UU: poropressão medida (leitura do ensaio); CIU: σ1 − σ'1; CID: variação volumétrica.
+                      // UU: poropressão medida (leitura do ensaio); CIU: σ₁ − σ'1; CID: variação volumétrica.
                       const data = valoresDaFaixaInferior(cp, results[i], reportTestType);
                       return (
                         <Line key={cp.id} data={data} dataKey="dv" stroke={cp.color} name={cp.displayId ?? cp.id}
@@ -4295,7 +4319,7 @@ function TriaxialReport({
                 {isUUReport
                   ? "Poropressão medida durante o cisalhamento não drenado (leitura direta). No UU a análise é em tensões totais: a poropressão não entra no cálculo da envoltória."
                   : isCIUReport
-                    ? "Poropressão gerada durante o cisalhamento não drenado (leitura direta, u = σ1 − σ'1)."
+                    ? "Poropressão gerada durante o cisalhamento não drenado (leitura direta, u = σ₁ − σ'1)."
                     : "Legenda: (+) Valores Positivos Representam REDUÇÃO DE VOLUME; (−) Valores Negativos representam AUMENTO DE VOLUME."}
               </div>
             </>
@@ -4307,8 +4331,8 @@ function TriaxialReport({
           UU: os dois na mesma folha (4). CID/CIU: folhas 4 e 5. */}
       {(() => {
         const alphaDeg = envelope ? Math.atan(envelope.M) * 180 / Math.PI : 0;
-        const caixa = "rounded border border-[#141414]/60 bg-[#f3f4f6] px-3 py-1";
-        const caixas = `flex flex-wrap justify-center gap-2 ${isUUReport ? "text-[10.5px]" : "mt-1 text-[12px]"}`;
+        const caixa = "rounded border border-[#E5A832] bg-[#FBF6EA] px-3 py-1.5 text-[13px] font-medium";
+        const caixas = `flex flex-wrap justify-center gap-2 ${isUUReport ? "" : "mt-1"}`;
         const desvioOuR2 = (
           <span className={caixa}>
             {isUUReport ? (
@@ -4357,21 +4381,21 @@ function TriaxialReport({
         return isUUReport ? folha(4, <>{mohr}{caminho}</>) : <>{folha(4, mohr)}{folha(5, caminho)}</>;
       })()}
 
-      {/* Módulo de Deformabilidade + Razão σ'1/σ'3 (folha 5 no UU, 6 no CID/CIU) */}
+      {/* Módulo de Deformabilidade + Razão σ'1/σ'₃ (folha 5 no UU, 6 no CID/CIU) */}
       {page(folhasFixas, (
         <div className="flex h-full flex-col gap-2 text-[10px] text-[#141414]">
           <SectionBar>Módulo de Deformabilidade versus Deformação Axial Específica</SectionBar>
           <div className="h-[48%]">
             <ResponsiveContainer>
-              <ComposedChart margin={{ top: 6, right: 12, bottom: 24, left: 40 }}>
+              <ComposedChart margin={{ top: 26, right: 14, bottom: 30, left: 60 }}>
                 <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" />
-                <XAxis type="number" dataKey="eaPct" domain={axisDomain(0, cfg.eaMax)} tick={{ fontSize: 10 }} ticks={equalTicks(0, cfg.eaMax)} interval={0}>
-                  <RLabel value="εa - Deformação Axial Específica [%]" position="insideBottom" offset={-8} fontSize={10} />
+                <XAxis type="number" dataKey="eaPct" domain={axisDomain(0, cfg.eaMax)} tick={{ fontSize: 11 }} ticks={equalTicks(0, cfg.eaMax)} interval={0}>
+                  <RLabel value="εa - Deformação Axial Específica [%]" position="insideBottom" offset={-8} fontSize={11} />
                 </XAxis>
-                <YAxis domain={axisDomain(0, cfg.eModMax)} tick={{ fontSize: 10 }} ticks={equalTicks(0, cfg.eModMax)} interval={0}>
-                  <RLabel value="Módulo de Deformabilidade [MPa]" angle={-90} position="insideLeft" offset={-4} fontSize={10} />
+                <YAxis domain={axisDomain(0, cfg.eModMax)} tick={{ fontSize: 11 }} ticks={equalTicks(0, cfg.eModMax)} interval={0}>
+                  <RLabel value="Módulo de Deformabilidade [MPa]" angle={-90} position="insideLeft" offset={-4} fontSize={11} />
                 </YAxis>
-                <Legend wrapperStyle={{ fontSize: 10 }} verticalAlign="top" />
+                <Legend wrapperStyle={{ fontSize: 11 }} verticalAlign="top" />
                 {specimens.map((cp, i) => {
                   const data = results[i].shearCurve
                     .filter((p) => p.eaPct > 0)
@@ -4384,18 +4408,18 @@ function TriaxialReport({
               </ComposedChart>
             </ResponsiveContainer>
           </div>
-          <SectionBar>Razão das Tensões Principais ({isUUReport ? "σ1/σ3" : "σ'1/σ'3"}) versus Deformação Axial Específica</SectionBar>
+          <SectionBar>Razão das Tensões Principais ({isUUReport ? "σ₁/σ₃" : "σ'1/σ'₃"}) versus Deformação Axial Específica</SectionBar>
           <div className="h-[46%]">
             <ResponsiveContainer>
-              <ComposedChart margin={{ top: 6, right: 12, bottom: 24, left: 40 }}>
+              <ComposedChart margin={{ top: 26, right: 14, bottom: 30, left: 60 }}>
                 <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" />
-                <XAxis type="number" dataKey="eaPct" domain={axisDomain(0, cfg.eaMax)} tick={{ fontSize: 10 }} ticks={equalTicks(0, cfg.eaMax)} interval={0}>
-                  <RLabel value="εa - Deformação Axial Específica [%]" position="insideBottom" offset={-8} fontSize={10} />
+                <XAxis type="number" dataKey="eaPct" domain={axisDomain(0, cfg.eaMax)} tick={{ fontSize: 11 }} ticks={equalTicks(0, cfg.eaMax)} interval={0}>
+                  <RLabel value="εa - Deformação Axial Específica [%]" position="insideBottom" offset={-8} fontSize={11} />
                 </XAxis>
-                <YAxis domain={axisDomain(0, cfg.ratioMax)} tick={{ fontSize: 10 }} ticks={equalTicks(0, cfg.ratioMax)} interval={0}>
-                  <RLabel value={isUUReport ? "σ1 / σ3" : "σ'1 / σ'3"} angle={-90} position="insideLeft" offset={-4} fontSize={10} />
+                <YAxis domain={axisDomain(0, cfg.ratioMax)} tick={{ fontSize: 11 }} ticks={equalTicks(0, cfg.ratioMax)} interval={0}>
+                  <RLabel value={isUUReport ? "σ₁ / σ₃" : "σ'1 / σ'₃"} angle={-90} position="insideLeft" offset={-4} fontSize={11} />
                 </YAxis>
-                <Legend wrapperStyle={{ fontSize: 10 }} verticalAlign="top" />
+                <Legend wrapperStyle={{ fontSize: 11 }} verticalAlign="top" />
                 {specimens.map((cp, i) => {
                   const data = results[i].shearCurve
                     .filter((p) => p.sigma3Prime > 0)
@@ -4646,7 +4670,7 @@ function CoverPage({
         : sample.condition === "saturado"
           ? "Compressão Triaxial Adensado Isotropicamente e Drenado - CIDsat"
           : "Compressão Triaxial Adensado Isotropicamente e Drenado - CIDnat"],
-    ["Norma Adotada", isUUReport ? "ASTM D2850:2015 / NBR 12770" : isCIUReport ? "ASTM D4767:2011 / ISO 17892-9:2018" : "ASTM D7181:2020 / ISO 17892-9:2018"],
+    ["Norma Adotada", isUUReport ? "ASTM D2850:2015" : isCIUReport ? "ASTM D4767:2011 / ISO 17892-9:2018" : "ASTM D7181:2020 / ISO 17892-9:2018"],
     ["Tipo da Amostra", sample.sampleType ?? "—"],
     ["Condição do Ensaio", condLabel],
   ];
@@ -4726,7 +4750,7 @@ function SpecimenPage({
   const dvShear = valoresDaFaixaInferior(cp, r, isUUReport ? "uu" : isCIUReport ? "ciu" : "cid");
   const moldagem = photos.find((p) => p.kind === "moldagem");
   const ruptura = photos.find((p) => p.kind === "ruptura");
-  const legend = `${cp.displayId ?? cp.id} · ${isUUReport ? "σ3" : "σ3'"}=${cp.sigma3Target} kPa`;
+  const legend = `${cp.displayId ?? cp.id} · ${isUUReport ? "σ₃" : "σ₃'"}=${cp.sigma3Target} kPa`;
   const PhotoBox = ({ title, photo }: { title: string; photo?: import("@/features/lab/types").Photo }) => (
     <div className="flex h-full min-h-0 flex-col gap-1 overflow-hidden rounded border border-[#141414]/60">
       <div className="bg-[#d1d5db] px-2 py-[3px] text-center text-[9.5px] font-bold uppercase text-[#111827]">
@@ -4754,17 +4778,17 @@ function SpecimenPage({
       <SectionBar>Gráfico de Tensão Desvio versus Deformação Axial Específica — {cp.displayId ?? cp.id}</SectionBar>
       <div className="grid h-[46%] grid-cols-[1fr_38%] gap-2">
         <ResponsiveContainer>
-          <ComposedChart margin={{ top: 6, right: 12, bottom: 22, left: 40 }}>
+          <ComposedChart margin={{ top: 26, right: 14, bottom: 30, left: 60 }}>
             <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" />
-            <XAxis type="number" dataKey="eaPct" domain={axisDomain(0, cfg.eaMax)} tick={{ fontSize: 9 }} ticks={equalTicks(0, cfg.eaMax)} interval={0}>
-              <RLabel value="εa - Deformação Axial Específica [%]" position="insideBottom" offset={-6} fontSize={9} />
+            <XAxis type="number" dataKey="eaPct" domain={axisDomain(0, cfg.eaMax)} tick={{ fontSize: 11 }} ticks={equalTicks(0, cfg.eaMax)} interval={0}>
+              <RLabel value="εa - Deformação Axial Específica [%]" position="insideBottom" offset={-6} fontSize={11} />
             </XAxis>
-            <YAxis domain={axisDomain(0, cfg.sigmaDMax)} tick={{ fontSize: 9 }} ticks={equalTicks(0, cfg.sigmaDMax)} interval={0}>
-              <RLabel value="σd = (σ1−σ3) - Tensão Desvio [kPa]" angle={-90} position="insideLeft" offset={-2} fontSize={9} />
+            <YAxis domain={axisDomain(0, cfg.sigmaDMax)} tick={{ fontSize: 11 }} ticks={equalTicks(0, cfg.sigmaDMax)} interval={0}>
+              <RLabel value="σd = (σ₁−σ₃) - Tensão Desvio [kPa]" angle={-90} position="insideLeft" offset={-2} fontSize={11} />
             </YAxis>
             <Line data={r.shearCurve} dataKey="sigmaD" stroke={cp.color} name={legend} type="monotone"
               dot={false} strokeWidth={1.8} isAnimationActive={false} />
-            <Legend wrapperStyle={{ fontSize: 9 }} verticalAlign="top" />
+            <Legend wrapperStyle={{ fontSize: 11 }} verticalAlign="top" />
           </ComposedChart>
         </ResponsiveContainer>
         <PhotoBox title="Registro Fotográfico na Moldagem" photo={moldagem} />
@@ -4778,24 +4802,24 @@ function SpecimenPage({
       </SectionBar>
       <div className="grid h-[46%] grid-cols-[1fr_38%] gap-2">
         <ResponsiveContainer>
-          <ComposedChart margin={{ top: 6, right: 12, bottom: 22, left: 40 }}>
+          <ComposedChart margin={{ top: 26, right: 14, bottom: 30, left: 60 }}>
             <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" />
-            <XAxis type="number" dataKey="eaPct" domain={axisDomain(0, cfg.eaMax)} tick={{ fontSize: 9 }} ticks={equalTicks(0, cfg.eaMax)} interval={0}>
-              <RLabel value="εa - Deformação Axial Específica [%]" position="insideBottom" offset={-6} fontSize={9} />
+            <XAxis type="number" dataKey="eaPct" domain={axisDomain(0, cfg.eaMax)} tick={{ fontSize: 11 }} ticks={equalTicks(0, cfg.eaMax)} interval={0}>
+              <RLabel value="εa - Deformação Axial Específica [%]" position="insideBottom" offset={-6} fontSize={11} />
             </XAxis>
             {isCIUReport || isUUReport ? (
-              <YAxis domain={axisDomain(cfg.dvShearMin, cfg.dvShearMax)} tick={{ fontSize: 9 }} ticks={equalTicks(cfg.dvShearMin, cfg.dvShearMax)} interval={0}>
-                <RLabel value="u - Poropressão [kPa]" angle={-90} position="insideLeft" offset={-2} fontSize={9} />
+              <YAxis domain={axisDomain(cfg.dvShearMin, cfg.dvShearMax)} tick={{ fontSize: 11 }} ticks={equalTicks(cfg.dvShearMin, cfg.dvShearMax)} interval={0}>
+                <RLabel value="u - Poropressão [kPa]" angle={-90} position="insideLeft" offset={-2} fontSize={11} />
               </YAxis>
             ) : (
-              <YAxis reversed domain={axisDomain(cfg.dvShearMin, cfg.dvShearMax)} tick={{ fontSize: 9 }} ticks={equalTicks(cfg.dvShearMin, cfg.dvShearMax)} interval={0}>
-                <RLabel value="Variação Volumétrica [cm³]" angle={-90} position="insideLeft" offset={-2} fontSize={9} />
+              <YAxis reversed domain={axisDomain(cfg.dvShearMin, cfg.dvShearMax)} tick={{ fontSize: 11 }} ticks={equalTicks(cfg.dvShearMin, cfg.dvShearMax)} interval={0}>
+                <RLabel value="Variação Volumétrica [cm³]" angle={-90} position="insideLeft" offset={-2} fontSize={11} />
               </YAxis>
             )}
             <ReferenceLine y={0} stroke="#999" />
             <Line data={dvShear} dataKey="dv" stroke={cp.color} name={legend} type="monotone"
               dot={false} strokeWidth={1.8} isAnimationActive={false} />
-            <Legend wrapperStyle={{ fontSize: 9 }} verticalAlign="top" />
+            <Legend wrapperStyle={{ fontSize: 11 }} verticalAlign="top" />
           </ComposedChart>
         </ResponsiveContainer>
         <PhotoBox title="Registro Fotográfico após a Ruptura" photo={ruptura} />
@@ -4804,7 +4828,7 @@ function SpecimenPage({
         {isUUReport
           ? "Poropressão medida durante o cisalhamento não drenado (leitura direta). No UU a análise é em tensões totais: a poropressão não entra no cálculo da envoltória."
           : isCIUReport
-            ? "Poropressão gerada durante o cisalhamento não drenado (leitura direta, u = σ1 − σ'1)."
+            ? "Poropressão gerada durante o cisalhamento não drenado (leitura direta, u = σ₁ − σ'1)."
             : "Legenda: (+) Valores Positivos Representam REDUÇÃO DE VOLUME; (−) Valores Negativos representam AUMENTO DE VOLUME."}
       </div>
     </div>

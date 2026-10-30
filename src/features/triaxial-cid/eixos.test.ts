@@ -21,19 +21,38 @@ describe("eixos que cobrem os dados", () => {
     expect(topoQueCobre(0, 46)).toBe(50);
   });
 
-  it("escala 1:1 preenche a área: mesmo kPa/px nos dois eixos", () => {
+  /** kPa por px de cada eixo, descontada a sobra que vira margem. */
+  const escalas = (e: ReturnType<typeof escalaIgual>, w: number, h: number) => [
+    e.xMax / (w - e.sobraW),
+    e.yMax / (h - e.sobraH),
+  ];
+
+  it("escala 1:1: mesmo kPa/px nos dois eixos, cobrindo os dados", () => {
     // Faixa larga e baixa (600 × 200 px) com σ até 285 e τ até 48 (os círculos do UU).
     const e = escalaIgual(600, 200, 285, 48);
-    expect(e.xMax).toBe(300);
-    expect(e.xMax / 600).toBeCloseTo(e.yMax / 200, 9);
+    const [kx, ky] = escalas(e, 600, 200);
+    expect(kx).toBeCloseTo(ky, 9);
+    expect(e.xMax).toBeGreaterThanOrEqual(285);
     expect(e.yMax).toBeGreaterThanOrEqual(48);
     expect(e.ticksX[1] - e.ticksX[0]).toBe(e.ticksY[1] - e.ticksY[0]);
   });
 
-  it("escala 1:1 estica o x quando o y necessário não cabe", () => {
-    const e = escalaIgual(600, 100, 50, 80);
-    expect(e.yMax).toBe(80);
-    expect(e.xMax / 600).toBeCloseTo(e.yMax / 100, 9);
+  it("os dois eixos terminam exatamente num tick (sem ponta sobrando)", () => {
+    for (const [w, h, x, y] of [[640, 200, 299, 48], [600, 100, 50, 80], [700, 260, 120, 30], [500, 500, 90, 40]]) {
+      const e = escalaIgual(w, h, x, y);
+      expect(e.ticksX[e.ticksX.length - 1]).toBeCloseTo(e.xMax, 9);
+      expect(e.ticksY[e.ticksY.length - 1]).toBeCloseTo(e.yMax, 9);
+      const [kx, ky] = escalas(e, w, h);
+      expect(kx).toBeCloseTo(ky, 9);
+      expect(e.xMax).toBeGreaterThanOrEqual(x);
+      expect(e.yMax).toBeGreaterThanOrEqual(y);
+    }
+  });
+
+  it("não deixa o eixo y curto demais: escolhe passo menor quando sobra muito espaço", () => {
+    // O caso da foto: σ até ~300, τ até ~48 numa faixa de 640 × 200 px.
+    const e = escalaIgual(640, 200, 299, 48);
+    expect(e.sobraH).toBeLessThan(60);
   });
 
   it("base negativa cobre poropressão negativa", () => {

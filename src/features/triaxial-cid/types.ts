@@ -45,7 +45,7 @@ export interface TriaxialSample {
    *   mesmas fases de saturação/adensamento do CID; cisalhamento não drenado
    *   medindo poropressão gerada (campo `uPore` de `ShearReading`) em vez de
    *   variação de volume — resultado em tensões efetivas (σ', c', φ'), igual ao CID.
-   * - "uu":  Não Consolidado Não Drenado (ASTM D2850 / NBR 12770) — sem fases de
+   * - "uu":  Não Consolidado Não Drenado (ASTM D2850) — sem fases de
    *   saturação/adensamento, cisalhamento em tensões totais (σ em vez de σ').
    * Campo independente de `condition`, seguindo o mesmo padrão (usuário
    * define na tela; não é derivado de `ensaio.tipo`). Ausente/undefined em

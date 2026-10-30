@@ -139,7 +139,6 @@ function dataSaoPaulo() {
 const REPORT_TITLE = "ENSAIO TRIAXIAL NÃO CONSOLIDADO NÃO DRENADO (UU)";
 const NORMS = [
   { text: "ASTM D2850-15 — Unconsolidated-Undrained Triaxial Compression Test on Cohesive Soils", italic: false },
-  { text: "NBR 12770 — Solo coesivo — Determinação da resistência à compressão não confinada", italic: true },
 ];
 const NOTA =
   "Os resultados apresentados referem-se exclusivamente à amostra ensaiada. A reprodução deste documento somente poderá ser feita na íntegra, após aprovação prévia e por escrito da empresa.";
@@ -445,7 +444,7 @@ function derivar(p: ExportTriaxialUuParams): Derivados {
     const evConsPct = r.V0 > 0 ? (r.dVcons / r.V0) * 100 : 0;
     const eFinal = (1 + r.e0) * (1 - (evConsPct + evShearLast) / 100) - 1;
     const sf = cp.wFinalPct != null && eFinal > 0 && p.sample.Gs > 0 ? (cp.wFinalPct * p.sample.Gs) / eFinal : null;
-    const failCrit = cp.failureCriterion === "max_ratio" ? "Máx. Obliquidade (σ1'/σ3')" : "Máx. t = (σ1−σ3)/2";
+    const failCrit = cp.failureCriterion === "max_ratio" ? "Máx. Obliquidade (σ₁'/σ₃')" : "Máx. t = (σ₁−σ₃)/2";
     return { sf, eFinal, failCrit };
   });
   const alphaDeg = p.envelope ? (Math.atan(p.envelope.M) * 180) / Math.PI : 0;
@@ -487,7 +486,7 @@ function paginaCapa(cx: Ctx, p: ExportTriaxialUuParams) {
   const condicoes: [string, string][] = [
     ["Equipamento Utilizado", (s.equipment && s.equipment.trim()) || "—"],
     ["Tipo do Ensaio", "Compressão Triaxial Não Consolidado Não Drenado - UU"],
-    ["Norma Adotada", "ASTM D2850:2015 / NBR 12770"],
+    ["Norma Adotada", "ASTM D2850:2015"],
     ["Tipo da Amostra", s.sampleType ?? "—"],
     ["Condição do Ensaio", "Ensaio não consolidado, não drenado (sem saturação/adensamento controlados)"],
     ["Dimensões Características da Amostra", s.specDimensions ?? "—"],
@@ -523,7 +522,7 @@ function paginaResumo(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
   put(cx, cab, 1, cab, 20, "Característica da Amostra", { size: 6.4, bold: true, fill: HEAD_BG });
   p.specimens.forEach((cp, i) => {
     const [c1, c2] = faixas[i];
-    put(cx, cab, c1, cab, c2, `${cp.displayId ?? cp.id} · σ3=${fmt(cp.sigma3Target, 0)} kPa`, {
+    put(cx, cab, c1, cab, c2, `${cp.displayId ?? cp.id} · σ₃=${fmt(cp.sigma3Target, 0)} kPa`, {
       size: 6.4, bold: true, color: argb(cp.color ?? BRAND), align: "center", fill: HEAD_BG,
     });
   });
@@ -549,16 +548,16 @@ function paginaResumo(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
   linha("Índice de Vazios Inicial, e₀", undefined, cps.map((c) => fmt(c.r.e0, 3)));
   linha("Grau de Saturação Inicial, S₀", "%", cps.map((c) => fmt(c.r.Sr0, 2)));
   linha("Drenos Laterais", undefined, cps.map((c) => c.cp.lateralDrains ?? "—"));
-  linha("Tensão Confinante, σ3", "kPa", cps.map((c) => fmt(c.cp.sigma3Target, 0)));
+  linha("Tensão Confinante, σ₃", "kPa", cps.map((c) => fmt(c.cp.sigma3Target, 0)));
   linha("Umidade final, wf", "%", cps.map((c) => (c.cp.wFinalPct != null ? fmt(c.cp.wFinalPct, 2) : "—")));
   linha("Grau de Saturação Final, Sf", "%", cps.map((c) => (c.x.sf != null ? fmt(c.x.sf, 2) : "—")));
   linha("Velocidade de Deformação", "mm/min", cps.map((c) => (c.cp.strainRate != null ? fmt(c.cp.strainRate, 3) : "—")));
   linha("Critério de Ruptura Adotado", undefined, cps.map((c) => c.x.failCrit));
   linha("Tensão Desviadora Corrigida", "kPa", cps.map((c) => (c.r.failure ? fmt(c.r.failure.q, 2) : "—")));
   linha("Deformação Axial na Ruptura", "%", cps.map((c) => (c.r.failure ? fmt(c.r.failure.eaPct, 2) : "—")));
-  linha("Tensão Principal Menor, σ3", "kPa", cps.map((c) => (c.r.failure ? fmt(c.r.failure.sigma3Prime, 2) : "—")));
-  linha("Tensão Principal Maior, σ1", "kPa", cps.map((c) => (c.r.failure ? fmt(c.r.failure.sigma1Prime, 2) : "—")));
-  linha("Razão de Tensões Principais σ1/σ3", undefined, cps.map((c) => (c.r.failure ? fmt(c.r.failure.ratio, 2) : "—")));
+  linha("Tensão Principal Menor, σ₃", "kPa", cps.map((c) => (c.r.failure ? fmt(c.r.failure.sigma3Prime, 2) : "—")));
+  linha("Tensão Principal Maior, σ₁", "kPa", cps.map((c) => (c.r.failure ? fmt(c.r.failure.sigma1Prime, 2) : "—")));
+  linha("Razão de Tensões Principais σ₁/σ₃", undefined, cps.map((c) => (c.r.failure ? fmt(c.r.failure.ratio, 2) : "—")));
   linha("s na ruptura", "kPa", cps.map((c) => (c.r.failure ? fmt(c.r.failure.pPrime, 2) : "—")));
   linha("q na ruptura", "kPa", cps.map((c) => (c.r.failure ? fmt(c.r.failure.q, 2) : "—")));
   linha("Índice de vazios final, ef", undefined, cps.map((c) => (isFinite(c.x.eFinal) ? fmt(c.x.eFinal, 3) : "—")));
@@ -569,16 +568,22 @@ function paginaResumo(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
   edge(cx, tatil, 1, tatil, COLS, "all", CELL_BORDER);
 
   newRow(cx, 4);
-  const caixas = newRow(cx, 17);
+  const caixas = newRow(cx, 22);
   const phi = p.envelope ? `${fmt(p.envelope.phiDeg, 2)}°` : "—";
   const coe = p.envelope ? `${fmt(p.envelope.cPrime, 2)} kPa` : "—";
-  caixa(cx, caixas, 1, 20, [{ t: "φᵤ =", bold: true }, { t: ` ${phi}` }]);
-  caixa(cx, caixas, 21, 40, [{ t: "Su = cᵤ =", bold: true }, { t: ` ${coe}` }]);
-  caixa(cx, caixas, 41, 60, [{ t: "Desvio padrão de Su =", bold: true }, { t: ` ${desvioSu(p.envelope)}` }]);
+  caixaDestaque(cx, caixas, 1, 20, [{ t: "φᵤ =", bold: true }, { t: ` ${phi}` }]);
+  caixaDestaque(cx, caixas, 21, 40, [{ t: "Su = cᵤ =", bold: true }, { t: ` ${coe}` }]);
+  caixaDestaque(cx, caixas, 41, 60, [{ t: "Desvio padrão de Su =", bold: true }, { t: ` ${desvioSu(p.envelope)}` }]);
 }
 
 /** Desvio padrão de Su entre os CPs (UU: vai no lugar do R² da regressão). */
 const desvioSu = (env: EnvelopeResult | null) => (env ? `${fmt(env.desvioPadrao, 2)} kPa` : "—");
+
+/** Resultado em destaque: fundo areia, borda âmbar (cor da marca) e texto maior, sem cores fortes. */
+function caixaDestaque(cx: Ctx, r: number, c1: number, c2: number, runs: Run[]) {
+  put(cx, r, c1, r, c2, runs, { size: 9, align: "center", fill: "FFFBF6EA" });
+  edge(cx, r, c1, r, c2, "all", "FFE5A832", "medium");
+}
 
 function caixa(cx: Ctx, r: number, c1: number, c2: number, runs: Run[]) {
   put(cx, r, c1, r, c2, runs, { size: 6.75, align: "left" });
@@ -593,15 +598,15 @@ function paginaQvsEa(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
   graficoLinha(cx, hTopo, 1, COLS, (w, h) => ({
     width: w,
     height: h,
-    margin: { top: 6, right: 12, bottom: 24, left: 44 },
+    margin: { top: 6, right: 12, bottom: 30, left: 60 },
     xDomain: ea.domain,
     yDomain: sd.domain,
     xTicks: ea.ticks,
     yTicks: sd.ticks,
     xLabel: "εa - Deformação Axial Específica [%]",
-    yLabel: "σd = (σ1−σ3) - Tensão Desvio [kPa]",
+    yLabel: "σd = (σ₁−σ₃) - Tensão Desvio [kPa]",
     series: p.specimens.map((cp, i) => ({
-      name: `${cp.displayId ?? cp.id} · σ3=${cp.sigma3Target} kPa`,
+      name: `${cp.displayId ?? cp.id} · σ₃=${cp.sigma3Target} kPa`,
       color: cp.color ?? BRAND,
       points: p.results[i].shearCurve.map((q) => ({ x: q.eaPct, y: q.sigmaD })),
     })),
@@ -614,7 +619,7 @@ function paginaQvsEa(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
   graficoLinha(cx, restante(cx) - 12, 1, COLS, (w, h) => ({
     width: w,
     height: h,
-    margin: { top: 6, right: 12, bottom: 24, left: 44 },
+    margin: { top: 6, right: 12, bottom: 30, left: 60 },
     xDomain: ea.domain,
     yDomain: poro.domain,
     xTicks: ea.ticks,
@@ -650,7 +655,7 @@ function paginaMohrECaminho(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
   const circulos: ChartSeries[] = p.results.flatMap((r, i) =>
     r.failure
       ? [{
-          name: `${p.specimens[i].displayId ?? p.specimens[i].id} · σ3=${fmt(p.specimens[i].sigma3Target, 0)} kPa`,
+          name: `${p.specimens[i].displayId ?? p.specimens[i].id} · σ₃=${fmt(p.specimens[i].sigma3Target, 0)} kPa`,
           color: argb(p.specimens[i].color ?? BRAND),
           points: mohrCirclePoints(r.failure.sigma3Prime, r.failure.sigma1Prime).map((pt) => ({ x: pt.sigma, y: pt.tau })),
         }]
@@ -672,7 +677,7 @@ function paginaMohrECaminho(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
   graficoLinha(cx, hGrafico, 1, COLS, (w, h) => ({
     width: w,
     height: h,
-    margin: { top: 8, right: 20, bottom: 34, left: 44 },
+    margin: { top: 8, right: 20, bottom: 36, left: 60 },
     escala11: true,
     xDomain: [0, sigmaNecessario],
     yDomain: [0, tauNecessario],
@@ -685,15 +690,15 @@ function paginaMohrECaminho(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
   const bxMohr = newRow(cx, 22);
   const cPrime = env ? `${fmt(env.cPrime, 2)} kPa` : "—";
   const phiDeg = env ? `${fmt(env.phiDeg, 2)}°` : "—";
-  caixa(cx, bxMohr, 1, 20, [{ t: "Su = cᵤ", bold: true }, { t: " (resistência não drenada) = ", size: 6 }, { t: cPrime, bold: true }]);
-  caixa(cx, bxMohr, 21, 40, [{ t: "φᵤ", bold: true }, { t: " (envoltória horizontal) = ", size: 6 }, { t: phiDeg, bold: true }]);
-  caixa(cx, bxMohr, 41, 60, [{ t: "Desvio padrão de Su = ", bold: true }, { t: desvioSu(env), bold: true }]);
+  caixaDestaque(cx, bxMohr, 1, 20, [{ t: "Su = cᵤ", bold: true }, { t: " (resistência não drenada) = ", size: 6 }, { t: cPrime, bold: true }]);
+  caixaDestaque(cx, bxMohr, 21, 40, [{ t: "φᵤ", bold: true }, { t: " (envoltória horizontal) = ", size: 6 }, { t: phiDeg, bold: true }]);
+  caixaDestaque(cx, bxMohr, 41, 60, [{ t: "Desvio padrão de Su = ", bold: true }, { t: desvioSu(env), bold: true }]);
 
   barra(cx, "Caminho de Tensões (stress path) — Diagrama t–s (MIT) — Tensões Totais");
   const sNecessario = 1.05 * Math.max(1, ...p.results.flatMap((r) => r.shearCurve.map((q) => q.pPrime)));
   const tNecessario = 1.15 * Math.max(1, ...p.results.flatMap((r) => r.shearCurve.map((q) => q.q)), env ? env.a : 0);
   const seriesCaminho: ChartSeries[] = p.specimens.map((cp, i) => ({
-    name: `${cp.displayId ?? cp.id} · σ3=${cp.sigma3Target} kPa`,
+    name: `${cp.displayId ?? cp.id} · σ₃=${cp.sigma3Target} kPa`,
     color: argb(cp.color ?? BRAND),
     points: p.results[i].shearCurve.map((q) => ({ x: q.pPrime, y: q.q })),
   }));
@@ -712,7 +717,7 @@ function paginaMohrECaminho(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
   graficoLinha(cx, restante(cx) - 22, 1, COLS, (w, h) => ({
     width: w,
     height: h,
-    margin: { top: 8, right: 20, bottom: 34, left: 44 },
+    margin: { top: 8, right: 20, bottom: 36, left: 60 },
     escala11: true,
     xDomain: [0, sNecessario],
     yDomain: [0, tNecessario],
@@ -723,9 +728,9 @@ function paginaMohrECaminho(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
     series: seriesCaminho,
   }));
   const bxCaminho = newRow(cx, 22);
-  caixa(cx, bxCaminho, 1, 20, [{ t: "a", bold: true }, { t: " (intercepto Kf) = ", size: 6 }, { t: env ? `${fmt(env.a, 2)} kPa` : "—", bold: true }]);
-  caixa(cx, bxCaminho, 21, 40, [{ t: "α", bold: true }, { t: " (inclinação Kf) = ", size: 6 }, { t: env ? `${fmt(d.alphaDeg, 2)}°` : "—", bold: true }]);
-  caixa(cx, bxCaminho, 41, 60, [{ t: "Desvio padrão de Su = ", bold: true }, { t: desvioSu(env), bold: true }]);
+  caixaDestaque(cx, bxCaminho, 1, 20, [{ t: "a", bold: true }, { t: " (intercepto Kf) = ", size: 6 }, { t: env ? `${fmt(env.a, 2)} kPa` : "—", bold: true }]);
+  caixaDestaque(cx, bxCaminho, 21, 40, [{ t: "α", bold: true }, { t: " (inclinação Kf) = ", size: 6 }, { t: env ? `${fmt(d.alphaDeg, 2)}°` : "—", bold: true }]);
+  caixaDestaque(cx, bxCaminho, 41, 60, [{ t: "Desvio padrão de Su = ", bold: true }, { t: desvioSu(env), bold: true }]);
 }
 
 function paginaModulo(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
@@ -736,7 +741,7 @@ function paginaModulo(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
   graficoLinha(cx, h1, 1, COLS, (w, h) => ({
     width: w,
     height: h,
-    margin: { top: 6, right: 12, bottom: 24, left: 44 },
+    margin: { top: 6, right: 12, bottom: 30, left: 60 },
     xDomain: ea.domain,
     yDomain: em.domain,
     xTicks: ea.ticks,
@@ -752,18 +757,18 @@ function paginaModulo(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
     })),
   }));
 
-  barra(cx, "Razão das Tensões Principais (σ1/σ3) versus Deformação Axial Específica");
+  barra(cx, "Razão das Tensões Principais (σ₁/σ₃) versus Deformação Axial Específica");
   const rat = axisDomainAndTicks(0, d.cfg.ratioMax, 0, maxDe(p, (q) => (q.sigma3Prime > 0 ? q.sigma1Prime / q.sigma3Prime : 0)));
   graficoLinha(cx, restante(cx), 1, COLS, (w, h) => ({
     width: w,
     height: h,
-    margin: { top: 6, right: 12, bottom: 24, left: 44 },
+    margin: { top: 6, right: 12, bottom: 30, left: 60 },
     xDomain: ea.domain,
     yDomain: rat.domain,
     xTicks: ea.ticks,
     yTicks: rat.ticks,
     xLabel: "εa - Deformação Axial Específica [%]",
-    yLabel: "σ1 / σ3",
+    yLabel: "σ₁ / σ₃",
     series: p.specimens.map((cp, i) => ({
       name: cp.displayId ?? cp.id,
       color: argb(cp.color ?? BRAND),
@@ -813,7 +818,7 @@ function paginaCp(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados, idx: number)
   const cp = p.specimens[idx];
   const r = p.results[idx];
   const cpNome = cp.displayId ?? cp.id;
-  const legenda = `${cpNome} · σ3=${cp.sigma3Target} kPa`;
+  const legenda = `${cpNome} · σ₃=${cp.sigma3Target} kPa`;
   const fotos = fotosPublicadas(p.photos ?? []).filter((f) => f.specimenId === cp.id);
   const moldagem = fotos.find((f) => f.kind === "moldagem");
   const ruptura = fotos.find((f) => f.kind === "ruptura");
@@ -826,13 +831,13 @@ function paginaCp(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados, idx: number)
     grafico: (w, h) => ({
       width: w,
       height: h,
-      margin: { top: 6, right: 8, bottom: 22, left: 40 },
+      margin: { top: 6, right: 12, bottom: 30, left: 60 },
       xDomain: ea.domain,
       yDomain: sd.domain,
       xTicks: ea.ticks,
       yTicks: sd.ticks,
       xLabel: "εa - Deformação Axial Específica [%]",
-      yLabel: "σd = (σ1−σ3) - Tensão Desvio [kPa]",
+      yLabel: "σd = (σ₁−σ₃) - Tensão Desvio [kPa]",
       tickPx: 9,
       series: [{
         name: legenda,
@@ -853,7 +858,7 @@ function paginaCp(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados, idx: number)
     grafico: (w, h) => ({
       width: w,
       height: h,
-      margin: { top: 6, right: 8, bottom: 22, left: 40 },
+      margin: { top: 6, right: 12, bottom: 30, left: 60 },
       xDomain: ea.domain,
       yDomain: poro.domain,
       xTicks: ea.ticks,

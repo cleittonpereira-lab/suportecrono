@@ -35,33 +35,62 @@ export function baseQueCobre(digitado: number, menorDado: number): number {
 }
 
 /**
- * Escala 1:1 — os mesmos kPa por pixel nos dois eixos — preenchendo a área do
- * gráfico (Mohr e caminho de tensões). O eixo x vai até o valor redondo acima de
- * `xNecessario`; o y vai até onde a altura deixar com a mesma escala. Se aí não
- * couber `yNecessario`, é o x que estica. Os ticks usam o mesmo passo nos dois
- * eixos, então a grade sai em quadrados.
+ * Escala 1:1 — os mesmos kPa por pixel nos dois eixos — ocupando a área do
+ * gráfico (Mohr e caminho de tensões). Os dois eixos terminam exatamente num tick
+ * (sem ponta de eixo sobrando além do último número) e usam o mesmo passo, então
+ * a grade sai em quadrados. O que não dá para usar com essa escala volta em
+ * `sobraW`/`sobraH` (px), para virar margem. Entre os passos redondos possíveis,
+ * fica o que desperdiça menos área sem lotar o eixo de números.
  */
 export function escalaIgual(
   plotW: number,
   plotH: number,
   xNecessario: number,
   yNecessario: number,
-): { xMax: number; yMax: number; ticksX: number[]; ticksY: number[] } {
+): { xMax: number; yMax: number; ticksX: number[]; ticksY: number[]; sobraW: number; sobraH: number } {
   const w = Math.max(1, plotW);
   const h = Math.max(1, plotH);
-  let xMax = niceCeil(Math.max(0, xNecessario));
-  let yMax = (xMax * h) / w;
-  if (yMax < yNecessario) {
-    yMax = niceCeil(yNecessario);
-    xMax = (yMax * w) / h;
+  const xNec = Math.max(1e-9, xNecessario);
+  const yNec = Math.max(1e-9, yNecessario);
+
+  /** Com este passo: menor escala (kPa/px) em que os topos redondos cobrem os dados. */
+  const encaixar = (passo: number) => {
+    const xTopo = Math.ceil(xNec / passo - 1e-9) * passo;
+    const yTopo = Math.ceil(yNec / passo - 1e-9) * passo;
+    const k = Math.max(xTopo / w, yTopo / h); // kPa por px
+    const xMax = Math.floor((w * k) / passo + 1e-9) * passo;
+    const yMax = Math.floor((h * k) / passo + 1e-9) * passo;
+    const usadoW = xMax / k;
+    const usadoH = yMax / k;
+    return { passo, xMax, yMax, sobraW: w - usadoW, sobraH: h - usadoH, desperdicio: 1 - (usadoW * usadoH) / (w * h) };
+  };
+  // Passo "redondo" logo abaixo (1, 2, 5 × 10^k): 50 → 20 → 10 → 5…
+  const menor = (p: number) => {
+    const mag = Math.pow(10, Math.floor(Math.log10(p) + 1e-9));
+    const m = Math.round(p / mag);
+    return m >= 5 ? 2 * mag : m >= 2 ? mag : 0.5 * mag;
+  };
+  let passo = niceStep(Math.max(xNec, (yNec * w) / h, (xNec * h) / w), 7);
+  let melhor = encaixar(passo);
+  for (let i = 0; i < 2; i++) {
+    passo = menor(passo);
+    const c = encaixar(passo);
+    const intervalos = Math.max(c.xMax, c.yMax) / passo;
+    if (intervalos <= 15 && c.desperdicio < melhor.desperdicio - 0.01) melhor = c;
   }
-  const passo = niceStep(Math.max(xMax, yMax), 7);
   const ticks = (max: number) => {
     const out: number[] = [];
-    for (let v = 0; v <= max + 1e-9; v += passo) out.push(Math.round(v * 1e6) / 1e6);
+    for (let v = 0; v <= max + 1e-9; v += melhor.passo) out.push(Math.round(v * 1e6) / 1e6);
     return out;
   };
-  return { xMax, yMax, ticksX: ticks(xMax), ticksY: ticks(yMax) };
+  return {
+    xMax: melhor.xMax,
+    yMax: melhor.yMax,
+    ticksX: ticks(melhor.xMax),
+    ticksY: ticks(melhor.yMax),
+    sobraW: Math.max(0, melhor.sobraW),
+    sobraH: Math.max(0, melhor.sobraH),
+  };
 }
 
 /**

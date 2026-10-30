@@ -1,5 +1,5 @@
 /**
- * Formulações e convenções do Triaxial UU (ASTM D2850 / NBR 12770), usadas pelo
+ * Formulações e convenções do Triaxial UU (ASTM D2850), usadas pelo
  * PDF e pelo Excel do relatório. Ensaio em tensões totais, sem adensamento,
  * sem drenagem e sem poropressão: o volume do CP não muda (εv = 0).
  */
@@ -92,4 +92,4 @@ export const GLOSSARIO_UU_CONVENCAO =
   "Convenção de unidades: dimensões em mm/cm, massas em g, volumes em cm³, forças em kN, tensões em kPa, ângulos em graus. Deformações εa em %; nas fórmulas entram em fração (dividir por 100). γw = 9,81 kN/m³. Ensaio em tensões totais: σ e τ sem descontar poropressão; convenção MIT (diagrama t–s) conforme ISO 17892-9:2018 Anexo B.";
 
 export const GLOSSARIO_UU_REFERENCIAS =
-  "Referências normativas: ASTM D2850-15 — Unconsolidated-Undrained Triaxial Compression Test on Cohesive Soils; NBR 12770 — Solo coesivo — Determinação da resistência à compressão não confinada; ISO 17892-9:2018 (correções de membrana e papel filtro; Anexo B para a reta Kf na convenção MIT).";
+  "Referências normativas: ASTM D2850-15 — Unconsolidated-Undrained Triaxial Compression Test on Cohesive Soils (correções de membrana e papel filtro conforme ISO 17892-9:2018; Anexo B para a convenção MIT).";

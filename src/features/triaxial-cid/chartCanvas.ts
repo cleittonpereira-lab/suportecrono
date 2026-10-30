@@ -121,13 +121,13 @@ export function renderChartPng(spec: ChartSpec): string | null {
   if (!ctx) return null;
   ctx.scale(SCALE, SCALE);
 
-  const tickPx = spec.tickPx ?? 10;
+  const tickPx = spec.tickPx ?? 11;
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, spec.width, spec.height);
 
   // ---- Legenda no topo (quebra de linha quando não cabe) ----
-  ctx.font = `${tickPx}px ${FONT}`;
-  const legendLine = 16;
+  ctx.font = `${tickPx + 1.5}px ${FONT}`;
+  const legendLine = 18;
   const legendRows: { name: string; color: string; dash?: number[]; x: number; y: number }[] = [];
   let lx = spec.margin.left;
   let ly = 0;
@@ -144,22 +144,26 @@ export function renderChartPng(spec: ChartSpec): string | null {
   }
   const legendHeight = legendRows.length ? ly + legendLine : 0;
 
-  const left = spec.margin.left;
-  const right = spec.width - spec.margin.right;
-  const top = spec.margin.top + legendHeight + (legendHeight ? 4 : 0);
+  let left = spec.margin.left;
+  let right = spec.width - spec.margin.right;
+  let top = spec.margin.top + legendHeight + (legendHeight ? 4 : 0);
   const bottom = spec.height - spec.margin.bottom;
-  const plotW = right - left;
-  const plotH = bottom - top;
   let [x0, x1] = spec.xDomain;
   let [y0, y1] = spec.yDomain;
   let xTicks = spec.xTicks;
   let yTicks = spec.yTicks;
   if (spec.escala11) {
-    const e = escalaIgual(plotW, plotH, x1, y1);
+    const e = escalaIgual(right - left, bottom - top, x1, y1);
     [x0, x1, y0, y1] = [0, e.xMax, 0, e.yMax];
     xTicks = e.ticksX;
     yTicks = e.ticksY;
+    // A área que a escala igual não usa vira margem: os eixos acabam num tick.
+    left += e.sobraW / 2;
+    right -= e.sobraW / 2;
+    top += e.sobraH;
   }
+  const plotW = right - left;
+  const plotH = bottom - top;
   const sx = (x: number) => left + ((x - x0) / (x1 - x0 || 1)) * plotW;
   const sy = (y: number) =>
     spec.yReversed
@@ -232,7 +236,7 @@ export function renderChartPng(spec: ChartSpec): string | null {
     ctx.fillText(tickLabel(t), left - 4, py);
   }
 
-  ctx.font = `${tickPx + 0.5}px ${FONT}`;
+  ctx.font = `${tickPx + 1.5}px ${FONT}`;
   ctx.textAlign = "center";
   ctx.textBaseline = "bottom";
   ctx.fillText(spec.xLabel, (left + right) / 2, spec.height - 4);

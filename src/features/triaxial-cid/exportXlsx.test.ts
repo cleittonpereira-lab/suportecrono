@@ -94,10 +94,11 @@ describe("exportXlsx — Triaxial UU", () => {
     const todo = textosDaFolha(wb.getWorksheet("Laudo Triaxial UU")!).join("\n");
     expect(todo).toContain("ENSAIO TRIAXIAL NÃO CONSOLIDADO NÃO DRENADO (UU)");
     expect(todo).toContain("Compressão Triaxial Não Consolidado Não Drenado - UU");
-    expect(todo).toContain("ASTM D2850:2015 / NBR 12770");
+    expect(todo).toContain("ASTM D2850:2015");
+    expect(todo).not.toContain("NBR 12770");
     expect(todo).toContain("QUADRO RESUMO DOS RESULTADOS");
-    expect(todo).toContain("CP1 · σ3=200 kPa");
-    expect(todo).toContain("CP2 · σ3=400 kPa");
+    expect(todo).toContain("CP1 · σ₃=200 kPa");
+    expect(todo).toContain("CP2 · σ₃=400 kPa");
     expect(todo).toContain("FORMULAÇÕES E CONVENÇÕES (2/2)");
     expect(todo).toContain("Caracterização Tátil-Visual");
     expect(todo).toContain("Folha:");
