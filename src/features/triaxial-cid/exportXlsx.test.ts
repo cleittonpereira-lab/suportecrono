@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import ExcelJS from "exceljs";
 import { buildSampleTriE005_382 } from "./samples/tri-e-005-382";
 import { fitEnvelope, processSpecimen } from "./domain/calc";
-import { buildTriaxialUuXlsxWorkbook, type ExportSample } from "./exportXlsx";
+import { buildTriaxialUuXlsxWorkbook, nomeDaAba, type ExportSample } from "./exportXlsx";
 import type { TriaxialSample, TriaxialSpecimen } from "./types";
 
 /** Ensaio UU de exemplo: 2 CPs do sample real do OWNTEC, sem fases de adensamento controladas. */
@@ -68,13 +68,55 @@ function textosDaFolha(ws: ExcelJS.Worksheet): string[] {
 /** Quebras de página gravadas pelo exportador (o leitor do exceljs não as devolve). */
 const quebrasDe = (ws: ExcelJS.Worksheet) => ((ws as unknown as { rowBreaks: { id: number }[] }).rowBreaks ?? []).map((q) => q.id);
 
+/** Células com o rodapé "Folha: n / total", com a linha e a coluna onde estão na grade. */
+function folhasNaGrade(ws: ExcelJS.Worksheet) {
+  const achados: { linha: number; coluna: number; texto: string }[] = [];
+  ws.eachRow((row, linha) => {
+    row.eachCell((cell, coluna) => {
+      const v = cell.value as unknown;
+      const texto = typeof v === "string"
+        ? v
+        : v && typeof v === "object" && "richText" in v
+          ? (v as { richText: { text: string }[] }).richText.map((t) => t.text).join("")
+          : "";
+      if (texto.startsWith("Folha:")) achados.push({ linha, coluna, texto });
+    });
+  });
+  return achados;
+}
+
 describe("exportXlsx — Triaxial UU", () => {
-  it("gera as nove folhas do PDF (capa, resumo, σd×εa, Mohr + caminho, módulo, 2 CPs, 2 do glossário)", async () => {
+  it("organiza as nove folhas em cinco faixas, a folha da esquerda ao lado da da direita", async () => {
     const wb = await buildTriaxialUuXlsxWorkbook({ ...montaParametros(), semGraficos: true });
     const ws = wb.getWorksheet("Laudo Triaxial UU");
     expect(ws).toBeDefined();
-    // 5 folhas fixas (Mohr e caminho de tensões juntos) + 2 CPs + 2 do glossário = 9.
-    expect(quebrasDe(ws!).length).toBe(9);
+    // 9 folhas em pares (1|2, 3|4, 5|6, 7|8, 9): uma quebra por faixa, 1084 px = 813 pt cada.
+    expect(quebrasDe(ws!)).toEqual([1084, 2168, 3252, 4336, 5420]);
+    const folhas = folhasNaGrade(ws!);
+    const folha = (n: number) => folhas.find((f) => f.texto.endsWith(` ${n} / 9`))!;
+    expect(folha(1).coluna).toBeLessThanOrEqual(60);
+    expect(folha(2).coluna).toBeGreaterThan(60);
+    expect(folha(2).linha).toBe(folha(1).linha);
+    expect(folha(3).linha).toBeGreaterThan(1084);
+    expect(folha(4).linha).toBe(folha(3).linha);
+    expect(folha(4).coluna).toBeGreaterThan(60);
+  });
+
+  it("nomeia a aba do laudo como REL-(nome do arquivo), com no máximo 31 caracteres", () => {
+    expect(nomeDaAba("18279-26_14198-02_SH-F-KM360-01_1.50-1.50_TRI.UU_Rev-00.xlsx")).toBe("REL-18279-26_14198-02_SH-F-KM36");
+    expect(nomeDaAba("A/B:C.xlsx")).toBe("REL-A-B-C");
+    expect(nomeDaAba()).toBe("Laudo Triaxial UU");
+  });
+
+  it("traz a aba Dados Brutos com as massas, as leituras e a altura de cada CP", async () => {
+    const wb = await buildTriaxialUuXlsxWorkbook({ ...montaParametros(), semGraficos: true });
+    const ws = wb.getWorksheet("Dados Brutos");
+    expect(ws).toBeDefined();
+    const todo = textosDaFolha(ws!).join("\n");
+    expect(todo).toContain("CP1 · σ₃ = 200 kPa");
+    expect(todo).toContain("Altura média inicial, H0");
+    expect(todo).toContain("Massa úmida do CP");
+    expect(todo).toContain("Δh (mm)");
   });
 
   it("cada folha soma exatamente 813 pt de linhas (uma folha A4 do PDF)", async () => {

@@ -56,6 +56,8 @@ export interface ExportTriaxialUuParams {
   axisCfg?: Partial<TriaxialAxisCfg>;
   /** Pula gráficos e fotos (usado nos testes, que rodam fora do navegador). */
   semGraficos?: boolean;
+  /** Nome do arquivo gerado: a aba do laudo vira "REL-" + esse nome. */
+  nomeArquivo?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -67,10 +69,16 @@ const COL_PX = 12;
 /** Largura em caracteres que o Excel converte em ~12 px por coluna. */
 const COL_WIDTH = COL_PX / 7;
 const PX_TO_PT = 0.75;
-const ptToPx = (pt: number) => pt / PX_TO_PT;
 
 /** 297 mm − 2 × 5 mm de margem vertical do PDF, em pt. */
 const PAGE_PT = 813;
+/** Duas folhas lado a lado: a da direita começa depois de COL_GAP colunas vazias. */
+const COL_GAP = 2;
+const COLS_POR_FOLHA = COLS + COL_GAP;
+/** Grade física: 1 linha = 1 px (0,75 pt), assim cada altura em pt cai num número exato de pixels. */
+const PX_POR_PT = 4 / 3;
+const LINHA_PT = 0.75;
+const FOLHA_PX = Math.round(PAGE_PT * PX_POR_PT);
 /** Alturas do cabeçalho: faixa do título, 3 linhas de campos, descrição e granulometria. */
 const HEADER_ROWS = [56, 14, 14, 14, 16, 14];
 /** Alturas do rodapé: espaço, 4 linhas da assinatura, faixa preta e carimbo. */
@@ -211,12 +219,23 @@ interface Ctx {
   /** Fotos já carregadas, pela URL usada no registro (ver `caixaFoto`). */
   fotos: Map<string, HTMLImageElement>;
   warnings: string[];
+  /** Deslocamento de colunas da folha atual: 0 (esquerda) ou COLS_POR_FOLHA (direita). */
+  colOff: number;
+  /** Primeira linha física da faixa da folha atual (1-based). */
+  faixaTopo: number;
+  /** Altura já escrita na folha atual, em pt (posição do cursor). */
+  posPt: number;
+  /** Linha lógica (id de `newRow`) → intervalo de linhas físicas [primeira, última]. */
+  linhas: Map<number, [number, number]>;
 }
 
 /** Escreve valor (texto ou trechos) numa área mesclada da grade. */
 function put(cx: Ctx, r1: number, c1: number, r2: number, c2: number, value: string | Run[], style: Style = {}) {
-  if (r1 !== r2 || c1 !== c2) cx.ws.mergeCells(r1, c1, r2, c2);
-  const cell = cx.ws.getCell(r1, c1);
+  const [R1, R2] = faixa(cx, r1, r2);
+  const C1 = c1 + cx.colOff;
+  const C2 = c2 + cx.colOff;
+  if (R1 !== R2 || C1 !== C2) cx.ws.mergeCells(R1, C1, R2, C2);
+  const cell = cx.ws.getCell(R1, C1);
   if (Array.isArray(value)) {
     cell.value = richOf(value, style);
   } else {
@@ -242,27 +261,50 @@ function edge(
   color = CELL_BORDER,
   style: "thin" | "medium" = "thin",
 ) {
+  const [R1, R2] = faixa(cx, r1, r2);
+  const C1 = c1 + cx.colOff;
+  const C2 = c2 + cx.colOff;
   const s: string[] = sides === "all" ? ["top", "bottom", "left", "right"] : sides;
   const spec = { style, color: { argb: color } } as ExcelJS.Border;
-  for (let r = r1; r <= r2; r++) {
-    for (let c = c1; c <= c2; c++) {
+  for (let r = R1; r <= R2; r++) {
+    for (let c = C1; c <= C2; c++) {
       const cell = cx.ws.getCell(r, c);
       const b: Partial<ExcelJS.Borders> = { ...(cell.border ?? {}) };
-      if (s.includes("top") && r === r1) b.top = spec;
-      if (s.includes("bottom") && r === r2) b.bottom = spec;
-      if (s.includes("left") && c === c1) b.left = spec;
-      if (s.includes("right") && c === c2) b.right = spec;
+      if (s.includes("top") && r === R1) b.top = spec;
+      if (s.includes("bottom") && r === R2) b.bottom = spec;
+      if (s.includes("left") && c === C1) b.left = spec;
+      if (s.includes("right") && c === C2) b.right = spec;
       cell.border = b;
     }
   }
 }
 
-/** Cria uma linha com altura fixa; `conta` diz se ela entra no miolo da página. */
+/**
+ * Cria uma linha lógica de altura `hPt` (pt). Ela ocupa as linhas físicas da grade
+ * (1 px cada) da faixa da folha atual; `conta` diz se entra no miolo da página.
+ */
 function newRow(cx: Ctx, hPt: number, conta = true): number {
   const r = cx.row++;
-  cx.ws.getRow(r).height = hPt;
+  const ini = cx.faixaTopo + Math.round(cx.posPt * PX_POR_PT);
+  cx.posPt += hPt;
+  const fim = Math.max(ini, cx.faixaTopo + Math.round(cx.posPt * PX_POR_PT) - 1);
+  cx.linhas.set(r, [ini, fim]);
   if (conta) cx.used += hPt;
   return r;
+}
+
+/** Linhas físicas (1-based) que vão da linha lógica `r1` até a `r2`. */
+function faixa(cx: Ctx, r1: number, r2: number): [number, number] {
+  const a = cx.linhas.get(r1);
+  const b = cx.linhas.get(r2);
+  if (!a || !b) throw new Error(`Linha da folha ${cx.pageNo} não existe na grade`);
+  return [a[0], b[1]];
+}
+
+/** Tamanho em px da área de linhas r1..r2 e colunas c1..c2 (sem o deslocamento da folha). */
+function dimensoes(cx: Ctx, r1: number, c1: number, r2: number, c2: number): { wPx: number; hPx: number } {
+  const [a, b] = faixa(cx, r1, r2);
+  return { wPx: (c2 - c1 + 1) * COL_PX, hPx: b - a + 1 };
 }
 
 const restante = (cx: Ctx) => CONTENT_PT - cx.used;
@@ -278,8 +320,9 @@ function cabecalho(cx: Ctx) {
   if (cx.logoId != null) {
     const w = Math.min(cx.logoPx.w, 16 * COL_PX - 8);
     const h = 40;
+    const [topo, base] = faixa(cx, rb, rb);
     cx.ws.addImage(cx.logoId, {
-      tl: { col: (16 * COL_PX - w) / 2 / COL_PX, row: rb - 1 + (ptToPx(HEADER_ROWS[0]) - h) / 2 / ptToPx(HEADER_ROWS[0]) },
+      tl: { col: cx.colOff + (16 * COL_PX - w) / 2 / COL_PX, row: topo - 1 + (base - topo + 1 - h) / 2 },
       ext: { width: w, height: h },
       editAs: "oneCell",
     });
@@ -346,7 +389,7 @@ function rodape(cx: Ctx) {
     const h = 28;
     const w = Math.round((cx.sigPx.w / cx.sigPx.h) * h);
     cx.ws.addImage(cx.sigId, {
-      tl: { col: 20 + (20 * COL_PX - w) / 2 / COL_PX, row: f1 - 1 + 2 / ptToPx(FOOTER_ROWS[1]) },
+      tl: { col: cx.colOff + 20 + (20 * COL_PX - w) / 2 / COL_PX, row: faixa(cx, f1, f1)[0] - 1 + 2 },
       ext: { width: w, height: h },
       editAs: "oneCell",
     });
@@ -375,6 +418,11 @@ function rodape(cx: Ctx) {
 function inicioPagina(cx: Ctx, pageNo: number) {
   cx.pageNo = pageNo;
   cx.used = 0;
+  cx.posPt = 0;
+  // Folhas 1 e 2 dividem a primeira faixa, 3 e 4 a segunda, e assim por diante.
+  const indice = pageNo - 1;
+  cx.faixaTopo = Math.floor(indice / 2) * FOLHA_PX + 1;
+  cx.colOff = indice % 2 === 1 ? COLS_POR_FOLHA : 0;
   cabecalho(cx);
 }
 
@@ -383,7 +431,9 @@ function fimPagina(cx: Ctx) {
   if (sobra < -0.5) cx.warnings.push(`Folha ${cx.pageNo}: conteúdo passou ${(-sobra).toFixed(1)} pt da área útil`);
   if (sobra > 0.05) newRow(cx, sobra);
   rodape(cx);
-  cx.ws.getRow(cx.row - 1).addPageBreak();
+  if (Math.abs(cx.posPt - PAGE_PT) > 0.01) cx.warnings.push(`Folha ${cx.pageNo}: altura ${cx.posPt} pt em vez de ${PAGE_PT}`);
+  // A quebra de página fica no fim da faixa, depois da folha da direita (ou da última folha).
+  if (cx.colOff !== 0 || cx.pageNo === cx.total) cx.ws.getRow(cx.faixaTopo + FOLHA_PX - 1).addPageBreak();
 }
 
 /** Barra cinza de seção (SectionBar do PDF). */
@@ -395,13 +445,20 @@ function barra(cx: Ctx, texto: string, style: Style = {}) {
   edge(cx, r, 1, r, COLS, "all", SECTION_BORDER);
 }
 
-/** Imagem PNG presa à área de uma linha da grade. */
-function imagem(cx: Ctx, base64: string, col1: number, row: number, wPx: number, hPx: number) {
+/** Âncora de célula (coluna e linha 0-based, sem deslocamento dentro da célula). */
+const ancora = (col: number, row: number) =>
+  ({ col, row, nativeCol: col, nativeColOff: 0, nativeRow: row, nativeRowOff: 0 }) as ExcelJS.Anchor;
+
+/**
+ * Imagem PNG presa às duas pontas da área (linhas r1..r2, colunas c1..c2): ela estica
+ * com as células, então nunca passa do quadro, mesmo se a largura da coluna mudar.
+ */
+function imagem(cx: Ctx, base64: string, c1: number, c2: number, r1: number, r2: number) {
+  const [a, b] = faixa(cx, r1, r2);
   const id = cx.wb.addImage({ base64, extension: "png" });
   cx.ws.addImage(id, {
-    tl: { col: col1 - 1, row: row - 1 },
-    ext: { width: Math.round(wPx), height: Math.round(hPx) },
-    editAs: "oneCell",
+    tl: ancora(c1 - 1 + cx.colOff, a - 1),
+    br: ancora(c2 + cx.colOff, b),
   });
 }
 
@@ -409,10 +466,9 @@ function imagem(cx: Ctx, base64: string, col1: number, row: number, wPx: number,
 function graficoLinha(cx: Ctx, hPt: number, col1: number, col2: number, monta: (wPx: number, hPx: number) => ChartSpec) {
   const r = newRow(cx, hPt);
   if (cx.semGraficos) return r;
-  const wPx = (col2 - col1 + 1) * COL_PX;
-  const hPx = ptToPx(hPt);
+  const { wPx, hPx } = dimensoes(cx, r, col1, r, col2);
   const b64 = renderChartPng(monta(wPx, hPx));
-  if (b64) imagem(cx, b64, col1, r, wPx, hPx);
+  if (b64) imagem(cx, b64, col1, col2, r, r);
   else cx.warnings.push(`Gráfico da folha ${cx.pageNo} não pôde ser desenhado`);
   return r;
 }
@@ -790,7 +846,6 @@ function maxDe(p: ExportTriaxialUuParams, f: (q: SpecimenResults["shearCurve"][n
 function caixaFoto(
   cx: Ctx,
   r: number,
-  hArea: number,
   c1: number,
   c2: number,
   titulo: string,
@@ -801,11 +856,10 @@ function caixaFoto(
   const areaRow = r + 1;
   const src = foto ? foto.url || foto.dataUrl : undefined;
   const img = src ? cx.fotos.get(src) : undefined;
-  const wPx = (c2 - c1 + 1) * COL_PX;
-  const hPx = ptToPx(hArea);
+  const { wPx, hPx } = dimensoes(cx, areaRow, c1, areaRow, c2);
   const b64 = img && !cx.semGraficos ? renderFotoPng(img, wPx, hPx) : null;
   if (b64) {
-    imagem(cx, b64, c1, areaRow, wPx, hPx);
+    imagem(cx, b64, c1, c2, areaRow, areaRow);
   } else {
     put(cx, areaRow, c1, areaRow, c2, "Sem registro", { size: 6, color: MUTED, align: "center" });
   }
@@ -890,13 +944,13 @@ function blocoLadoAlado(
 ) {
   const r = cx.row;
   for (let i = 0; i < 3; i++) newRow(cx, i === 1 ? hPt - 28 : 14);
-  const wEsq = 36 * COL_PX;
   if (!cx.semGraficos) {
-    const b64 = renderChartPng(o.grafico(wEsq, ptToPx(hPt)));
-    if (b64) imagem(cx, b64, 1, r, wEsq, ptToPx(hPt));
+    const { wPx, hPx } = dimensoes(cx, r, 1, r + 2, 36);
+    const b64 = renderChartPng(o.grafico(wPx, hPx));
+    if (b64) imagem(cx, b64, 1, 36, r, r + 2);
     else cx.warnings.push(`Gráfico da folha ${cx.pageNo} não pôde ser desenhado`);
   }
-  caixaFoto(cx, r, hPt - 28, 38, COLS, o.titulo, o.foto, o.legenda);
+  caixaFoto(cx, r, 38, COLS, o.titulo, o.foto, o.legenda);
 }
 
 function paginaGlossario(cx: Ctx, parte: 1 | 2) {
@@ -983,6 +1037,114 @@ async function imagemBase64(src: string): Promise<string | null> {
 // Montagem da pasta de trabalho
 // ---------------------------------------------------------------------------
 
+/**
+ * Nome da aba do laudo: "REL-" + nome do arquivo. O Excel aceita no máximo 31
+ * caracteres e proíbe : \ / ? * [ ], então o nome é cortado e os símbolos viram "-".
+ */
+export function nomeDaAba(nomeArquivo?: string): string {
+  const base = (nomeArquivo ?? "").replace(/\.xlsx$/i, "").replace(/[\\/?*[\]:]/g, "-").trim();
+  return base ? `REL-${base}`.slice(0, 31) : "Laudo Triaxial UU";
+}
+
+const COLUNAS_BRUTAS = 7;
+
+/** Número arredondado, ou vazio quando não há valor. */
+const numero = (v: number | null | undefined, casas = 3) =>
+  v == null || !isFinite(v) ? null : Number(v.toFixed(casas));
+
+/** Umidade de uma cápsula [%]: (úmido − seco) / (seco − tara). */
+const umidadeDaCapsula = (c: { tara: number; wet: number; dry: number }) =>
+  c.dry - c.tara > 0 ? numero(((c.wet - c.dry) / (c.dry - c.tara)) * 100, 2) : null;
+
+/**
+ * Aba "Dados Brutos": os valores digitados no ensaio (massas, cápsulas, leituras de
+ * cisalhamento), sem os gráficos, para processar fora do laudo.
+ */
+function abaDadosBrutos(wb: ExcelJS.Workbook, p: ExportTriaxialUuParams) {
+  const ws = wb.addWorksheet("Dados Brutos", { views: [{ showGridLines: false }] });
+  ws.columns = Array.from({ length: COLUNAS_BRUTAS }, (_, i) => ({ width: i === 0 ? 36 : 16 }));
+  let r = 0;
+  const escreve = (
+    valores: (string | number | null | undefined)[],
+    opt: { negrito?: boolean; fundo?: string; mesclar?: boolean; tamanho?: number } = {},
+  ) => {
+    r++;
+    valores.forEach((v, i) => {
+      const cell = ws.getCell(r, i + 1);
+      cell.value = v ?? null;
+      cell.font = { name: FONT, size: opt.tamanho ?? 9, bold: opt.negrito === true, color: { argb: INK } };
+      cell.alignment = { vertical: "middle", horizontal: i === 0 ? "left" : "center", wrapText: true };
+      if (opt.fundo) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: opt.fundo } };
+      cell.border = { bottom: { style: "hair", color: { argb: GLOSS_LINE } } };
+    });
+    if (opt.mesclar) ws.mergeCells(r, 1, r, COLUNAS_BRUTAS);
+  };
+  const par = (rotulo: string, valor: string | number | null | undefined, unidade = "") =>
+    escreve([rotulo, valor, unidade]);
+
+  const s = p.sample;
+  escreve(["DADOS BRUTOS — ENSAIO TRIAXIAL NÃO CONSOLIDADO NÃO DRENADO (UU)"], { negrito: true, tamanho: 11, mesclar: true });
+  par("Cliente", s.client);
+  par("Obra", s.workNumber);
+  par("O.S.", s.os);
+  par("Furo", s.borehole);
+  par("Profundidade", s.depth);
+  par("Código da amostra", s.code);
+  par("Amostra", s.reportNumber);
+  par("Revisão", s.revision);
+  par("Operador", s.operator);
+  par("Equipamento", s.equipment);
+  par("Densidade relativa dos grãos, Gs", s.Gs);
+  par("Massa específica da água, ρw", s.rhoW, "g/cm³");
+  par("Módulo da membrana, Em", s.membraneE, "kPa");
+  par("Espessura da membrana, tm", s.membraneT, "mm");
+  escreve([]);
+
+  p.specimens.forEach((cp, i) => {
+    escreve([`${cp.displayId ?? cp.id} · σ₃ = ${cp.sigma3Target} kPa`], { negrito: true, fundo: SECTION_BG, mesclar: true });
+    par("Diâmetro médio inicial, D0", numero(cp.D0), "mm");
+    par("Diâmetro — medições individuais", (cp.D0measurements ?? []).join(" / "), "mm");
+    par("Altura média inicial, H0", numero(cp.H0), "mm");
+    par("Altura — medições individuais", (cp.H0measurements ?? []).join(" / "), "mm");
+    par("Massa úmida do CP", numero(cp.wetMass), "g");
+    par("Massa seca do CP", numero(cp.dryMass), "g");
+    par("Umidade inicial, w0", numero(cp.w0Pct, 2), "%");
+    par("Massa final do CP", numero(cp.mFinal), "g");
+    par("Umidade final, wf", numero(cp.wFinalPct, 2), "%");
+    par("Massa sobre o CP", numero(cp.mSobreCP), "g");
+    par("Área do pistão", numero(cp.aPistao), "cm²");
+    par("Altura do topcap", numero(cp.hTopcap), "cm");
+    par("Atrito do pistão", numero(cp.fAtritoPistao), "kgf");
+    par("Espessura da membrana (CP)", numero(cp.espMembrana), "cm");
+
+    const capsulas = (titulo: string, lista: NonNullable<typeof cp.capsules>) => {
+      if (!lista.length) return;
+      escreve([titulo], { negrito: true, fundo: HEAD_BG, mesclar: true });
+      escreve(["Cápsula", "Tipo", "Tara (g)", "Úmido + tara (g)", "Seco + tara (g)", "Umidade (%)"], { negrito: true, fundo: HEAD_BG });
+      lista.forEach((c, k) =>
+        escreve([c.numero ?? String(k + 1), c.tipo ?? "", numero(c.tara), numero(c.wet), numero(c.dry), umidadeDaCapsula(c)]),
+      );
+    };
+    capsulas("Cápsulas de umidade — inicial", cp.capsules ?? []);
+    capsulas("Cápsulas de umidade — final", cp.finalCapsules ?? []);
+
+    escreve(["Leitura", "Δh (mm)", "εa (%)", "Carga (kgf)", "Força (N)", "u (kPa)", "σd (kPa)"], { negrito: true, fundo: HEAD_BG });
+    const curva = p.results[i]?.shearCurve ?? [];
+    cp.shear.forEach((leitura, k) =>
+      escreve([
+        k + 1,
+        numero(leitura.dispMm),
+        numero(leitura.eaPct),
+        numero(leitura.loadKgf),
+        numero(leitura.F, 2),
+        numero(leitura.uPore, 2),
+        curva.length === cp.shear.length ? numero(curva[k].sigmaD, 2) : null,
+      ]),
+    );
+    escreve([]);
+  });
+}
+
 /** Monta a planilha inteira (todas as folhas do PDF, na ordem do relatório). */
 export async function buildTriaxialUuXlsxWorkbook(p: ExportTriaxialUuParams): Promise<ExcelJS.Workbook> {
   const ExcelJSRuntime = (await import("exceljs")).default;
@@ -992,7 +1154,7 @@ export async function buildTriaxialUuXlsxWorkbook(p: ExportTriaxialUuParams): Pr
   wb.created = new Date();
   wb.modified = new Date();
 
-  const ws = wb.addWorksheet("Laudo Triaxial UU", {
+  const ws = wb.addWorksheet(nomeDaAba(p.nomeArquivo), {
     views: [{ showGridLines: false }],
     pageSetup: {
       paperSize: 9,
@@ -1001,7 +1163,7 @@ export async function buildTriaxialUuXlsxWorkbook(p: ExportTriaxialUuParams): Pr
       scale: 100,
     },
   });
-  for (let c = 1; c <= COLS; c++) ws.getColumn(c).width = COL_WIDTH;
+  for (let c = 1; c <= COLS_POR_FOLHA + COLS; c++) ws.getColumn(c).width = COL_WIDTH;
 
   const semGraficos = p.semGraficos === true;
   let logoId: number | null = null;
@@ -1048,6 +1210,7 @@ export async function buildTriaxialUuXlsxWorkbook(p: ExportTriaxialUuParams): Pr
     sample: p.sample, semGraficos,
     logoId, logoPx, sigId, sigPx, fotos,
     warnings: [],
+    colOff: 0, faixaTopo: 1, posPt: 0, linhas: new Map(),
   };
 
   inicioPagina(cx, 1);
@@ -1084,13 +1247,17 @@ export async function buildTriaxialUuXlsxWorkbook(p: ExportTriaxialUuParams): Pr
   paginaGlossario(cx, 2);
   fimPagina(cx);
 
+  // Cada faixa tem duas folhas lado a lado; as linhas físicas têm 1 px cada (ver FOLHA_PX).
+  for (let r = 1; r <= Math.ceil(total / 2) * FOLHA_PX; r++) ws.getRow(r).height = LINHA_PT;
+  abaDadosBrutos(wb, p);
+
   if (cx.warnings.length && typeof console !== "undefined") console.warn("[Excel UU]", cx.warnings.join(" | "));
   return wb;
 }
 
 /** Gera o .xlsx e devolve o nome e o conteúdo em base64 (para o Drive). */
 export async function getTriaxialUuXlsxBase64(p: ExportTriaxialUuParams, filename: string): Promise<{ filename: string; base64: string }> {
-  const wb = await buildTriaxialUuXlsxWorkbook(p);
+  const wb = await buildTriaxialUuXlsxWorkbook({ ...p, nomeArquivo: p.nomeArquivo ?? filename });
   const buffer = await wb.xlsx.writeBuffer();
   const bytes = new Uint8Array(buffer);
   let bin = "";
@@ -1100,7 +1267,7 @@ export async function getTriaxialUuXlsxBase64(p: ExportTriaxialUuParams, filenam
 
 /** Gera o .xlsx e baixa no navegador. */
 export async function exportTriaxialUuXlsx(p: ExportTriaxialUuParams, filename: string) {
-  const wb = await buildTriaxialUuXlsxWorkbook(p);
+  const wb = await buildTriaxialUuXlsxWorkbook({ ...p, nomeArquivo: p.nomeArquivo ?? filename });
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

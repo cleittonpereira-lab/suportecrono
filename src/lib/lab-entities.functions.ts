@@ -91,6 +91,8 @@ export type ReportApprovalRow = {
   comment: string | null;
   filename: string | null;
   updated_at?: string;
+  /** Impressão digital dos dados do ensaio no envio para verificação (ver dados-do-laudo.ts). */
+  dados_hash?: string | null;
 };
 
 export type ReportApprovalCommentRow = {

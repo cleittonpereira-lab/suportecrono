@@ -900,6 +900,15 @@ export function TriaxialCidPage() {
         if (!(await pdfDaRevisaoEstaNoDrive(scopeId, saved.rev))) return;
       }
 
+      // Grava o rascunho antes de pedir a verificação: o servidor guarda a impressão
+      // digital dos dados que estão no arquivo nesse momento (ver exigirDadosInalterados).
+      const currentDraft = { sample, specimens, selectedCpId, tab, adjust, axisCfg, photos: ctx?.photos || [] };
+      saveDraft(scopeId, currentDraft, { id: user?.id, name: displayName });
+      const gravado = await flushDraft(scopeId, { id: user?.id, name: displayName });
+      if (gravado.conflict || gravado.error) {
+        throw new Error(gravado.error ?? "O rascunho foi alterado em outro computador. Recarregue a tela antes de enviar.");
+      }
+
       // Envia automaticamente para verificação — o fluxo é "Terminei a digitação".
       try {
         await requestApproval({
@@ -917,8 +926,6 @@ export function TriaxialCidPage() {
             },
           },
         });
-        const currentDraft = { sample, specimens, selectedCpId, tab, adjust, axisCfg, photos: ctx?.photos || [] };
-        saveDraft(scopeId, currentDraft, { id: user?.id, name: displayName });
         if (ctx && ctx.os && ctx.amostra && ctx.ensaio) {
           labStore.patchEnsaio(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, {
             payload: currentDraft,
