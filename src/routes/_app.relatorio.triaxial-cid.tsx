@@ -148,6 +148,27 @@ const normsFor = (testType: TestType) => (testType === "uu" ? NORMS_UU : testTyp
 /** @deprecated use `normsFor("cid")` — mantido para não quebrar referências existentes. */
 const NORMS = NORMS_CID;
 
+/**
+ * Campos de correção do CP que vêm da planilha (força de atrito, peso sobre o CP,
+ * topcap e área do pistão a partir do diâmetro). Valor ausente não apaga o que já
+ * está no CP. Geometria (D0 e H0) nunca vem da planilha.
+ */
+function correcaoDoArquivo(
+  p: import("@/features/triaxial-cid/importXlsx").ParametrosDeCorrecao | undefined,
+): Partial<TriaxialSpecimen> {
+  if (!p) return {};
+  const campos: Partial<TriaxialSpecimen> = {
+    espMembrana: p.espMembranaCm,
+    fAtritoPistao: p.fAtritoKgf,
+    mSobreCP: p.pesoSobreCpKgf != null ? p.pesoSobreCpKgf * 1000 : undefined,
+    hTopcap: p.hTopcapCm,
+    aPistao: p.dPistaoCm != null ? Math.PI * (p.dPistaoCm / 2) ** 2 : undefined,
+  };
+  return Object.fromEntries(
+    Object.entries(campos).filter(([, v]) => typeof v === "number" && Number.isFinite(v)),
+  ) as Partial<TriaxialSpecimen>;
+}
+
 const reportTitleFor = (condition: "saturado" | "natural", testType: TestType = "cid") => {
   if (testType === "uu") return "ENSAIO TRIAXIAL NÃO CONSOLIDADO NÃO DRENADO (UU)";
   if (testType === "ciu") {
@@ -323,7 +344,11 @@ export function TriaxialCidPage() {
       }
     : { ...SEED_SAMPLE, typedBy: currentUserName, operator: currentUserName };
   const [sample, setSample] = useState<TriaxialSample>(
-    () => (draft?.sample ? { ...initialSample, ...draft.sample } : initialSample),
+    // O código da amostra é o do cadastro (Gantt/amostra), não o que um rascunho antigo
+    // guardou — rascunhos de importações antigas trazem o NT (ex.: 638) nesse campo.
+    () => (draft?.sample
+      ? { ...initialSample, ...draft.sample, code: ctx?.amostra?.code || draft.sample.code || initialSample.code }
+      : initialSample),
   );
   // Trava o tipo do ensaio (CID/CIU/UU) no que está registrado no laboratório
   // — são ensaios diferentes (envoltória, gráficos e cálculo mudam conforme o
@@ -1085,7 +1110,18 @@ export function TriaxialCidPage() {
         consolidationCount: data.consolidation.length,
         shearCount: shear.length,
       },
+      ...correcaoDoArquivo(data.parametros),
     });
+    // Membrana e água são da amostra (valem para todos os CPs), não de cada CP.
+    const p = data.parametros;
+    if (p) {
+      setSample((prev) => ({
+        ...prev,
+        ...(p.membraneEkPa != null ? { membraneE: p.membraneEkPa } : {}),
+        ...(p.espMembranaCm != null ? { membraneT: p.espMembranaCm * 10 } : {}),
+        ...(p.rhoW != null ? { rhoW: p.rhoW } : {}),
+      }));
+    }
   };
 
   /** Importa cada ensaio (NT) escolhido na janela para o CP de destino. */
@@ -2150,6 +2186,44 @@ export function TriaxialCidPage() {
           {/* CISALHAMENTO */}
           <TabsContent value="cisalhamento" className="mt-4 space-y-4">
             <CpSelector specimens={sortedSpecimens} selectedId={selectedCpId} onSelect={setSelectedCpId} isUU={isUU} />
+            {/* Todos os CPs no mesmo gráfico: compara a família de curvas da amostra. */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Curvas de todos os CPs — σ<sub>d</sub> × ε<sub>a</sub></CardTitle>
+                <CardDescription>
+                  Cada CP com a sua tensão confinante. Clique num CP acima para ver as leituras dele.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="h-[300px] w-full">
+                  <ResponsiveContainer>
+                    <ComposedChart margin={{ top: 22, right: 16, bottom: 26, left: 60 }}>
+                      <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" />
+                      <XAxis type="number" dataKey="eaPct" domain={[0, "auto"]} tick={{ fontSize: 12 }}>
+                        <RLabel value="εa - Deformação Axial Específica [%]" position="insideBottom" offset={-14} fontSize={12} />
+                      </XAxis>
+                      <YAxis type="number" domain={[0, "auto"]} tick={{ fontSize: 12 }}>
+                        <RLabel value="σd = (σ₁−σ₃) - Tensão Desvio [kPa]" angle={-90} position="insideLeft" offset={-6} fontSize={12} />
+                      </YAxis>
+                      <Legend wrapperStyle={{ fontSize: 12 }} verticalAlign="top" />
+                      {sortedSpecimens.map((cp, i) => (
+                        <Line
+                          key={cp.id}
+                          data={results[i]?.shearCurve.map((p) => ({ eaPct: p.eaPct, sigmaD: p.sigmaD })) ?? []}
+                          dataKey="sigmaD"
+                          stroke={cp.color ?? BRAND}
+                          strokeWidth={cp.id === selectedCpId ? 2.8 : 1.6}
+                          name={`${cp.displayId ?? cp.id} · ${isUU ? "σ₃" : "σ'₃"}=${cp.sigma3Target} kPa`}
+                          type="monotone"
+                          dot={false}
+                          isAnimationActive={false}
+                        />
+                      ))}
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
             {/* Ajuste/filtragem de curvas: só admin e gestor (lib/papeis.ts). */}
             {podeAjustarCurvas({ role }) && (
               <div className="flex justify-end">

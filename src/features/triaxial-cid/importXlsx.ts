@@ -22,6 +22,66 @@ export interface ImportedRawData {
   nt: string;
   consolidation: ConsolidationReading[];
   shear: ShearReading[];
+  /** Parâmetros de correção que a planilha traz (membrana, pistão, topcap…). Sem geometria (D0/H0). */
+  parametros?: ParametrosDeCorrecao;
+}
+
+/** Parâmetros de correção lidos da planilha, nas unidades do relatório. */
+export interface ParametrosDeCorrecao {
+  /** Espessura da membrana [cm]. */
+  espMembranaCm?: number;
+  /** Módulo de elasticidade da membrana [kPa]. */
+  membraneEkPa?: number;
+  /** Força de atrito do pistão [kgf]. */
+  fAtritoKgf?: number;
+  /** Peso sobre o corpo de prova [kgf]. */
+  pesoSobreCpKgf?: number;
+  /** Altura do topcap / cabeça [cm]. */
+  hTopcapCm?: number;
+  /** Diâmetro do pistão [cm] (a área do pistão sai dele). */
+  dPistaoCm?: number;
+  /** Massa específica da água [g/cm³]. */
+  rhoW?: number;
+}
+
+/**
+ * Lê os parâmetros de correção da planilha (uma linha de leitura do NT escolhido
+ * ou da primeira). Só as colunas de correção — nunca D0 e H0 do corpo de prova.
+ */
+function lerParametrosDeCorrecao(grid: Grid, nt?: string): ParametrosDeCorrecao | undefined {
+  for (let r = 0; r < Math.min(grid.length, 30); r++) {
+    const head = grid[r];
+    if (!head) continue;
+    const cols: Record<string, number> = {};
+    head.forEach((cell, c) => {
+      const t = norm(cell);
+      if (t.includes("espessura da memb")) cols.espMembrana = c;
+      else if (t.includes("mod. elastic. memb")) cols.membraneE = c;
+      else if (t.includes("peso sobre o cp")) cols.peso = c;
+      else if (t.includes("h cab.")) cols.topcap = c;
+      else if (t.includes("forca atrito")) cols.atrito = c;
+      else if (t.includes("d pistao")) cols.pistao = c;
+      else if (t.includes("massa esp. agua")) cols.agua = c;
+      else if (t === "nt") cols.nt = c;
+    });
+    if (cols.espMembrana == null) continue;
+    for (let k = r + 1; k < grid.length; k++) {
+      const row = grid[k];
+      if (!row) continue;
+      if (nt && cols.nt != null && String(row[cols.nt] ?? "").trim() !== nt) continue;
+      const v = (c?: number) => (c == null ? undefined : asNum(row[c]) ?? undefined);
+      return {
+        espMembranaCm: v(cols.espMembrana),
+        membraneEkPa: v(cols.membraneE),
+        fAtritoKgf: v(cols.atrito),
+        pesoSobreCpKgf: v(cols.peso),
+        hTopcapCm: v(cols.topcap),
+        dPistaoCm: v(cols.pistao),
+        rhoW: v(cols.agua),
+      };
+    }
+  }
+  return undefined;
 }
 
 /** Etapa detectada dentro de um NT. */
@@ -508,5 +568,15 @@ export async function parseOwnTecXlsx(
   }
 
   const code = detectedCode || filename.replace(/\.[^./\\]+$/, "").replace(/[\\/]/g, "_").trim();
-  return { code, filename, nt: detectedCode, consolidation, shear };
+  let parametros: ParametrosDeCorrecao | undefined;
+  for (const nomeAba of wb.SheetNames) {
+    const grade = XLSX.utils.sheet_to_json<(string | number | null)[]>(wb.Sheets[nomeAba], {
+      header: 1,
+      defval: null,
+      raw: true,
+    }) as Grid;
+    parametros = lerParametrosDeCorrecao(grade, opts.selectedNT);
+    if (parametros) break;
+  }
+  return { code, filename, nt: detectedCode, consolidation, shear, parametros };
 }
