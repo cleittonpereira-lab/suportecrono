@@ -613,7 +613,6 @@ function paginaResumo(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados) {
   linha("Massa Esp. Aparente Seco, ρd", "g/cm³", cps.map((c) => fmt(c.r.gammaDry / 9.81, 2)));
   linha("Índice de Vazios Inicial, e₀", undefined, cps.map((c) => fmt(c.r.e0, 3)));
   linha("Grau de Saturação Inicial, S₀", "%", cps.map((c) => fmt(c.r.Sr0, 2)));
-  linha("Drenos Laterais", undefined, cps.map((c) => c.cp.lateralDrains ?? "—"));
   linha("Tensão Confinante, σ₃", "kPa", cps.map((c) => fmt(c.cp.sigma3Target, 0)));
   linha("Umidade final, wf", "%", cps.map((c) => (c.cp.wFinalPct != null ? fmt(c.cp.wFinalPct, 2) : "—")));
   linha("Grau de Saturação Final, Sf", "%", cps.map((c) => (c.x.sf != null ? fmt(c.x.sf, 2) : "—")));
@@ -877,7 +876,7 @@ function caixaFoto(
   edge(cx, r, c1, r + 2, c2, "all", BOX_BORDER);
 }
 
-/** Página do CP: gráfico de σd×εa e de volume, cada um ao lado de uma foto. */
+/** Página do CP: gráfico de σd×εa e de poropressão, cada um ao lado de uma foto. */
 function paginaCp(cx: Ctx, p: ExportTriaxialUuParams, d: Derivados, idx: number) {
   const cp = p.specimens[idx];
   const r = p.results[idx];

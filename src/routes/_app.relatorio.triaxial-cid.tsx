@@ -2247,6 +2247,7 @@ export function TriaxialCidPage() {
               cp={cp}
               res={res}
               isUU={isUU}
+              isCIU={isCIU}
               onUpdateRow={(ri, patch) => updateShearRow(cp.id, ri, patch)}
               onAddRow={() =>
                 updateSpecimen(cp.id, {
@@ -2640,14 +2641,24 @@ export function TriaxialCidPage() {
                         <AxisGroup title="t = (σ1 − σ3)/2 (kPa) — trajetória MIT">
                           <AxisField label="máximo" step="10" value={axisCfg.qMax} onChange={(v) => updateAxis("qMax", v)} />
                         </AxisGroup>
-                        <AxisGroup title="εv (%) — deformação volumétrica">
-                          <AxisField label="mínimo" step="0.5" value={axisCfg.evMin} onChange={(v) => updateAxis("evMin", v)} />
-                          <AxisField label="máximo" step="0.5" value={axisCfg.evMax} onChange={(v) => updateAxis("evMax", v)} />
-                        </AxisGroup>
-                        <AxisGroup title="ΔV (cm³) — cisalhamento">
-                          <AxisField label="mínimo (aumento vol.)" step="0.5" value={axisCfg.dvShearMin} onChange={(v) => updateAxis("dvShearMin", v)} />
-                          <AxisField label="máximo (redução vol.)" step="0.5" value={axisCfg.dvShearMax} onChange={(v) => updateAxis("dvShearMax", v)} />
-                        </AxisGroup>
+                        {isUU || isCIU ? (
+                          // Ruptura não drenada: o eixo de baixo do laudo é a poropressão (usa dvShearMin/Max).
+                          <AxisGroup title="u (kPa) — poropressão no cisalhamento">
+                            <AxisField label="mínimo" step="5" value={axisCfg.dvShearMin} onChange={(v) => updateAxis("dvShearMin", v)} />
+                            <AxisField label="máximo" step="5" value={axisCfg.dvShearMax} onChange={(v) => updateAxis("dvShearMax", v)} />
+                          </AxisGroup>
+                        ) : (
+                          <>
+                            <AxisGroup title="εv (%) — deformação volumétrica">
+                              <AxisField label="mínimo" step="0.5" value={axisCfg.evMin} onChange={(v) => updateAxis("evMin", v)} />
+                              <AxisField label="máximo" step="0.5" value={axisCfg.evMax} onChange={(v) => updateAxis("evMax", v)} />
+                            </AxisGroup>
+                            <AxisGroup title="ΔV (cm³) — cisalhamento">
+                              <AxisField label="mínimo (aumento vol.)" step="0.5" value={axisCfg.dvShearMin} onChange={(v) => updateAxis("dvShearMin", v)} />
+                              <AxisField label="máximo (redução vol.)" step="0.5" value={axisCfg.dvShearMax} onChange={(v) => updateAxis("dvShearMax", v)} />
+                            </AxisGroup>
+                          </>
+                        )}
                         <AxisGroup title="E (MPa) — módulo de deformabilidade">
                           <AxisField label="máximo" step="5" value={axisCfg.eModMax} onChange={(v) => updateAxis("eModMax", v)} />
                         </AxisGroup>
@@ -2796,7 +2807,11 @@ export function TriaxialCidPage() {
                 Instruções Técnicas da Programação (Gantt)
               </label>
               <div className="p-3.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs text-foreground font-medium leading-relaxed">
-                {(ctx?.ensaio as any)?.observacoes || "Ensaio Triaxial CID: Realizar verificação do parâmetro B de Skempton (mínimo B >= 0.95). Consolidação isotrópica com registro de dissipação de poropressão antes do cisalhamento drenado."}
+                {(ctx?.ensaio as any)?.observacoes || (isUU
+                  ? "Ensaio Triaxial UU: sem saturação nem adensamento; cisalhamento não drenado, com a velocidade de deformação axial constante. Análise em tensões totais."
+                  : isCIU
+                    ? "Ensaio Triaxial CIU: Realizar verificação do parâmetro B de Skempton (mínimo B >= 0.95). Consolidação isotrópica antes do cisalhamento não drenado, com leitura da poropressão."
+                    : "Ensaio Triaxial CID: Realizar verificação do parâmetro B de Skempton (mínimo B >= 0.95). Consolidação isotrópica com registro de dissipação de poropressão antes do cisalhamento drenado.")}
               </div>
             </div>
 
@@ -2805,7 +2820,9 @@ export function TriaxialCidPage() {
                 Critérios Operacionais & Detalhes da Amostra
               </label>
               <div className="p-3 rounded-lg bg-muted/50 border border-border text-xs text-muted-foreground leading-relaxed">
-                {sample.description || "Solo fino indeformado. Manter velocidade de deformação axial constante controlada para garantir drenagem completa durante o ensaio."}
+                {sample.description || (isUU || isCIU
+                  ? "Solo fino indeformado. Manter velocidade de deformação axial constante durante o cisalhamento não drenado."
+                  : "Solo fino indeformado. Manter velocidade de deformação axial constante controlada para garantir drenagem completa durante o ensaio.")}
               </div>
             </div>
           </div>
@@ -2946,13 +2963,16 @@ function HeadWithInfo({ label, formula }: { label: React.ReactNode; formula: str
 }
 
 /**
- * Seção de cisalhamento drenado — dados de entrada em faixa retrátil
- * (com fórmulas em tooltips) e gráficos empilhados abaixo.
+ * Seção de cisalhamento — dados de entrada em faixa retrátil (com fórmulas em
+ * tooltips) e gráficos empilhados abaixo. CID: ruptura drenada, gráfico de εv.
+ * CIU e UU: ruptura não drenada, gráfico de poropressão; o UU ainda é em
+ * tensões totais (s, σ1, σ3 sem a linha).
  */
 function ShearPhaseSection({
   cp,
   res,
   isUU = false,
+  isCIU = false,
   onUpdateRow,
   onAddRow,
   onRemoveRow,
@@ -2961,11 +2981,17 @@ function ShearPhaseSection({
   res: SpecimenResults;
   /** UU: sem variação de volume — a tabela não mostra ΔV, volume do CP nem índice de vazios. */
   isUU?: boolean;
+  /** CIU: ruptura não drenada, com poropressão medida. */
+  isCIU?: boolean;
   onUpdateRow: (rowIdx: number, patch: Partial<ShearReading>) => void;
   onAddRow: () => void;
   onRemoveRow: (rowIdx: number) => void;
 }) {
   const [dataOpen, setDataOpen] = useState(true);
+  const naoDrenado = isUU || isCIU;
+  // Tensões totais no UU (sem a linha), efetivas no CID/CIU.
+  const ln = isUU ? "" : "'";
+  const poropressao = cp.shear.map((s) => ({ eaPct: s.eaPct, u: s.uPore ?? 0 }));
   const H0 = cp.H0 || 1;
   const V0 = res.V0 || 1;
   const Hc = res.Hc || H0;               // altura após adensamento [mm]
@@ -2996,7 +3022,7 @@ function ShearPhaseSection({
             <div className="flex items-center gap-2">
               {dataOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
               <CardTitle className="text-sm">
-                Cisalhamento drenado — dados de entrada — {cp.displayId ?? cp.id}
+                {naoDrenado ? "Cisalhamento não drenado" : "Cisalhamento drenado"} — dados de entrada — {cp.displayId ?? cp.id}
               </CardTitle>
             </div>
             <CardDescription className="text-xs">
@@ -3207,21 +3233,33 @@ function ShearPhaseSection({
           </div>
           <div className="h-[260px]">
             <ResponsiveContainer>
-              <ComposedChart data={res.shearCurve} margin={{ top: 10, right: 20, bottom: 30, left: 10 }}>
-                <CartesianGrid stroke="#eee" strokeDasharray="3 3" />
-                <XAxis dataKey="eaPct" type="number"><RLabel value="εa (%)" position="insideBottom" offset={-8} fontSize={11} /></XAxis>
-                <YAxis><RLabel value="εv (%)" angle={-90} position="insideLeft" fontSize={11} /></YAxis>
-                <Tooltip formatter={(v: number) => fmt(v, 2)} />
-                <ReferenceLine y={0} stroke="#999" />
-                <Line type="monotone" dataKey="evPct" stroke={ACCENT} dot={false} strokeWidth={2} />
-              </ComposedChart>
+              {naoDrenado ? (
+                // Ruptura não drenada: o volume não varia — o que se acompanha é a poropressão.
+                <ComposedChart data={poropressao} margin={{ top: 10, right: 20, bottom: 30, left: 10 }}>
+                  <CartesianGrid stroke="#eee" strokeDasharray="3 3" />
+                  <XAxis dataKey="eaPct" type="number"><RLabel value="εa (%)" position="insideBottom" offset={-8} fontSize={11} /></XAxis>
+                  <YAxis><RLabel value="u - Poropressão (kPa)" angle={-90} position="insideLeft" fontSize={11} /></YAxis>
+                  <Tooltip formatter={(v: number) => fmt(v, 1)} />
+                  <ReferenceLine y={0} stroke="#999" />
+                  <Line type="monotone" dataKey="u" stroke={ACCENT} dot={false} strokeWidth={2} />
+                </ComposedChart>
+              ) : (
+                <ComposedChart data={res.shearCurve} margin={{ top: 10, right: 20, bottom: 30, left: 10 }}>
+                  <CartesianGrid stroke="#eee" strokeDasharray="3 3" />
+                  <XAxis dataKey="eaPct" type="number"><RLabel value="εa (%)" position="insideBottom" offset={-8} fontSize={11} /></XAxis>
+                  <YAxis><RLabel value="εv (%)" angle={-90} position="insideLeft" fontSize={11} /></YAxis>
+                  <Tooltip formatter={(v: number) => fmt(v, 2)} />
+                  <ReferenceLine y={0} stroke="#999" />
+                  <Line type="monotone" dataKey="evPct" stroke={ACCENT} dot={false} strokeWidth={2} />
+                </ComposedChart>
+              )}
             </ResponsiveContainer>
           </div>
           <div className="h-[260px]">
             <ResponsiveContainer>
               <ComposedChart data={res.shearCurve} margin={{ top: 10, right: 20, bottom: 30, left: 10 }}>
                 <CartesianGrid stroke="#eee" strokeDasharray="3 3" />
-                <XAxis dataKey="pPrime" type="number"><RLabel value="s' (kPa)" position="insideBottom" offset={-8} fontSize={11} /></XAxis>
+                <XAxis dataKey="pPrime" type="number"><RLabel value={`s${ln} (kPa)`} position="insideBottom" offset={-8} fontSize={11} /></XAxis>
                 <YAxis dataKey="q" type="number"><RLabel value="t (kPa)" angle={-90} position="insideLeft" fontSize={11} /></YAxis>
                 <Tooltip formatter={(v: number) => fmt(v, 1)} />
                 <Line type="monotone" dataKey="q" stroke={BRAND} dot={false} strokeWidth={2} />
@@ -3232,9 +3270,9 @@ function ShearPhaseSection({
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-5 text-sm">
               <Stat label="εa,f" value={`${fmt(res.failure.eaPct, 2)} %`} />
               <Stat label="q_f" value={`${fmt(res.failure.q, 1)} kPa`} />
-              <Stat label="s'_f" value={`${fmt(res.failure.pPrime, 1)} kPa`} />
-              <Stat label="σ1'_f" value={`${fmt(res.failure.sigma1Prime, 1)} kPa`} />
-              <Stat label="σ3'_f" value={`${fmt(res.failure.sigma3Prime, 1)} kPa`} />
+              <Stat label={`s${ln}_f`} value={`${fmt(res.failure.pPrime, 1)} kPa`} />
+              <Stat label={`σ1${ln}_f`} value={`${fmt(res.failure.sigma1Prime, 1)} kPa`} />
+              <Stat label={`σ3${ln}_f`} value={`${fmt(res.failure.sigma3Prime, 1)} kPa`} />
             </div>
           )}
         </CardContent>
@@ -4222,7 +4260,7 @@ function SummaryTablePage({
           <Row label="Massa Esp. Aparente Seco, ρd" unit="g/cm³" values={rowData.map((d) => fmt(rhoDry(d.r), 2))} />
           <Row label="Índice de Vazios Inicial, e₀" values={rowData.map((d) => fmt(d.r.e0, 3))} />
           <Row label="Grau de Saturação Inicial, S₀" unit="%" values={rowData.map((d) => fmt(d.r.Sr0, 2))} />
-          <Row label="Drenos Laterais" values={rowData.map((d) => d.cp.lateralDrains ?? "—")} />
+          {!isUUReport && <Row label="Drenos Laterais" values={rowData.map((d) => d.cp.lateralDrains ?? "—")} />}
           <Row label={`Tensão Confinante, ${sigSym}`} unit="kPa" values={rowData.map((d) => fmt(d.cp.sigma3Target, 0))} />
           {!isUUReport && (
             <>
