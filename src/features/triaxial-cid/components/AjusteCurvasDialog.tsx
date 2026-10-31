@@ -28,6 +28,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
@@ -39,7 +40,7 @@ import {
 } from "@/lib/ajuste-curvas";
 import { ACCENT, BRAND, CP_COLORS, GRID, SUB } from "../constants";
 import { ADAPTADORES } from "../domain/ajuste";
-import { fitEnvelope, mohrCirclePoints, processSpecimen } from "../domain/calc";
+import { envoltoriaUU, fitEnvelope, mohrCirclePoints, processSpecimen } from "../domain/calc";
 import type { TriaxialSample, TriaxialSpecimen } from "../types";
 
 const n = (v: number | null | undefined, d = 2) =>
@@ -51,8 +52,24 @@ function envoltoriaDe(cps: TriaxialSpecimen[], amostra: TriaxialSample) {
   const pontos = resultados
     .map((r, i) => (r.failure ? { pPrime: r.failure.pPrime, q: r.failure.q, cp: cps[i].id } : null))
     .filter((p): p is { pPrime: number; q: number; cp: string } => p != null);
-  return { resultados, envelope: fitEnvelope(pontos) };
+  // UU: envoltória horizontal em Su (φu = 0), a mesma regra do relatório.
+  return { resultados, envelope: amostra.testType === "uu" ? envoltoriaUU(pontos) : fitEnvelope(pontos) };
 }
+
+/** Opções iniciais de cada curva — trocadas junto com a curva escolhida. */
+const opcoesPadrao = (variavel: VariavelAjustavel): OpcoesAjuste => {
+  const p = PERFIS[variavel];
+  return {
+    metodo: p.metodoPadrao,
+    janela: 7,
+    percentil: p.percentilPadrao,
+    fracaoLowess: 0.3,
+    grauPolinomio: 5,
+    forcarZeroInicial: p.forcarZeroInicial,
+    permiteNegativo: p.permiteNegativo,
+    fatorEscala: 1,
+  };
+};
 
 export function AjusteCurvasDialog({
   sample,
@@ -75,21 +92,54 @@ export function AjusteCurvasDialog({
   const [pensando, setPensando] = useState(false);
 
   const perfil = PERFIS[variavel];
-  const [opcoes, setOpcoes] = useState<OpcoesAjuste>({
-    metodo: perfil.metodoPadrao,
-    janela: 7,
-    percentil: perfil.percentilPadrao,
-    fracaoLowess: 0.3,
-    grauPolinomio: 5,
-    forcarZeroInicial: perfil.forcarZeroInicial,
-    permiteNegativo: perfil.permiteNegativo,
-  });
-
-  const mexer = (patch: Partial<OpcoesAjuste>) => setOpcoes((o) => ({ ...o, ...patch }));
-
-  const adaptador = ADAPTADORES[variavel]!;
   const cpAtual = specimens.find((c) => c.id === cpId) ?? specimens[0];
   const registroAtual = cpAtual?.ajustesDeCurva?.[variavel];
+
+  // Opções guardadas por CP e por curva: ao voltar a uma curva, ela está onde foi
+  // deixada. Curva ainda não mexida abre com o ajuste já gravado (método, fator…)
+  // ou, sem ajuste, com o padrão dela — a poropressão pode ser negativa, a tensão
+  // desviadora não.
+  const chave = `${cpAtual?.id ?? ""}|${variavel}`;
+  const [opcoesPorCurva, setOpcoesPorCurva] = useState<Record<string, OpcoesAjuste>>({});
+  const opcoesIniciais = (): OpcoesAjuste =>
+    registroAtual
+      ? { ...opcoesPadrao(variavel), ...registroAtual.opcoes, metodo: registroAtual.metodo }
+      : opcoesPadrao(variavel);
+  const opcoes = opcoesPorCurva[chave] ?? opcoesIniciais();
+  const mexer = (patch: Partial<OpcoesAjuste>) =>
+    setOpcoesPorCurva((m) => ({ ...m, [chave]: { ...(m[chave] ?? opcoesIniciais()), ...patch } }));
+
+  // Fator de escala: o campo aceita "-" e "1," enquanto se digita; o texto só é
+  // reescrito quando o fator muda por outro controle (barra, sinal, "voltar a ×1")
+  // ou quando se troca de curva/CP.
+  const fator = opcoes.fatorEscala ?? 1;
+  const [fatorTexto, setFatorTexto] = useState(() => n(fator, 2));
+  const [chaveDoTexto, setChaveDoTexto] = useState(chave);
+  if (chaveDoTexto !== chave) {
+    setChaveDoTexto(chave);
+    setFatorTexto(n(fator, 2));
+  }
+  const definirFator = (v: number) => {
+    mexer({ fatorEscala: v });
+    setFatorTexto(n(v, 2));
+  };
+  const digitarFator = (texto: string) => {
+    setFatorTexto(texto);
+    const v = Number(texto.replace(",", "."));
+    if (Number.isFinite(v) && v !== 0 && Math.abs(v) <= 10) mexer({ fatorEscala: v });
+  };
+
+  const trocarVariavel = (v: VariavelAjustavel) => {
+    setVariavel(v);
+    setSugestao(null);
+  };
+
+  const adaptador = ADAPTADORES[variavel]!;
+  // UU: não há variação de volume. A poropressão é medida (e aparece nos gráficos),
+  // então pode ser ajustada — ela só não entra no cálculo, que é em tensões totais.
+  const variaveisDisponiveis = (Object.keys(ADAPTADORES) as VariavelAjustavel[]).filter(
+    (v) => !(sample.testType === "uu" && v === "variacao-volumetrica"),
+  );
 
   /**
    * Base do ajuste: SEMPRE o dado medido. Se já houve ajuste nesta curva,
@@ -237,10 +287,10 @@ export function AjusteCurvasDialog({
 
             <div className="space-y-1">
               <Label className="text-[11px] text-muted-foreground">Curva</Label>
-              <Select value={variavel} onValueChange={(v) => setVariavel(v as VariavelAjustavel)}>
+              <Select value={variavel} onValueChange={(v) => trocarVariavel(v as VariavelAjustavel)}>
                 <SelectTrigger className="h-8 w-[230px] text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {(Object.keys(ADAPTADORES) as VariavelAjustavel[]).map((v) => (
+                  {variaveisDisponiveis.map((v) => (
                     <SelectItem key={v} value={v} className="text-xs">{PERFIS[v].rotulo}</SelectItem>
                   ))}
                 </SelectContent>
@@ -254,6 +304,9 @@ export function AjusteCurvasDialog({
                   Curva já ajustada por <b>{registroAtual.aplicadoPor}</b> em{" "}
                   {new Date(registroAtual.aplicadoEm).toLocaleDateString("pt-BR")} ·{" "}
                   {NOMES_DOS_METODOS[registroAtual.metodo]}
+                  {(registroAtual.opcoes?.fatorEscala ?? 1) !== 1 && (
+                    <> · fator ×{n(registroAtual.opcoes.fatorEscala, 2)}</>
+                  )}
                 </span>
                 <Button variant="ghost" size="sm" className="h-6 gap-1 px-2 text-[11px]" onClick={restaurar}>
                   <RotateCcw className="h-3 w-3" /> Restaurar original
@@ -382,6 +435,37 @@ export function AjusteCurvasDialog({
                     <Label className="text-[11px]">Começar em zero</Label>
                     <Switch checked={!!opcoes.forcarZeroInicial}
                       onCheckedChange={(v) => mexer({ forcarZeroInicial: v })} />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="flex items-center justify-between text-[11px]">
+                      <span>Fator de escala</span>
+                      <span className="flex items-center gap-1 text-muted-foreground">
+                        ×
+                        <Input
+                          value={fatorTexto}
+                          onChange={(e) => digitarFator(e.target.value)}
+                          inputMode="decimal"
+                          className="h-6 w-16 px-1 text-right text-[11px]"
+                        />
+                      </span>
+                    </Label>
+                    {/* Arrasta o tamanho do fator (0,10 a 5,00); o sinal fica no "Inverter sinal". */}
+                    <Slider min={0.1} max={5} step={0.01} value={[Math.min(5, Math.max(0.1, Math.abs(fator)))]}
+                      onValueChange={([v]) => definirFator((fator < 0 ? -1 : 1) * v)} />
+                    <div className="flex items-center justify-between rounded border px-2 py-1">
+                      <Label className="text-[11px]">Inverter sinal (×−1)</Label>
+                      <Switch checked={fator < 0}
+                        onCheckedChange={(neg) => definirFator((neg ? -1 : 1) * Math.abs(fator))} />
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] leading-snug text-muted-foreground">
+                      <span>Multiplica a curva ajustada (−10 a 10). Fica registrado no ajuste.</span>
+                      {fator !== 1 && (
+                        <button type="button" className="underline" onClick={() => definirFator(1)}>
+                          voltar a ×1
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 rounded border bg-muted/30 p-2 text-[11px]">

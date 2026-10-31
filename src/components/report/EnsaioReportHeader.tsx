@@ -70,12 +70,16 @@ export function EnsaioTitleBlock({ title, description }: { title: ReactNode; des
  */
 export function AmostraSummaryCard({
   reportNumber,
+  codigo,
+  serie,
   osNumero,
   subtitle,
   onEditClick,
   children,
 }: {
   reportNumber?: string;
+  codigo?: string;
+  serie?: string | null;
   osNumero?: string;
   subtitle?: ReactNode;
   onEditClick?: () => void;
@@ -87,7 +91,7 @@ export function AmostraSummaryCard({
         <div className="flex items-center justify-between gap-3">
           <div>
             <CardTitle className="text-sm">
-              Amostra {reportNumber || "—"} · OS {osNumero || "—"}
+              Amostra {reportNumber || "—"}{codigo ? ` · código ${codigo}` : ""}{serie ? ` · série ${serie}` : ""} · OS {osNumero || "—"}
             </CardTitle>
             {subtitle && <CardDescription className="text-xs">{subtitle}</CardDescription>}
           </div>

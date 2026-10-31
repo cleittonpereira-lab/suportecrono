@@ -20,6 +20,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth, exigirLogin } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { atualizarDriveJson, ensureFolderPath, readDriveJson } from "@/lib/driveStorage";
+import { hashDadosDoLaudo } from "@/lib/dados-do-laudo";
 import {
   FOLDER_AMOSTRAS,
   FOLDER_ENSAIOS,
@@ -126,7 +127,7 @@ type IdsEnsaio = { osId: string; amostraId: string; ensaioId: string };
  */
 async function alterarEnsaio(
   scopeId: string,
-  alterar: (ids: IdsEnsaio, existing: EnsaioFile | null) => EnsaioFile,
+  alterar: (ids: IdsEnsaio, existing: EnsaioFile | null) => EnsaioFile | Promise<EnsaioFile>,
 ): Promise<{ ids: IdsEnsaio; file: EnsaioFile }> {
   const ids = parseScope(scopeId);
   if (!ids) throw new Error(`scopeId inválido: ${scopeId}`);
@@ -187,6 +188,19 @@ function exigirEtapa(linha: ApprovalRow, aceitos: ApprovalStatus[], acao: string
 }
 
 /** Etapa do fluxo → valor gravado em `workflowStatus`/`status` do ensaio. */
+/**
+ * Recusa verificar ou aprovar quando os dados do ensaio mudaram depois do envio: o PDF
+ * que o verificador recebeu já não corresponde ao que está salvo. Linhas antigas, sem
+ * impressão digital, seguem como antes.
+ */
+async function exigirDadosInalterados(linha: ApprovalRow, file: EnsaioFile): Promise<void> {
+  if (!linha.dados_hash) return;
+  const atual = await hashDadosDoLaudo(file.payload, file.photos);
+  if (atual !== linha.dados_hash) {
+    throw new Error("Os dados do ensaio mudaram depois do envio; reenvie para verificação.");
+  }
+}
+
 function workflowDaEtapa(approvals: ApprovalRow[]): "digitacao" | "aguardando_verificacao" | "aguardando_aprovacao" | "aprovado" {
   const etapa = etapaDasAprovacoes(approvals);
   return etapa === "aprovado" || etapa === "aguardando_aprovacao" || etapa === "aguardando_verificacao" ? etapa : "digitacao";
@@ -269,7 +283,7 @@ export const requestApproval = createServerFn({ method: "POST" })
       created_at: nowIso,
     };
 
-    const { ids, file } = await alterarEnsaio(data.scopeId, (ids, existing) => {
+    const { ids, file } = await alterarEnsaio(data.scopeId, async (ids, existing) => {
       // Sem o arquivo do ensaio não há o que enviar para verificação. Antes, um
       // arquivo ilegível virava `existing = null` e esta função gravava um ensaio
       // novo com `payload: null` — apagando o laudo digitado no exato momento em
@@ -287,6 +301,7 @@ export const requestApproval = createServerFn({ method: "POST" })
           `A Rev-${String(data.rev).padStart(2, "0")} já foi aprovada e não pode ser substituída. Recarregue a tela e gere uma nova revisão.`,
         );
       }
+      const dadosHash = await hashDadosDoLaudo(existing.payload, existing.photos);
       return {
         ...existing,
         id: ids.ensaioId,
@@ -309,7 +324,7 @@ export const requestApproval = createServerFn({ method: "POST" })
         workflowStatus: targetWorkflow,
         approvals: existing.approvals ?? [],
         draftHistory: existing.draftHistory ?? [],
-        reportApprovals: [row, ...approvals.filter((a) => a.rev !== data.rev)],
+        reportApprovals: [{ ...row, dados_hash: dadosHash }, ...approvals.filter((a) => a.rev !== data.rev)],
         approvalComments: [commentRow, ...comments].slice(0, 200),
       };
     });
@@ -375,12 +390,13 @@ export const verifyApproval = createServerFn({ method: "POST" })
     };
 
     let updatedRow!: ApprovalRow;
-    const { ids, file } = await alterarEnsaio(data.scopeId, (_ids, existing) => {
+    const { ids, file } = await alterarEnsaio(data.scopeId, async (_ids, existing) => {
       if (!existing) throw new Error("Registro de aprovação não encontrado.");
       const approvals = (existing.reportApprovals as ApprovalRow[] | undefined) ?? [];
       const idx = approvals.findIndex((a) => a.rev === data.rev);
       if (idx === -1) throw new Error("Solicitação de aprovação para esta revisão não encontrada.");
       exigirEtapa(approvals[idx], ["pendente_verificacao", "rejeitado"], "verificada");
+      await exigirDadosInalterados(approvals[idx], existing);
 
       updatedRow = {
         ...approvals[idx],
@@ -484,12 +500,13 @@ export const decideApproval = createServerFn({ method: "POST" })
     };
 
     let updatedRow!: ApprovalRow;
-    const { ids, file } = await alterarEnsaio(data.scopeId, (_ids, existing) => {
+    const { ids, file } = await alterarEnsaio(data.scopeId, async (_ids, existing) => {
       if (!existing) throw new Error("Registro de aprovação não encontrado.");
       const approvals = (existing.reportApprovals as ApprovalRow[] | undefined) ?? [];
       const idx = approvals.findIndex((a) => a.rev === data.rev);
       if (idx === -1) throw new Error("Solicitação de aprovação para esta revisão não encontrada.");
       exigirEtapa(approvals[idx], ["pendente_aprovacao", "verificado"], "aprovada");
+      await exigirDadosInalterados(approvals[idx], existing);
 
       updatedRow = { ...approvals[idx], ...patch };
       const nextApprovals = [...approvals];

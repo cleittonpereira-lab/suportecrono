@@ -187,3 +187,37 @@ describe("filtros isolados", () => {
     lowess(x, y, 0.4).forEach((v, i) => expect(v).toBeCloseTo(y[i], 6));
   });
 });
+
+describe("fator de escala", () => {
+  const pts: Ponto[] = [0, 1, 2, 3, 4].map((x) => ({ x, y: 10 + x }));
+
+  it("multiplica a curva ajustada (mediana de janela 1 = o próprio dado)", () => {
+    const r = ajustarCurva(pts, { metodo: "mediana", janela: 1, fatorEscala: 0.9 });
+    r.pontos.forEach((p, i) => expect(p.yAjustado).toBeCloseTo(pts[i].y * 0.9, 4));
+  });
+
+  it("fator 1 (ou ausente) não muda nada", () => {
+    const sem = ajustarCurva(pts, { metodo: "mediana", janela: 1 });
+    const um = ajustarCurva(pts, { metodo: "mediana", janela: 1, fatorEscala: 1 });
+    expect(um.pontos.map((p) => p.yAjustado)).toEqual(sem.pontos.map((p) => p.yAjustado));
+  });
+
+  it("fator negativo inverte o sinal; acima de 1,5 também vale", () => {
+    const inv = ajustarCurva(pts, { metodo: "mediana", janela: 1, fatorEscala: -1 });
+    inv.pontos.forEach((p, i) => expect(p.yAjustado).toBeCloseTo(-pts[i].y, 4));
+    const tres = ajustarCurva(pts, { metodo: "mediana", janela: 1, fatorEscala: 3 });
+    tres.pontos.forEach((p, i) => expect(p.yAjustado).toBeCloseTo(pts[i].y * 3, 4));
+  });
+
+  it("curva que pode ser negativa (poropressão) não é cortada em zero", () => {
+    const u: Ponto[] = [0, 1, 2, 3].map((x) => ({ x, y: 2 - 3 * x }));
+    const r = ajustarCurva(u, { metodo: "mediana", janela: 1, permiteNegativo: true });
+    expect(r.pontos[3].yAjustado).toBeCloseTo(-7, 4);
+  });
+
+  it("'começar em zero' continua valendo depois da escala", () => {
+    const r = ajustarCurva(pts, { metodo: "mediana", janela: 1, fatorEscala: 1.2, forcarZeroInicial: true });
+    expect(r.pontos[0].yAjustado).toBe(0);
+    expect(r.pontos[4].yAjustado).toBeCloseTo(14 * 1.2, 4);
+  });
+});

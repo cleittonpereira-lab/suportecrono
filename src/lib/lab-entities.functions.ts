@@ -91,6 +91,8 @@ export type ReportApprovalRow = {
   comment: string | null;
   filename: string | null;
   updated_at?: string;
+  /** Impressão digital dos dados do ensaio no envio para verificação (ver dados-do-laudo.ts). */
+  dados_hash?: string | null;
 };
 
 export type ReportApprovalCommentRow = {
@@ -132,6 +134,8 @@ export type EnsaioFile = {
   // o próximo autosave do rascunho reportar "alterado em outro computador"
   // mesmo sem nenhum outro usuário/aba envolvido. Ver draft.functions.ts.
   draftRev?: number;
+  /** Número de série do ensaio (ex.: ASF.DAP-26-00123), dado uma vez ao criar. */
+  serie?: string | null;
   // Consolidado aqui: farol/aprovações/histórico do mesmo ensaio (ver
   // draft.functions.ts e approvals.functions.ts). upsertEnsaioFn (chamado
   // pelo labStore a cada patchEnsaio/onPayloadChange) preserva esses campos
@@ -550,6 +554,24 @@ export function mesclarEnsaio(
   };
 }
 
+/**
+ * Número de série do ensaio: "ASF.DAP-26-00123" (tipo, ano e sequência). A
+ * sequência é um contador por tipo e ano, gravado com a mesma trava dos demais
+ * documentos: dois computadores não recebem o mesmo número, e um número nunca
+ * volta a ser usado.
+ */
+export async function proximaSerieDoEnsaio(tipo: string, agora: Date = new Date()): Promise<string> {
+  const ano = String(agora.getFullYear()).slice(-2);
+  const prefixo = tipo.toUpperCase().replace(/-/g, ".");
+  const pasta = await ensureFolderPath(["contadores"]);
+  const contador = await atualizarDriveJson<{ seq: number }>(
+    `serie-${prefixo}-${ano}.json`,
+    pasta,
+    (atual) => ({ seq: (atual?.seq ?? 0) + 1 }),
+  );
+  return `${prefixo}-${ano}-${String(contador?.seq ?? 0).padStart(5, "0")}`;
+}
+
 export const upsertEnsaioFn = createServerFn({ method: "POST" })
   .middleware([exigirLogin])
   .validator((v: unknown) => EnsaioInput.parse(v))
@@ -565,11 +587,13 @@ export const upsertEnsaioFn = createServerFn({ method: "POST" })
     // Gravação que não muda nada não vai ao Drive — ex.: o payload de um ensaio
     // com rascunho compartilhado, que mesclarEnsaio ignora. Era uma segunda
     // gravação completa do mesmo arquivo a cada autosave do editor.
-    await atualizarDriveJson<EnsaioFile>(name, folderId, (existing) => {
+    const salvo = await atualizarDriveJson<EnsaioFile>(name, folderId, async (existing) => {
       const proximo = mesclarEnsaio(existing, data, { podeConcluirFora: podeFora });
+      // Ensaio novo ganha o número de série aqui, uma vez só; ensaio já existente fica como está.
+      if (!existing) proximo.serie = await proximaSerieDoEnsaio(data.tipo);
       return mudaAlgo(existing, proximo) ? proximo : null;
     });
-    return { ok: true };
+    return { ok: true, serie: salvo?.serie ?? null };
   });
 
 const DeleteEnsaioInput = z.object({ id: z.string().min(1), amostraId: z.string().min(1) });

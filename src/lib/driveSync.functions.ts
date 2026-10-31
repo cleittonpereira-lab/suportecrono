@@ -156,6 +156,8 @@ type ArquivoLab = {
   nome?: string;
   sigla?: string;
   reportApprovals?: { rev?: unknown; status?: unknown }[];
+  /** Pasta `relatorios` onde a revisão foi gravada (primeiro envio ao Drive). */
+  driveRelatoriosId?: string | null;
 };
 
 /** Nomes das pastas `{OS}/{amostra}/{ensaio}` no Drive. */
@@ -202,6 +204,17 @@ async function lerArquivosDoEnsaio(scopeId: string): Promise<ArquivosDoEnsaio | 
   return { os, am, en };
 }
 
+/** Guarda no registro do ensaio a pasta `relatorios` onde a revisão foi gravada. */
+async function gravarPastaDeRelatorios(scopeId: string, folderId: string): Promise<void> {
+  const ids = parseScope(scopeId);
+  if (!ids) return;
+  const { ensureFolderPath: ensureFolderPathShared, atualizarDriveJson } = await import("@/lib/driveStorage");
+  const pasta = await ensureFolderPathShared(["lab-ensaios"]);
+  await atualizarDriveJson<ArquivoLab>(`${ids.amostraId}__${ids.ensaioId}.json`, pasta, (en) =>
+    en && en.driveRelatoriosId !== folderId ? { ...en, driveRelatoriosId: folderId } : null,
+  );
+}
+
 /** Pasta do ensaio, com a amostra por nome e código ("SH-02-189 (13690-03)"). É onde tudo é gravado. */
 function pastaDoEnsaio({ os, am, en }: ArquivosDoEnsaio): string[] {
   return nomesDaPasta({
@@ -244,8 +257,11 @@ async function pastasDeRelatorios(lab: ArquivosDoEnsaio): Promise<PastaDeRelator
   const antiga = pastaAntigaDoEnsaio(lab);
   const mesmaPasta = nova[1] === antiga[1];
   const pastas: PastaDeRelatorios[] = [];
+  // A pasta gravada no registro vem primeiro: a busca não depende mais só do nome.
+  const gravada = lab.en.driveRelatoriosId ?? null;
+  if (gravada) pastas.push({ id: gravada, antiga: false });
   const idNova = await resolveFolderPath([...nova, "relatorios"]);
-  if (idNova) pastas.push({ id: idNova, antiga: mesmaPasta });
+  if (idNova && idNova !== gravada) pastas.push({ id: idNova, antiga: mesmaPasta });
   if (!mesmaPasta) {
     const idAntiga = await resolveFolderPath([...antiga, "relatorios"]);
     if (idAntiga) pastas.push({ id: idAntiga, antiga: true });
@@ -531,6 +547,7 @@ async function enviarRevisaoAoDrive(data: z.infer<typeof SyncRevisionInput>, pdf
     return { pdfId: id, pdfFilename: existente?.name ?? nomePdf, pdfFolderId: existente?.pastaId ?? relFolderId };
   });
   logSync({ scope_id: data.scopeId, rev: data.rev, kind: "pdf", status: "ok", file_id: pdfId, folder_id: pdfFolderId });
+  if (lab) await gravarPastaDeRelatorios(data.scopeId, relFolderId);
 
   if (data.xlsx) {
     // A planilha fica ao lado do PDF da mesma revisão.

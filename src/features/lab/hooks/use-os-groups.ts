@@ -141,7 +141,7 @@ export function useOsGroups() {
     // ensaio CIU aparecia na OS como Cisalhamento Direto.
     const mapaLaudos = montarMapa(tiposProg as any[]);
 
-    const groups = new Map<string, { group: OsGroup; itemsMap: Map<string, EnsaioItemOS> }>();
+    const groups = new Map<string, { group: OsGroup; itemsMap: Map<string, EnsaioItemOS>; porCodigo: Map<string, EnsaioItemOS[]> }>();
 
     const getOrCreateGroupData = (osNum: string) => {
       const cleanNum = (osNum || "").trim();
@@ -158,9 +158,31 @@ export function useOsGroups() {
             ensaios: [],
           },
           itemsMap: new Map<string, EnsaioItemOS>(),
+          porCodigo: new Map<string, EnsaioItemOS[]>(),
         });
       }
       return groups.get(cleanNum)!;
+    };
+
+    /**
+     * Guarda cada ensaio pelo ID do registro, para que duplicados (mesmo código e
+     * tipo, em amostras diferentes) não se apaguem. Também indexa pelo código +
+     * tipo, que é como a pendência e a programação encontram o ensaio.
+     */
+    const guardarItem = (
+      gData: { itemsMap: Map<string, EnsaioItemOS>; porCodigo: Map<string, EnsaioItemOS[]> },
+      chaveRegistro: string,
+      testKey: string,
+      item: EnsaioItemOS,
+    ) => {
+      gData.itemsMap.set(chaveRegistro, item);
+      gData.porCodigo.set(testKey, [...(gData.porCodigo.get(testKey) ?? []), item]);
+    };
+
+    /** Texto do payload de uma pendência (ex.: furo e profundidade do avulso). */
+    const textoDoPayload = (p: { payload?: unknown }, campo: string): string => {
+      const v = (p.payload as Record<string, unknown> | null)?.[campo];
+      return typeof v === "string" ? v : "";
     };
 
     // Helper para chave canônica única por amostra + metodologia
@@ -223,7 +245,7 @@ export function useOsGroups() {
             revisao: os.revision || "0",
           };
 
-          itemsMap.set(testKey, item);
+          guardarItem(gData, `en:${en.id}`, testKey, item);
           etapaDoEnsaio.set(item, etapa);
         }
       }
@@ -251,9 +273,13 @@ export function useOsGroups() {
 
       const etapaPendencia = normalizarEtapa(p.status);
 
-      const sampleIdent = details.codigo || p.amostra || "AM-01";
+      // O código da própria pendência (a chave dela) vem antes do código da programação.
+      const sampleIdent = p.amostra || details.codigo || "AM-01";
       const testKey = getTestKey(sampleIdent, tipo);
-      const existing = itemsMap.get(testKey);
+      const candidatos = gData.porCodigo.get(testKey) ?? [];
+      // Mais de um registro com esse código e tipo: a pendência não diz qual é, então não casa com nenhum.
+      if (candidatos.length > 1) continue;
+      const existing = candidatos[0];
 
       if (existing) {
         // Atualiza campos com dados enriquecidos da pendência
@@ -274,12 +300,12 @@ export function useOsGroups() {
         if (p.verificador_nome) existing.verificador = p.verificador_nome;
         if (p.aprovador_nome) existing.aprovador = p.aprovador_nome;
       } else {
-        itemsMap.set(testKey, {
+        guardarItem(gData, `pend:${p.id}`, testKey, {
           id: p.id,
           pendenciaId: p.id,
           amostra: sampleIdent,
-          furo: details.furo,
-          prof: details.prof,
+          furo: details.furo || textoDoPayload(p, "furo"),
+          prof: details.prof || textoDoPayload(p, "prof"),
           codigo: details.codigo,
           ensaio: p.ensaio,
           tipo,
@@ -316,7 +342,10 @@ export function useOsGroups() {
       if (deletedEnsaios.has(enKey) || deletedEnsaios.has(enIdKey)) continue;
 
       const testKey = getTestKey(sampleIdent, tipo);
-      const existing = itemsMap.get(testKey);
+      const candidatos = gData.porCodigo.get(testKey) ?? [];
+      // Com mais de um registro para o mesmo código e tipo, a programação não diz qual é: não mexe em nenhum.
+      if (candidatos.length > 1) continue;
+      const existing = candidatos[0];
 
       if (existing) {
         // Melhora furo, prof e sigla com os dados diretos da programação do Gantt
@@ -333,7 +362,7 @@ export function useOsGroups() {
         // Saiu da bancada e ainda não tem laudo nem pendência: falta digitar.
         const st: EnsaioItemOS["status"] = concluiu ? "pendente" : iniciou ? "execucao" : "programado";
 
-        itemsMap.set(testKey, {
+        guardarItem(gData, `prog:${prog.id}`, testKey, {
           id: prog.id,
           amostra: sampleIdent,
           furo: details.furo,

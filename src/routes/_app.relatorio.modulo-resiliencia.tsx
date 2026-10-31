@@ -1,3 +1,4 @@
+import { exigirPdfNoDrive } from "@/lib/revisoes-do-drive";
 import { useDraftActivity } from "@/hooks/use-draft-activity";
 import { EditingPresenceBanner } from "@/components/DraftActivityInfo";
 import { DadosTravados } from "@/components/report/DadosTravados";
@@ -607,7 +608,7 @@ export function MRPage() {
         });
         if (resDrive?.folderUrl) setDriveFolderUrl(resDrive.folderUrl);
       } catch (err) {
-        console.warn("Drive sync standby:", err);
+        await exigirPdfNoDrive(scopeId, saved.rev, err);
       }
 
       await requestApproval({
@@ -875,6 +876,8 @@ export function MRPage() {
         {/* Identificação */}
         <div className="mt-3">
           <AmostraSummaryCard
+            codigo={ctx?.amostra?.code ?? undefined}
+            serie={ctx?.ensaio?.serie ?? undefined}
             reportNumber={sample.reportNumber}
             osNumero={sample.os}
             subtitle={`${sample.client || "—"} · Furo ${sample.borehole || "—"} · Prof. ${sample.depth || "—"}`}

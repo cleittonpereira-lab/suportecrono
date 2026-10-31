@@ -32,7 +32,7 @@ import {
   downloadVersion,
   type ReportVersion,
 } from "@/features/asf-dap/report-versions";
-import { sincronizarVersoesComDrive, useVersoesAoVivo } from "@/lib/revisoes-do-drive";
+import { pdfDaRevisaoEstaNoDrive, sincronizarVersoesComDrive, useVersoesAoVivo } from "@/lib/revisoes-do-drive";
 import { excluirRevisaoDoLaudo } from "@/lib/excluir-revisao";
 import { syncRevision, fetchDriveStatus } from "@/features/asf-dap/driveSync";
 import { ReportVersionsPanel } from "@/components/report/ReportVersionsPanel";
@@ -145,9 +145,11 @@ function NumField({ label, value, onChange, className }: { label: string; value:
 /** Página única do laudo: identificação (via ReportHeader) + resultados por CP. */
 function ASFDapReportPage({
   sample,
+  serie,
   photos: photosRecebidas = [],
 }: {
   sample: AsfDapSample;
+  serie?: string | null;
   photos?: import("@/features/lab/types").Photo[];
 }) {
   const photos = fotosPublicadas(photosRecebidas);
@@ -165,7 +167,7 @@ function ASFDapReportPage({
   const anyNeedsFilme = results.some((r) => r.needsFilme);
   return (
     <ReportPage
-      sample={sample as unknown as ReportSample}
+      sample={{ ...sample, serie } as unknown as ReportSample}
       page={1}
       total={1}
       title="DENSIDADE RELATIVA APARENTE E MASSA ESPECÍFICA APARENTE"
@@ -728,7 +730,6 @@ export function ASFPage() {
 
   const handleSaveVersion = async (opts?: { skipVerification?: boolean }) => {
     const skipVerification = opts?.skipVerification === true;
-    setWfStatus(skipVerification ? "aguardando_aprovacao" : "aguardando_verificacao");
     setSaveBusy(true);
     const tid = toast.loading("Gerando e salvando versão PDF…");
     try {
@@ -771,7 +772,15 @@ export function ASFPage() {
         });
         if (resDrive?.folderUrl) setDriveFolderUrl(resDrive.folderUrl);
       } catch (err) {
-        console.warn("Drive sync standby:", err);
+        // Sem o PDF no Drive, a revisão não entra no fluxo: ninguém consegue
+        // conferir um laudo que não está lá (era o caso da Rev-00 "aguardando
+        // aprovação" sem PDF). Se só a planilha ou as fotos falharam, o PDF
+        // está no Drive e o envio segue.
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!(await pdfDaRevisaoEstaNoDrive(scopeId, saved.rev))) {
+          throw new Error(`o PDF da Rev-${String(saved.rev).padStart(2, "0")} não chegou ao Drive (${msg}). A revisão não foi enviada: tente de novo.`);
+        }
+        console.warn("Drive sync parcial:", msg);
       }
 
       await requestApproval({
@@ -868,7 +877,10 @@ export function ASFPage() {
           reemissao: true,
         });
       } catch (err) {
-        console.warn("Drive sync standby:", err);
+        // Antes, uma falha do Drive virava "PDF atualizado" na tela. Agora avisa:
+        // a cópia local foi trocada, mas a do Drive (a oficial) não.
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(`a cópia do Drive não foi atualizada (${msg}). Tente de novo.`);
       }
 
       const currentDraft = { sample: sampleAtualizado, photos: ctx?.photos || [] };
@@ -964,7 +976,7 @@ export function ASFPage() {
           <div className="flex-1 min-h-0 overflow-auto bg-[#525659] p-8 flex justify-center">
             <div className="flex flex-col items-center gap-8 shrink-0 pb-12">
               <div className="w-[210mm] h-[297mm] shadow-2xl bg-white shrink-0 overflow-hidden">
-                <ASFDapReportPage sample={sample} photos={ctx?.photos ?? []} />
+                <ASFDapReportPage sample={sample} serie={ctx?.ensaio?.serie} photos={ctx?.photos ?? []} />
               </div>
             </div>
           </div>
@@ -1062,7 +1074,7 @@ export function ASFPage() {
             )}
 
             <Button variant="outline" size="sm" onClick={handleGeneratePdf}>
-              <Download className="mr-1.5 h-4 w-4" /> Baixar PDF
+              <Download className="mr-1.5 h-4 w-4" /> Baixar prévia (sem revisão)
             </Button>
           </div>
         </div>
@@ -1083,6 +1095,8 @@ export function ASFPage() {
         {/* Identificação */}
         <div className="mt-3">
           <AmostraSummaryCard
+            codigo={ctx?.amostra?.code ?? undefined}
+            serie={ctx?.ensaio?.serie ?? undefined}
             reportNumber={sample.reportNumber}
             osNumero={sample.os}
             subtitle={`${sample.client || "—"} · ${sample.local || "—"} · Furo ${sample.borehole || "—"} · Prof. ${sample.depth || "—"}`}
@@ -1315,7 +1329,7 @@ export function ASFPage() {
           }}
           className="print-only-report mx-auto flex flex-col items-center gap-4"
         >
-          <ASFDapReportPage sample={sample} photos={ctx?.photos ?? []} />
+          <ASFDapReportPage sample={sample} serie={ctx?.ensaio?.serie} photos={ctx?.photos ?? []} />
         </div>
         <style>{`
           @media print {

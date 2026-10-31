@@ -736,7 +736,7 @@ export function CompressaoDiametralPage() {
           reemissao: true,
         });
       } catch (err) {
-        console.warn("Drive sync standby:", err);
+        throw new Error(`a cópia do Drive não foi atualizada (${err instanceof Error ? err.message : String(err)}). Tente de novo.`);
       }
 
       const currentDraft = { sample, photos: ctx?.photos || [] };

@@ -61,7 +61,7 @@ const MODELOS = [
     titulo: "Triaxial UU",
     descricao:
       "Modelo do relatório de compressão triaxial não consolidado não drenado. Mesmo editor do CID, com o seletor de tipo em UU.",
-    norma: "ASTM D2850 / NBR 12770",
+    norma: "ASTM D2850",
     icon: FlaskConical,
     tag: "TRI.UU",
   },

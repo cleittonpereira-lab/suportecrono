@@ -10,7 +10,7 @@ export const Route = createFileRoute("/_app/relatorio/triaxial-uu")({
       {
         name: "description",
         content:
-          "Fila de ensaios triaxiais UU (Não Consolidado Não Drenado, ASTM D2850 / NBR 12770): sem fases de saturação/adensamento, cisalhamento em tensões totais — envoltória, gráficos e cálculo próprios, diferentes do CID e do CIU.",
+          "Fila de ensaios triaxiais UU (Não Consolidado Não Drenado, ASTM D2850): sem fases de saturação/adensamento, cisalhamento em tensões totais — envoltória, gráficos e cálculo próprios, diferentes do CID e do CIU.",
       },
     ],
   }),

@@ -573,6 +573,14 @@ function FieldText({ label, value, onChange, onCommit }: { label: string; value:
     </div>
   );
 }
+/** Enter vai para o próximo campo numérico, e Shift+Enter para o anterior (como numa planilha). */
+function proximoCampoAoEnter(e: { key: string; shiftKey: boolean; currentTarget: HTMLInputElement; preventDefault(): void }) {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  const campos = Array.from(document.querySelectorAll<HTMLInputElement>("input[data-campo-numerico]:not(:disabled)"));
+  campos[campos.indexOf(e.currentTarget) + (e.shiftKey ? -1 : 1)]?.focus();
+}
+
 function FieldNum({
   label, value, onChange, onCommit, disabled,
 }: { label: string; value: number | null; onChange: (v: number | null) => void; onCommit?: () => void; disabled?: boolean }) {
@@ -584,8 +592,10 @@ function FieldNum({
         inputMode="decimal"
         value={value ?? ""}
         disabled={disabled}
+        data-campo-numerico
         onFocus={(e) => e.currentTarget.select()}
         onBlur={() => onCommit?.()}
+        onKeyDown={proximoCampoAoEnter}
         onChange={(e) => {
           const raw = e.target.value;
           onChange(raw === "" ? null : Number(raw.replace(",", ".")));

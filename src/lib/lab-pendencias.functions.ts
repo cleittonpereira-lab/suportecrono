@@ -357,6 +357,46 @@ export const criarRelatorioAvulso = createServerFn({ method: "POST" })
     return { ok: true, id: key, created: true };
   });
 
+const IguaisInput = z.object({
+  os: z.string().min(1),
+  tipo_ensaio: z.string().min(1),
+  amostra: z.string().nullable().optional(),
+  codigo: z.string().nullable().optional(),
+  furo: z.string().nullable().optional(),
+  prof: z.string().nullable().optional(),
+});
+
+/** Profundidade só pelos números: "0,00 a 0,11 m" e "0.00-0.11" dão a mesma chave. */
+function profundidadeNormalizada(v: string | null | undefined): string {
+  return (v ?? "").match(/\d+(?:[.,]\d+)?/g)?.map((n) => Number(n.replace(",", ".")).toFixed(2)).join("|") ?? "";
+}
+
+/**
+ * Pendências que já existem com o mesmo tipo, na mesma OS, com o mesmo furo (ou
+ * nome) e a mesma profundidade — mesmo que o código seja outro. O código fica de
+ * fora da comparação: na OS 17921 os duplicados se diferenciam só por ele
+ * (487+800: 13705-029 a -033). Aqui só se avisa; quem decide é a pessoa.
+ */
+export const buscarEnsaiosIguais = createServerFn({ method: "POST" })
+  .middleware([exigirLogin])
+  .validator((i: unknown) => IguaisInput.parse(i))
+  .handler(async ({ data }) => {
+    const { listarPendencias } = await import("./lab-pendencias-leitura.server");
+    const norm = (v: string | null | undefined) => (v ?? "").trim().toLowerCase().replace(/\s+/g, "");
+    const prof = profundidadeNormalizada(data.prof);
+    const nomes = [norm(data.furo), norm(data.amostra)].filter(Boolean);
+    if (!prof || nomes.length === 0) return { iguais: [] as { codigo: string | null; status: string }[] };
+    const iguais = (await listarPendencias())
+      .filter((p) => p.os === data.os.trim() && norm(p.tipo_ensaio) === norm(data.tipo_ensaio))
+      .filter((p) => {
+        const pl = (p.payload ?? {}) as Record<string, unknown>;
+        const nomesDele = [norm(String(pl.furo ?? "")), norm(String(pl.amostra_nome ?? ""))].filter(Boolean);
+        return profundidadeNormalizada(String(pl.prof ?? "")) === prof && nomesDele.some((n) => nomes.includes(n));
+      })
+      .map((p) => ({ codigo: p.amostra, status: p.status }));
+    return { iguais };
+  });
+
 const DeleteInput = z.object({ id: z.string().min(1) });
 
 export const removerPendenciaDigitacao = createServerFn({ method: "POST" })
