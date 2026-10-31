@@ -91,8 +91,8 @@ describe("exportXlsx — Triaxial UU", () => {
     const wb = await buildTriaxialUuXlsxWorkbook({ ...montaParametros(), semGraficos: true });
     const ws = wb.getWorksheet("Laudo Triaxial UU");
     expect(ws).toBeDefined();
-    // Uma faixa só, de 1084 px = 813 pt.
-    expect(quebrasDe(ws!)).toEqual([1084]);
+    // Uma faixa só: 271 linhas de 3 pt = 813 pt.
+    expect(quebrasDe(ws!)).toEqual([271]);
     const folhas = folhasNaGrade(ws!);
     const folha = (n: number) => folhas.find((f) => f.texto.endsWith(` ${n} / 9`))!;
     for (let n = 1; n <= 9; n++) {
@@ -113,7 +113,7 @@ describe("exportXlsx — Triaxial UU", () => {
     expect(xml.indexOf("<colBreaks")).toBeGreaterThan(xml.indexOf("</rowBreaks>"));
     const wbXml = await zip.file("xl/workbook.xml")!.async("string");
     // Até a coluna 556 = (9 − 1)·62 + 60 = "UJ".
-    expect(wbXml).toMatch(/_xlnm\.Print_Area[^>]*>[^<]*\$A\$?1:\$UJ\$?1084</);
+    expect(wbXml).toMatch(/_xlnm\.Print_Area[^>]*>[^<]*\$A\$?1:\$UJ\$?271</);
     // E o arquivo continua abrindo.
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(bytes as unknown as ArrayBuffer);

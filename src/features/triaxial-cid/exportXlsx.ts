@@ -75,10 +75,17 @@ const PAGE_PT = 813;
 /** Folhas lado a lado numa linha só (1 | 2 | 3 …), separadas por COL_GAP colunas vazias. */
 const COL_GAP = 2;
 const COLS_POR_FOLHA = COLS + COL_GAP;
-/** Grade física: 1 linha = 1 px (0,75 pt), assim cada altura em pt cai num número exato de pixels. */
-const PX_POR_PT = 4 / 3;
-const LINHA_PT = 0.75;
-const FOLHA_PX = Math.round(PAGE_PT * PX_POR_PT);
+/**
+ * Grade física: cada linha da planilha tem 3 pt. O Excel arredonda a altura da
+ * linha para pixels inteiros da TELA: com linhas de 0,75 pt (1 px a 100 %), num
+ * Windows em 125 % cada linha virava 0,6 pt e a folha imprimia com 650 pt em vez
+ * de 813 — sobrava 1/5 do A4 em branco. 3 pt é um número inteiro de pixels em
+ * 100 % (4), 125 % (5), 150 % (6), 175 % (7) e 200 % (8).
+ */
+const LINHA_PT = 3;
+/** Pixels (a 96 dpi) por linha da grade — é a medida usada para gráficos e fotos. */
+const PX_POR_LINHA = 4;
+const FOLHA_LINHAS = Math.round(PAGE_PT / LINHA_PT);
 /** Alturas do cabeçalho: faixa do título, 3 linhas de campos, descrição e granulometria. */
 const HEADER_ROWS = [56, 14, 14, 14, 16, 14];
 /** Alturas do rodapé: espaço, 4 linhas da assinatura, faixa preta e carimbo. */
@@ -281,13 +288,17 @@ function edge(
 
 /**
  * Cria uma linha lógica de altura `hPt` (pt). Ela ocupa as linhas físicas da grade
- * (1 px cada) da faixa da folha atual; `conta` diz se entra no miolo da página.
+ * (LINHA_PT cada) da faixa da folha atual; `conta` diz se entra no miolo da página.
  */
 function newRow(cx: Ctx, hPt: number, conta = true): number {
   const r = cx.row++;
-  const ini = cx.faixaTopo + Math.round(cx.posPt * PX_POR_PT);
+  const ini = cx.faixaTopo + Math.round(cx.posPt / LINHA_PT);
   cx.posPt += hPt;
-  const fim = Math.max(ini, cx.faixaTopo + Math.round(cx.posPt * PX_POR_PT) - 1);
+  const fimExato = cx.faixaTopo + Math.round(cx.posPt / LINHA_PT) - 1;
+  // Linha lógica menor que meia linha física some no arredondamento e divide a
+  // linha física com a seguinte — só pode ser espaçador, nunca texto.
+  if (fimExato < ini && hPt > 0.05) cx.warnings.push(`Folha ${cx.pageNo}: linha de ${hPt} pt menor que a grade (${LINHA_PT} pt)`);
+  const fim = Math.max(ini, fimExato);
   cx.linhas.set(r, [ini, fim]);
   if (conta) cx.used += hPt;
   return r;
@@ -304,7 +315,7 @@ function faixa(cx: Ctx, r1: number, r2: number): [number, number] {
 /** Tamanho em px da área de linhas r1..r2 e colunas c1..c2 (sem o deslocamento da folha). */
 function dimensoes(cx: Ctx, r1: number, c1: number, r2: number, c2: number): { wPx: number; hPx: number } {
   const [a, b] = faixa(cx, r1, r2);
-  return { wPx: (c2 - c1 + 1) * COL_PX, hPx: b - a + 1 };
+  return { wPx: (c2 - c1 + 1) * COL_PX, hPx: (b - a + 1) * PX_POR_LINHA };
 }
 
 const restante = (cx: Ctx) => CONTENT_PT - cx.used;
@@ -322,7 +333,7 @@ function cabecalho(cx: Ctx) {
     const h = 40;
     const [topo, base] = faixa(cx, rb, rb);
     cx.ws.addImage(cx.logoId, {
-      tl: { col: cx.colOff + (16 * COL_PX - w) / 2 / COL_PX, row: topo - 1 + (base - topo + 1 - h) / 2 },
+      tl: { col: cx.colOff + (16 * COL_PX - w) / 2 / COL_PX, row: topo - 1 + ((base - topo + 1) * PX_POR_LINHA - h) / 2 / PX_POR_LINHA },
       ext: { width: w, height: h },
       editAs: "oneCell",
     });
@@ -389,7 +400,7 @@ function rodape(cx: Ctx) {
     const h = 28;
     const w = Math.round((cx.sigPx.w / cx.sigPx.h) * h);
     cx.ws.addImage(cx.sigId, {
-      tl: { col: cx.colOff + 20 + (20 * COL_PX - w) / 2 / COL_PX, row: faixa(cx, f1, f1)[0] - 1 + 2 },
+      tl: { col: cx.colOff + 20 + (20 * COL_PX - w) / 2 / COL_PX, row: faixa(cx, f1, f1)[0] - 1 + 2 / PX_POR_LINHA },
       ext: { width: w, height: h },
       editAs: "oneCell",
     });
@@ -432,7 +443,7 @@ function fimPagina(cx: Ctx) {
   rodape(cx);
   if (Math.abs(cx.posPt - PAGE_PT) > 0.01) cx.warnings.push(`Folha ${cx.pageNo}: altura ${cx.posPt} pt em vez de ${PAGE_PT}`);
   // Quebra de linha no fim da faixa; as de coluna, entre as folhas, entram em `comQuebrasDeColuna`.
-  if (cx.pageNo === cx.total) cx.ws.getRow(cx.faixaTopo + FOLHA_PX - 1).addPageBreak();
+  if (cx.pageNo === cx.total) cx.ws.getRow(cx.faixaTopo + FOLHA_LINHAS - 1).addPageBreak();
 }
 
 /** Barra cinza de seção (SectionBar do PDF). */
@@ -1186,7 +1197,7 @@ export async function buildTriaxialUuXlsxWorkbook(p: ExportTriaxialUuParams): Pr
       margins: { left: 0.31, right: 0.15, top: 0.2, bottom: 0.2, header: 0, footer: 0 },
       scale: 100,
       pageOrder: "overThenDown",
-      printArea: `A1:${letraDaColuna(ultimaColuna)}${FOLHA_PX}`,
+      printArea: `A1:${letraDaColuna(ultimaColuna)}${FOLHA_LINHAS}`,
     },
   });
   for (let c = 1; c <= ultimaColuna; c++) ws.getColumn(c).width = COL_WIDTH;
@@ -1271,8 +1282,8 @@ export async function buildTriaxialUuXlsxWorkbook(p: ExportTriaxialUuParams): Pr
   paginaGlossario(cx, 2);
   fimPagina(cx);
 
-  // Uma faixa só, com todas as folhas; as linhas físicas têm 1 px cada (ver FOLHA_PX).
-  for (let r = 1; r <= FOLHA_PX; r++) ws.getRow(r).height = LINHA_PT;
+  // Uma faixa só, com todas as folhas; cada linha física tem 3 pt (ver LINHA_PT).
+  for (let r = 1; r <= FOLHA_LINHAS; r++) ws.getRow(r).height = LINHA_PT;
   abasDadosBrutos(wb, p);
 
   if (cx.warnings.length && typeof console !== "undefined") console.warn("[Excel UU]", cx.warnings.join(" | "));
