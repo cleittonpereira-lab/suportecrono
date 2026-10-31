@@ -27,7 +27,7 @@ import {
   type IdentidadeDoLaudo,
 } from "./pasta-amostra";
 import { registrarMudanca } from "./avisos-mudanca";
-import { podeRegravar, proximaRevisao, type LinhaDeRevisao } from "./revisoes-regra";
+import { pdfsMaisRecentesPorRevisao, podeRegravar, proximaRevisao, type LinhaDeRevisao } from "./revisoes-regra";
 
 const DRIVE_V3 = "https://www.googleapis.com/drive/v3";
 const DRIVE_UPLOAD = "https://www.googleapis.com/upload/drive/v3/files";
@@ -694,7 +694,7 @@ export const listDriveRevisions = createServerFn({ method: "GET" })
     // A pasta da amostra e a antiga (só o nome), só com os laudos desta amostra.
     const laudos = await laudosDoEnsaio(data.scopeId, "id,name,size,modifiedTime,createdTime");
     if (!laudos || laudos.pastas.length === 0) return { revisions: [], pastaExiste: false };
-    const revisions = laudos.arquivos
+    const revisions = pdfsMaisRecentesPorRevisao(laudos.arquivos)
       .map((f): RevisaoNoDrive | null => {
         const m = /Rev-?(\d+)\.pdf$/i.exec(f.name);
         if (!m) return null;
@@ -835,7 +835,7 @@ export const registerEnsaioDraft = createServerFn({ method: "POST" })
  */
 async function acharPdfDaRevisao(scopeId: string, rev?: number): Promise<{ id: string; name: string }> {
   if (!parseScope(scopeId)) throw new Error("scopeId inválido.");
-  const laudos = await laudosDoEnsaio(scopeId);
+  const laudos = await laudosDoEnsaio(scopeId, "id,name,modifiedTime");
   if (!laudos) throw new Error("Ensaio não encontrado.");
   const files = laudos.arquivos.filter((f) => f.name.toLowerCase().endsWith(".pdf"));
   if (files.length === 0) throw new Error("Nenhum PDF encontrado no Drive para este ensaio.");
@@ -843,7 +843,8 @@ async function acharPdfDaRevisao(scopeId: string, rev?: number): Promise<{ id: s
   // Pedida a revisão N, devolve a N ou falha. Antes caía em `files[0]` quando
   // não achava, e a tela de compressão simples gravava esse PDF no histórico
   // local COMO se fosse a revisão N.
-  const comRev = files.filter((f) => revDoArquivo(f.name) != null);
+  // Um PDF por revisão, o modificado por último (ver pdfsMaisRecentesPorRevisao).
+  const comRev = pdfsMaisRecentesPorRevisao(files);
   if (typeof rev === "number") {
     const alvo = comRev.find((f) => revDoArquivo(f.name) === rev);
     if (!alvo) throw new Error(`A revisão ${rev} não foi encontrada no Drive para este ensaio.`);

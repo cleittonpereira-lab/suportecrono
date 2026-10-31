@@ -40,3 +40,26 @@ export function proximaRevisao(linhas: readonly LinhaDeRevisao[], revsNoDrive: r
   const usadas = [...linhas.map((l) => l.rev), ...revsNoDrive];
   return usadas.length > 0 ? Math.max(...usadas) + 1 : 0;
 }
+
+/** Número da revisão pelo nome do PDF ("..._Rev-03.pdf"), ou null. */
+export function revDoNomeDoPdf(nome: string): number | null {
+  const m = /Rev-?(\d+)\.pdf$/i.exec(nome);
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * Um PDF por revisão: o modificado por último. A pasta nova e a antiga da
+ * amostra são lidas juntas, e uma revisão podia ter dois PDFs (envio repetido,
+ * nome antigo). Pegava-se o primeiro que a listagem trouxesse — o "Visualizar"
+ * abria uma versão desatualizada e a lista de versões trazia a mesma revisão duas vezes.
+ */
+export function pdfsMaisRecentesPorRevisao<T extends { name: string; modifiedTime?: string }>(arquivos: readonly T[]): T[] {
+  const porRev = new Map<number, T>();
+  for (const f of arquivos) {
+    const rev = revDoNomeDoPdf(f.name);
+    if (rev === null) continue;
+    const atual = porRev.get(rev);
+    if (!atual || Date.parse(f.modifiedTime ?? "") > Date.parse(atual.modifiedTime ?? "")) porRev.set(rev, f);
+  }
+  return [...porRev.values()];
+}

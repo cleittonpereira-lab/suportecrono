@@ -42,3 +42,16 @@ describe("o que pode ser regravado", () => {
     expect(podeRegravar(linhas, 2)).toBe(false);
   });
 });
+
+describe("pdfsMaisRecentesPorRevisao", () => {
+  it("duas cópias da mesma revisão (pasta nova e antiga): fica a modificada por último", async () => {
+    const { pdfsMaisRecentesPorRevisao } = await import("./revisoes-regra");
+    const r = pdfsMaisRecentesPorRevisao([
+      { id: "velho", name: "14198-02_TRI3.UU_Rev-00.pdf", modifiedTime: "2026-10-31T15:14:00Z" },
+      { id: "outro", name: "notas.txt", modifiedTime: "2026-10-31T16:00:00Z" },
+      { id: "novo", name: "18279-26_14198-02_TRI3.UU_Rev-00.pdf", modifiedTime: "2026-10-31T15:33:00Z" },
+      { id: "r1", name: "x_Rev-01.pdf", modifiedTime: "2026-10-31T15:40:00Z" },
+    ]);
+    expect(r.map((f) => f.id).sort()).toEqual(["novo", "r1"]);
+  });
+});

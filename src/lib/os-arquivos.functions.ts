@@ -179,7 +179,7 @@ export const uploadOsFile = createServerFn({ method: "POST" })
         if (folderId) {
           const boundary = `----lovable-${crypto.randomUUID()}`;
           const metadata = { name: data.name, mimeType: data.mimeType, parents: [folderId] };
-          const bin = Uint8Array.from(atob(data.base64), (c) => c.charCodeAt(0));
+          const bin = new Uint8Array(Buffer.from(data.base64, "base64"));
           const enc = new TextEncoder();
           const head = enc.encode(
             `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
@@ -266,16 +266,12 @@ export const fetchOsFileContent = createServerFn({ method: "GET" }).middleware([
         );
         if (res.ok) {
           const buf = new Uint8Array(await res.arrayBuffer());
-          let binary = "";
-          const chunk = 0x8000;
-          for (let i = 0; i < buf.length; i += chunk) {
-            binary += String.fromCharCode(...buf.subarray(i, i + chunk));
-          }
           return {
             id: meta.id as string,
             name: meta.name as string,
             mimeType: meta.mimeType as string,
-            base64: btoa(binary),
+            // Conversão nativa: o laço caractere a caractere estourava a CPU do Worker em arquivos grandes.
+            base64: Buffer.from(buf.buffer, buf.byteOffset, buf.byteLength).toString("base64"),
           };
         }
       } catch {
