@@ -62,6 +62,7 @@ import {
 import { CsCurveImportDialog } from "@/features/compressao-simples/components/CsCurveImportDialog";
 import { exportCompressaoSimplesXlsx } from "@/features/compressao-simples/exportXlsx";
 import { loadDraft, saveDraft, fetchRemoteDraft, flushDraft } from "@/features/compressao-simples/draftStore";
+import { escolherRascunhoInicial } from "@/lib/rascunho-inicial";
 import { listPendenciasDigitacao } from "@/lib/lab-pendencias.functions";
 import { findMatchingPendencia } from "@/lib/pendencia-match";
 import type { CsFieldPayload } from "@/features/compressao-simples/ui";
@@ -368,7 +369,7 @@ export function CompressaoSimplesPage() {
   if (draftRef.current === null) draftRef.current = loadDraft(scopeId);
 
   const payloadDraft = ctx?.ensaio?.payload as any;
-  const draft = payloadDraft ?? draftRef.current ?? undefined;
+  const draft = escolherRascunhoInicial(payloadDraft, draftRef.current);
 
   const initialSample: CompressaoSimplesSample = useMemo(() => {
     const base = seedCompressaoSimplesSample();
@@ -1139,24 +1140,26 @@ export function CompressaoSimplesPage() {
             reportNumber: sample.reportNumber, code: sample.code, borehole: sample.borehole, depth: sample.depth,
             sampleType: sample.sampleType, sampleState: sample.sampleState,
             description: sample.description, granulometricDescription: sample.granulometricDescription,
+            materialType: (sample as any).materialType,
             equipment: sample.equipment,
           }}
           onSave={(updated) => {
             setSample((prev) => ({
               ...prev,
-              client: updated.client || prev.client,
-              workNumber: updated.workNumber || prev.workNumber,
-              local: updated.local || prev.local,
-              technicalResp: updated.technicalResp || prev.technicalResp,
-              reportNumber: updated.reportNumber || prev.reportNumber,
-              code: updated.code || prev.code,
-              borehole: updated.borehole || prev.borehole,
-              depth: updated.depth || prev.depth,
-              description: updated.description || prev.description,
-              granulometricDescription: updated.granulometricDescription || prev.granulometricDescription,
-              sampleType: updated.sampleType || prev.sampleType,
-              sampleState: (updated.sampleState as CompressaoSimplesSample["sampleState"]) || prev.sampleState,
-              equipment: updated.equipment || prev.equipment,
+              ...updated,
+              client: updated.client ?? prev.client,
+              workNumber: updated.workNumber ?? prev.workNumber,
+              local: updated.local ?? prev.local,
+              technicalResp: updated.technicalResp ?? prev.technicalResp,
+              reportNumber: updated.reportNumber ?? prev.reportNumber,
+              code: updated.code ?? prev.code,
+              borehole: updated.borehole ?? prev.borehole,
+              depth: updated.depth ?? prev.depth,
+              description: updated.description ?? prev.description,
+              granulometricDescription: updated.granulometricDescription ?? prev.granulometricDescription,
+              sampleType: updated.sampleType ?? prev.sampleType,
+              sampleState: (updated.sampleState as CompressaoSimplesSample["sampleState"]) ?? prev.sampleState,
+              equipment: updated.equipment ?? prev.equipment,
             }));
           }}
         />

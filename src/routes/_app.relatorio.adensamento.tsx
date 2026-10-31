@@ -2879,22 +2879,23 @@ export function AdensamentoPage() {
           description: sample.description,
           granulometricDescription: sample.granulometricDescription,
           equipment: sample.equipment,
+          materialType: (sample as any).materialType,
         }}
         onSave={(updated) => {
           setSample((prev) => ({
             ...prev,
             ...updated,
-            client: updated.client || prev.client,
-            workNumber: updated.workNumber || prev.workNumber,
-            local: updated.local || prev.local,
-            technicalResp: updated.technicalResp || prev.technicalResp,
-            reportNumber: updated.reportNumber || prev.reportNumber,
-            code: updated.code || prev.code,
-            borehole: updated.borehole || prev.borehole,
-            depth: updated.depth || prev.depth,
-            description: updated.description || prev.description,
-            granulometricDescription: updated.granulometricDescription || prev.granulometricDescription,
-            equipment: updated.equipment || prev.equipment,
+            client: updated.client ?? prev.client,
+            workNumber: updated.workNumber ?? prev.workNumber,
+            local: updated.local ?? prev.local,
+            technicalResp: updated.technicalResp ?? prev.technicalResp,
+            reportNumber: updated.reportNumber ?? prev.reportNumber,
+            code: updated.code ?? prev.code,
+            borehole: updated.borehole ?? prev.borehole,
+            depth: updated.depth ?? prev.depth,
+            description: updated.description ?? prev.description,
+            granulometricDescription: updated.granulometricDescription ?? prev.granulometricDescription,
+            equipment: updated.equipment ?? prev.equipment,
           }));
         }}
       />

@@ -55,6 +55,7 @@ import { seedPLTSample, newPLTDeterminacao } from "@/features/load-test/types";
 import type { PLTFieldPayload } from "@/features/load-test/ui";
 import { calcularLinha, calcularMedias, TABELA_BIENIAWSKI_K } from "@/features/load-test/calc";
 import { loadDraft, saveDraft, fetchRemoteDraft, flushDraft } from "@/features/load-test/draftStore";
+import { escolherRascunhoInicial } from "@/lib/rascunho-inicial";
 import { listPendenciasDigitacao } from "@/lib/lab-pendencias.functions";
 import { findMatchingPendencia } from "@/lib/pendencia-match";
 
@@ -379,7 +380,7 @@ export function PLTPage() {
   if (draftRef.current === null) draftRef.current = loadDraft(scopeId);
 
   const payloadDraft = ctx?.ensaio?.payload as any;
-  const draft = payloadDraft ?? draftRef.current ?? undefined;
+  const draft = escolherRascunhoInicial(payloadDraft, draftRef.current);
 
   const initialSample: PLTSample = useMemo(() => {
     const base = seedPLTSample();

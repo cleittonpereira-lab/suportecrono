@@ -57,6 +57,7 @@ import {
   capsulaUmidadePct, teorUmidadeMedio, calcCorpoDeProva, mediaCps,
 } from "@/features/compressao-diametral/calc";
 import { loadDraft, saveDraft, fetchRemoteDraft, flushDraft } from "@/features/compressao-diametral/draftStore";
+import { escolherRascunhoInicial } from "@/lib/rascunho-inicial";
 import { listPendenciasDigitacao } from "@/lib/lab-pendencias.functions";
 import { findMatchingPendencia } from "@/lib/pendencia-match";
 import type { CdFieldPayload } from "@/features/compressao-diametral/ui";
@@ -324,7 +325,7 @@ export function CompressaoDiametralPage() {
   if (draftRef.current === null) draftRef.current = loadDraft(scopeId);
 
   const payloadDraft = ctx?.ensaio?.payload as any;
-  const draft = payloadDraft ?? draftRef.current ?? undefined;
+  const draft = escolherRascunhoInicial(payloadDraft, draftRef.current);
 
   const initialSample: CompressaoDiametralSample = useMemo(() => {
     const base = seedCompressaoDiametralSample();

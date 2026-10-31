@@ -71,6 +71,7 @@ import type { UmidadeNaturalSample, MoistureCapsule } from "@/features/umidade-n
 import { seedUmidadeNaturalSample } from "@/features/umidade-natural/types";
 import { capsuleMoisturePct, averageMoisturePct, moistureDeviations } from "@/features/umidade-natural/calc";
 import { loadDraft, saveDraft, fetchRemoteDraft, flushDraft } from "@/features/umidade-natural/draftStore";
+import { escolherRascunhoInicial } from "@/lib/rascunho-inicial";
 
 const fmt = (n: number | null | undefined, d = 2) =>
   n == null || !isFinite(n) ? "—" : n.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -177,7 +178,7 @@ export function UNPage() {
   if (draftRef.current === null) draftRef.current = loadDraft(scopeId);
 
   const payloadDraft = ctx?.ensaio?.payload as any;
-  const draft = payloadDraft ?? draftRef.current ?? undefined;
+  const draft = escolherRascunhoInicial(payloadDraft, draftRef.current);
 
   const initialSample: UmidadeNaturalSample = useMemo(() => {
     const base = seedUmidadeNaturalSample();

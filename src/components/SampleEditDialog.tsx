@@ -158,6 +158,8 @@ export function SampleEditDialog({
           depth: form.depth,
           description: form.description,
           granulometricDescription: form.granulometricDescription,
+          sampleType: form.sampleType,
+          materialType: form.materialType,
           coords: {
             N: Number(form.coordN) || 0,
             E: Number(form.coordE) || 0,

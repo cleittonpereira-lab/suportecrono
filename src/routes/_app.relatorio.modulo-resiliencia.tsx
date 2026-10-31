@@ -73,6 +73,7 @@ import type { ModuloResilienciaSample, StressState } from "@/features/modulo-res
 import { seedModuloResilienciaSample, seedStressStates } from "@/features/modulo-resiliencia/types";
 import { thetaOf, tauOctOf, mrOf, fitCompositeModel, predictMR } from "@/features/modulo-resiliencia/calc";
 import { loadDraft, saveDraft, fetchRemoteDraft, flushDraft } from "@/features/modulo-resiliencia/draftStore";
+import { escolherRascunhoInicial } from "@/lib/rascunho-inicial";
 
 const fmt = (n: number | null | undefined, d = 2) =>
   n == null || !isFinite(n) ? "—" : n.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -289,7 +290,7 @@ export function MRPage() {
   if (draftRef.current === null) draftRef.current = loadDraft(scopeId);
 
   const payloadDraft = ctx?.ensaio?.payload as any;
-  const draft = payloadDraft ?? draftRef.current ?? undefined;
+  const draft = escolherRascunhoInicial(payloadDraft, draftRef.current);
 
   const initialSample: ModuloResilienciaSample = useMemo(() => {
     const base = seedModuloResilienciaSample();

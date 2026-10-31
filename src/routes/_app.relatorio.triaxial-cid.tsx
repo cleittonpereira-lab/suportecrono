@@ -91,6 +91,7 @@ import type {
 } from "@/features/triaxial-cid/types";
 import { SEED_SAMPLE, EMPTY_SPECIMENS } from "@/features/triaxial-cid/seed";
 import { loadDraft, saveDraft, fetchRemoteTriaxialDraft, flushDraft } from "@/features/triaxial-cid/draftStore";
+import { escolherRascunhoInicial } from "@/lib/rascunho-inicial";
 import { SaveNowButton } from "@/components/report/SaveNowButton";
 import { useIsDirty, useIsSavingInFlight } from "@/lib/save-in-flight";
 import { beginSave, endSave } from "@/lib/save-in-flight";
@@ -271,13 +272,12 @@ export function TriaxialCidPage() {
   if (draftRef.current === null) {
     draftRef.current = loadDraft(scopeId);
   }
-  // Preferir payload salvo no Ensaio (sincronizado com Google Drive via labStore)
-  // sobre o rascunho local — assim, alterações feitas em um computador aparecem
-  // em outro. O localStorage fica como fallback offline.
+  // Payload salvo no Ensaio (via labStore) × rascunho local: vence o mais novo
+  // (ver escolherRascunhoInicial) — a cópia do labStore pode estar atrasada.
   const payloadDraft = (ctx?.ensaio?.payload ?? undefined) as
     | Partial<import("@/features/triaxial-cid/draftStore").TriaxialDraft>
     | undefined;
-  const draft = payloadDraft ?? draftRef.current ?? undefined;
+  const draft = escolherRascunhoInicial(payloadDraft, draftRef.current);
   const initialSample: TriaxialSample = ctx
     ? {
         client: ctx.os.client || cad?.tomador || "",
@@ -2691,25 +2691,26 @@ export function TriaxialCidPage() {
           sampleState: sample.sampleState,
           description: sample.description,
           granulometricDescription: sample.granulometricDescription,
+          materialType: (sample as any).materialType,
           equipment: sample.equipment,
         }}
         onSave={(updated) => {
           setSample((prev) => ({
             ...prev,
             ...updated,
-            client: updated.client || prev.client,
-            workNumber: updated.workNumber || prev.workNumber,
-            local: updated.local || prev.local,
-            technicalResp: updated.technicalResp || prev.technicalResp,
-            reportNumber: updated.reportNumber || prev.reportNumber,
-            code: updated.code || prev.code,
-            borehole: updated.borehole || prev.borehole,
-            depth: updated.depth || prev.depth,
-            description: updated.description || prev.description,
-            granulometricDescription: updated.granulometricDescription || prev.granulometricDescription,
-            sampleType: updated.sampleType || prev.sampleType,
-            sampleState: (updated.sampleState as any) || prev.sampleState,
-            equipment: updated.equipment || prev.equipment,
+            client: updated.client ?? prev.client,
+            workNumber: updated.workNumber ?? prev.workNumber,
+            local: updated.local ?? prev.local,
+            technicalResp: updated.technicalResp ?? prev.technicalResp,
+            reportNumber: updated.reportNumber ?? prev.reportNumber,
+            code: updated.code ?? prev.code,
+            borehole: updated.borehole ?? prev.borehole,
+            depth: updated.depth ?? prev.depth,
+            description: updated.description ?? prev.description,
+            granulometricDescription: updated.granulometricDescription ?? prev.granulometricDescription,
+            sampleType: updated.sampleType ?? prev.sampleType,
+            sampleState: (updated.sampleState as any) ?? prev.sampleState,
+            equipment: updated.equipment ?? prev.equipment,
           }));
         }}
       />

@@ -97,6 +97,7 @@ import type {
 } from "@/features/cisalhamento-direto/types";
 import { SEED_CD_SAMPLE, makeEmptyCDSpecimen } from "@/features/cisalhamento-direto/seed";
 import { loadDraft, saveDraft, fetchRemoteDraft, flushDraft } from "@/features/cisalhamento-direto/draftStore";
+import { escolherRascunhoInicial } from "@/lib/rascunho-inicial";
 import { SaveNowButton } from "@/components/report/SaveNowButton";
 import { useIsDirty, useIsSavingInFlight } from "@/lib/save-in-flight";
 import { processSpecimen, fitEnvelope } from "@/features/cisalhamento-direto/domain/calc";
@@ -222,7 +223,7 @@ export function CDPage() {
   if (draftRef.current === null) draftRef.current = loadDraft(scopeId);
 
   const payloadDraft = (ctx?.ensaio?.payload as any);
-  const draft = payloadDraft ?? draftRef.current ?? undefined;
+  const draft = escolherRascunhoInicial(payloadDraft, draftRef.current);
 
   const initialSample: CDSample = ctx
     ? {
@@ -2453,25 +2454,26 @@ export function CDPage() {
             sampleState: sample.sampleState,
             description: sample.description,
             granulometricDescription: sample.granulometricDescription,
+            materialType: (sample as any).materialType,
             equipment: sample.equipment,
           }}
           onSave={(updated) => {
             setSample((prev) => ({
               ...prev,
               ...updated,
-              client: updated.client || prev.client,
-              workNumber: updated.workNumber || prev.workNumber,
-              local: updated.local || prev.local,
-              technicalResp: updated.technicalResp || prev.technicalResp,
-              reportNumber: updated.reportNumber || prev.reportNumber,
-              code: updated.code || prev.code,
-              borehole: updated.borehole || prev.borehole,
-              depth: updated.depth || prev.depth,
-              description: updated.description || prev.description,
-              granulometricDescription: updated.granulometricDescription || prev.granulometricDescription,
-              sampleType: updated.sampleType || prev.sampleType,
-              sampleState: (updated.sampleState as any) || prev.sampleState,
-              equipment: updated.equipment || prev.equipment,
+              client: updated.client ?? prev.client,
+              workNumber: updated.workNumber ?? prev.workNumber,
+              local: updated.local ?? prev.local,
+              technicalResp: updated.technicalResp ?? prev.technicalResp,
+              reportNumber: updated.reportNumber ?? prev.reportNumber,
+              code: updated.code ?? prev.code,
+              borehole: updated.borehole ?? prev.borehole,
+              depth: updated.depth ?? prev.depth,
+              description: updated.description ?? prev.description,
+              granulometricDescription: updated.granulometricDescription ?? prev.granulometricDescription,
+              sampleType: updated.sampleType ?? prev.sampleType,
+              sampleState: (updated.sampleState as any) ?? prev.sampleState,
+              equipment: updated.equipment ?? prev.equipment,
             }));
           }}
         />

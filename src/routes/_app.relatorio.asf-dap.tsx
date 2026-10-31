@@ -66,6 +66,7 @@ import {
   volumeCaliper, meaAberta, gmbFromMea, vvPct,
 } from "@/features/asf-dap/calc";
 import { loadDraft, saveDraft, fetchRemoteDraft, flushDraft } from "@/features/asf-dap/draftStore";
+import { escolherRascunhoInicial } from "@/lib/rascunho-inicial";
 import { listPendenciasDigitacao } from "@/lib/lab-pendencias.functions";
 import { findMatchingPendencia } from "@/lib/pendencia-match";
 
@@ -408,7 +409,7 @@ export function ASFPage() {
   if (draftRef.current === null) draftRef.current = loadDraft(scopeId);
 
   const payloadDraft = ctx?.ensaio?.payload as any;
-  const draft = payloadDraft ?? draftRef.current ?? undefined;
+  const draft = escolherRascunhoInicial(payloadDraft, draftRef.current);
 
   const initialSample: AsfDapSample = useMemo(() => {
     const base = seedAsfDapSample();
