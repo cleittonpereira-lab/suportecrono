@@ -87,25 +87,33 @@ const cssColor = (c: string) => (/^[0-9a-fA-F]{8}$/.test(c) ? `#${c.slice(2)}` :
 
 /**
  * Foto do registro fotográfico: imagem ajustada à área (contain) e centralizada
- * sobre fundo branco, com a mesma margem interna da caixa do PDF (4 px).
+ * sobre fundo branco, com a mesma margem interna da caixa do PDF (4 px). Sai na
+ * resolução da própria foto — até 4× a caixa — e em JPEG: com 2× em PNG ela
+ * ficava borrada e pesada.
  */
-export function renderFotoPng(img: HTMLImageElement, wPx: number, hPx: number): string | null {
+export function renderFotoJpeg(img: HTMLImageElement, wPx: number, hPx: number): string | null {
+  const escala = Math.min(4, Math.max(SCALE, img.naturalWidth / wPx, img.naturalHeight / hPx));
+  const canvas = desenhaFoto(img, wPx, hPx, escala);
+  return canvas ? canvas.toDataURL("image/jpeg", 0.92).split(",")[1] ?? null : null;
+}
+
+function desenhaFoto(img: HTMLImageElement, wPx: number, hPx: number, escala: number): HTMLCanvasElement | null {
   if (typeof document === "undefined") return null;
   const canvas = document.createElement("canvas");
-  canvas.width = Math.round(wPx * SCALE);
-  canvas.height = Math.round(hPx * SCALE);
+  canvas.width = Math.round(wPx * escala);
+  canvas.height = Math.round(hPx * escala);
   const ctx = canvas.getContext("2d");
   if (!ctx || !img.naturalWidth || !img.naturalHeight) return null;
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  const pad = 4 * SCALE;
+  const pad = 4 * escala;
   const boxW = canvas.width - pad * 2;
   const boxH = canvas.height - pad * 2;
   const k = Math.min(boxW / img.naturalWidth, boxH / img.naturalHeight);
   const dw = img.naturalWidth * k;
   const dh = img.naturalHeight * k;
   ctx.drawImage(img, (canvas.width - dw) / 2, (canvas.height - dh) / 2, dw, dh);
-  return canvas.toDataURL("image/png").split(",")[1] ?? null;
+  return canvas;
 }
 
 /**

@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import ExcelJS from "exceljs";
 import { buildSampleTriE005_382 } from "./samples/tri-e-005-382";
 import { fitEnvelope, processSpecimen } from "./domain/calc";
-import { buildTriaxialUuXlsxWorkbook, nomeDaAba, type ExportSample } from "./exportXlsx";
+import JSZip from "jszip";
+import { buildTriaxialUuXlsxWorkbook, gerarTriaxialUuXlsx, nomeDaAba, nomeDaAbaDoCp, type ExportSample } from "./exportXlsx";
 import type { TriaxialSample, TriaxialSpecimen } from "./types";
 
 /** Ensaio UU de exemplo: 2 CPs do sample real do OWNTEC, sem fases de adensamento controladas. */
@@ -86,20 +87,44 @@ function folhasNaGrade(ws: ExcelJS.Worksheet) {
 }
 
 describe("exportXlsx — Triaxial UU", () => {
-  it("organiza as nove folhas em cinco faixas, a folha da esquerda ao lado da da direita", async () => {
+  it("põe as nove folhas numa linha só, uma ao lado da outra (1 | 2 | 3 … | 9)", async () => {
     const wb = await buildTriaxialUuXlsxWorkbook({ ...montaParametros(), semGraficos: true });
     const ws = wb.getWorksheet("Laudo Triaxial UU");
     expect(ws).toBeDefined();
-    // 9 folhas em pares (1|2, 3|4, 5|6, 7|8, 9): uma quebra por faixa, 1084 px = 813 pt cada.
-    expect(quebrasDe(ws!)).toEqual([1084, 2168, 3252, 4336, 5420]);
+    // Uma faixa só, de 1084 px = 813 pt.
+    expect(quebrasDe(ws!)).toEqual([1084]);
     const folhas = folhasNaGrade(ws!);
     const folha = (n: number) => folhas.find((f) => f.texto.endsWith(` ${n} / 9`))!;
-    expect(folha(1).coluna).toBeLessThanOrEqual(60);
-    expect(folha(2).coluna).toBeGreaterThan(60);
-    expect(folha(2).linha).toBe(folha(1).linha);
-    expect(folha(3).linha).toBeGreaterThan(1084);
-    expect(folha(4).linha).toBe(folha(3).linha);
-    expect(folha(4).coluna).toBeGreaterThan(60);
+    for (let n = 1; n <= 9; n++) {
+      expect(folha(n).linha).toBe(folha(1).linha);
+      // Folha n ocupa as colunas (n−1)·62+1 … (n−1)·62+60.
+      expect(folha(n).coluna).toBeGreaterThan((n - 1) * 62);
+      expect(folha(n).coluna).toBeLessThanOrEqual((n - 1) * 62 + 60);
+    }
+  });
+
+  it("grava uma quebra de página entre cada folha e a área de impressão de todas", async () => {
+    const bytes = await gerarTriaxialUuXlsx({ ...montaParametros(), semGraficos: true });
+    const zip = await JSZip.loadAsync(bytes);
+    const xml = (await zip.file("xl/worksheets/sheet1.xml")!.async("string"))!;
+    const ids = [...xml.matchAll(/<colBreaks[^>]*>(.*?)<\/colBreaks>/g)][0][1].match(/id="(\d+)"/g)!.map((m) => Number(m.slice(4, -1)));
+    expect(ids).toEqual([62, 124, 186, 248, 310, 372, 434, 496]);
+    // O esquema do Excel exige <colBreaks> logo depois de <rowBreaks>.
+    expect(xml.indexOf("<colBreaks")).toBeGreaterThan(xml.indexOf("</rowBreaks>"));
+    const wbXml = await zip.file("xl/workbook.xml")!.async("string");
+    // Até a coluna 556 = (9 − 1)·62 + 60 = "UJ".
+    expect(wbXml).toMatch(/_xlnm\.Print_Area[^>]*>[^<]*\$A\$?1:\$UJ\$?1084</);
+    // E o arquivo continua abrindo.
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(bytes as unknown as ArrayBuffer);
+    expect(wb.worksheets.length).toBe(3);
+  });
+
+  it("nomeia as abas de dados brutos por CP e não repete nome", () => {
+    const usados = new Set<string>();
+    expect(nomeDaAbaDoCp({ id: "x", displayId: "CP01", sigma3Target: 50 }, usados)).toBe("Dados Brutos - CP01-50kPa");
+    expect(nomeDaAbaDoCp({ id: "x", displayId: "CP01", sigma3Target: 50 }, usados)).toBe("Dados Brutos - CP01-50kPa (2)");
+    expect(nomeDaAbaDoCp({ id: "x", displayId: "CP/03", sigma3Target: 12.5 }, usados)).toBe("Dados Brutos - CP-03-12.5kPa");
   });
 
   it("nomeia a aba do laudo como REL-(nome do arquivo), com no máximo 31 caracteres", () => {
@@ -108,15 +133,21 @@ describe("exportXlsx — Triaxial UU", () => {
     expect(nomeDaAba()).toBe("Laudo Triaxial UU");
   });
 
-  it("traz a aba Dados Brutos com as massas, as leituras e a altura de cada CP", async () => {
+  it("traz uma aba de dados brutos por CP, com as massas, as leituras e a altura", async () => {
     const wb = await buildTriaxialUuXlsxWorkbook({ ...montaParametros(), semGraficos: true });
-    const ws = wb.getWorksheet("Dados Brutos");
-    expect(ws).toBeDefined();
-    const todo = textosDaFolha(ws!).join("\n");
-    expect(todo).toContain("CP1 · σ₃ = 200 kPa");
-    expect(todo).toContain("Altura média inicial, H0");
-    expect(todo).toContain("Massa úmida do CP");
-    expect(todo).toContain("Δh (mm)");
+    expect(wb.worksheets.map((w) => w.name)).toEqual([
+      "Laudo Triaxial UU",
+      "Dados Brutos - CP1-200kPa",
+      "Dados Brutos - CP2-400kPa",
+    ]);
+    const cp1 = textosDaFolha(wb.getWorksheet("Dados Brutos - CP1-200kPa")!).join("\n");
+    expect(cp1).toContain("CP1 · σ₃ = 200 kPa");
+    expect(cp1).not.toContain("CP2 · σ₃");
+    expect(cp1).toContain("Cliente Teste");
+    expect(cp1).toContain("Altura média inicial, H0");
+    expect(cp1).toContain("Massa úmida do CP");
+    expect(cp1).toContain("Velocidade de deformação");
+    expect(cp1).toContain("Δh (mm)");
   });
 
   it("cada folha soma exatamente 813 pt de linhas (uma folha A4 do PDF)", async () => {

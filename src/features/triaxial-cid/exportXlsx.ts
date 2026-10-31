@@ -13,7 +13,7 @@ import type ExcelJS from "exceljs";
 import type { EnvelopeResult, SpecimenResults, TriaxialSample, TriaxialSpecimen } from "./types";
 import { mohrCirclePoints } from "./domain/calc";
 import { ACCENT, BRAND } from "./constants";
-import { axisDomainAndTicks, equalTicks, renderChartPng, renderFotoPng, type ChartSeries, type ChartSpec } from "./chartCanvas";
+import { axisDomainAndTicks, equalTicks, renderChartPng, renderFotoJpeg, type ChartSeries, type ChartSpec } from "./chartCanvas";
 import { fotosPublicadas } from "@/features/lab/photos";
 import type { Photo } from "@/features/lab/types";
 import { formatSignerName } from "@/lib/assinaturas-pdf";
@@ -72,7 +72,7 @@ const PX_TO_PT = 0.75;
 
 /** 297 mm − 2 × 5 mm de margem vertical do PDF, em pt. */
 const PAGE_PT = 813;
-/** Duas folhas lado a lado: a da direita começa depois de COL_GAP colunas vazias. */
+/** Folhas lado a lado numa linha só (1 | 2 | 3 …), separadas por COL_GAP colunas vazias. */
 const COL_GAP = 2;
 const COLS_POR_FOLHA = COLS + COL_GAP;
 /** Grade física: 1 linha = 1 px (0,75 pt), assim cada altura em pt cai num número exato de pixels. */
@@ -219,7 +219,7 @@ interface Ctx {
   /** Fotos já carregadas, pela URL usada no registro (ver `caixaFoto`). */
   fotos: Map<string, HTMLImageElement>;
   warnings: string[];
-  /** Deslocamento de colunas da folha atual: 0 (esquerda) ou COLS_POR_FOLHA (direita). */
+  /** Deslocamento de colunas da folha atual: (folha − 1) × COLS_POR_FOLHA. */
   colOff: number;
   /** Primeira linha física da faixa da folha atual (1-based). */
   faixaTopo: number;
@@ -419,10 +419,9 @@ function inicioPagina(cx: Ctx, pageNo: number) {
   cx.pageNo = pageNo;
   cx.used = 0;
   cx.posPt = 0;
-  // Folhas 1 e 2 dividem a primeira faixa, 3 e 4 a segunda, e assim por diante.
-  const indice = pageNo - 1;
-  cx.faixaTopo = Math.floor(indice / 2) * FOLHA_PX + 1;
-  cx.colOff = indice % 2 === 1 ? COLS_POR_FOLHA : 0;
+  // Todas as folhas na mesma faixa de linhas, uma ao lado da outra.
+  cx.faixaTopo = 1;
+  cx.colOff = (pageNo - 1) * COLS_POR_FOLHA;
   cabecalho(cx);
 }
 
@@ -432,8 +431,8 @@ function fimPagina(cx: Ctx) {
   if (sobra > 0.05) newRow(cx, sobra);
   rodape(cx);
   if (Math.abs(cx.posPt - PAGE_PT) > 0.01) cx.warnings.push(`Folha ${cx.pageNo}: altura ${cx.posPt} pt em vez de ${PAGE_PT}`);
-  // A quebra de página fica no fim da faixa, depois da folha da direita (ou da última folha).
-  if (cx.colOff !== 0 || cx.pageNo === cx.total) cx.ws.getRow(cx.faixaTopo + FOLHA_PX - 1).addPageBreak();
+  // Quebra de linha no fim da faixa; as de coluna, entre as folhas, entram em `comQuebrasDeColuna`.
+  if (cx.pageNo === cx.total) cx.ws.getRow(cx.faixaTopo + FOLHA_PX - 1).addPageBreak();
 }
 
 /** Barra cinza de seção (SectionBar do PDF). */
@@ -453,9 +452,9 @@ const ancora = (col: number, row: number) =>
  * Imagem PNG presa às duas pontas da área (linhas r1..r2, colunas c1..c2): ela estica
  * com as células, então nunca passa do quadro, mesmo se a largura da coluna mudar.
  */
-function imagem(cx: Ctx, base64: string, c1: number, c2: number, r1: number, r2: number) {
+function imagem(cx: Ctx, base64: string, c1: number, c2: number, r1: number, r2: number, extension: "png" | "jpeg" = "png") {
   const [a, b] = faixa(cx, r1, r2);
-  const id = cx.wb.addImage({ base64, extension: "png" });
+  const id = cx.wb.addImage({ base64, extension });
   cx.ws.addImage(id, {
     tl: ancora(c1 - 1 + cx.colOff, a - 1),
     br: ancora(c2 + cx.colOff, b),
@@ -857,9 +856,9 @@ function caixaFoto(
   const src = foto ? foto.url || foto.dataUrl : undefined;
   const img = src ? cx.fotos.get(src) : undefined;
   const { wPx, hPx } = dimensoes(cx, areaRow, c1, areaRow, c2);
-  const b64 = img && !cx.semGraficos ? renderFotoPng(img, wPx, hPx) : null;
+  const b64 = img && !cx.semGraficos ? renderFotoJpeg(img, wPx, hPx) : null;
   if (b64) {
-    imagem(cx, b64, c1, c2, areaRow, areaRow);
+    imagem(cx, b64, c1, c2, areaRow, areaRow, "jpeg");
   } else {
     put(cx, areaRow, c1, areaRow, c2, "Sem registro", { size: 6, color: MUTED, align: "center" });
   }
@@ -1057,11 +1056,30 @@ const umidadeDaCapsula = (c: { tara: number; wet: number; dry: number }) =>
   c.dry - c.tara > 0 ? numero(((c.wet - c.dry) / (c.dry - c.tara)) * 100, 2) : null;
 
 /**
- * Aba "Dados Brutos": os valores digitados no ensaio (massas, cápsulas, leituras de
- * cisalhamento), sem os gráficos, para processar fora do laudo.
+ * Nome da aba de dados brutos de um CP: "Dados Brutos - CP01-50kPa". Mesmas regras
+ * do Excel que `nomeDaAba` (31 caracteres, sem : \ / ? * [ ]); repetido ganha " (2)".
  */
-function abaDadosBrutos(wb: ExcelJS.Workbook, p: ExportTriaxialUuParams) {
-  const ws = wb.addWorksheet("Dados Brutos", { views: [{ showGridLines: false }] });
+export function nomeDaAbaDoCp(cp: Pick<TriaxialSpecimen, "id" | "displayId" | "sigma3Target">, usados: Set<string>): string {
+  const sigma = Number.isFinite(cp.sigma3Target) ? `-${Number(cp.sigma3Target.toFixed(1))}kPa` : "";
+  const base = `Dados Brutos - ${cp.displayId ?? cp.id}${sigma}`.replace(/[\\/?*[\]:]/g, "-").slice(0, 31);
+  let nome = base;
+  for (let n = 2; usados.has(nome.toLowerCase()); n++) nome = `${base.slice(0, 31 - ` (${n})`.length)} (${n})`;
+  usados.add(nome.toLowerCase());
+  return nome;
+}
+
+/**
+ * Uma aba de dados brutos por CP ("Dados Brutos - CP01-50kPa"): os valores
+ * digitados (massas, cápsulas, leituras de cisalhamento), sem os gráficos, para
+ * processar fora do laudo. Cada aba repete a identificação da amostra.
+ */
+function abasDadosBrutos(wb: ExcelJS.Workbook, p: ExportTriaxialUuParams) {
+  const usados = new Set(wb.worksheets.map((w) => w.name.toLowerCase()));
+  p.specimens.forEach((cp, i) => abaDadosBrutosDoCp(wb, p, i, nomeDaAbaDoCp(cp, usados)));
+}
+
+function abaDadosBrutosDoCp(wb: ExcelJS.Workbook, p: ExportTriaxialUuParams, i: number, nomeAba: string) {
+  const ws = wb.addWorksheet(nomeAba, { views: [{ showGridLines: false }] });
   ws.columns = Array.from({ length: COLUNAS_BRUTAS }, (_, i) => ({ width: i === 0 ? 36 : 16 }));
   let r = 0;
   const escreve = (
@@ -1100,8 +1118,10 @@ function abaDadosBrutos(wb: ExcelJS.Workbook, p: ExportTriaxialUuParams) {
   par("Espessura da membrana, tm", s.membraneT, "mm");
   escreve([]);
 
-  p.specimens.forEach((cp, i) => {
+  const cp = p.specimens[i];
+  {
     escreve([`${cp.displayId ?? cp.id} · σ₃ = ${cp.sigma3Target} kPa`], { negrito: true, fundo: SECTION_BG, mesclar: true });
+    par("Velocidade de deformação", numero(cp.strainRate), "mm/min");
     par("Diâmetro médio inicial, D0", numero(cp.D0), "mm");
     par("Diâmetro — medições individuais", (cp.D0measurements ?? []).join(" / "), "mm");
     par("Altura média inicial, H0", numero(cp.H0), "mm");
@@ -1141,8 +1161,7 @@ function abaDadosBrutos(wb: ExcelJS.Workbook, p: ExportTriaxialUuParams) {
         curva.length === cp.shear.length ? numero(curva[k].sigmaD, 2) : null,
       ]),
     );
-    escreve([]);
-  });
+  }
 }
 
 /** Monta a planilha inteira (todas as folhas do PDF, na ordem do relatório). */
@@ -1154,16 +1173,23 @@ export async function buildTriaxialUuXlsxWorkbook(p: ExportTriaxialUuParams): Pr
   wb.created = new Date();
   wb.modified = new Date();
 
+  // 5 folhas fixas (capa, resumo, σd×εa, Mohr + caminho de tensões, módulo) + CPs + 2 do glossário.
+  const total = totalDeFolhas(p);
+  const ultimaColuna = (total - 1) * COLS_POR_FOLHA + COLS;
   const ws = wb.addWorksheet(nomeDaAba(p.nomeArquivo), {
     views: [{ showGridLines: false }],
     pageSetup: {
       paperSize: 9,
       orientation: "portrait",
-      margins: { left: 0.31, right: 0.31, top: 0.2, bottom: 0.2, header: 0, footer: 0 },
+      // Margem direita menor: cada página impressa leva a folha (60 colunas) e as
+      // 2 colunas vazias que a separam da próxima — 558 pt cabem nos 595 do A4.
+      margins: { left: 0.31, right: 0.15, top: 0.2, bottom: 0.2, header: 0, footer: 0 },
       scale: 100,
+      pageOrder: "overThenDown",
+      printArea: `A1:${letraDaColuna(ultimaColuna)}${FOLHA_PX}`,
     },
   });
-  for (let c = 1; c <= COLS_POR_FOLHA + COLS; c++) ws.getColumn(c).width = COL_WIDTH;
+  for (let c = 1; c <= ultimaColuna; c++) ws.getColumn(c).width = COL_WIDTH;
 
   const semGraficos = p.semGraficos === true;
   let logoId: number | null = null;
@@ -1203,8 +1229,6 @@ export async function buildTriaxialUuXlsxWorkbook(p: ExportTriaxialUuParams): Pr
   }
 
   const d = derivar(p);
-  // 5 folhas fixas (capa, resumo, σd×εa, Mohr + caminho de tensões, módulo) + CPs + 2 do glossário.
-  const total = 5 + p.specimens.length + 2;
   const cx: Ctx = {
     wb, ws, row: 1, used: 0, pageNo: 0, total,
     sample: p.sample, semGraficos,
@@ -1247,19 +1271,57 @@ export async function buildTriaxialUuXlsxWorkbook(p: ExportTriaxialUuParams): Pr
   paginaGlossario(cx, 2);
   fimPagina(cx);
 
-  // Cada faixa tem duas folhas lado a lado; as linhas físicas têm 1 px cada (ver FOLHA_PX).
-  for (let r = 1; r <= Math.ceil(total / 2) * FOLHA_PX; r++) ws.getRow(r).height = LINHA_PT;
-  abaDadosBrutos(wb, p);
+  // Uma faixa só, com todas as folhas; as linhas físicas têm 1 px cada (ver FOLHA_PX).
+  for (let r = 1; r <= FOLHA_PX; r++) ws.getRow(r).height = LINHA_PT;
+  abasDadosBrutos(wb, p);
 
   if (cx.warnings.length && typeof console !== "undefined") console.warn("[Excel UU]", cx.warnings.join(" | "));
   return wb;
 }
 
+/** Folhas do laudo: 5 fixas (capa, resumo, σd×εa, Mohr + caminho de tensões, módulo) + CPs + 2 do glossário. */
+export const totalDeFolhas = (p: Pick<ExportTriaxialUuParams, "specimens">) => 5 + p.specimens.length + 2;
+
+/** Letra da coluna (1 → A, 27 → AA). */
+function letraDaColuna(n: number): string {
+  let s = "";
+  for (let x = n; x > 0; x = Math.floor((x - 1) / 26)) s = String.fromCharCode(65 + ((x - 1) % 26)) + s;
+  return s;
+}
+
+/**
+ * Quebras de página entre as folhas (uma depois de cada bloco de COLS_POR_FOLHA
+ * colunas), para a impressão sair 1 folha do PDF por página A4. O exceljs só grava
+ * quebras de linha, então o `<colBreaks>` entra direto no XML da aba do laudo
+ * (a primeira), na posição que o esquema do Excel pede: logo depois de `<rowBreaks>`.
+ */
+export async function comQuebrasDeColuna(xlsx: ArrayBuffer | Uint8Array, total: number): Promise<Uint8Array> {
+  const JSZip = (await import("jszip")).default;
+  const zip = await JSZip.loadAsync(xlsx);
+  const caminho = "xl/worksheets/sheet1.xml";
+  const xml = await zip.file(caminho)?.async("string");
+  if (!xml || total < 2) return new Uint8Array(xlsx);
+  const ids = Array.from({ length: total - 1 }, (_, i) => (i + 1) * COLS_POR_FOLHA);
+  const quebras =
+    `<colBreaks count="${ids.length}" manualBreakCount="${ids.length}">` +
+    ids.map((id) => `<brk id="${id}" max="1048575" man="1"/>`).join("") +
+    `</colBreaks>`;
+  const novo = xml.includes("</rowBreaks>")
+    ? xml.replace("</rowBreaks>", `</rowBreaks>${quebras}`)
+    : xml.replace(/<(drawing|legacyDrawing|tableParts|extLst)\b/, (m) => `${quebras}${m}`);
+  zip.file(caminho, novo);
+  return zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+}
+
+/** Bytes do .xlsx final (laudo + dados brutos), já com as quebras entre as folhas. */
+export async function gerarTriaxialUuXlsx(p: ExportTriaxialUuParams): Promise<Uint8Array> {
+  const wb = await buildTriaxialUuXlsxWorkbook(p);
+  return comQuebrasDeColuna(await wb.xlsx.writeBuffer(), totalDeFolhas(p));
+}
+
 /** Gera o .xlsx e devolve o nome e o conteúdo em base64 (para o Drive). */
 export async function getTriaxialUuXlsxBase64(p: ExportTriaxialUuParams, filename: string): Promise<{ filename: string; base64: string }> {
-  const wb = await buildTriaxialUuXlsxWorkbook({ ...p, nomeArquivo: p.nomeArquivo ?? filename });
-  const buffer = await wb.xlsx.writeBuffer();
-  const bytes = new Uint8Array(buffer);
+  const bytes = await gerarTriaxialUuXlsx({ ...p, nomeArquivo: p.nomeArquivo ?? filename });
   let bin = "";
   for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]);
   return { filename, base64: btoa(bin) };
@@ -1267,9 +1329,8 @@ export async function getTriaxialUuXlsxBase64(p: ExportTriaxialUuParams, filenam
 
 /** Gera o .xlsx e baixa no navegador. */
 export async function exportTriaxialUuXlsx(p: ExportTriaxialUuParams, filename: string) {
-  const wb = await buildTriaxialUuXlsxWorkbook({ ...p, nomeArquivo: p.nomeArquivo ?? filename });
-  const buffer = await wb.xlsx.writeBuffer();
-  const blob = new Blob([buffer], {
+  const bytes = await gerarTriaxialUuXlsx({ ...p, nomeArquivo: p.nomeArquivo ?? filename });
+  const blob = new Blob([bytes as BlobPart], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
   const url = URL.createObjectURL(blob);

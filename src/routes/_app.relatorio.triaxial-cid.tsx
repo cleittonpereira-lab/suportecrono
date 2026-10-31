@@ -3810,6 +3810,7 @@ function MoldagemFicha({
               )}
             </div>
             <NumField label="σ3' alvo (kPa)" value={cp.sigma3Target} onChange={(v) => onCp({ sigma3Target: v })} />
+            <NumField label="Velocidade de deformação (mm/min)" value={cp.strainRate ?? 0} step={0.001} onChange={(v) => onCp({ strainRate: v })} />
             <div>
               <Label className="text-xs">Critério de ruptura</Label>
               <Select value={cp.failureCriterion} onValueChange={(v) => onCp({ failureCriterion: v as TriaxialSpecimen["failureCriterion"] })}>
