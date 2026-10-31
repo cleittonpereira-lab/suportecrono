@@ -1,4 +1,5 @@
 import { saveSharedDraft, loadSharedDraft } from "@/lib/draft.functions";
+import { semConteudoDasFotos } from "@/lib/fotos-do-rascunho";
 import { trackSave, markDirty, markClean } from "@/lib/save-in-flight";
 import { toast } from "sonner";
 
@@ -19,7 +20,7 @@ function persistRev(scopeId: string, rev: number): void {
 
 export function saveOedDraft(scopeId: string, data: any, actor?: { id?: string; name?: string }) {
   if (typeof window === "undefined" || typeof localStorage === "undefined") return;
-  const payload = { ...data, rev: knownRevs.get(scopeId), savedAt: new Date().toISOString() };
+  const payload = semConteudoDasFotos({ ...data, rev: knownRevs.get(scopeId), savedAt: new Date().toISOString() });
   try {
     localStorage.setItem(`${DRAFT_PREFIX}${scopeId}`, JSON.stringify(payload));
   } catch (e) {

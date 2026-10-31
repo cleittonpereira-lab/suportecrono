@@ -4,6 +4,7 @@
  */
 import type { PLTSample } from "./types";
 import { saveSharedDraft, loadSharedDraft } from "@/lib/draft.functions";
+import { semConteudoDasFotos } from "@/lib/fotos-do-rascunho";
 import { trackSave, markDirty, markClean } from "@/lib/save-in-flight";
 import { toast } from "sonner";
 
@@ -51,7 +52,7 @@ export function saveDraft(
   actor?: { id?: string; name?: string },
 ): void {
   if (typeof window === "undefined") return;
-  const payload = { ...draft, rev: knownRevs.get(scopeId), savedAt: new Date().toISOString() };
+  const payload = semConteudoDasFotos({ ...draft, rev: knownRevs.get(scopeId), savedAt: new Date().toISOString() });
   try {
     window.localStorage.setItem(KEY(scopeId), JSON.stringify(payload));
   } catch {}

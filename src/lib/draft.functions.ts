@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { exigirLogin, requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
+import { semConteudoDasFotos, semImagensEmbutidas } from "@/lib/fotos-do-rascunho";
 import { atualizarDriveJson, ensureFolderPath, readDriveJson, writeDriveJson } from "@/lib/driveStorage";
 import type { SerializableJson } from "@/lib/lab-entities.functions";
 import { FOLDER_ENSAIOS, ensaioFileName, toSerializableJson, type EnsaioFile, type DraftHistoryEntry } from "@/lib/lab-entities.functions";
@@ -100,7 +101,8 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     try {
       const nowIso = new Date().toISOString();
-      const payload = data.payload;
+      // Conteúdo das fotos com arquivo próprio não entra (ver semConteudoDasFotos) — nem de aba antiga.
+      const payload = semConteudoDasFotos(data.payload);
       const ids = parseScope(data.scopeId);
 
       if (!ids) {
@@ -176,13 +178,14 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
       // Diff de auditoria
       const oldPayload = (existing?.payload as Record<string, any>) || {};
       const diff = computeJsonDiff(oldPayload, payload);
-      const history: DraftHistoryEntry[] = existing?.draftHistory ? [...existing.draftHistory] : [];
+      // Sem imagens embutidas: os arquivos antigos guardavam as fotos inteiras aqui (ver semImagensEmbutidas).
+      const history: DraftHistoryEntry[] = existing?.draftHistory ? existing.draftHistory.map(semImagensEmbutidas) : [];
       if (Object.keys(diff).length > 0) {
         history.unshift({
           changedAt: nowIso,
           changedBy: data.changedBy || null,
           changedByName: data.changedByName || "Operador",
-          diff,
+          diff: semImagensEmbutidas(diff),
         });
         if (history.length > MAX_HISTORY) history.length = MAX_HISTORY;
       }
