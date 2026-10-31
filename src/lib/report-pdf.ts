@@ -18,7 +18,7 @@
  * resolvia a maior parte disso; este módulo generaliza aquela implementação
  * para os laudos.
  */
-import { toPng } from "html-to-image";
+import { toJpeg } from "html-to-image";
 import { marcarAssinaturasNoPdf } from "./assinaturas-pdf";
 
 /** Estilo aplicado pelo html-to-image a cada página no momento da captura. */
@@ -28,6 +28,13 @@ export interface OpcoesRasterizacao {
   /** Seletor das páginas dentro do container. Adensamento usa "[data-pdf-page]". */
   seletorPagina?: string;
   pixelRatio?: number;
+  /**
+   * Qualidade do JPEG de cada folha (0–1). As folhas iam em PNG a 2,5×: ~700 kB
+   * cada, um laudo de 9 folhas passava de 6 MB e o envio/a prévia estouravam o
+   * limite do servidor. JPEG 0,85 a 2× fica legível na impressão e bem menor.
+   * O Excel não passa por aqui (monta as próprias imagens, em qualidade máxima).
+   */
+  qualidadeJpeg?: number;
   comprimir?: boolean;
   /** Estilo aplicado a cada página no momento da captura. */
   estiloPagina?: EstiloDeCaptura;
@@ -269,7 +276,8 @@ export async function rasterizarRelatorioParaPdf(
   if (import.meta.env.SSR) throw new Error("A geração de PDF só roda no navegador.");
   const {
     seletorPagina = ".printable-report",
-    pixelRatio = 2.5,
+    pixelRatio = 2,
+    qualidadeJpeg = 0.85,
     comprimir = true,
     estiloPagina = ESTILO_PAGINA_LAUDO,
     ignorarNoPrint = true,
@@ -335,8 +343,9 @@ export async function rasterizarRelatorioParaPdf(
         throw new Error(`A geração do PDF passou de ${Math.round(tetoTotalMs / 1000)}s. Tente novamente.`);
       }
       const dataUrl = await comTeto(
-        toPng(paginas[i], {
+        toJpeg(paginas[i], {
           pixelRatio,
+          quality: qualidadeJpeg,
           cacheBust: false,
           backgroundColor: "#ffffff",
           skipFonts: true,
@@ -349,7 +358,7 @@ export async function rasterizarRelatorioParaPdf(
         `A renderização da página ${i + 1} de ${paginas.length} do laudo`,
       );
       if (i > 0) pdf.addPage("a4", "portrait");
-      pdf.addImage(dataUrl, "PNG", 0, 0, 210, 297, undefined, "FAST");
+      pdf.addImage(dataUrl, "JPEG", 0, 0, 210, 297, undefined, "FAST");
       onProgressoPagina?.(i + 1, paginas.length);
     }
 

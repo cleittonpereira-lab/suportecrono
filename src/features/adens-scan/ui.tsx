@@ -50,6 +50,8 @@ export interface AdensDesmontagem {
 export interface AdensPhoto {
   id: string;
   dataUrl: string;
+  /** Arquivo da foto no Drive (/api/photo/...) — depois da migração para o D1, o dataUrl fica vazio. */
+  url?: string;
   bytes: number;
   caption?: string;
 }
@@ -671,7 +673,7 @@ function PhotoBlock({
             {photos.map((p) => (
               <div key={p.id} className="relative rounded-md border overflow-hidden">
                 <div className="aspect-[3/4] bg-black/5 flex items-center justify-center">
-                  <img src={p.dataUrl} alt="" className="max-h-full max-w-full object-contain" />
+                  <img src={p.url || p.dataUrl} alt="" className="max-h-full max-w-full object-contain" />
                 </div>
                 <div className="flex items-center justify-between p-1 text-[10px] text-muted-foreground">
                   <span>{formatBytes(p.bytes)}</span>

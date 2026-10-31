@@ -1,4 +1,5 @@
 import { exigirPdfNoDrive } from "@/lib/revisoes-do-drive";
+import { fotosParaODrive } from "@/lib/fotos-para-o-drive";
 import { useDraftActivity } from "@/hooks/use-draft-activity";
 import { EditingPresenceBanner } from "@/components/DraftActivityInfo";
 import { DadosTravados } from "@/components/report/DadosTravados";
@@ -35,7 +36,6 @@ import { syncRevision, fetchDriveStatus } from "@/features/load-test/driveSync";
 import { ReportVersionsPanel } from "@/components/report/ReportVersionsPanel";
 import {
   listApprovals, requestApproval, verifyApproval, decideApproval, type ApprovalRow,
-  useRegerarPdfNoFluxo,
 } from "@/lib/approvals-com-pdf";
 import { getWorkflowStatuses } from "@/lib/driveSync.functions";
 import {
@@ -486,15 +486,7 @@ export function PLTPage() {
   };
 
   const fotosParaDrive = () =>
-    (ctx?.photos ?? [])
-      .map((p) => {
-        const m = /^data:(.*?);base64,(.*)$/.exec(p.dataUrl);
-        const mimeType = m?.[1] || "image/jpeg";
-        const b64 = m?.[2] || "";
-        const ext = mimeType.split("/")[1] || "jpg";
-        return { cpId: p.specimenId || "geral", filename: `${p.kind}_${p.id}.${ext}`, mimeType, base64: b64 };
-      })
-      .filter((f) => f.base64.length > 0);
+    fotosParaODrive(ctx?.photos, (p) => p.specimenId || "geral");
 
   const handleSyncAll = async () => {
     if (versions.length === 0) {
@@ -582,7 +574,7 @@ export function PLTPage() {
           if (Array.isArray(fp.fotos) && fp.fotos.length > 0) {
             for (const foto of fp.fotos) {
               const det = fp.determinacoes.find((d) => d.numero === foto.determinacaoNumero);
-              ctx.addPhoto({ dataUrl: foto.dataUrl, kind: "outro", caption: foto.caption, specimenId: det?.id });
+              ctx.addPhoto({ dataUrl: foto.dataUrl, url: foto.url, kind: "outro", caption: foto.caption, specimenId: det?.id });
             }
             preencheu = true;
           }
@@ -633,7 +625,6 @@ export function PLTPage() {
     }
     return blob;
   };
-  useRegerarPdfNoFluxo(scopeId, buildReportPdfBlob);
 
   const handleGeneratePdf = async () => {
     const toastId = toast.loading("Gerando PDF do relatório…");

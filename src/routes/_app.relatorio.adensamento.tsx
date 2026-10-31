@@ -147,7 +147,7 @@ import { useDraftActivity } from "@/hooks/use-draft-activity";
 import { EditingPresenceBanner, DraftHistoryButton } from "@/components/DraftActivityInfo";
 import { listPendenciasDigitacao, atualizarPendenciaDigitacao } from "@/lib/lab-pendencias.functions";
 import { findMatchingPendencia } from "@/lib/pendencia-match";
-import { requestApproval, verifyApproval, decideApproval, listApprovals, getWorkflowStatuses, useRegerarPdfNoFluxo } from "@/lib/approvals-com-pdf";
+import { requestApproval, verifyApproval, decideApproval, listApprovals, getWorkflowStatuses } from "@/lib/approvals-com-pdf";
 import { buildScopeId } from "@/lib/scope";
 import { WorkflowFarol } from "@/features/lab/components/WorkflowFarol";
 import { PickerWithCreate } from "@/features/cisalhamento-direto/PickerWithCreate";
@@ -500,8 +500,9 @@ export function AdensamentoPage() {
         if (typeof remote.methodCas === "boolean") setMethodCas(remote.methodCas);
         if (typeof remote.methodPS === "boolean") setMethodPS(remote.methodPS);
         if (typeof remote.showResults === "boolean") setShowResults(remote.showResults);
-        if (Array.isArray(remote.photos) && ctx?.os && ctx?.amostra && ctx?.ensaio) {
-          labStore.setEnsaioPhotos(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, remote.photos);
+        // Só completa as fotos do ensaio — a cópia do rascunho pode estar atrasada (ver fotosAoAbrirOEditor).
+        if (ctx?.os && ctx?.amostra && ctx?.ensaio) {
+          labStore.completarFotosComORascunho(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, remote.photos);
         }
       }
       setRemoteLoaded(true);
@@ -1182,7 +1183,6 @@ export function AdensamentoPage() {
       if (wasDark) htmlEl.classList.add("dark");
     }
   };
-  useRegerarPdfNoFluxo(scopeId, () => gerarPdfDoAdensamento({ oficial: true, pixelRatio: 2 }));
 
   const handleExportPDF = async () => {
     if (import.meta.env.SSR) return;

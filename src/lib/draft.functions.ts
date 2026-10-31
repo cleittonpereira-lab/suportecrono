@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { exigirLogin, requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { semConteudoDasFotos, semImagensEmbutidas } from "@/lib/fotos-do-rascunho";
+import { diffSemValoresGrandes } from "@/lib/historico-do-rascunho";
 import { atualizarDriveJson, ensureFolderPath, readDriveJson, writeDriveJson } from "@/lib/driveStorage";
 import type { SerializableJson } from "@/lib/lab-entities.functions";
 import { FOLDER_ENSAIOS, ensaioFileName, toSerializableJson, type EnsaioFile, type DraftHistoryEntry } from "@/lib/lab-entities.functions";
@@ -179,14 +180,19 @@ export const saveSharedDraft = createServerFn({ method: "POST" })
       const oldPayload = (existing?.payload as Record<string, any>) || {};
       const diff = computeJsonDiff(oldPayload, payload);
       // Sem imagens embutidas: os arquivos antigos guardavam as fotos inteiras aqui (ver semImagensEmbutidas).
-      const history: DraftHistoryEntry[] = existing?.draftHistory ? existing.draftHistory.map(semImagensEmbutidas) : [];
+      // Sem valores grandes (listas inteiras de CPs com dados brutos): ver diffSemValoresGrandes.
+      const enxuto = (e: DraftHistoryEntry): DraftHistoryEntry =>
+        semImagensEmbutidas({ ...e, diff: diffSemValoresGrandes(e.diff ?? {}) });
+      const history: DraftHistoryEntry[] = existing?.draftHistory ? existing.draftHistory.map(enxuto) : [];
       if (Object.keys(diff).length > 0) {
-        history.unshift({
-          changedAt: nowIso,
-          changedBy: data.changedBy || null,
-          changedByName: data.changedByName || "Operador",
-          diff: semImagensEmbutidas(diff),
-        });
+        history.unshift(
+          enxuto({
+            changedAt: nowIso,
+            changedBy: data.changedBy || null,
+            changedByName: data.changedByName || "Operador",
+            diff,
+          }),
+        );
         if (history.length > MAX_HISTORY) history.length = MAX_HISTORY;
       }
 

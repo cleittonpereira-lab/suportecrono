@@ -3,6 +3,7 @@
  * extraído (DNIT 412/2025-ME): editor do escritório, laudo A4 e fluxo de
  * verificação/aprovação. Mesmo esqueleto do ASF.DAP (_app.relatorio.asf-dap.tsx).
  */
+import { fotosParaODrive } from "@/lib/fotos-para-o-drive";
 import { useDraftActivity } from "@/hooks/use-draft-activity";
 import { DadosTravados } from "@/components/report/DadosTravados";
 import { BotaoNovaRevisao } from "@/components/report/BotaoNovaRevisao";
@@ -48,7 +49,6 @@ import {
   verifyApproval,
   decideApproval,
   type ApprovalRow,
-  useRegerarPdfNoFluxo,
 } from "@/lib/approvals-com-pdf";
 import { getWorkflowStatuses } from "@/lib/driveSync.functions";
 import {
@@ -529,15 +529,7 @@ export function AsfTbPage() {
   };
 
   const fotosParaDrive = () =>
-    (ctx?.photos ?? [])
-      .map((p) => {
-        const m = /^data:(.*?);base64,(.*)$/.exec(p.dataUrl);
-        const mimeType = m?.[1] || "image/jpeg";
-        const b64 = m?.[2] || "";
-        const ext = mimeType.split("/")[1] || "jpg";
-        return { cpId: "geral", filename: `${p.kind}_${p.id}.${ext}`, mimeType, base64: b64 };
-      })
-      .filter((f) => f.base64.length > 0);
+    fotosParaODrive(ctx?.photos);
 
   const handleSyncAll = async () => {
     if (versions.length === 0) {
@@ -662,7 +654,7 @@ export function AsfTbPage() {
         if (!jaImportouFotos) {
           if (Array.isArray(fp.fotos) && fp.fotos.length > 0) {
             for (const foto of fp.fotos) {
-              ctx.addPhoto({ dataUrl: foto.dataUrl, kind: "outro", caption: foto.caption });
+              ctx.addPhoto({ dataUrl: foto.dataUrl, url: foto.url, kind: "outro", caption: foto.caption });
             }
             preencheu = true;
           }
@@ -725,7 +717,6 @@ export function AsfTbPage() {
     }
     return blob;
   };
-  useRegerarPdfNoFluxo(scopeId, buildReportPdfBlob);
 
   const nomeBase = () => (sample.workNumber || sample.os || "relatorio").toString().replace(/[^\w-]+/g, "_");
 

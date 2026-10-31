@@ -27,10 +27,10 @@ import {
   requestApproval,
   verifyApproval,
   decideApproval,
-  listApprovals,
   getWorkflowStatuses,
   type ApprovalRow,
 } from "@/lib/approvals-com-pdf";
+import { listApprovals } from "@/lib/approvals.functions";
 import { getRevisionPdfBase64 } from "@/lib/driveSync.functions";
 import { buildScopeId } from "@/lib/scope";
 import { mespIndexMetadata, syncMEspARevision } from "@/features/mesp-natural/drive-sync";

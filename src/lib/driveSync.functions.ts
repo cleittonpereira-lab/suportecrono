@@ -17,7 +17,7 @@ import { getGoogleAccessToken, isGoogleAuthConfigured } from "./google-auth.serv
 // A resolução de nome→id vive só em `driveStorage`. Este módulo tinha a sua
 // própria cópia de `findFolder`/`findFileInFolder`, com o mesmo defeito de
 // pegar `files[0]` sem ordenação — e por isso duplicava pastas `relatorios`.
-import { findFileInFolder, findFolder, withKeyLock } from "./driveStorage";
+import { findFileInFolder, findFolder, readPhotoBytes, withKeyLock } from "./driveStorage";
 import { nomeDoArquivoDoLaudo, siglaDoEnsaio } from "./nome-laudo";
 import {
   laudoDeOutraAmostra,
@@ -414,11 +414,14 @@ async function uploadBytesNew(opts: {
   return (JSON.parse(text) as { id: string }).id;
 }
 
+// Conversão nativa (Buffer). O laço caractere a caractere sobre um PDF de vários MB
+// estourava o limite de CPU do Worker: a resposta chegava vazia na tela.
 function b64ToBytes(b64: string): Uint8Array {
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
+  return new Uint8Array(Buffer.from(b64, "base64"));
+}
+
+function bytesToB64(bytes: Uint8Array): string {
+  return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64");
 }
 
 const PhotoSchema = z.object({
@@ -426,6 +429,8 @@ const PhotoSchema = z.object({
   filename: z.string(),
   mimeType: z.string().default("image/jpeg"),
   base64: z.string(),
+  /** Foto que já é arquivo no Drive: o servidor copia de lá, sem base64 (lib/fotos-para-o-drive.ts). */
+  fileId: z.string().optional(),
 });
 
 const SyncRevisionInput = z.object({
@@ -576,12 +581,28 @@ async function enviarRevisaoAoDrive(data: z.infer<typeof SyncRevisionInput>, pdf
 
   const fotoResults: { cpId: string; filename: string; fileId: string }[] = [];
   for (const f of data.fotos) {
+    let bytes: Uint8Array;
+    let mimeType = f.mimeType;
+    if (f.base64) {
+      bytes = b64ToBytes(f.base64);
+    } else if (f.fileId) {
+      // Foto que já é arquivo no Drive: copia de lá (ver lib/fotos-para-o-drive.ts).
+      const original = await readPhotoBytes(f.fileId);
+      if (!original) {
+        logSync({ scope_id: data.scopeId, rev: data.rev, kind: "foto", status: "error", error: `foto ${f.fileId} não encontrada no Drive` });
+        continue;
+      }
+      bytes = original.bytes;
+      if (original.mimeType.startsWith("image/")) mimeType = original.mimeType;
+    } else {
+      continue;
+    }
     const cpFolder = await ensureFolderPath([...parts, "fotos", f.cpId]);
     const fid = await uploadBytes({
       parentId: cpFolder,
       name: f.filename,
-      mimeType: f.mimeType,
-      bytes: b64ToBytes(f.base64),
+      mimeType,
+      bytes,
       overwrite: true,
     });
     fotoResults.push({ cpId: f.cpId, filename: f.filename, fileId: fid });
@@ -924,13 +945,8 @@ export const getRevisionPdfBase64 = createServerFn({ method: "POST" })
     });
     if (!res.ok) throw new Error(`Drive download ${res.status}`);
     const buf = new Uint8Array(await res.arrayBuffer());
-    let bin = "";
-    const CHUNK = 0x8000;
-    for (let i = 0; i < buf.length; i += CHUNK) {
-      bin += String.fromCharCode(...buf.subarray(i, i + CHUNK));
-    }
     const revMatch = target.name.match(/Rev-(\d+)/i);
-    return { base64: btoa(bin), rev: revMatch ? Number(revMatch[1]) : null, nome: target.name };
+    return { base64: bytesToB64(buf), rev: revMatch ? Number(revMatch[1]) : null, nome: target.name };
   });
 
 /**
@@ -965,10 +981,5 @@ export const getRevisionXlsxBase64 = createServerFn({ method: "POST" })
     });
     if (!res.ok) throw new Error(`Drive download ${res.status}`);
     const buf = new Uint8Array(await res.arrayBuffer());
-    let bin = "";
-    const CHUNK = 0x8000;
-    for (let i = 0; i < buf.length; i += CHUNK) {
-      bin += String.fromCharCode(...buf.subarray(i, i + CHUNK));
-    }
-    return { base64: btoa(bin), nome: alvo.name };
+    return { base64: bytesToB64(buf), nome: alvo.name };
   });

@@ -9,15 +9,18 @@
  * completado da próxima vez que alguém abrir a revisão (painel de versões ou
  * prévia da Central de Emissões).
  */
-import { useEffect, useRef } from "react";
 import { toast } from "sonner";
-import { verifyApproval as verificarNoServidor, decideApproval as decidirNoServidor } from "./approvals.functions";
+import {
+  verifyApproval as verificarNoServidor,
+  decideApproval as decidirNoServidor,
+  listApprovals as listarNoServidor,
+  type ApprovalRow,
+} from "./approvals.functions";
 import { getRevisionPdfBase64, substituirPdfDaRevisao } from "./driveSync.functions";
 import { assinaturasDaAprovacao, carimbarAssinaturas, type AprovacaoDoPdf } from "./assinaturas-pdf";
 
 export {
   requestApproval,
-  listApprovals,
   getWorkflowStatuses,
   listApprovalComments,
   addApprovalComment,
@@ -103,63 +106,42 @@ function completarEmSegundoPlano(scopeId: string, rev: number, aprovacao: Aprova
     });
 }
 
-/* ─────────── PDF refeito com os dados atuais ao verificar/aprovar ─────────── */
-
-/**
- * O editor aberto registra aqui como gerar o PDF do laudo. Ao verificar ou
- * aprovar, o PDF da revisão é refeito com os dados da tela ANTES de a decisão
- * ser gravada — sem precisar clicar em "Atualizar PDF". Uma correção feita
- * durante a verificação entra no PDF que vai para o Drive. Depois vem o
- * carimbo das assinaturas, sobre o PDF novo (em sequência, sem corrida).
- * Fora do editor (Central de Emissões), não há o que refazer: só o carimbo.
+/*
+ * O PDF da revisão NÃO é refeito na verificação/aprovação. Antes, a tela de
+ * quem decidia gerava um PDF novo e ele substituía o do Drive: o que ia para o
+ * Drive era o que estava na tela daquela pessoa — com uma foto que não tinha
+ * carregado ou um rascunho antigo guardado no navegador, o laudo oficial perdia
+ * fotos ou dados e ficava diferente do que o verificador tinha conferido. Com a
+ * trava de dados (exigirDadosInalterados em approvals.functions.ts), qualquer
+ * correção já exige reenviar a revisão; então o PDF enviado é o oficial e só
+ * recebe as assinaturas.
  */
-const regeradores = new Map<string, () => Promise<Blob>>();
-
-export function useRegerarPdfNoFluxo(scopeId: string, gerarPdf: () => Promise<Blob>): void {
-  const atual = useRef(gerarPdf);
-  useEffect(() => {
-    atual.current = gerarPdf;
-  });
-  useEffect(() => {
-    if (!scopeId) return;
-    const fn = () => atual.current();
-    regeradores.set(scopeId, fn);
-    return () => {
-      if (regeradores.get(scopeId) === fn) regeradores.delete(scopeId);
-    };
-  }, [scopeId]);
-}
-
-async function regerarAntesDaDecisao(scopeId: string, rev: number): Promise<void> {
-  const gerar = regeradores.get(scopeId);
-  if (!gerar) return;
-  const rotulo = `Rev-${String(rev).padStart(2, "0")}`;
-  const id = toast.loading(`Refazendo o PDF da ${rotulo} com os dados atuais…`);
-  try {
-    const blob = await gerar();
-    const bytes = new Uint8Array(await blob.arrayBuffer());
-    await substituirPdfDaRevisao({ data: { scopeId, rev, base64: bytesParaBase64(bytes), criarSeFaltar: true } });
-    toast.success(`PDF da ${rotulo} refeito com os dados atuais.`, { id });
-  } catch (err) {
-    toast.dismiss(id);
-    const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(`O PDF da ${rotulo} não pôde ser refeito com os dados atuais, e a decisão NÃO foi registrada: ${msg}`);
-  }
-}
 
 // Tipos soltos de propósito: quem valida a entrada é o servidor (zod), como antes.
 type EntradaDecisao = { scopeId: string; rev: number; decision: string; comment?: string };
 
 export async function verifyApproval(opts: { data: EntradaDecisao }) {
-  if (opts.data.decision === "verificado") await regerarAntesDaDecisao(opts.data.scopeId, opts.data.rev);
   const linha = await verificarNoServidor({ data: opts.data });
+  if (!linha) throw new Error("O servidor não confirmou a verificação (resposta vazia). Recarregue a tela antes de tentar de novo.");
   completarEmSegundoPlano(opts.data.scopeId, opts.data.rev, linha, opts.data.decision !== "verificado");
   return linha;
 }
 
 export async function decideApproval(opts: { data: EntradaDecisao }) {
-  if (opts.data.decision === "aprovado") await regerarAntesDaDecisao(opts.data.scopeId, opts.data.rev);
   const linha = await decidirNoServidor({ data: opts.data });
+  if (!linha) throw new Error("O servidor não confirmou a decisão (resposta vazia). Recarregue a tela antes de tentar de novo.");
   completarEmSegundoPlano(opts.data.scopeId, opts.data.rev, linha, opts.data.decision !== "aprovado");
   return linha;
+}
+
+/**
+ * Lista de aprovações que nunca chega `undefined` à tela. Quando o servidor não
+ * responde (Worker no limite), a função devolvia `undefined`, as telas guardavam
+ * isso no estado e o editor quebrava em `approvals.find` ("Erro ao renderizar o
+ * editor do ensaio"). Agora é erro: quem chama mantém a lista que já tinha.
+ */
+export async function listApprovals(opts: { data: { scopeId: string } }): Promise<ApprovalRow[]> {
+  const linhas: unknown = await listarNoServidor(opts);
+  if (!Array.isArray(linhas)) throw new Error("O servidor não devolveu as aprovações (resposta vazia). Tente de novo.");
+  return linhas as ApprovalRow[];
 }

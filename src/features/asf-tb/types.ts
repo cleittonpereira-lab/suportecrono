@@ -165,6 +165,8 @@ export function seedAsfTbSample(partial?: Partial<AsfTbSample>): AsfTbSample {
 export interface AsfTbPhoto {
   id: string;
   dataUrl: string;
+  /** Arquivo da foto no Drive (/api/photo/...) — depois da migração para o D1, o dataUrl fica vazio. */
+  url?: string;
   bytes: number;
   caption?: string;
 }

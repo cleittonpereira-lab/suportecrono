@@ -1,4 +1,5 @@
 import { exigirPdfNoDrive } from "@/lib/revisoes-do-drive";
+import { fotosParaODrive } from "@/lib/fotos-para-o-drive";
 import { useDraftActivity } from "@/hooks/use-draft-activity";
 import { EditingPresenceBanner } from "@/components/DraftActivityInfo";
 import { DadosTravados } from "@/components/report/DadosTravados";
@@ -59,7 +60,6 @@ import {
   verifyApproval,
   decideApproval,
   type ApprovalRow,
-  useRegerarPdfNoFluxo,
 } from "@/lib/approvals-com-pdf";
 import { getWorkflowStatuses } from "@/lib/driveSync.functions";
 import { Textarea } from "@/components/ui/textarea";
@@ -420,15 +420,7 @@ export function MRPage() {
     const tid = toast.loading("Reenviando última revisão ao Drive…");
     try {
       const last = versions[0];
-      const fotos = (ctx?.photos ?? [])
-        .map((p) => {
-          const m = /^data:(.*?);base64,(.*)$/.exec(p.dataUrl);
-          const mimeType = m?.[1] || "image/jpeg";
-          const b64 = m?.[2] || "";
-          const ext = mimeType.split("/")[1] || "jpg";
-          return { cpId: "geral", filename: `${p.kind}_${p.id}.${ext}`, mimeType, base64: b64 };
-        })
-        .filter((f) => f.base64.length > 0);
+      const fotos = fotosParaODrive(ctx?.photos);
       const result = await syncRevision({
         scopeId,
         rev: last.rev,
@@ -548,7 +540,6 @@ export function MRPage() {
     }
     return blob;
   };
-  useRegerarPdfNoFluxo(scopeId, buildReportPdfBlob);
 
   const handleGeneratePdf = async () => {
     const toastId = toast.loading("Gerando PDF do relatório…");
@@ -584,15 +575,7 @@ export function MRPage() {
       await refreshVersions();
 
       try {
-        const fotos = (ctx?.photos ?? [])
-          .map((p) => {
-            const m = /^data:(.*?);base64,(.*)$/.exec(p.dataUrl);
-            const mimeType = m?.[1] || "image/jpeg";
-            const b64 = m?.[2] || "";
-            const ext = mimeType.split("/")[1] || "jpg";
-            return { cpId: "geral", filename: `${p.kind}_${p.id}.${ext}`, mimeType, base64: b64 };
-          })
-          .filter((f) => f.base64.length > 0);
+        const fotos = fotosParaODrive(ctx?.photos);
 
         const resDrive = await syncRevision({
           scopeId,

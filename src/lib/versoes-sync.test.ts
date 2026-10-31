@@ -22,6 +22,14 @@ describe("versões: o que trazer do Drive", () => {
     ]);
   });
 
+  it("PDF do Drive de outro tamanho, mesmo gerado logo depois: troca pela do Drive (prévia = oficial)", () => {
+    const l = local(0, "2026-09-14T17:12:34Z", { size: 900 });
+    const [acao] = planoDeSincronizacao([l], [remota(0, "2026-09-14T17:12:50Z")]);
+    expect(acao).toMatchObject({ tipo: "baixar", substitui: l });
+    const igual = local(0, "2026-09-14T17:12:34Z", { size: 1000 });
+    expect(planoDeSincronizacao([igual], [remota(0, "2026-09-14T17:12:50Z")])[0]).toMatchObject({ tipo: "renomear" });
+  });
+
   it("cópia local gerada aqui e PDF do Drive assinado depois: troca pela do Drive", () => {
     const l = local(0, "2026-09-14T17:12:34Z");
     const [acao] = planoDeSincronizacao([l], [remota(0, "2026-09-14T18:15:00Z")]);

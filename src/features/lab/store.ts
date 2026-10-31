@@ -24,6 +24,7 @@ import { loadLabStateFromDrive } from "@/lib/labState.functions";
 import { trackSave, markDirty as markDirtyGlobal, markClean as markCleanGlobal, waitUntilSaved } from "@/lib/save-in-flight";
 import type { LabEnsaioSnapshot } from "@/lib/lab-ensaios.functions";
 import { mergeRemote } from "./merge-remote";
+import { fotosAoAbrirOEditor } from "./fotos-ao-abrir";
 import { aplicarSync, arvoreDoCache, cacheVazio, versoesConhecidas } from "./arvore";
 
 const STORAGE_KEY = "lab://os-store/v1";
@@ -884,6 +885,21 @@ export const labStore = {
       ...e,
       photos: (e.photos ?? []).map((p) => (p.id === photoId ? { ...p, ...patch } : p)),
     }));
+  },
+  /**
+   * Completa as fotos do ensaio com a cópia guardada no rascunho, sem nunca
+   * remover nenhuma (ver fotosAoAbrirOEditor). Usado ao abrir os editores que
+   * guardam `photos` no rascunho; antes eles usavam setEnsaioPhotos e a cópia
+   * atrasada apagava fotos do ensaio.
+   */
+  completarFotosComORascunho(osId: string, amId: string, enId: string, doRascunho: unknown) {
+    const ensaio = state.os
+      .find((o) => o.id === osId)
+      ?.amostras.find((a) => a.id === amId)
+      ?.ensaios.find((e) => e.id === enId);
+    if (!ensaio) return;
+    const fotos = fotosAoAbrirOEditor(ensaio.photos, doRascunho);
+    if (fotos) updateEnsaio(osId, amId, enId, (e) => ({ ...e, photos: fotos }));
   },
   setEnsaioPhotos(osId: string, amId: string, enId: string, photos: Photo[]) {
     updateEnsaio(osId, amId, enId, (e) => ({

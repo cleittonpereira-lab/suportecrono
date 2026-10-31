@@ -1,4 +1,5 @@
 import { pdfDaRevisaoEstaNoDrive } from "@/lib/revisoes-do-drive";
+import { fotosParaODrive } from "@/lib/fotos-para-o-drive";
 import { SyncStatusBadge } from "@/components/SyncStatusBadge";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { DadosTravados } from "@/components/report/DadosTravados";
@@ -72,7 +73,6 @@ import {
   verifyApproval,
   decideApproval,
   type ApprovalRow,
-  useRegerarPdfNoFluxo,
 } from "@/lib/approvals-com-pdf";
 import { CheckCircle2,
   MessageSquareQuote, XCircle, Clock, Send } from "lucide-react";
@@ -762,8 +762,9 @@ export function TriaxialCidPage() {
         if (remote.tab) setTab(remote.tab);
         if (remote.adjust) setAdjust((a: any) => ({ ...a, ...remote.adjust }));
         if (remote.axisCfg) setAxisCfg((cfg) => ({ ...cfg, ...remote.axisCfg }));
-        if (Array.isArray((remote as any).photos) && ctx?.os?.id && ctx?.amostra?.id && ctx?.ensaio?.id) {
-          labStore.setEnsaioPhotos(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, (remote as any).photos);
+        // Só completa as fotos do ensaio — a cópia do rascunho pode estar atrasada (ver fotosAoAbrirOEditor).
+        if (ctx?.os?.id && ctx?.amostra?.id && ctx?.ensaio?.id) {
+          labStore.completarFotosComORascunho(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, (remote as any).photos);
         }
       }
       setRemoteLoaded(true);
@@ -816,7 +817,6 @@ export function TriaxialCidPage() {
     }
     return blob;
   };
-  useRegerarPdfNoFluxo(scopeId, buildReportPdfBlob);
 
   /**
    * Nome oficial do laudo — o mesmo do Drive: OS_Amostra_Furo_Prof_Sigla_Rev-NN
@@ -865,18 +865,7 @@ export function TriaxialCidPage() {
       // Sincroniza com o Google Drive (não bloqueia UI se falhar).
       const syncToastId = toast.loading("Enviando ao Google Drive…");
       try {
-        const fotos = (ctx?.photos ?? []).map((p) => {
-          const m = /^data:(.*?);base64,(.*)$/.exec(p.dataUrl);
-          const mimeType = m?.[1] || "image/jpeg";
-          const b64 = m?.[2] || "";
-          const ext = mimeType.split("/")[1] || "jpg";
-          return {
-            cpId: p.specimenId || "geral",
-            filename: `${p.kind}_${p.id}.${ext}`,
-            mimeType,
-            base64: b64,
-          };
-        }).filter((f) => f.base64.length > 0);
+        const fotos = fotosParaODrive(ctx?.photos, (p) => p.specimenId || "geral");
         const result = await syncRevision({
           scopeId,
           rev: saved.rev,
@@ -981,13 +970,7 @@ export function TriaxialCidPage() {
     try {
       const last = versions[0];
       const blob = last.pdfBlob;
-      const fotos = (ctx?.photos ?? []).map((p) => {
-        const m = /^data:(.*?);base64,(.*)$/.exec(p.dataUrl);
-        const mimeType = m?.[1] || "image/jpeg";
-        const b64 = m?.[2] || "";
-        const ext = mimeType.split("/")[1] || "jpg";
-        return { cpId: p.specimenId || "geral", filename: `${p.kind}_${p.id}.${ext}`, mimeType, base64: b64 };
-      }).filter((f) => f.base64.length > 0);
+      const fotos = fotosParaODrive(ctx?.photos, (p) => p.specimenId || "geral");
       const result = await syncRevision({
         scopeId,
         rev: last.rev,

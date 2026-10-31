@@ -1,4 +1,5 @@
 import { SyncStatusBadge } from "@/components/SyncStatusBadge";
+import { fotosParaODrive } from "@/lib/fotos-para-o-drive";
 import { saveSharedDraft, loadSharedDraft } from "@/lib/draft.functions";
 import { DadosTravados } from "@/components/report/DadosTravados";
 import { BotaoNovaRevisao } from "@/components/report/BotaoNovaRevisao";
@@ -79,7 +80,6 @@ import {
   verifyApproval,
   decideApproval,
   type ApprovalRow,
-  useRegerarPdfNoFluxo,
 } from "@/lib/approvals-com-pdf";
 import { getWorkflowStatuses } from "@/lib/driveSync.functions";
 import { Textarea } from "@/components/ui/textarea";
@@ -478,8 +478,9 @@ export function CDPage() {
         if (remote.tab) setTab(remote.tab);
         if (remote.adjust) setAdjust((a: any) => ({ ...a, ...remote.adjust }));
         if (remote.axisCfg) setAxisCfg((cfg) => ({ ...cfg, ...remote.axisCfg }));
-        if (remote.photos && remote.photos.length > 0 && ctx?.os?.id && ctx?.amostra?.id && ctx?.ensaio?.id) {
-          labStore.setEnsaioPhotos(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, remote.photos as any);
+        // Só completa as fotos do ensaio — a cópia do rascunho pode estar atrasada (ver fotosAoAbrirOEditor).
+        if (ctx?.os?.id && ctx?.amostra?.id && ctx?.ensaio?.id) {
+          labStore.completarFotosComORascunho(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, remote.photos);
         }
       }
       setRemoteLoaded(true);
@@ -660,7 +661,6 @@ export function CDPage() {
     }
     return blob;
   };
-  useRegerarPdfNoFluxo(scopeId, buildReportPdfBlob);
 
   const handleGeneratePdf = async () => {
     setPdfBusy(true);
@@ -744,20 +744,7 @@ export function CDPage() {
 
       // Sincronização com o Drive em segundo plano
       try {
-        const fotos = (ctx?.photos ?? [])
-          .map((p) => {
-            const m = /^data:(.*?);base64,(.*)$/.exec(p.dataUrl);
-            const mimeType = m?.[1] || "image/jpeg";
-            const b64 = m?.[2] || "";
-            const ext = mimeType.split("/")[1] || "jpg";
-            return {
-              cpId: p.specimenId || "geral",
-              filename: `${p.kind}_${p.id}.${ext}`,
-              mimeType,
-              base64: b64,
-            };
-          })
-          .filter((f) => f.base64.length > 0);
+        const fotos = fotosParaODrive(ctx?.photos, (p) => p.specimenId || "geral");
 
         const resDrive = await syncRevision({
           scopeId,

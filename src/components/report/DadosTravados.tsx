@@ -7,8 +7,8 @@
  * Drive ficava diferente da tela até alguém lembrar de clicar em "Atualizar".
  *
  *  - Verificador/aprovador pode "Destravar para corrigir" enquanto confere;
- *    ao verificar/aprovar, o PDF é refeito com as correções
- *    (useRegerarPdfNoFluxo).
+ *    a correção muda os dados e exige reenviar a revisão (o PDF enviado
+ *    é o oficial; não é refeito na decisão).
  *  - Laudo aprovado só muda por "Gerar nova revisão".
  *  - Devolvido pelo verificador: mostra o motivo em destaque.
  *

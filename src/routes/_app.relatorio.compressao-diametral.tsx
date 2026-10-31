@@ -1,4 +1,5 @@
 import { useDraftActivity } from "@/hooks/use-draft-activity";
+import { fotosParaODrive } from "@/lib/fotos-para-o-drive";
 import { EditingPresenceBanner } from "@/components/DraftActivityInfo";
 import { DadosTravados } from "@/components/report/DadosTravados";
 import { BotaoNovaRevisao } from "@/components/report/BotaoNovaRevisao";
@@ -33,7 +34,6 @@ import { syncRevision, fetchDriveStatus } from "@/features/compressao-diametral/
 import { ReportVersionsPanel } from "@/components/report/ReportVersionsPanel";
 import {
   listApprovals, requestApproval, verifyApproval, decideApproval, type ApprovalRow,
-  useRegerarPdfNoFluxo,
 } from "@/lib/approvals-com-pdf";
 import { getWorkflowStatuses, listDriveRevisions, getRevisionPdfBase64 } from "@/lib/driveSync.functions";
 import {
@@ -428,15 +428,7 @@ export function CompressaoDiametralPage() {
   };
 
   const fotosParaDrive = () =>
-    (ctx?.photos ?? [])
-      .map((p) => {
-        const m = /^data:(.*?);base64,(.*)$/.exec(p.dataUrl);
-        const mimeType = m?.[1] || "image/jpeg";
-        const b64 = m?.[2] || "";
-        const ext = mimeType.split("/")[1] || "jpg";
-        return { cpId: "geral", filename: `${p.kind}_${p.id}.${ext}`, mimeType, base64: b64 };
-      })
-      .filter((f) => f.base64.length > 0);
+    fotosParaODrive(ctx?.photos);
 
   const handleSyncAll = async () => {
     if (versions.length === 0) { toast.info("Salve pelo menos uma versão para sincronizar."); return; }
@@ -548,6 +540,7 @@ export function CompressaoDiametralPage() {
               for (const foto of fp.fotos) {
                 ctx.addPhoto({
                   dataUrl: foto.dataUrl,
+                  url: foto.url,
                   bytes: foto.bytes,
                   kind: foto.fase === "antes" ? "moldagem" : "ruptura",
                   caption: foto.caption,
@@ -624,7 +617,6 @@ export function CompressaoDiametralPage() {
     }
     return blob;
   };
-  useRegerarPdfNoFluxo(scopeId, buildReportPdfBlob);
 
   const handleGeneratePdf = async () => {
     const toastId = toast.loading("Gerando PDF do relatório…");
@@ -782,7 +774,7 @@ export function CompressaoDiametralPage() {
         : "aguardando_verificacao";
       labStore.patchEnsaio(ctx.os.id, ctx.amostra.id, ctx.ensaio.id, { status: nextEnsaioStatus });
     }
-    // O PDF é refeito com os dados atuais ANTES da decisão (useRegerarPdfNoFluxo)
+    // O PDF enviado é o oficial (não é refeito na decisão — ver approvals-com-pdf.ts)
     // e recebe as assinaturas logo depois — não há mais nada a fazer aqui.
   };
 

@@ -13,7 +13,7 @@ export const MARCA_DO_DRIVE = "drive:";
 /** Diferença mínima para considerar que o PDF do Drive mudou depois de a cópia local ser gerada. */
 const FOLGA_MS = 120_000;
 
-export type VersaoLocalMin = { id: string; rev: number; createdAt: string; filename: string; note?: string };
+export type VersaoLocalMin = { id: string; rev: number; createdAt: string; filename: string; note?: string; size?: number };
 export type RevisaoRemota = { rev: number; filename: string; size: number; updatedAt: string; criadoEm?: string };
 
 export type AcaoDeSincronizacao<L extends VersaoLocalMin = VersaoLocalMin> =
@@ -67,7 +67,10 @@ export function planoDeSincronizacao<L extends VersaoLocalMin>(
       continue;
     }
     // Cópia gerada neste navegador: o Drive mudou depois (assinaturas, reemissão)?
-    const mudouDepois = Date.parse(remota.updatedAt) - Date.parse(local.createdAt) > FOLGA_MS;
+    // Tamanho diferente = outro PDF, por mais perto que esteja no tempo: o painel
+    // mostrava a cópia daqui como se fosse a do Drive (prévia ≠ PDF oficial).
+    const outroArquivo = typeof local.size === "number" && local.size > 0 && remota.size > 0 && local.size !== remota.size;
+    const mudouDepois = outroArquivo || Date.parse(remota.updatedAt) - Date.parse(local.createdAt) > FOLGA_MS;
     if (mudouDepois) acoes.push({ tipo: "baixar", remota, substitui: local });
     else acoes.push({ tipo: "renomear", remota, local });
   }

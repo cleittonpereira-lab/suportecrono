@@ -7,6 +7,7 @@ import type { CDSample, CDSpecimen, CDAxisCfg } from "./types";
 import { saveSharedDraft, loadSharedDraft } from "@/lib/draft.functions";
 import { semConteudoDasFotos } from "@/lib/fotos-do-rascunho";
 import { trackSave, markDirty, markClean } from "@/lib/save-in-flight";
+import { falhaDaGravacao } from "@/lib/falha-da-gravacao";
 import { toast } from "sonner";
 
 const KEY = (scopeId: string) => `cisalhamento-direto:draft:${scopeId}`;
@@ -26,6 +27,12 @@ export type CDDraft = {
 
 const saveTimers = new Map<string, any>();
 const knownRevs = new Map<string, number>();
+/**
+ * Último rascunho deste escopo, em memória. O botão Salvar (flush) relia o
+ * localStorage — que, cheio (dados brutos grandes), guardava a cópia ANTIGA:
+ * era ela que ia para o servidor por cima da edição.
+ */
+const ultimoPayload = new Map<string, unknown>();
 
 /** Atualiza só o campo `rev` do rascunho já salvo em localStorage, sem mexer no resto. */
 function persistRev(scopeId: string, rev: number): void {
@@ -60,9 +67,15 @@ export function saveDraft(
 ): void {
   if (typeof window === "undefined") return;
   const payload = semConteudoDasFotos({ ...draft, rev: knownRevs.get(scopeId), savedAt: new Date().toISOString() });
+  ultimoPayload.set(scopeId, payload);
   try {
     window.localStorage.setItem(KEY(scopeId), JSON.stringify(payload));
-  } catch {}
+  } catch {
+    // Sem espaço: a cópia antiga não pode ficar para o próximo carregamento (ver ultimoPayload).
+    try {
+      window.localStorage.removeItem(KEY(scopeId));
+    } catch {}
+  }
 
   markDirty();
 
@@ -77,6 +90,12 @@ export function saveDraft(
       saveSharedDraft({ data: { scopeId, payload, expectedRev, changedBy: actor?.id, changedByName: actor?.name } }),
     )
       .then((res) => {
+        const falha = falhaDaGravacao(res);
+        if (falha) {
+          // Continua "não salvo" (sem markClean): o indicador não pode dizer sincronizado.
+          toast.error("Rascunho não salvo no servidor: " + falha, { id: `rascunho:${scopeId}` });
+          return;
+        }
         if (res.conflict) {
           toast.warning("Atenção: Relatório alterado em outro computador", {
             description: "Os dados foram atualizados no servidor por outro usuário.",
@@ -109,13 +128,15 @@ export async function flushDraft(
     saveTimers.delete(scopeId);
   }
   const raw = typeof window !== "undefined" ? window.localStorage.getItem(KEY(scopeId)) : null;
-  const payload = raw ? JSON.parse(raw) : null;
+  const payload = ultimoPayload.get(scopeId) ?? (raw ? JSON.parse(raw) : null);
   if (!payload) return { success: true };
   const expectedRev = knownRevs.get(scopeId);
   try {
     const res = await trackSave(() =>
       saveSharedDraft({ data: { scopeId, payload, expectedRev, changedBy: actor?.id, changedByName: actor?.name } }),
     );
+    const falha = falhaDaGravacao(res);
+    if (falha) return { error: falha };
     if (res.conflict) {
       if (res.currentRev) {
         knownRevs.set(scopeId, res.currentRev);

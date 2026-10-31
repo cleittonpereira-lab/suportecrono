@@ -11,6 +11,8 @@ export interface DrivePhotoInput {
   filename: string;
   mimeType: string;
   base64: string;
+  /** Foto que já é arquivo no Drive (lib/fotos-para-o-drive.ts). */
+  fileId?: string;
 }
 
 export interface SyncRevisionArgs {

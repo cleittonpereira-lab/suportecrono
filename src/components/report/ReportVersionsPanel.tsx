@@ -35,6 +35,14 @@ import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import type { ApprovalRow } from "@/lib/approvals.functions";
 import { completarPdfDaRevisao } from "@/lib/approvals-com-pdf";
+import { getRevisionPdfBase64 } from "@/lib/driveSync.functions";
+
+function base64ParaBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
 
 export interface ReportVersionLike {
   id: string;
@@ -91,9 +99,14 @@ export function ReportVersionsPanel({
    */
   const pdfDaVersao = async (v: ReportVersionLike): Promise<{ blob: Blob; doDrive: boolean }> => {
     const appr = approvals.find((a) => a.rev === v.rev) ?? null;
-    if (appr && scopeId) {
+    if (scopeId) {
       try {
-        const { bytes } = await completarPdfDaRevisao(scopeId, v.rev, appr);
+        // Toda revisão que está no Drive é mostrada de lá — não só as que já têm
+        // linha de aprovação. A cópia deste navegador podia ser de outra geração
+        // (outro computador refez o PDF), e a prévia ficava diferente do oficial.
+        const bytes = appr
+          ? (await completarPdfDaRevisao(scopeId, v.rev, appr)).bytes
+          : base64ParaBytes((await getRevisionPdfBase64({ data: { scopeId, rev: v.rev } })).base64);
         const buf = new ArrayBuffer(bytes.byteLength);
         new Uint8Array(buf).set(bytes);
         return { blob: new Blob([buf], { type: "application/pdf" }), doDrive: true };
@@ -116,7 +129,6 @@ export function ReportVersionsPanel({
   };
 
   const baixarVersao = async (v: ReportVersionLike) => {
-    if (!approvals.some((a) => a.rev === v.rev)) return onDownloadVersion(v);
     setAbrindo(v.id);
     try {
       const { blob, doDrive } = await pdfDaVersao(v);

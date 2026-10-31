@@ -1,5 +1,6 @@
 import { syncRevisionToDrive } from "@/lib/driveSync.functions";
 import { blobToBase64 } from "@/lib/drive-sync-client";
+import { fileIdDaFoto } from "@/lib/fotos-para-o-drive";
 import type { OedSampleProps, OedStage, OedStageCalculated, OedPhysicalIndices, OedCompressibilityParams } from "./types";
 import type { Photo } from "@/features/lab/types";
 import { getOedometerXlsxBase64 } from "./exportXlsx";
@@ -29,12 +30,16 @@ export async function syncOedometerRevisionToDrive(args: {
     // O scopeId era remontado aqui com os CÓDIGOS (`os/<número>/amostra/<código>/
     // ensaio/adensamento`): o servidor não achava o ensaio por esses ids e
     // criava uma pasta paralela no Drive, onde nenhuma tela procurava a revisão.
-    const fotosPayload = args.photos.map((p, idx) => ({
-      cpId: `AD-${idx + 1}`,
-      filename: `FOTO_ADENSAMENTO_${idx + 1}.jpg`,
-      mimeType: "image/jpeg",
-      base64: (p.dataUrl || "").split(",")[1] || "",
-    })).filter((f) => f.base64.length > 0);
+    // Foto com arquivo próprio no Drive (dataUrl vazio) vai pelo fileId — ver lib/fotos-para-o-drive.ts.
+    const fotosPayload = args.photos
+      .map((p, idx) => ({
+        cpId: `AD-${idx + 1}`,
+        filename: `FOTO_ADENSAMENTO_${idx + 1}.jpg`,
+        mimeType: "image/jpeg",
+        base64: (p.dataUrl || "").split(",")[1] || "",
+        fileId: fileIdDaFoto(p.url) ?? undefined,
+      }))
+      .filter((f) => f.base64.length > 0 || f.fileId);
 
     const dadosJson = JSON.stringify(
       {

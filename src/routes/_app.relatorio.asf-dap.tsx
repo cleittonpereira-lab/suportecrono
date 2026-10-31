@@ -1,4 +1,5 @@
 import { useDraftActivity } from "@/hooks/use-draft-activity";
+import { fotosParaODrive } from "@/lib/fotos-para-o-drive";
 import { EditingPresenceBanner } from "@/components/DraftActivityInfo";
 import { DadosTravados } from "@/components/report/DadosTravados";
 import { BotaoNovaRevisao } from "@/components/report/BotaoNovaRevisao";
@@ -42,7 +43,6 @@ import {
   verifyApproval,
   decideApproval,
   type ApprovalRow,
-  useRegerarPdfNoFluxo,
 } from "@/lib/approvals-com-pdf";
 import { getWorkflowStatuses } from "@/lib/driveSync.functions";
 import {
@@ -525,15 +525,7 @@ export function ASFPage() {
     const tid = toast.loading("Reenviando última revisão ao Drive…");
     try {
       const last = versions[0];
-      const fotos = (ctx?.photos ?? [])
-        .map((p) => {
-          const m = /^data:(.*?);base64,(.*)$/.exec(p.dataUrl);
-          const mimeType = m?.[1] || "image/jpeg";
-          const b64 = m?.[2] || "";
-          const ext = mimeType.split("/")[1] || "jpg";
-          return { cpId: "geral", filename: `${p.kind}_${p.id}.${ext}`, mimeType, base64: b64 };
-        })
-        .filter((f) => f.base64.length > 0);
+      const fotos = fotosParaODrive(ctx?.photos);
       const result = await syncRevision({
         scopeId,
         rev: last.rev,
@@ -639,7 +631,7 @@ export function ASFPage() {
         if (!jaTemFotos) {
           if (Array.isArray(fp.fotos) && fp.fotos.length > 0) {
             for (const foto of fp.fotos) {
-              ctx.addPhoto({ dataUrl: foto.dataUrl, kind: "outro", caption: foto.caption });
+              ctx.addPhoto({ dataUrl: foto.dataUrl, url: foto.url, kind: "outro", caption: foto.caption });
             }
             preencheu = true;
           }
@@ -707,7 +699,6 @@ export function ASFPage() {
     }
     return blob;
   };
-  useRegerarPdfNoFluxo(scopeId, buildReportPdfBlob);
 
   const handleGeneratePdf = async () => {
     const toastId = toast.loading("Gerando PDF do relatório…");
@@ -748,15 +739,7 @@ export function ASFPage() {
       await refreshVersions();
 
       try {
-        const fotos = (ctx?.photos ?? [])
-          .map((p) => {
-            const m = /^data:(.*?);base64,(.*)$/.exec(p.dataUrl);
-            const mimeType = m?.[1] || "image/jpeg";
-            const b64 = m?.[2] || "";
-            const ext = mimeType.split("/")[1] || "jpg";
-            return { cpId: "geral", filename: `${p.kind}_${p.id}.${ext}`, mimeType, base64: b64 };
-          })
-          .filter((f) => f.base64.length > 0);
+        const fotos = fotosParaODrive(ctx?.photos);
 
         const resDrive = await syncRevision({
           scopeId,
@@ -852,15 +835,7 @@ export function ASFPage() {
       await refreshVersions();
 
       try {
-        const fotos = (ctx?.photos ?? [])
-          .map((p) => {
-            const m = /^data:(.*?);base64,(.*)$/.exec(p.dataUrl);
-            const mimeType = m?.[1] || "image/jpeg";
-            const b64 = m?.[2] || "";
-            const ext = mimeType.split("/")[1] || "jpg";
-            return { cpId: "geral", filename: `${p.kind}_${p.id}.${ext}`, mimeType, base64: b64 };
-          })
-          .filter((f) => f.base64.length > 0);
+        const fotos = fotosParaODrive(ctx?.photos);
 
         await syncRevision({
           scopeId,

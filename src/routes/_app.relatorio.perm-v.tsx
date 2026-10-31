@@ -1,4 +1,5 @@
 import { pdfDaRevisaoEstaNoDrive } from "@/lib/revisoes-do-drive";
+import { fotosParaODrive } from "@/lib/fotos-para-o-drive";
 import { useDraftActivity } from "@/hooks/use-draft-activity";
 import { EditingPresenceBanner } from "@/components/DraftActivityInfo";
 import { DadosTravados } from "@/components/report/DadosTravados";
@@ -42,7 +43,6 @@ import { syncRevision, fetchDriveStatus } from "@/features/perm-v/driveSync";
 import { ReportVersionsPanel } from "@/components/report/ReportVersionsPanel";
 import {
   listApprovals, requestApproval, verifyApproval, decideApproval, type ApprovalRow,
-  useRegerarPdfNoFluxo,
 } from "@/lib/approvals-com-pdf";
 import { getWorkflowStatuses } from "@/lib/driveSync.functions";
 import {
@@ -792,15 +792,7 @@ export function PermVPage() {
     const tid = toast.loading("Reenviando última revisão ao Drive…");
     try {
       const last = versions[0];
-      const fotos = (ctx?.photos ?? [])
-        .map((p) => {
-          const m = /^data:(.*?);base64,(.*)$/.exec(p.dataUrl);
-          const mimeType = m?.[1] || "image/jpeg";
-          const b64 = m?.[2] || "";
-          const ext = mimeType.split("/")[1] || "jpg";
-          return { cpId: "geral", filename: `${p.kind}_${p.id}.${ext}`, mimeType, base64: b64 };
-        })
-        .filter((f) => f.base64.length > 0);
+      const fotos = fotosParaODrive(ctx?.photos);
       const result = await syncRevision({
         scopeId,
         rev: last.rev,
@@ -981,7 +973,6 @@ export function PermVPage() {
     }
     return blob;
   };
-  useRegerarPdfNoFluxo(scopeId, () => gerarPdfDoLaudo(true));
 
   /**
    * Número da próxima revisão. Vinha só do IndexedDB deste navegador: em outro
@@ -1004,15 +995,7 @@ export function PermVPage() {
    * standby")`: a tela mostrava sucesso e o PDF ficava apenas no navegador.
    */
   const enviarRevisaoAoDrive = async (blob: Blob, revisao: number, filename: string) => {
-    const fotos = (ctx?.photos ?? [])
-      .map((p) => {
-        const m = /^data:(.*?);base64,(.*)$/.exec(p.dataUrl);
-        const mimeType = m?.[1] || "image/jpeg";
-        const b64 = m?.[2] || "";
-        const ext = mimeType.split("/")[1] || "jpg";
-        return { cpId: "geral", filename: `${p.kind}_${p.id}.${ext}`, mimeType, base64: b64 };
-      })
-      .filter((f) => f.base64.length > 0);
+    const fotos = fotosParaODrive(ctx?.photos);
     try {
       const res = await comTeto(
         syncRevision({
