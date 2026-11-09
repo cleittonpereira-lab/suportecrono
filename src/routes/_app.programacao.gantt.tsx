@@ -50,7 +50,13 @@ import {
   parseProgramacaoRow,
   type Programacao,
 } from "@/lib/programacao-model";
-import { recalculateDownstream } from "@/lib/programacao-cascade";
+import {
+  alvoAposMudanca,
+  cascataDoEquipamento,
+  recalculateDownstream,
+  type AlvoCascata,
+  type ReprogramacaoCascata,
+} from "@/lib/programacao-cascade";
 
 type Amostra = {
   id: string;
@@ -503,34 +509,37 @@ function GanttPage() {
       const dur = dragProg.duracao_dias || 1;
       const incluir = dragProg.incluir_fds;
       const fim = endIsoFromDur(iso, dur, incluir);
-      savProg.mutate({
-        id: dragProg.id,
-        row: {
-          equipamento_id: equipamentoId ?? "",
-          data_inicio_prevista: iso,
-          data_inicio: iso,
-          data_fim: fim,
-        },
-      });
+      const row = {
+        equipamento_id: equipamentoId ?? "",
+        data_inicio_prevista: iso,
+        data_inicio: iso,
+        data_fim: fim,
+      };
+      const cascata = cascataPara(alvoAposMudanca(dragProg, row));
+      savProg.mutate(
+        { id: dragProg.id, row },
+        { onSuccess: () => aplicarReprogramacao(cascata) },
+      );
     } else if (dragEnsaioId) {
       // Duração padrão a partir do tempo médio cadastrado no Tipo de
       // Ensaio (continua editável depois, aqui é só o valor inicial).
       const ens = ensaioById.get(dragEnsaioId);
       const tempoMedioH = ens ? tipoById.get(ens.tipo_ensaio_id)?.tempo_medio_h : null;
       const dur = tempoMedioH && tempoMedioH > 0 ? Math.max(0.25, Math.round((tempoMedioH / 8) * 4) / 4) : 1;
-      savProg.mutate({
-        row: {
-          ensaio_id: dragEnsaioId,
-          equipamento_id: equipamentoId ?? "",
-          data_inicio_prevista: iso,
-          data_inicio: iso,
-          duracao_dias: dur,
-          data_fim: endIsoFromDur(iso, dur, false),
-          status: "planejado",
-          progresso: 0,
-          incluir_fds: false,
-        },
-      });
+      const row = {
+        ensaio_id: dragEnsaioId,
+        equipamento_id: equipamentoId ?? "",
+        data_inicio_prevista: iso,
+        data_inicio: iso,
+        duracao_dias: dur,
+        data_fim: endIsoFromDur(iso, dur, false),
+        status: "planejado" as const,
+        progresso: 0,
+        incluir_fds: false,
+      };
+      // Ensaio novo caindo no meio da fila: os seguintes do equipamento andam.
+      const cascata = cascataPara(alvoAposMudanca(null, row));
+      savProg.mutate({ row }, { onSuccess: () => aplicarReprogramacao(cascata) });
     }
     setDragEnsaioId(null);
     setDragProg(null);
@@ -558,6 +567,48 @@ function GanttPage() {
       qc.invalidateQueries({ queryKey: ["programacoes"] });
     }
     return shifted;
+  };
+
+  /* ---- Reprogramação em cascata por equipamento ----
+   * Um equipamento faz um ensaio por vez. Quando a data ou o equipamento de um
+   * ensaio muda, ou ele atrasa, os seguintes do mesmo equipamento são
+   * empurrados até não se sobreporem (cascataDoEquipamento). Não puxa ninguém.
+   */
+  const cascataPara = (alvo: AlvoCascata, fimAlvo?: string | null) =>
+    cascataDoEquipamento(progs, alvo, fimAlvo);
+
+  const aplicarReprogramacao = async (mudancas: ReprogramacaoCascata[]) => {
+    if (mudancas.length === 0) return;
+    try {
+      for (const m of mudancas) {
+        await updateRow({ data: { sheet: SHEET_PROGS, id: m.id, patch: m.patch as Record<string, unknown> } });
+      }
+      toast.info(`${mudancas.length} ensaio(s) do mesmo equipamento reagendado(s) automaticamente`);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Falha ao reagendar os ensaios seguintes");
+    } finally {
+      qc.invalidateQueries({ queryKey: ["programacoes_full"] });
+      qc.invalidateQueries({ queryKey: ["programacoes"] });
+    }
+  };
+
+  // Ao iniciar/terminar com atraso: a cadeia de predecessor_id segue como antes
+  // (dependência: começa logo após o fim); no equipamento, só os seguintes são
+  // empurrados. Adiantamento continua pelo runCascade (puxa o próximo).
+  const reagendarAtraso = async (base: Programacao, mudanca: Partial<Programacao>, fimAlvo: string) => {
+    const alvo = alvoAposMudanca(base, mudanca);
+    const copias = progs.map((p) => ({ ...p, ...(p.id === base.id ? mudanca : {}) }));
+    const { shifted } = await recalculateDownstream(base.id, fimAlvo, copias, async (id, patch) => {
+      await updateRow({ data: { sheet: SHEET_PROGS, id, patch } });
+    }, { apenasCadeia: true });
+    const mudancas = cascataDoEquipamento(copias, alvo, fimAlvo);
+    await aplicarReprogramacao(mudancas);
+    if (shifted > 0) {
+      toast.info(`${shifted} ensaio(s) de predecessor reagendado(s) automaticamente`);
+      qc.invalidateQueries({ queryKey: ["programacoes_full"] });
+      qc.invalidateQueries({ queryKey: ["programacoes"] });
+    }
+    return shifted + mudancas.length;
   };
 
   /* ---- Impressão do Gantt (linha do tempo visual + tabela com status) ---- */
@@ -1021,10 +1072,12 @@ function GanttPage() {
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="p-0 overflow-x-auto">
+        {/* Único contêiner de rolagem da grade (horizontal e vertical): o cabeçalho de datas
+            é sticky dentro dele, então continua visível ao descer a lista. */}
+        <CardContent className="p-0 overflow-auto max-h-[70vh]">
           <div style={{ minWidth: leftW + days.length * dayW }}>
             {/* Header de datas (dois níveis) */}
-            <div className="sticky top-0 z-20 bg-background/95 backdrop-blur border-b">
+            <div className="sticky top-0 z-20 bg-background border-b">
               {/* Linha 1: meses */}
               <div
                 className="grid"
@@ -1109,7 +1162,7 @@ function GanttPage() {
                       <button
                         type="button"
                         onClick={() => toggleGroup(key)}
-                        className="sticky left-0 z-10 flex items-center gap-2 px-2 py-1.5 text-xs font-semibold border-r border-border/60 text-left relative overflow-hidden"
+                        className="sticky left-0 z-10 flex items-center gap-2 px-2 py-1.5 text-xs font-semibold border-r border-border/60 text-left relative overflow-hidden bg-background"
                         title={isCollapsed ? "Expandir" : "Recolher"}
                         style={{
                           width: leftW,
@@ -1224,7 +1277,11 @@ function GanttPage() {
                       className={`grid items-center hover:bg-primary/5 transition-colors border-b border-border/30 last:border-b-0 ${idx % 2 === 1 ? "bg-muted/15" : ""}`}
                       style={{ gridTemplateColumns: `${leftW}px ${META_TEMPLATE} repeat(${days.length}, ${dayW}px)` }}
                     >
-                      <div className={`px-3 py-1 text-xs border-r border-border/40 truncate flex items-center gap-2 sticky left-0 z-10 ${idx % 2 === 1 ? "bg-muted/30" : "bg-background"}`}>
+                      {/* Célula fixa: fundo sólido (sem transparência) para não deixar ver a barra por baixo */}
+                      <div
+                        className="px-3 py-1 text-xs border-r border-border/40 truncate flex items-center gap-2 sticky left-0 z-10 bg-background"
+                        style={idx % 2 === 1 ? { background: "color-mix(in oklab, var(--muted) 30%, var(--background))" } : undefined}
+                      >
                         <span
                           className="h-3.5 w-[3px] rounded-full shrink-0"
                           style={{ background: cor }}
@@ -1414,12 +1471,25 @@ function GanttPage() {
                   }
                 : undefined
             }
-            onSubmit={(row) =>
+            onSubmit={(row) => {
+              // Mudou data ou equipamento (ou é novo)? Os seguintes do equipamento andam.
+              const alvo = alvoAposMudanca(editing, row);
+              const mudouTempo =
+                !editing ||
+                editing.data_inicio_prevista !== alvo.data_inicio_prevista ||
+                editing.equipamento_id !== alvo.equipamento_id ||
+                editing.duracao_dias !== alvo.duracao_dias;
+              const cascata = mudouTempo ? cascataPara(alvo) : [];
               savProg.mutate(
                 { id: editing?.id, row },
-                { onSuccess: () => setDialogOpen(false) },
-              )
-            }
+                {
+                  onSuccess: () => {
+                    setDialogOpen(false);
+                    void aplicarReprogramacao(cascata);
+                  },
+                },
+              );
+            }}
           />
         </DialogContent>
       </Dialog>
@@ -1463,7 +1533,12 @@ function GanttPage() {
             {
               onSuccess: async () => {
                 setDetailProg(null);
-                await runCascade(progId, novoFim);
+                // Começou depois do previsto (termina depois do previsto) -> empurra os seguintes.
+                if (novoFim > (detailProg.data_fim ?? novoFim)) {
+                  await reagendarAtraso(detailProg, { data_inicio: hoje, data_fim: novoFim, status: "em_execucao" }, novoFim);
+                } else {
+                  await runCascade(progId, novoFim);
+                }
               },
             },
           );
@@ -1494,9 +1569,13 @@ function GanttPage() {
             {
               onSuccess: async () => {
                 setDetailProg(null);
-                // Termina antes do previsto -> puxa o início do próximo;
-                // termina depois -> atrasa o próximo. Mesma cascata do onIniciar.
-                await runCascade(progId, hoje);
+                // Termina depois do previsto -> atrasa, e os seguintes do equipamento andam.
+                // Termina antes -> puxa o início do próximo (runCascade), como antes.
+                if (hoje > (detailProg.data_fim ?? hoje)) {
+                  await reagendarAtraso(detailProg, { data_fim_real: hoje, data_inicio: inicioEff, data_fim: hoje, status: "concluido" }, hoje);
+                } else {
+                  await runCascade(progId, hoje);
+                }
               },
             },
           );
@@ -1518,6 +1597,21 @@ function GanttPage() {
           if (!detailProg) return;
           const A = detailProg;
           const B = destino;
+          // Cada um cai no lugar do outro: os seguintes do equipamento de destino andam.
+          const alvoA = alvoAposMudanca(A, {
+            equipamento_id: B.equipamento_id,
+            data_inicio_prevista: B.data_inicio_prevista,
+            data_inicio: B.data_inicio_prevista,
+            data_fim: B.data_inicio_prevista ? endIsoFromDur(B.data_inicio_prevista, A.duracao_dias || 1, A.incluir_fds) : null,
+          });
+          const alvoB = alvoAposMudanca(B, {
+            equipamento_id: A.equipamento_id,
+            data_inicio_prevista: A.data_inicio_prevista,
+            data_inicio: A.data_inicio_prevista,
+            data_fim: A.data_inicio_prevista ? endIsoFromDur(A.data_inicio_prevista, B.duracao_dias || 1, B.incluir_fds) : null,
+          });
+          const outros = progs.filter((p) => p.id !== A.id && p.id !== B.id);
+          const cascata = [...cascataDoEquipamento(outros, alvoA), ...cascataDoEquipamento(outros, alvoB)];
           try {
             await updateRow({
               data: {
@@ -1547,6 +1641,7 @@ function GanttPage() {
                 },
               },
             });
+            await aplicarReprogramacao(cascata);
             toast.success("Programações trocadas");
             qc.invalidateQueries({ queryKey: ["programacoes_full"] });
             qc.invalidateQueries({ queryKey: ["programacoes"] });
@@ -1559,6 +1654,14 @@ function GanttPage() {
         onMove={async (equipDestId, dataIso) => {
           if (!detailProg) return;
           const A = detailProg;
+          const cascata = cascataPara(
+            alvoAposMudanca(A, {
+              equipamento_id: equipDestId,
+              data_inicio_prevista: dataIso,
+              data_inicio: dataIso,
+              data_fim: dataIso ? endIsoFromDur(dataIso, A.duracao_dias || 1, A.incluir_fds) : null,
+            }),
+          );
           try {
             await updateRow({
               data: {
@@ -1574,6 +1677,7 @@ function GanttPage() {
                 },
               },
             });
+            await aplicarReprogramacao(cascata);
             toast.success("Programação movida");
             qc.invalidateQueries({ queryKey: ["programacoes_full"] });
             qc.invalidateQueries({ queryKey: ["programacoes"] });
