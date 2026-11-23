@@ -72,6 +72,7 @@ const logoAsset = { url: "/suporte-infra-logo.png" };
 import {
   casagrandeSigmaP,
   ccCr,
+  cAlphaSecundario,
   cvCasagrande,
   cvTaylor,
   pachecoSilvaSigmaP,
@@ -971,9 +972,12 @@ export function AdensamentoPage() {
       const kvTaylor = t && mv ? t.cv * mv * GAMMA_W : null;
       const kvCas = c && mv ? c.cv * mv * GAMMA_W : null;
       const readings = st?.readings || [];
-      const ca = phase === "load" && readings.length >= 3
-        ? Math.max(0, Math.abs((readings[readings.length - 1]?.d ?? stFinalDial) - (readings[readings.length - 3]?.d ?? stFinalDial)) / sample.ringHeight)
+      // Cα = (1+e)·|m|/H na reta do recalque × log t do trecho secundário.
+      // H é a altura média do estágio (mesma usada na drenagem).
+      const cAlpha = phase === "load"
+        ? cAlphaSecundario(st, { H_mm: Havg_mm, e })
         : null;
+      const ca = cAlpha?.ca ?? null;
       return {
         phase,
         sigma: st.sigma,

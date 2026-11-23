@@ -518,3 +518,36 @@ export function createBlankStage(sigma: number = 10): Stage {
   const readings = standardTimes.map((t) => ({ t, d: 0 }));
   return { sigma, readings, finalDial: 0 };
 }
+
+/**
+ * Coeficiente de adensamento secundário Cα (compressão secundária).
+ *
+ * Cα = Δe / Δlog t, no trecho secundário do estágio. Como Δe = −(1+e)·Δd/H,
+ * o trecho é a inclinação m (mm por ciclo de log) do recalque d × log t,
+ * ajustada nas últimas leituras do estágio:
+ *
+ *   Cα = (1 + e) · |m| / H
+ *
+ * com e o índice de vazios no fim do estágio e H a altura média do estágio [mm].
+ * Antes o cálculo usava só a diferença entre duas leituras e o diâmetro
+ * do anel, sem normalizar pelo tempo — não era Cα.
+ *
+ * Devolve null quando não há leituras suficientes para ajustar a reta.
+ */
+export function cAlphaSecundario(
+  stage: Stage,
+  opts: { H_mm: number; e: number; usarUltimas?: number },
+): { ca: number; slope: number; pontos: number } | null {
+  const { H_mm, e, usarUltimas = 3 } = opts;
+  if (!(H_mm > 0) || !isFinite(e)) return null;
+  const pts = (stage.readings || []).filter((r) => r.t > 0).sort((a, b) => a.t - b.t);
+  if (pts.length < 3) return null;
+  const cauda = pts.slice(-Math.max(3, usarUltimas));
+  const xs = cauda.map((p) => Math.log10(p.t));
+  const ys = cauda.map((p) => p.d);
+  if (Math.max(...xs) - Math.min(...xs) < 1e-9) return null;
+  const { m } = linearFit(xs, ys);
+  const ca = ((1 + e) * Math.abs(m)) / H_mm;
+  if (!isFinite(ca)) return null;
+  return { ca, slope: m, pontos: cauda.length };
+}

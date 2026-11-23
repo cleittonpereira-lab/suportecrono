@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cvCasagrande, cvTaylor, physicalIndices, ringArea, ringVolume, type MoistureCapsule, type SampleProps, type Stage } from "./oedometer";
+import { cAlphaSecundario, cvCasagrande, cvTaylor, physicalIndices, ringArea, ringVolume, type MoistureCapsule, type SampleProps, type Stage } from "./oedometer";
 
 /** Cápsula que resulta exatamente na umidade `w` (%): ms = 100 g. */
 const capsulaDe = (w: number): MoistureCapsule => ({ tara: 0, dry: 100, wet: 100 + w });
@@ -200,5 +200,20 @@ describe("Cv por Casagrande (log do tempo)", () => {
 
   it("poucas leituras não viram resultado", () => {
     expect(cvCasagrande({ sigma: 100, readings: [{ t: 1, d: 0.1 }], finalDial: 0.1 }, 10)).toBeNull();
+  });
+});
+
+describe("Cα pela inclinação do trecho secundário", () => {
+  it("recalque que cresce 0,1 mm por ciclo de log dá Cα = (1+e)·0,1/H", () => {
+    // d = 0,1·log10(t) + 2 nas leituras do secundário
+    const readings = [10, 30, 100, 300, 1000].map((t) => ({ t, d: 0.1 * Math.log10(t) + 2 }));
+    const r = cAlphaSecundario({ sigma: 100, readings, finalDial: 2.5 }, { H_mm: 18, e: 0.8 });
+    expect(r).not.toBeNull();
+    expect(r!.slope).toBeCloseTo(0.1, 9);
+    expect(r!.ca).toBeCloseTo((1.8 * 0.1) / 18, 9);
+  });
+
+  it("sem leituras suficientes não inventa valor", () => {
+    expect(cAlphaSecundario({ sigma: 1, readings: [{ t: 1, d: 0.1 }], finalDial: 0.1 }, { H_mm: 18, e: 0.8 })).toBeNull();
   });
 });
